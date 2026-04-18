@@ -1,0 +1,23 @@
+# Node dependencies
+node_modules/
+
+# Build folders
+dist/
+build/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Django media
+backend/media/
+
+# Logs
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
