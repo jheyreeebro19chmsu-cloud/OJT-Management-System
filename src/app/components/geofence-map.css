@@ -1,0 +1,63 @@
+.leaflet-zone-marker,
+.leaflet-picked-marker,
+.leaflet-user-marker {
+  background: transparent;
+  border: none;
+}
+
+.leaflet-zone-dot,
+.leaflet-picked-dot,
+.leaflet-user-dot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+}
+
+.leaflet-zone-dot {
+  background: #1d4ed8;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+}
+
+.leaflet-zone-marker-inactive .leaflet-zone-dot {
+  background: #64748b;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.25);
+}
+
+.leaflet-picked-dot {
+  background: #f97316;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.25);
+}
+
+.leaflet-user-dot {
+  background: #0ea5e9;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 5px rgba(56, 189, 248, 0.35);
+}
+
+.leaflet-geofence-popup .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.12);
+}
+
+.leaflet-popup-card {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.leaflet-popup-card p {
+  margin: 0;
+}
+
+.leaflet-popup-card p + p {
+  margin-top: 4px;
+}
+
+.leaflet-popup-title {
+  font-weight: 700;
+  color: #0f172a;
+}
