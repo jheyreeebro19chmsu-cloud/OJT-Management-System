@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter, isRouteErrorResponse, useRouteError } from 'react-router-dom';
+import { createHashRouter, isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { EmployeeLayout } from './components/EmployeeLayout';
@@ -50,7 +50,7 @@ function RouteErrorFallback() {
 
 const routeErrorElement = React.createElement(RouteErrorFallback);
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   {
     path: '/',
     Component: Login,
