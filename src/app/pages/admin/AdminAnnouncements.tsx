@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Megaphone, Plus, Edit2, Trash2, X, Save, Pin, Bell, Info, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { useApp } from '../../store/AppContext';
+import authAPI from '../../services/authApi';
 import { Announcement } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
@@ -73,7 +74,7 @@ export function AdminAnnouncements() {
     setShowForm(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.title.trim() || !form.content.trim()) {
       toast.error('Title and content are required.');
       return;
@@ -84,17 +85,64 @@ export function AdminAnnouncements() {
       expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : undefined,
       deadlineAt: form.deadlineAt ? new Date(form.deadlineAt).toISOString() : undefined,
       createdAt: new Date().toISOString(),
-      createdBy: currentUser?.name || 'Administrator',
+      createdBy: currentUser?.name || 'OJT Instructor',
       createdByRole: currentUser?.role === 'host' ? 'host' : 'admin',
     };
 
-    if (editId) {
-      updateAnnouncement(editId, data);
-      toast.success('Announcement updated!');
+    const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
+
+    if (API_BASE) {
+      // Upload to Django backend via multipart/form-data using authAPI
+      try {
+        const formData = new FormData();
+        formData.append('user_id', String(currentUser?.id || ''));
+        formData.append('title', form.title);
+        formData.append('content', form.content);
+
+        // If photo is a data URL, convert to Blob
+        if (form.photo && form.photo.startsWith('data:')) {
+          const res = await fetch(form.photo);
+          const blob = await res.blob();
+          formData.append('image', blob, `announcement_${Date.now()}.jpg`);
+        }
+
+        const resp = await authAPI.postAnnouncement(Number(currentUser?.id || 0), formData);
+        const respData = resp.data;
+        if (respData && respData.success) {
+          const created = {
+            id: `ann-${respData.announcement_id}`,
+            title: form.title,
+            content: form.content,
+            photo: respData.image_url || form.photo,
+            type: form.type,
+            targetRole: form.targetRole,
+            isPinned: form.isPinned,
+            reminder: form.reminder,
+            deadlineAt: form.deadlineAt ? new Date(form.deadlineAt).toISOString() : undefined,
+            comments: form.comments,
+            requiresSubmission: form.requiresSubmission,
+            createdAt: new Date().toISOString(),
+          } as Announcement;
+          // Add to local state
+          addAnnouncement(created as any);
+          toast.success('Announcement posted!');
+        } else {
+          toast.error('Failed to post announcement to server.');
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('Failed to post announcement to server.');
+      }
     } else {
-      addAnnouncement(data);
-      toast.success('Announcement posted!');
+      if (editId) {
+        updateAnnouncement(editId, data);
+        toast.success('Announcement updated!');
+      } else {
+        addAnnouncement(data);
+        toast.success('Announcement posted!');
+      }
     }
+
     setShowForm(false);
   };
 
@@ -210,7 +258,7 @@ export function AdminAnnouncements() {
                       {ann.requiresSubmission && (
                         <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                           {(['passed', 'missed', 'pending'] as const).map(st => {
-                            const list = employees.filter(e => e.active && e.position !== 'Administrator').filter(e => {
+                            const list = employees.filter(e => e.active && e.position !== 'OJT Instructor').filter(e => {
                               const status = getAnnouncementSubmissionStatus(ann, e.id);
                               return status === st;
                             });
@@ -306,6 +354,23 @@ export function AdminAnnouncements() {
                     placeholder="https://... or data:image/... "
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                   />
+                  <div className="mt-2">
+                    <label className="text-xs font-semibold text-gray-600 block mb-1.5">Upload Photo (optional)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          upd('photo', String(reader.result || ''));
+                        };
+                        reader.readAsDataURL(f);
+                      }}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
 
                 <div>

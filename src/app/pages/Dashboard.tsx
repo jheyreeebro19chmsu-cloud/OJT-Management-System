@@ -24,7 +24,7 @@ export function Dashboard() {
   const { currentUser, getCurrentEmployee, getTodayRecord, getEmployeeRecords, settings, getActiveAnnouncements } = useApp();
   const employee = getCurrentEmployee();
   const isAdmin = currentUser?.role === 'admin';
-  const displayName = employee?.name || currentUser?.name || (isAdmin ? 'Administrator' : 'Trainee');
+  const displayName = employee?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
   const displayId = employee?.employeeId || (isAdmin ? 'ADMIN' : '');
   const todayRecord = employee ? getTodayRecord(employee.id) : null;
   const allRecords = employee ? getEmployeeRecords(employee.id) : [];

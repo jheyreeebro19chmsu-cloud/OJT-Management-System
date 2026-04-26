@@ -81,7 +81,7 @@ export function AdminLayout() {
               <span className="text-white text-xs font-bold">AD</span>
             </div>
             <div>
-              <div className="text-white text-xs font-medium">Administrator</div>
+              <div className="text-white text-xs font-medium">OJT Instructor</div>
               <div className="text-blue-400 text-xs">admin@ojt.com</div>
             </div>
           </div>

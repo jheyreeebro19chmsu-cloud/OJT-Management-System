@@ -67,7 +67,7 @@ export function AdminHostFeedback() {
           className="px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-sm"
         >
           <option value="all">All Trainees</option>
-          {employees.filter(e => e.active && e.position !== 'Administrator').map(e => (
+          {employees.filter(e => e.active && e.position !== 'OJT Instructor').map(e => (
             <option key={e.id} value={e.id}>{e.name}</option>
           ))}
         </select>

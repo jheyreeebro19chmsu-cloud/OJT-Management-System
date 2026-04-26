@@ -144,6 +144,13 @@ class TimeRecord(models.Model):
     time_out = models.DateTimeField(null=True, blank=True)
     hours_rendered = models.FloatField(default=0.0)
     date = models.DateField()
+    # session: morning or afternoon
+    SESSION_CHOICES = [
+        ('morning', 'Morning'),
+        ('afternoon', 'Afternoon'),
+        ('unspecified', 'Unspecified'),
+    ]
+    session = models.CharField(max_length=20, choices=SESSION_CHOICES, default='unspecified')
     
     notes = models.TextField(blank=True)
     is_approved = models.BooleanField(default=False)
@@ -174,6 +181,17 @@ class Announcement(models.Model):
     
     def __str__(self):
         return f"Announcement: {self.title}"
+
+
+class AnnouncementSubmission(models.Model):
+    announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name='submissions')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='announcement_submissions')
+    message = models.TextField(blank=True)
+    image = models.ImageField(upload_to='announcement_submissions/', null=True, blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"AnnouncementSubmission({self.announcement.id} by {self.student.user.get_full_name()})"
 
 
 class Task(models.Model):

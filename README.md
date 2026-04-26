@@ -1,6 +1,6 @@
 # OJT Daily Time Record System
 
-A comprehensive On-the-Job Training (OJT) Daily Time Record System built with React, TypeScript, and Supabase. This mobile-first web application features facial recognition simulation, geofencing, and complete attendance management for trainees and administrators.
+A comprehensive On-the-Job Training (OJT) Daily Time Record System built with React, TypeScript, and Supabase. This mobile-first web application features facial recognition simulation, geofencing, and complete attendance management for trainees and OJT instructors.
 
 ## 🌟 Features
 
@@ -15,7 +15,7 @@ A comprehensive On-the-Job Training (OJT) Daily Time Record System built with Re
 - 👤 **Profile Management** - View personal and training information
 - ⭐ **Evaluations** - View end-of-OJT performance evaluations
 
-### For Administrators
+### For OJT Instructors
 - 👥 **Employee Management** - Add, edit, view all trainees
 - 📊 **Reports & Analytics** - Attendance trends and statistics
 - 🗺️ **Geofence Configuration** - Define allowed training zones
@@ -96,7 +96,7 @@ The app will be available at `http://localhost:5173`
 
 ## 🔐 Default Credentials
 
-### Admin Account
+### OJT Instructor Account
 - **Email**: `admin@ojt.com`
 - **Password**: `admin123`
 
@@ -217,20 +217,20 @@ The application is fully responsive and optimized for mobile devices:
 ## 🔧 Configuration
 
 ### Work Schedule Settings
-Configure in Admin Settings page:
+Configure in Instructor Settings page:
 - Work start time (default: 08:00)
 - Work end time (default: 17:00)
 - Late threshold in minutes (default: 15)
 
 ### Geofencing
-Configure in Admin Geofence page:
+Configure in Instructor Geofence page:
 - Add/edit/delete geofence zones
 - Set zone name, address, coordinates
 - Define radius in meters
 - Enable/disable zones
 
 ### Mapbox Map (Live Geofence Map)
-To enable the live Mapbox map in Admin Geofence:
+To enable the live Mapbox map in Instructor Geofence:
 1. Create a Mapbox account and get an access token
 2. Add to `.env`:
    `VITE_MAPBOX_TOKEN=your_mapbox_token`

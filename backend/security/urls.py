@@ -6,6 +6,10 @@ urlpatterns = [
     # Security/Face/Geofence endpoints
     path("health/", views.health, name="health"),
     path("geofence/check/", views.check_geofence, name="check_geofence"),
+    path("geonames/proxy/", views.geonames_proxy, name="geonames_proxy"),
+    path("geonames/countries/", views.geonames_countries, name="geonames_countries"),
+    path("geonames/cities/", views.geonames_cities, name="geonames_cities"),
+    path("osm/streets/", views.osm_streets, name="osm_streets"),
     path("face/register/", views.register_face, name="register_face"),
     path("face/verify/", views.verify_face, name="verify_face"),
     path("attendance/photo/", views.save_attendance_photo, name="save_attendance_photo"),
@@ -13,9 +17,7 @@ urlpatterns = [
     # Authentication endpoints
     path("auth/request-otp/", auth_views.request_otp, name="request_otp"),
     path("auth/verify-otp/", auth_views.verify_otp, name="verify_otp"),
-    path("auth/register-student/", auth_views.register_student, name="register_student"),
-    path("auth/register-instructor/", auth_views.register_instructor, name="register_instructor"),
-    path("auth/register-hte/", auth_views.register_hte, name="register_hte"),
+    path("auth/verify-qr/", auth_views.verify_qr, name="verify_qr"),
     path("auth/login/", auth_views.login, name="login"),
     
     # OJT Application endpoints
@@ -30,6 +32,7 @@ urlpatterns = [
     # Announcement endpoints
     path("announcement/post/", auth_views.post_announcement, name="post_announcement"),
     path("announcement/list/", auth_views.get_announcements, name="get_announcements"),
+    path("announcement/submit/", auth_views.submit_announcement_response, name="submit_announcement_response"),
     
     # HTE Access endpoints
     path("hte/request-access/", auth_views.request_hte_access, name="request_hte_access"),

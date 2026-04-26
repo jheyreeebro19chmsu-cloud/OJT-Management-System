@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, Clock, MapPin, Camera, Save, RotateCcw, Database, CheckCircle, XCircle, Server, KeyRound } from 'lucide-react';
 import { useApp } from '../../store/AppContext';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { fetchSecurityHealth, isSecurityApiConfigured, type SecurityHealthResponse } from '../../services/securityApi';
+import addressApi from '../../services/addressApi';
 
 export function AdminSettings() {
   const { settings, updateSettings, changeCurrentUserPassword } = useApp();
@@ -59,6 +60,155 @@ export function AdminSettings() {
       toast.error(result.message);
     }
   };
+
+  // Offline streets uploader state
+  const [uploadCountry, setUploadCountry] = useState('');
+  const [uploadUrl, setUploadUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [dropboxUrl, setDropboxUrl] = useState('');
+  const [progressPercent, setProgressPercent] = useState<number | null>(null);
+  const [persistedCountries, setPersistedCountries] = useState<string[]>([]);
+  const [persistedSummaries, setPersistedSummaries] = useState<Record<string, { citiesCount: number; hasMeta: boolean }>>({});
+  const [persistedDetails, setPersistedDetails] = useState<Record<string, { name: string; regions: string[]; sampleCities: string[] }>>({});
+
+  const handleFileUpload = async (file?: File) => {
+    if (!file) return;
+    if (!uploadCountry) return toast.error('Enter country code (e.g. PH)');
+    setUploading(true);
+    setProgressPercent(null);
+    try {
+      const txt = await file.text();
+      const data = JSON.parse(txt);
+      const ok = addressApi.registerOfflineStreets(uploadCountry, data as any);
+      if (ok) {
+        toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()}`);
+      } else {
+        toast.error('Registration failed (invalid data)');
+      }
+    } catch (err) {
+      toast.error('Failed to read or parse file');
+    } finally {
+      setUploading(false);
+      setProgressPercent(null);
+    }
+  };
+
+  const handleUrlRegister = async () => {
+    if (!uploadUrl) return toast.error('Enter a URL');
+    if (!uploadCountry) return toast.error('Enter country code (e.g. PH)');
+    setUploading(true);
+    setProgressPercent(null);
+    try {
+      const res = await fetch(uploadUrl);
+      // try streaming the response to report progress
+      const contentLength = res.headers.get('content-length');
+      if (res.body && contentLength) {
+        const total = parseInt(contentLength, 10);
+        const reader = res.body.getReader();
+        let received = 0;
+        const chunks: Uint8Array[] = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.length;
+            setProgressPercent(Math.round((received / total) * 100));
+          }
+        }
+        const decoder = new TextDecoder('utf-8');
+        const text = chunks.map(c => decoder.decode(c)).join('');
+        const data = JSON.parse(text);
+        const ok = addressApi.registerOfflineStreets(uploadCountry, data as any);
+      if (ok) toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()}`);
+      else toast.error('Registration failed (invalid data)');
+      } else {
+        const data = await res.json();
+        const ok = addressApi.registerOfflineStreets(uploadCountry, data as any);
+        if (ok) toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()}`);
+        else toast.error('Registration failed (invalid data)');
+      }
+    } catch (err) {
+      toast.error('Failed to fetch or parse JSON from URL');
+    } finally {
+      setUploading(false);
+      setProgressPercent(null);
+    }
+  };
+
+  const handleDropboxRegister = async () => {
+    if (!dropboxUrl) return toast.error('Enter Dropbox share URL');
+    if (!uploadCountry) return toast.error('Enter country code (e.g. PH)');
+    setUploading(true);
+    setProgressPercent(null);
+    try {
+      // Convert common Dropbox share url to direct download
+      let url = dropboxUrl.trim();
+      // If it's a www.dropbox.com link with ?dl=0, replace with dl=1
+      if (url.includes('dropbox.com')) {
+        url = url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
+      }
+      const res = await fetch(url);
+      const contentLength = res.headers.get('content-length');
+      if (res.body && contentLength) {
+        const total = parseInt(contentLength, 10);
+        const reader = res.body.getReader();
+        let received = 0;
+        const chunks: Uint8Array[] = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.length;
+            setProgressPercent(Math.round((received / total) * 100));
+          }
+        }
+        const decoder = new TextDecoder('utf-8');
+        const text = chunks.map(c => decoder.decode(c)).join('');
+        const data = JSON.parse(text);
+        const ok = addressApi.registerOfflineStreets(uploadCountry, data as any);
+        if (ok) toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()} from Dropbox`);
+        else toast.error('Registration failed (invalid data)');
+      } else {
+        const data = await res.json();
+        const ok = addressApi.registerOfflineStreets(uploadCountry, data as any);
+        if (ok) toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()} from Dropbox`);
+        else toast.error('Registration failed (invalid data)');
+      }
+    } catch (err) {
+      toast.error('Failed to fetch or parse JSON from Dropbox URL');
+    } finally {
+      setUploading(false);
+      setProgressPercent(null);
+      // refresh list
+      refreshPersistedList();
+    }
+  };
+
+  const refreshPersistedList = async () => {
+    try {
+      const list = await addressApi.listOfflineCountries();
+      setPersistedCountries(list || []);
+      const map: Record<string, { citiesCount: number; hasMeta: boolean }> = {};
+      const detailsMap: Record<string, { name: string; regions: string[]; sampleCities: string[] }> = {};
+      await Promise.all((list || []).map(async (c) => {
+        const s = await addressApi.getOfflineSummary(c);
+        map[c] = { citiesCount: s.citiesCount, hasMeta: s.hasMeta };
+        const d = await addressApi.getOfflineDetails(c, 8);
+        detailsMap[c] = { name: d.name, regions: d.regions, sampleCities: d.sampleCities };
+      }));
+      setPersistedSummaries(map);
+      setPersistedDetails(detailsMap);
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    refreshPersistedList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -257,6 +407,130 @@ export function AdminSettings() {
               <span><strong>No Verification:</strong> Time recorded without security checks</span>
             </div>
           )}
+        </div>
+      </motion.div>
+
+      {/* Offline Streets Uploader */}
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
+        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center">
+            <Database size={18} className="text-indigo-700" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800">Offline Streets Uploader</h3>
+            <p className="text-xs text-gray-500">Upload a JSON file or provide a URL to register offline street datasets per country.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Country Code (ISO alpha-2)</label>
+            <input value={uploadCountry} onChange={e => setUploadCountry(e.target.value.toUpperCase())} placeholder="e.g. PH" className="w-40 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50" />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Upload JSON File</label>
+            <input type="file" accept="application/json" onChange={e => handleFileUpload(e.target.files?.[0])} className="text-sm" />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Or register from URL</label>
+            <div className="flex gap-2">
+              <input value={uploadUrl} onChange={e => setUploadUrl(e.target.value)} placeholder="https://example.com/streets/PH.json" className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50" />
+              <button onClick={handleUrlRegister} className={`px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm ${uploading ? 'opacity-60' : ''}`}>Register</button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Or register from Dropbox share link</label>
+            <div className="flex gap-2">
+              <input value={dropboxUrl} onChange={e => setDropboxUrl(e.target.value)} placeholder="https://www.dropbox.com/s/FILEID/streets.json?dl=0" className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50" />
+              <button onClick={handleDropboxRegister} className={`px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm ${uploading ? 'opacity-60' : ''}`}>Import</button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Dropbox links will be converted to direct downloads; the file must be valid JSON matching the expected structure.</p>
+          </div>
+
+          {progressPercent !== null && (
+            <div className="mt-2">
+              <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                <div className="h-2 bg-indigo-600" style={{ width: `${progressPercent}%` }} />
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Downloading & parsing: {progressPercent}%</div>
+            </div>
+          )}
+
+          {/* Persisted offline datasets list */}
+          <div className="mt-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Persisted Offline Datasets</h4>
+            {persistedCountries.length === 0 ? (
+              <div className="text-xs text-gray-500">No persisted datasets found.</div>
+            ) : (
+              <div className="space-y-2">
+                {persistedCountries.map(code => {
+                  const s = persistedSummaries[code] || { citiesCount: 0, hasMeta: false };
+                  const d = persistedDetails[code] || { name: code, regions: [], sampleCities: [] };
+                  return (
+                    <div key={code} className="p-3 rounded-lg border border-gray-100 bg-white">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{d.name} <span className="text-xs text-gray-400">({code})</span></div>
+                          <div className="text-xs text-gray-500">{s.citiesCount} cities{ s.hasMeta ? ' · regions present' : '' }</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={async () => {
+                            const loaded = await addressApi.loadOfflineStreets(code);
+                            if (loaded) toast.success(`Loaded ${d.name} into memory`); else toast.error('Failed to load');
+                          }} className="px-3 py-1 rounded-xl border text-xs">Load</button>
+                          <button onClick={async () => {
+                            if (!confirm(`Delete persisted dataset for ${d.name}? This cannot be undone.`)) return;
+                            const ok = await addressApi.deleteOfflineCountry(code);
+                            if (ok) {
+                              toast.success(`Deleted ${d.name}`);
+                              refreshPersistedList();
+                            } else toast.error('Failed to delete');
+                          }} className="px-3 py-1 rounded-xl border text-xs text-red-600">Remove</button>
+                        </div>
+                      </div>
+                      {d.regions.length > 0 && (
+                        <div className="mt-2 text-xs text-gray-600">
+                          <div className="font-semibold text-[12px] text-gray-700">Regions</div>
+                          <div className="flex gap-2 flex-wrap mt-1">
+                            {d.regions.map(r => <div key={r} className="px-2 py-0.5 bg-gray-100 rounded text-xs">{r}</div>)}
+                          </div>
+                        </div>
+                      )}
+                      {d.sampleCities.length > 0 && (
+                        <div className="mt-2 text-xs text-gray-600">
+                          <div className="font-semibold text-[12px] text-gray-700">Sample Cities</div>
+                          <div className="flex gap-2 flex-wrap mt-1">
+                            {d.sampleCities.map(cn => <div key={cn} className="px-2 py-0.5 bg-gray-50 rounded text-xs">{cn}</div>)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="text-xs text-gray-500">Registered datasets are kept in memory for the current session. Use the <strong>Clear Cache</strong> button below to clear street lookup cache.</div>
+          <div className="flex gap-2">
+            <button onClick={async () => {
+              const ok = await addressApi.clearStreetCache();
+              if (ok) toast.success('Street cache cleared'); else toast.error('Failed to clear cache');
+            }} className="px-3 py-2 rounded-xl border">Clear Cache</button>
+            <button onClick={async () => {
+              const ok = await addressApi.clearOfflineStreets();
+              if (ok) toast.success('Offline datasets cleared'); else toast.error('Failed to clear offline datasets');
+            }} className="px-3 py-2 rounded-xl border">Clear Offline Datasets</button>
+            <button onClick={async () => {
+              if (!uploadCountry) return toast.error('Enter country code');
+              const loaded = await addressApi.loadOfflineStreets(uploadCountry);
+              if (loaded) toast.success(`Loaded offline streets for ${uploadCountry}`); else toast.error('No offline file found for that country');
+            }} className="px-3 py-2 rounded-xl border">Load From Bundle</button>
+          </div>
         </div>
       </motion.div>
 

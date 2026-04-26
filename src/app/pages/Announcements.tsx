@@ -31,7 +31,33 @@ export function Announcements() {
     const message = (messageDrafts[announcement.id] || '').trim();
     const photo = photoDrafts[announcement.id];
     if (!message && !photo) return;
-    submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+    // If backend is configured, POST to server; else use local context
+    const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
+    if (API_BASE) {
+      const formData = new FormData();
+      formData.append('announcement_id', announcement.id);
+      formData.append('user_id', String(employee.id));
+      formData.append('message', message);
+      if (photo && photo.startsWith('data:')) {
+        // convert data URL to blob
+        fetch(photo).then(r => r.blob()).then(blob => {
+          formData.append('image', blob, `submission_${Date.now()}.jpg`);
+          authAPI.submitAnnouncementResponse(announcement.id, employee.id, formData).then(() => {
+            // update local mirror
+            submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+          }).catch(() => {
+            // fallback local
+            submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+          });
+        }).catch(() => submitAnnouncementResponse(announcement.id, employee.id, message, photo));
+      } else {
+        authAPI.submitAnnouncementResponse(announcement.id, employee.id, formData).then(() => {
+          submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+        }).catch(() => submitAnnouncementResponse(announcement.id, employee.id, message, photo));
+      }
+    } else {
+      submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+    }
     setMessageDrafts(prev => ({ ...prev, [announcement.id]: '' }));
     setPhotoDrafts(prev => ({ ...prev, [announcement.id]: undefined }));
   };

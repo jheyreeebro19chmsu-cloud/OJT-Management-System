@@ -308,6 +308,35 @@ export async function updateGeofenceZone(
   return true;
 }
 
+// Migration helper: update any employees/announcements that still use 'Administrator' position/name
+export async function migrateAdministratorPosition(): Promise<number> {
+  if (!isSupabaseConfigured()) return 0;
+  try {
+    // Update employee positions in a single query where possible
+    const { error: updateErr } = await supabase
+      .from('employees')
+      .update({ position: 'OJT Instructor' })
+      .eq('position', 'Administrator');
+    if (updateErr) {
+      console.error('Error migrating employee positions:', updateErr);
+    }
+
+    // Update announcements createdBy field if present
+    const { error: annErr } = await supabase
+      .from('announcements')
+      .update({ created_by: 'OJT Instructor' })
+      .eq('created_by', 'Administrator');
+    if (annErr) {
+      console.error('Error migrating announcements created_by:', annErr);
+    }
+
+    return 1; // return non-zero to indicate attempt (caller can check logs)
+  } catch (e) {
+    console.error('migrateAdministratorPosition failed:', e);
+    return 0;
+  }
+}
+
 export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
@@ -332,7 +361,7 @@ export async function fetchSettings(): Promise<AppSettings | null> {
   const { data, error } = await supabase
     .from('app_settings')
     .select('*')
-    .single();
+    .maybeSingle();
 
   if (error) {
     if (error.code === 'PGRST116') {
@@ -340,6 +369,11 @@ export async function fetchSettings(): Promise<AppSettings | null> {
       return null;
     }
     console.error('Error fetching settings:', error);
+    return null;
+  }
+
+  if (!data) {
+    // No settings row present
     return null;
   }
 

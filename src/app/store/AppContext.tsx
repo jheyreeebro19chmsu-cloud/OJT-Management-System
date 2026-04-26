@@ -41,11 +41,11 @@ const DEFAULT_GEOFENCE: GeofenceZone[] = [
 const MOCK_EMPLOYEES: Employee[] = [
   {
     id: 'admin-1',
-    name: 'Administrator',
+    name: 'OJT Instructor',
     employeeId: 'ADM-2024-001',
     email: 'admin@ojt.com',
     department: 'Administration',
-    position: 'Administrator',
+    position: 'OJT Instructor',
     companyName: 'TechCorp Philippines',
     supervisorName: 'System Owner',
     schoolName: 'N/A',
@@ -138,7 +138,7 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
     targetRole: 'all',
     isPinned: true,
     createdAt: new Date().toISOString(),
-    createdBy: 'Administrator',
+    createdBy: 'OJT Instructor',
   },
   {
     id: 'ann-2',
@@ -148,7 +148,7 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
     targetRole: 'employee',
     isPinned: false,
     createdAt: new Date(Date.now() - 86400000).toISOString(),
-    createdBy: 'Administrator',
+    createdBy: 'OJT Instructor',
   },
 ];
 
@@ -331,6 +331,30 @@ function migrateGeofenceStorageOnce(): void {
   }
 }
 
+function migrateInstructorPositionOnce(): void {
+  try {
+    if (localStorage.getItem('ojt_migrated_instructor_positions') === 'done') return;
+    const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
+    const parsed = raw ? JSON.parse(raw) : [];
+    let changed = false;
+    if (Array.isArray(parsed)) {
+      parsed.forEach((emp: any) => {
+        if (emp && emp.position === 'Administrator') {
+          emp.position = 'OJT Instructor';
+          if (emp.name === 'Administrator') emp.name = 'OJT Instructor';
+          changed = true;
+        }
+      });
+    }
+    if (changed) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, parsed);
+    }
+    localStorage.setItem('ojt_migrated_instructor_positions', 'done');
+  } catch {
+    // ignore migration failures
+  }
+}
+
 function loadFromStorage<T>(key: string, defaultValue: T): T {
   try {
     const stored = localStorage.getItem(key);
@@ -346,6 +370,7 @@ function saveToStorage<T>(key: string, value: T): void {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   migrateGeofenceStorageOnce();
+  migrateInstructorPositionOnce();
   const [isLoading, setIsLoading] = useState(false);
   const [useSupabase, setUseSupabase] = useState(false);
   
@@ -433,6 +458,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (configured) {
         try {
           setIsLoading(true);
+          // Run one-time Supabase migration to normalize 'Administrator' → 'OJT Instructor'
+          try {
+            if (localStorage.getItem('ojt_migrated_instructor_positions') !== 'done') {
+              // import lazily to avoid circular imports at module level
+              const { migrateAdministratorPosition } = await import('../services/supabaseService');
+              migrateAdministratorPosition().catch(() => {});
+              localStorage.setItem('ojt_migrated_instructor_positions', 'done');
+            }
+          } catch {
+            // ignore migration errors
+          }
           
           // Fetch all data from Supabase
           const [
@@ -542,9 +578,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const emp = employees.find(e => normalizeEmail(e.email) === normalizedEmail && e.active);
     if (emp) {
       const storedPassword = passwords[normalizedEmail];
-      const fallbackPassword = emp.position === 'Administrator' ? 'admin123' : 'ojt2024';
-      if (password === (storedPassword || fallbackPassword)) {
-        const role: User['role'] = emp.position === 'Administrator' ? 'admin' : 'employee';
+        const fallbackPassword = emp.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
+        if (password === (storedPassword || fallbackPassword)) {
+          const role: User['role'] = emp.position === 'OJT Instructor' ? 'admin' : 'employee';
         const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id };
         setCurrentUser(user);
         return user;
@@ -564,7 +600,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (normalizedEmail === 'admin@ojt.com' && password === 'admin123') {
-      const user: User = { id: 'admin', name: 'Administrator', role: 'admin' };
+      const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin' };
       setCurrentUser(user);
       return user;
     }
@@ -587,7 +623,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const email = getCurrentUserEmail();
     if (!email) return { success: false, message: 'Current account not found.' };
     const account = employees.find(e => normalizeEmail(e.email) === email);
-    const fallbackPassword = account?.position === 'Administrator' ? 'admin123' : 'ojt2024';
+    const fallbackPassword = account?.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
     const existingPassword = passwords[email] || fallbackPassword;
     if (currentPassword !== existingPassword) {
       return { success: false, message: 'Current password is incorrect.' };

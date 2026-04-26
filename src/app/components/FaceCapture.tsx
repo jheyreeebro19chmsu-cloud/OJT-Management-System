@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { CheckCircle, XCircle, Camera, RefreshCw, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
+import { detectFaceInDataUrl, computeDescriptorFromDataUrl, descriptorDistance } from '../services/faceClient';
 
 type ScanState = 'idle' | 'requesting' | 'scanning' | 'analyzing' | 'verifying' | 'success' | 'failed' | 'no-camera';
 
@@ -197,13 +198,41 @@ export function FaceCapture({
         } catch (err: unknown) {
           const fallbackAllowed = isFetchConnectivityIssue(err);
           if (fallbackAllowed) {
-            setCapturedImage(img || null);
-            setProgress(100);
-            setState('success');
-            setScanMessage('Backend unreachable. Proceeding with offline verification mode.');
-            stopCamera();
-            setTimeout(() => onSuccess(img), 1500);
-            return;
+            // Attempt client-side verification when backend is unreachable
+            const registered = registeredImage ? registeredImage : undefined;
+            if (registered) {
+              // compute descriptors and compare
+              const [d1, d2] = await Promise.all([computeDescriptorFromDataUrl(registered), computeDescriptorFromDataUrl(img)]);
+              if (d1 && d2) {
+                const dist = descriptorDistance(d1, d2);
+                const matched = dist <= 0.6; // typical threshold
+                if (matched) {
+                  setCapturedImage(img || null);
+                  setProgress(100);
+                  setState('success');
+                  setScanMessage('Identity verified offline (client-side)');
+                  stopCamera();
+                  setTimeout(() => onSuccess(img), 1500);
+                  return;
+                }
+                setProgress(100);
+                setState('failed');
+                setScanMessage('Face did not match (offline).');
+                stopCamera();
+                return;
+              }
+            }
+            // if no registered image or descriptors failed, attempt basic face detection
+            const hasFace = await detectFaceInDataUrl(img).catch(() => false);
+            if (hasFace) {
+              setCapturedImage(img || null);
+              setProgress(100);
+              setState('success');
+              setScanMessage('Backend unreachable. Proceeding with offline verification mode.');
+              stopCamera();
+              setTimeout(() => onSuccess(img), 1500);
+              return;
+            }
           }
           setProgress(100);
           setState('failed');
@@ -221,6 +250,17 @@ export function FaceCapture({
         setScanMessage('Face not recognized. Please try again.');
         stopCamera();
       } else {
+        // If running in register mode or fallback offline, ensure face is present client-side
+        if (!canUseBackend && img) {
+          const hasFace = await detectFaceInDataUrl(img).catch(() => false);
+          if (!hasFace) {
+            setProgress(100);
+            setState('failed');
+            setScanMessage('No face detected. Please align your face and try again.');
+            stopCamera();
+            return;
+          }
+        }
         setCapturedImage(img || null);
         setProgress(100);
         setState('success');

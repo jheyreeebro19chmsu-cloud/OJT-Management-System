@@ -163,7 +163,7 @@ setup.bat     → Windows setup automation
 - OTP verification, JWT tokens, role-based access
 - See: SYSTEM_FEATURES.md
 
-✅ **Admin Dashboard**
+✅ **Instructor Dashboard**
 - Django admin with full configuration
 - Uses credentials from setup script
 

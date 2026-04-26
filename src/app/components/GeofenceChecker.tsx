@@ -76,6 +76,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           const apiResult = await checkGeofenceApi({
             lat: latitude,
             lng: longitude,
+            accuracy: accuracy,
             zones: activeZones.map(z => ({
               name: z.name,
               lat: z.lat,
@@ -104,7 +105,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         }
       }
 
-      const inside = isWithinGeofence(latitude, longitude, closestZone.lat, closestZone.lng, closestZone.radius);
+      const inside = isWithinGeofence(latitude, longitude, closestZone.lat, closestZone.lng, closestZone.radius, accuracy);
 
       setResult({
         state: inside ? 'inside' : 'outside',

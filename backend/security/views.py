@@ -7,6 +7,9 @@ from django.conf import settings
 from django.http import JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.core.files.base import ContentFile
+import os
+import urllib.request
+import urllib.parse
 
 from .api_auth import require_security_api_key
 from .utils import decode_base64_image, find_nearest_zone, safe_float
@@ -94,7 +97,10 @@ def check_geofence(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"inside": False, "reason": "no_zones"}, status=400)
 
     radius = safe_float(nearest_zone.get("radius"), 0.0)
-    inside = nearest_distance is not None and nearest_distance <= radius
+    # Consider client-reported accuracy if provided. Be conservative: treat user as outside unless
+    # (distance + accuracy) <= radius.
+    accuracy = safe_float(data.get("accuracy"), 0.0)
+    inside = nearest_distance is not None and (nearest_distance + (accuracy or 0.0)) <= radius
 
     return JsonResponse(
         {
@@ -106,6 +112,7 @@ def check_geofence(request: HttpRequest) -> JsonResponse:
                 "lng": safe_float(nearest_zone.get("lng")),
                 "radius": radius,
             },
+            "accuracy_m": accuracy,
             "geofence_advisory": True,
             "advisory_note": "Server recomputed distance from reported coordinates; GPS can be inaccurate or spoofed.",
         }
@@ -265,3 +272,110 @@ def save_attendance_photo(request: HttpRequest) -> JsonResponse:
 
     image_url = request.build_absolute_uri(record.image.url)
     return JsonResponse({"success": True, "image_url": image_url})
+
+
+def geonames_proxy(request: HttpRequest) -> JsonResponse:
+    """Proxy Geonames requests through the server so the username stays secret.
+
+    Accepts GET parameters:
+    - q: search query (uses searchJSON)
+    - geonameId: numeric id (uses getJSON)
+    - maxRows: optional for search
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    username = getattr(settings, "GEONAMES_USERNAME", None) or os.environ.get("GEONAMES_USERNAME")
+    if not username:
+        return JsonResponse({"error": "GEONAMES_USERNAME not configured on server"}, status=500)
+
+    q = request.GET.get("q")
+    geoname_id = request.GET.get("geonameId") or request.GET.get("id")
+    try:
+        if geoname_id:
+            url = f"http://api.geonames.org/getJSON?geonameId={urllib.parse.quote(str(geoname_id))}&username={urllib.parse.quote(username)}"
+        elif q:
+            maxRows = request.GET.get("maxRows", "10")
+            url = f"http://api.geonames.org/searchJSON?q={urllib.parse.quote(q)}&maxRows={urllib.parse.quote(str(maxRows))}&username={urllib.parse.quote(username)}"
+        else:
+            return JsonResponse({"error": "q or geonameId is required"}, status=400)
+
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            body = resp.read()
+            data = json.loads(body.decode("utf-8"))
+            return JsonResponse(data)
+    except Exception as exc:
+        return JsonResponse({"error": "geonames_proxy_failed", "detail": str(exc)}, status=502)
+
+
+@csrf_exempt
+def geonames_countries(request: HttpRequest) -> JsonResponse:
+    """Return list of countries from Geonames countryInfoJSON"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    username = getattr(settings, "GEONAMES_USERNAME", None) or os.environ.get("GEONAMES_USERNAME")
+    if not username:
+        return JsonResponse({"error": "GEONAMES_USERNAME not configured on server"}, status=500)
+    try:
+        url = f"http://api.geonames.org/countryInfoJSON?username={urllib.parse.quote(username)}"
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return JsonResponse(data)
+    except Exception as exc:
+        return JsonResponse({"error": "geonames_countries_failed", "detail": str(exc)}, status=502)
+
+
+@csrf_exempt
+def geonames_cities(request: HttpRequest) -> JsonResponse:
+    """Search cities using Geonames searchJSON. Query params: q, country (ISO code), maxRows"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    username = getattr(settings, "GEONAMES_USERNAME", None) or os.environ.get("GEONAMES_USERNAME")
+    if not username:
+        return JsonResponse({"error": "GEONAMES_USERNAME not configured on server"}, status=500)
+    q = request.GET.get("q") or request.GET.get("query")
+    country = request.GET.get("country")
+    maxRows = request.GET.get("maxRows", "50")
+    if not q:
+        return JsonResponse({"geonames": []})
+    try:
+        url = f"http://api.geonames.org/searchJSON?q={urllib.parse.quote(q)}&maxRows={urllib.parse.quote(str(maxRows))}&username={urllib.parse.quote(username)}&featureClass=P"
+        if country:
+            url += f"&country={urllib.parse.quote(country)}"
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return JsonResponse(data)
+    except Exception as exc:
+        return JsonResponse({"error": "geonames_cities_failed", "detail": str(exc)}, status=502)
+
+
+@csrf_exempt
+def osm_streets(request: HttpRequest) -> JsonResponse:
+    """Search streets using Nominatim. Query params: street (q), city, country"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    street = request.GET.get("street") or request.GET.get("q")
+    city = request.GET.get("city")
+    country = request.GET.get("country")
+    limit = request.GET.get("limit", "50")
+    if not street:
+        return JsonResponse({"results": []})
+    try:
+        params = {
+            "street": street,
+            "format": "json",
+            "addressdetails": 1,
+            "limit": limit,
+        }
+        if city:
+            params["city"] = city
+        if country:
+            params["country"] = country
+        url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(params)
+        # Nominatim requires a proper User-Agent
+        req = urllib.request.Request(url, headers={"User-Agent": "OJTSys/1.0 (contact@example.com)"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return JsonResponse({"results": data})
+    except Exception as exc:
+        return JsonResponse({"error": "osm_streets_failed", "detail": str(exc)}, status=502)

@@ -114,7 +114,7 @@ export function AdminEvaluations() {
 
     const data = {
       employeeId: selectedEmp.id,
-      evaluatedBy: 'Administrator',
+      evaluatedBy: 'OJT Instructor',
       ...form,
       overallScore,
       grade,
