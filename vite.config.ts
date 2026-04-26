@@ -19,4 +19,9 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+  // Increase chunk size warning limit to avoid noisy warnings for large bundles
+  // Default is 500 KB. Set to 2000 KB (2 MB) to suppress warnings for bigger chunks.
+  build: {
+    chunkSizeWarningLimit: 2000,
+  },
 })
