@@ -123,7 +123,11 @@ export function Register() {
     }
   };
 
-  const update = (field: string, value: string | number) => setForm(p => ({ ...p, [field]: value }));
+  const update = (field: string, value: string | number) => {
+    // Keep numeric fields numeric, otherwise store as string
+    const newValue = field === 'requiredHours' ? Number(value) : value;
+    setForm(p => ({ ...p, [field]: newValue }));
+  };
 
   const handleNext = () => {
     if (step < steps.length - 1) setStep(s => s + 1);
@@ -189,7 +193,7 @@ export function Register() {
     }
   };
 
-  const hasText = (value: string) => value.trim().length > 0;
+  const hasText = (value: unknown) => String(value ?? '').trim().length > 0;
 
   const isStepValid = () => {
     if (!role) return false;
@@ -230,6 +234,25 @@ export function Register() {
     if (step === 2) return 'School and course are required.';
     return 'Face registration is required to continue.';
   };
+
+  // Debug logging to help diagnose validation issues in the browser console
+  useEffect(() => {
+    if (!role) return;
+    // Log minimal info to avoid spamming sensitive fields
+    console.debug('Register: validation', {
+      role,
+      step,
+      isValid: isStepValid(),
+      summary: {
+        name: String(form.name).slice(0, 20),
+        email: String(form.email).slice(0, 30),
+        companyName: String(form.companyName).slice(0, 30),
+        supervisorName: String(form.supervisorName).slice(0, 30),
+        startDate: String(form.startDate),
+        endDate: String(form.endDate),
+      },
+    });
+  }, [role, step, form, faceRegistered, generatedPassword, locationStatus]);
 
   const locationStatusConfig = {
     idle: { color: 'bg-gray-50 border-gray-200', text: 'text-gray-500', label: 'Waiting for location...', icon: <MapPin size={14} className="text-gray-400" /> },
