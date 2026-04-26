@@ -235,24 +235,7 @@ export function Register() {
     return 'Face registration is required to continue.';
   };
 
-  // Debug logging to help diagnose validation issues in the browser console
-  useEffect(() => {
-    if (!role) return;
-    // Log minimal info to avoid spamming sensitive fields
-    console.debug('Register: validation', {
-      role,
-      step,
-      isValid: isStepValid(),
-      summary: {
-        name: String(form.name).slice(0, 20),
-        email: String(form.email).slice(0, 30),
-        companyName: String(form.companyName).slice(0, 30),
-        supervisorName: String(form.supervisorName).slice(0, 30),
-        startDate: String(form.startDate),
-        endDate: String(form.endDate),
-      },
-    });
-  }, [role, step, form, faceRegistered, generatedPassword, locationStatus]);
+  
 
   const locationStatusConfig = {
     idle: { color: 'bg-gray-50 border-gray-200', text: 'text-gray-500', label: 'Waiting for location...', icon: <MapPin size={14} className="text-gray-400" /> },
