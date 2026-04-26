@@ -620,15 +620,20 @@ export function Register() {
   };
 
   const isStepValid = () => {
+    // Support either full `name` field or separated `first_name`/`last_name` used in the UI.
+    const hasName = Boolean((form as any).name || (((form as any).first_name || '').trim() && ((form as any).last_name || '').trim()));
+    const hasEmail = Boolean((form as any).email && (form as any).email.toString().trim());
+
     if (role === 'admin') {
-      if (step === 0) return form.name && form.email;
-      return faceRegistered;
-    } else {
-      if (step === 0) return form.name && form.email;
-      if (step === 1) return form.companyName && form.supervisorName && form.startDate && form.endDate;
-      if (step === 2) return form.schoolName && form.course;
+      if (step === 0) return hasName && hasEmail;
       return faceRegistered;
     }
+
+    // Trainee / HTE
+    if (step === 0) return hasName && hasEmail;
+    if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
+    if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
+    return faceRegistered;
   };
 
   const locationStatusConfig = {
