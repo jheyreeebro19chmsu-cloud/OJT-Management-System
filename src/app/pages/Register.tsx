@@ -792,16 +792,11 @@ export function Register() {
                       placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
                     <div className="mt-2 flex items-center gap-2">
                       <button
-                        onClick={async () => {
+                        onClick={() => {
+                          // Email sending disabled: mark OTP as requested locally
                           setOtpMessage(null);
-                          try {
-                            const fullName = `${form.first_name || ''} ${form.last_name || ''}`.trim() || form.name || 'User';
-                            await authAPI.requestOTP(form.email, fullName);
-                            setOtpRequested(true);
-                            setOtpMessage('OTP sent to your email.');
-                          } catch (err) {
-                            setOtpMessage('Unable to send OTP (server unavailable). Continuing offline.');
-                          }
+                          setOtpRequested(true);
+                          setOtpMessage('OTP requested');
                         }}
                         className="text-xs text-indigo-600 hover:text-indigo-800"
                       >

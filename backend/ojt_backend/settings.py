@@ -109,34 +109,21 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# CORS: set DJANGO_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173 for production
-_cors = os.environ.get("DJANGO_CORS_ORIGINS", "").strip()
-if _cors:
-    CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors.split(",") if o.strip()]
-    # Dev/prod convenience: allow localhost/vite ports without editing env each time.
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^http://localhost:\d+$",
-        r"^http://127\.0\.0\.1:\d+$",
-    ]
-else:
-    CORS_ALLOW_ALL_ORIGINS = True
+# CORS: explicit allowed origins for frontend (local dev + deployed site)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://ojt-management-system-capstone-f35i.onrender.com",
+]
 
 # Allow credentials for cross-site requests (cookies, Authorization headers)
 CORS_ALLOW_CREDENTIALS = True
 
-# Ensure deployed origin is allowed by default when environment variable is set
-_render_origin = "https://ojt-management-system-capstone-f35i.onrender.com"
-try:
-    if _cors:
-        if _render_origin not in CORS_ALLOWED_ORIGINS:
-            CORS_ALLOWED_ORIGINS.append(_render_origin)
-    else:
-        # when allow-all is enabled we still expose the allowed-origins list for clarity
-        CORS_ALLOWED_ORIGINS = [_render_origin]
-except Exception:
-    # keep defaults on any unexpected error
-    pass
+# Also allow localhost ports via regex (convenience for dev)
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
 
 CORS_ALLOW_HEADERS = [
     "accept",
