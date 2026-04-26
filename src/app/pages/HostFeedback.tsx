@@ -24,7 +24,7 @@ export function HostFeedback() {
   const { employees, addHostFeedback, currentUser, logout } = useApp();
   const navigate = useNavigate();
   const trainees = useMemo(
-    () => employees.filter(e => e.active && e.position !== 'Administrator'),
+    () => employees.filter(e => e.active && e.position !== 'OJT Instructor'),
     [employees]
   );
 

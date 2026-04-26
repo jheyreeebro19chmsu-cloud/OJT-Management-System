@@ -344,7 +344,7 @@ If you have existing data in localStorage that you want to migrate to Supabase:
 ⚠️ **Important**: The current RLS policies allow public access for development. In production:
 
 1. Implement proper authentication using Supabase Auth
-2. Create role-based policies (admin vs employee)
+2. Create role-based policies (OJT Instructor vs employee)
 3. Restrict write operations based on user roles
 4. Enable API key restrictions
 5. Use environment-specific configurations

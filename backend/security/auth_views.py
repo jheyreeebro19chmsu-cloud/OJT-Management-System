@@ -2,6 +2,7 @@
 import json
 import qrcode
 import io
+import base64
 from datetime import timedelta
 from typing import Any, Dict
 
@@ -17,6 +18,8 @@ from django.core.files.base import ContentFile
 from rest_framework.authtoken.models import Token
 from rest_framework_simplejwt.tokens import RefreshToken
 from .api_auth import require_jwt
+from django.db import transaction
+from datetime import time as dtime, datetime
 
 from .models import (
     UserRole, Student, OJTInstructor, HTE, OTPVerification,
@@ -207,28 +210,29 @@ def register_student(request: HttpRequest) -> JsonResponse:
         if not otp:
             return JsonResponse({'error': 'Email not verified. Please verify OTP first'}, status=400)
         
-        # Create user
-        user = User.objects.create_user(
-            username=email,
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name
-        )
-        
-        # Create role
-        UserRole.objects.create(
-            user=user,
-            role='student',
-            is_verified=True
-        )
-        
-        # Create student profile
-        student = Student.objects.create(
-            user=user,
-            age=age,
-            address=address
-        )
+        # Create user and related profiles atomically to avoid partial state
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            # Create role
+            UserRole.objects.create(
+                user=user,
+                role='student',
+                is_verified=True
+            )
+
+            # Create student profile
+            student = Student.objects.create(
+                user=user,
+                age=age,
+                address=address
+            )
         
         # Send confirmation email
         full_name = f"{first_name} {last_name}"
@@ -282,29 +286,30 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
         if not otp:
             return JsonResponse({'error': 'Email not verified. Please verify OTP first'}, status=400)
         
-        # Create user
-        user = User.objects.create_user(
-            username=email,
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name
-        )
-        
-        # Create role
-        UserRole.objects.create(
-            user=user,
-            role='instructor',
-            is_verified=True
-        )
-        
-        # Create instructor profile
-        instructor = OJTInstructor.objects.create(
-            user=user,
-            course=course,
-            department=department,
-            institution=institution
-        )
+        # Create user and related profiles atomically to avoid partial state
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            # Create role
+            UserRole.objects.create(
+                user=user,
+                role='instructor',
+                is_verified=True
+            )
+
+            # Create instructor profile
+            instructor = OJTInstructor.objects.create(
+                user=user,
+                course=course,
+                department=department,
+                institution=institution
+            )
         
         # Generate QR code
         qr_data = f"instructor_{instructor.id}_{instructor.user.email}"
@@ -411,6 +416,112 @@ def register_hte(request: HttpRequest) -> JsonResponse:
                 'company': company_name
             }
         }, status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def register_oauth_student(request: HttpRequest) -> JsonResponse:
+    """Register or return existing student for OAuth users (no OTP required)."""
+    try:
+        data = json.loads(request.body)
+        email = data.get('email', '').strip()
+        first_name = data.get('first_name', '').strip()
+        last_name = data.get('last_name', '').strip()
+
+        if not email:
+            return JsonResponse({'error': 'Email is required'}, status=400)
+
+        user = User.objects.filter(email=email).first()
+        if user:
+            refresh = RefreshToken.for_user(user)
+            return JsonResponse({'success': True, 'message': 'User exists', 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)} , 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'student'} })
+
+        with transaction.atomic():
+            password = User.objects.make_random_password()
+            user = User.objects.create_user(username=email, email=email, password=password, first_name=first_name, last_name=last_name)
+            UserRole.objects.create(user=user, role='student', is_verified=True)
+            Student.objects.create(user=user)
+
+        refresh = RefreshToken.for_user(user)
+        return JsonResponse({'success': True, 'message': 'OAuth student registered', 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'student'}}, status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def register_oauth_instructor(request: HttpRequest) -> JsonResponse:
+    """Register or return existing instructor for OAuth users (no OTP required)."""
+    try:
+        data = json.loads(request.body)
+        email = data.get('email', '').strip()
+        first_name = data.get('first_name', '').strip()
+        last_name = data.get('last_name', '').strip()
+        course = data.get('course', '').strip() if data.get('course') else ''
+        department = data.get('department', '').strip() if data.get('department') else ''
+
+        if not email:
+            return JsonResponse({'error': 'Email is required'}, status=400)
+
+        user = User.objects.filter(email=email).first()
+        if user:
+            instructor = OJTInstructor.objects.filter(user=user).first()
+            refresh = RefreshToken.for_user(user)
+            return JsonResponse({'success': True, 'message': 'Instructor exists', 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor', 'qr_code_url': instructor.qr_code_image.url if instructor and instructor.qr_code_image else None}}, status=200)
+
+        with transaction.atomic():
+            password = User.objects.make_random_password()
+            user = User.objects.create_user(username=email, email=email, password=password, first_name=first_name, last_name=last_name)
+            UserRole.objects.create(user=user, role='instructor', is_verified=True)
+            instructor = OJTInstructor.objects.create(user=user, course=course, department=department, institution='')
+
+            # Generate QR code
+            qr_data = f"instructor_{instructor.id}_{instructor.user.email}"
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(qr_data)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+
+            img_io = io.BytesIO()
+            qr_img.save(img_io, format='PNG')
+            img_io.seek(0)
+            instructor.qr_code = qr_data
+            instructor.qr_code_image.save(f'qr_{instructor.id}.png', ContentFile(img_io.read()), save=True)
+
+        refresh = RefreshToken.for_user(user)
+        return JsonResponse({'success': True, 'message': 'OAuth instructor registered', 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor', 'qr_code_url': instructor.qr_code_image.url if instructor.qr_code_image else None}}, status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def verify_qr(request: HttpRequest) -> JsonResponse:
+    """Verify a QR payload and return instructor info if valid."""
+    try:
+        data = json.loads(request.body)
+        qr_data = data.get('qr_data', '').strip()
+        if not qr_data:
+            return JsonResponse({'error': 'qr_data is required'}, status=400)
+
+        # Try to find instructor by qr_code field
+        instructor = OJTInstructor.objects.filter(qr_code=qr_data).first()
+        if not instructor:
+            # attempt to parse format instructor_{id}_{email}
+            if qr_data.startswith('instructor_'):
+                parts = qr_data.split('_')
+                try:
+                    iid = int(parts[1])
+                    instructor = OJTInstructor.objects.filter(id=iid).first()
+                except Exception:
+                    instructor = None
+
+        if not instructor:
+            return JsonResponse({'error': 'Invalid QR code'}, status=404)
+
+        return JsonResponse({'success': True, 'instructor': {'id': instructor.id, 'email': instructor.user.email, 'name': instructor.user.get_full_name(), 'qr_code_url': instructor.qr_code_image.url if instructor.qr_code_image else None}})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -638,12 +749,40 @@ def time_in(request: HttpRequest) -> JsonResponse:
         except (Student.DoesNotExist, StudentOJTApplication.DoesNotExist):
             return JsonResponse({'error': 'Student or application not found'}, status=404)
         
+        # Determine session based on current server time and configured windows
+        now = timezone.localtime(timezone.now())
+        # configurable via settings, fallback defaults
+        morning_in = getattr(settings, 'MORNING_IN', dtime(hour=8, minute=0))
+        morning_out = getattr(settings, 'MORNING_OUT', dtime(hour=12, minute=0))
+        afternoon_in = getattr(settings, 'AFTERNOON_IN', dtime(hour=13, minute=0))
+        afternoon_out = getattr(settings, 'AFTERNOON_OUT', dtime(hour=17, minute=0))
+        tolerance_minutes = getattr(settings, 'ATTENDANCE_TOLERANCE_MINUTES', 30)
+
+        def within(t: dtime, tol_min: int):
+            low = (datetime.combine(now.date(), t) - timedelta(minutes=tol_min)).time()
+            high = (datetime.combine(now.date(), t) + timedelta(minutes=tol_min)).time()
+            return low <= now.time() <= high
+
+        session = 'unspecified'
+        if within(morning_in, tolerance_minutes):
+            session = 'morning'
+        elif within(afternoon_in, tolerance_minutes):
+            session = 'afternoon'
+        else:
+            return JsonResponse({'error': 'Not within allowed time-in window for morning or afternoon'}, status=400)
+
+        # Prevent duplicate open time-in for same date/session
+        existing = TimeRecord.objects.filter(student=student, application=application, date=now.date(), session=session, time_out__isnull=True).first()
+        if existing:
+            return JsonResponse({'error': 'Active time-in already exists for this session'}, status=400)
+
         # Create time record
         time_record = TimeRecord.objects.create(
             student=student,
             application=application,
-            time_in=timezone.now(),
-            date=timezone.now().date()
+            time_in=now,
+            date=now.date(),
+            session=session
         )
         
         return JsonResponse({
@@ -674,14 +813,40 @@ def time_out(request: HttpRequest) -> JsonResponse:
         except (Student.DoesNotExist, StudentOJTApplication.DoesNotExist):
             return JsonResponse({'error': 'Student or application not found'}, status=404)
         
-        # Get today's time record
-        today = timezone.now().date()
-        time_record = TimeRecord.objects.filter(
-            student=student,
-            application=application,
-            date=today,
-            time_out__isnull=True
-        ).first()
+        # Get today's time record and determine session by current time window
+        now = timezone.localtime(timezone.now())
+        today = now.date()
+        morning_out = getattr(settings, 'MORNING_OUT', dtime(hour=12, minute=0))
+        afternoon_out = getattr(settings, 'AFTERNOON_OUT', dtime(hour=17, minute=0))
+        tolerance_minutes = getattr(settings, 'ATTENDANCE_TOLERANCE_MINUTES', 30)
+
+        def within(t: dtime, tol_min: int):
+            low = (datetime.combine(now.date(), t) - timedelta(minutes=tol_min)).time()
+            high = (datetime.combine(now.date(), t) + timedelta(minutes=tol_min)).time()
+            return low <= now.time() <= high
+
+        session = None
+        if within(morning_out, tolerance_minutes):
+            session = 'morning'
+        elif within(afternoon_out, tolerance_minutes):
+            session = 'afternoon'
+
+        if session:
+            time_record = TimeRecord.objects.filter(
+                student=student,
+                application=application,
+                date=today,
+                session=session,
+                time_out__isnull=True
+            ).first()
+        else:
+            # fallback to any open record for today
+            time_record = TimeRecord.objects.filter(
+                student=student,
+                application=application,
+                date=today,
+                time_out__isnull=True
+            ).first()
         
         if not time_record:
             return JsonResponse({'error': 'No active time in found for today'}, status=404)
@@ -709,30 +874,49 @@ def time_out(request: HttpRequest) -> JsonResponse:
 def post_announcement(request: HttpRequest) -> JsonResponse:
     """Post announcement by instructor."""
     try:
-        data = json.loads(request.body)
-        
-        user_id = data.get('user_id')
-        title = data.get('title', '').strip()
-        content = data.get('content', '').strip()
-        
+        # Support both JSON (application/json) and multipart/form-data with file upload
+        if request.content_type and request.content_type.startswith('multipart'):
+            user_id = request.POST.get('user_id')
+            title = request.POST.get('title', '').strip()
+            content = request.POST.get('content', '').strip()
+            image_file = request.FILES.get('image')
+        else:
+            data = json.loads(request.body)
+            user_id = data.get('user_id')
+            title = data.get('title', '').strip()
+            content = data.get('content', '').strip()
+            image_b64 = data.get('image_b64')
+
         if not all([user_id, title, content]):
             return JsonResponse({'error': 'User ID, title and content are required'}, status=400)
-        
+
         try:
             instructor = OJTInstructor.objects.get(user_id=user_id)
         except OJTInstructor.DoesNotExist:
             return JsonResponse({'error': 'Instructor not found'}, status=404)
-        
+
         announcement = Announcement.objects.create(
             instructor=instructor,
             title=title,
             content=content
         )
+
+        # Handle image upload (multipart) or base64 image in JSON
+        if 'image_file' in locals() and image_file:
+            announcement.image.save(image_file.name, image_file, save=True)
+        elif 'image_b64' in locals() and image_b64:
+            # save base64 image
+            try:
+                content_file = ContentFile(base64.b64decode(image_b64.split(',',1)[1])) if ',' in image_b64 else ContentFile(base64.b64decode(image_b64))
+                announcement.image.save(f'ann_{announcement.id}.jpg', content_file, save=True)
+            except Exception:
+                pass
         
         return JsonResponse({
             'success': True,
             'message': 'Announcement posted successfully',
-            'announcement_id': announcement.id
+            'announcement_id': announcement.id,
+            'image_url': announcement.image.url if announcement.image else None
         }, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -761,7 +945,8 @@ def get_announcements(request: HttpRequest) -> JsonResponse:
                 'title': a.title,
                 'content': a.content,
                 'created_at': a.created_at.isoformat(),
-                'updated_at': a.updated_at.isoformat()
+                'updated_at': a.updated_at.isoformat(),
+                'image_url': request.build_absolute_uri(a.image.url) if a.image else None,
             }
             for a in announcements
         ]
@@ -770,6 +955,62 @@ def get_announcements(request: HttpRequest) -> JsonResponse:
             'success': True,
             'announcements': data
         })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def submit_announcement_response(request: HttpRequest) -> JsonResponse:
+    """Employee submits response (message + optional image) to an announcement."""
+    try:
+        # support multipart/form-data or JSON with base64 image
+        if request.content_type and request.content_type.startswith('multipart'):
+            announcement_id = request.POST.get('announcement_id')
+            user_id = request.POST.get('user_id')
+            message = request.POST.get('message', '').strip()
+            image_file = request.FILES.get('image')
+        else:
+            data = json.loads(request.body)
+            announcement_id = data.get('announcement_id')
+            user_id = data.get('user_id')
+            message = data.get('message', '').strip()
+            image_b64 = data.get('image_b64')
+
+        if not all([announcement_id, user_id]):
+            return JsonResponse({'error': 'announcement_id and user_id are required'}, status=400)
+
+        try:
+            announcement = Announcement.objects.get(id=int(announcement_id))
+        except Announcement.DoesNotExist:
+            return JsonResponse({'error': 'Announcement not found'}, status=404)
+
+        try:
+            student = Student.objects.get(user_id=int(user_id))
+        except Student.DoesNotExist:
+            return JsonResponse({'error': 'Student not found'}, status=404)
+
+        submission = AnnouncementSubmission.objects.create(
+            announcement=announcement,
+            student=student,
+            message=message
+        )
+
+        if 'image_file' in locals() and image_file:
+            submission.image.save(image_file.name, image_file, save=True)
+        elif 'image_b64' in locals() and image_b64:
+            try:
+                content = base64.b64decode(image_b64.split(',', 1)[1]) if ',' in image_b64 else base64.b64decode(image_b64)
+                submission.image.save(f'sub_{submission.id}.jpg', ContentFile(content), save=True)
+            except Exception:
+                pass
+
+        return JsonResponse({
+            'success': True,
+            'submission_id': submission.id,
+            'submitted_at': submission.submitted_at.isoformat(),
+            'image_url': submission.image.url if submission.image else None,
+        }, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

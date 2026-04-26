@@ -1,0 +1,20 @@
+{
+  "cities": {
+    "manila": [
+      "Roxas Boulevard",
+      "Taft Avenue",
+      "España Boulevard",
+      "Quezon Boulevard"
+    ],
+    "quezon city": [
+      "Katipunan Avenue",
+      "Commonwealth Avenue",
+      "Don Mariano Marcos Avenue"
+    ],
+    "makati": [
+      "Ayala Avenue",
+      "Makati Avenue",
+      "Paseo de Roxas"
+    ]
+  }
+}

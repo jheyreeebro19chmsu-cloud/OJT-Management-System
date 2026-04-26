@@ -83,6 +83,7 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
 export async function checkGeofence(payload: {
   lat: number;
   lng: number;
+  accuracy?: number;
   zones?: Array<{ name?: string; lat: number; lng: number; radius: number; active?: boolean }>;
 }): Promise<GeofenceApiResponse> {
   return postJson<GeofenceApiResponse>('/geofence/check/', payload);

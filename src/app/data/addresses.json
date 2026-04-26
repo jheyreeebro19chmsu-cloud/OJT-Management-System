@@ -1,0 +1,39 @@
+{
+  "countries": [
+    {
+      "code": "PH",
+      "name": "Philippines",
+      "cities": [
+        {
+          "name": "Makati City",
+          "streets": ["Ayala Avenue", "Makati Avenue", "Legazpi Street"]
+        },
+        {
+          "name": "Manila",
+          "streets": ["Taft Avenue", "España Boulevard", "Roxas Boulevard"]
+        }
+      ]
+    },
+    {
+      "code": "US",
+      "name": "United States",
+      "cities": [
+        {
+          "name": "New York",
+          "streets": ["5th Avenue", "Broadway", "Wall Street"]
+        },
+        {
+          "name": "San Francisco",
+          "streets": ["Market Street", "Mission Street", "Van Ness Avenue"]
+        }
+      ]
+    },
+    {
+      "code": "OTHER",
+      "name": "Other",
+      "cities": [
+        { "name": "Other City", "streets": ["Other Street"] }
+      ]
+    }
+  ]
+}

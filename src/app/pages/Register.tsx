@@ -6,6 +6,10 @@ import { FaceCapture } from '../components/FaceCapture';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
 import { motion, AnimatePresence } from 'motion/react';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
+import { authAPI } from '../services/authApi';
+import addressesData from '../data/addresses.json';
+import countriesCities from '../data/countries_cities.json';
+import addressApi, { autocompletePlaces, getPlaceDetails, parsePlaceComponents, searchCities, searchStreets } from '../services/addressApi';
 
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 const stepsAdmin = ['Personal Info', 'Face Registration'];
@@ -70,13 +74,56 @@ export function Register() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpMessage, setOtpMessage] = useState<string | null>(null);
+  const [oauthPending, setOauthPending] = useState(false);
 
   // Registration location state
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
   const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number } | undefined>();
   const [registrationAddress, setRegistrationAddress] = useState<string>('');
+  const [availableCountries, setAvailableCountries] = useState(() => (countriesCities as any).countries || []);
+  const [availableCities, setAvailableCities] = useState<any[]>([]);
+  const [availableStreets, setAvailableStreets] = useState<string[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerCountry, setPickerCountry] = useState('');
+  const [pickerRegion, setPickerRegion] = useState('');
+  const [pickerCity, setPickerCity] = useState('');
+  const [streetsLoading, setStreetsLoading] = useState(false);
+  const [cityFilter, setCityFilter] = useState('');
+  const [countryHighlight, setCountryHighlight] = useState(0);
+  const [regionHighlight, setRegionHighlight] = useState(0);
+  const [cityHighlight, setCityHighlight] = useState(0);
+  const [streetHighlight, setStreetHighlight] = useState(0);
+  const modalRef = React.useRef<HTMLDivElement | null>(null);
+  const countryListRef = React.useRef<HTMLUListElement | null>(null);
+  const cityListRef = React.useRef<HTMLDivElement | null>(null);
+  const streetListRef = React.useRef<HTMLUListElement | null>(null);
+  const filterInputRef = React.useRef<HTMLInputElement | null>(null);
+  const prevActiveElementRef = React.useRef<HTMLElement | null>(null);
+  const [activePane, setActivePane] = useState<'country'|'region'|'city'>('country');
+  const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
+  const useProxy = Boolean(API_BASE);
+
+  // Autocomplete UI state (Geonames / proxy)
+  const [addrQuery, setAddrQuery] = useState('');
+  const [addrSuggestions, setAddrSuggestions] = useState<any[]>([]);
+  const [showAddrSuggestions, setShowAddrSuggestions] = useState(false);
+  const addrDebounceRef = React.useRef<number | null>(null);
+  const [cityQuery, setCityQuery] = useState('');
+  const [citySuggestions, setCitySuggestions] = useState<any[]>([]);
+  const cityDebounceRef = React.useRef<number | null>(null);
+  const [streetQuery, setStreetQuery] = useState('');
+  const [streetSuggestions, setStreetSuggestions] = useState<any[]>([]);
+  const streetDebounceRef = React.useRef<number | null>(null);
+  const [availableRegions, setAvailableRegions] = useState<string[]>([]);
+  const [availableCitiesForRegion, setAvailableCitiesForRegion] = useState<string[]>([]);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
+
+  // registration flow continues below
 
   const selectRole = (nextRole: UserRole) => {
     setRole(nextRole);
@@ -87,6 +134,8 @@ export function Register() {
     setFaceRegistered(false);
     setPhoto(undefined);
     setFaceCapturing(false);
+    // store pending oauth role for Google sign-in flow
+    try { localStorage.setItem('pending_oauth_role', nextRole || ''); } catch {}
   };
 
   const regeneratePassword = () => {
@@ -104,10 +153,128 @@ export function Register() {
     }
   };
 
-  // Capture location on mount
+  // Capture location on mount and detect OAuth HTE prefill
   useEffect(() => {
     captureLocation();
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const h = params.get('h');
+      const pending = localStorage.getItem('pending_oauth_role');
+      const oauthEmail = localStorage.getItem('oauth_email');
+      const oauthName = localStorage.getItem('oauth_name');
+      if (h === 'hte' || pending === 'hte') {
+        setRole('hte');
+        setOauthPending(true);
+        if (oauthEmail) update('email', oauthEmail);
+        if (oauthName) update('name', oauthName);
+        // clear pending markers
+        localStorage.removeItem('pending_oauth_role');
+        localStorage.removeItem('oauth_email');
+        localStorage.removeItem('oauth_name');
+      }
+    } catch {
+      // ignore
+    }
   }, []);
+
+  // Load countries from proxy if available
+  useEffect(() => {
+    (async () => {
+      try {
+        if (useProxy) {
+          const res = await getCountries();
+          if (res && res.geonames) {
+            // map geonames country info to {code,name,cities:[]}
+            const countries = (res.geonames || []).map((c: any) => ({ code: c.countryCode, name: c.countryName, cities: [] }));
+            countries.sort((a: any, b: any) => (a.name || a.code).localeCompare(b.name || b.code));
+            setAvailableCountries(countries);
+          }
+        }
+      } catch {
+        // ignore, keep local dataset
+      }
+    })();
+  }, [useProxy]);
+
+  // Ensure bundled countries are sorted alphabetically on mount
+  useEffect(() => {
+    try {
+      const c = ((countriesCities as any).countries || []).slice();
+      c.sort((a: any, b: any) => (a.name || a.code).localeCompare(b.name || b.code));
+      setAvailableCountries(c);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // When a country is picked, try to load offline details (regions + cities) and populate region list
+  useEffect(() => {
+    let cancelled = false;
+    if (!pickerCountry) {
+      setAvailableRegions([]);
+      setPickerRegion('');
+      setPickerCity('');
+      setAvailableCitiesForRegion([]);
+      return;
+    }
+    (async () => {
+      try {
+        await addressApi.loadOfflineStreets(pickerCountry);
+        const details = await addressApi.getOfflineDetails(pickerCountry, 200);
+        if (!cancelled && details && details.regions && details.regions.length > 0) {
+          setAvailableRegions(details.regions.slice().sort((a,b) => a.localeCompare(b)));
+          setPickerRegion('');
+          setPickerCity('');
+          setRegionHighlight(0);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      // fallback: use bundled countriesCities adminName1 grouping
+      try {
+        const countryObj = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
+        const cities = (countryObj.cities || []);
+        const groups: Record<string, any[]> = {};
+        cities.forEach((ct: any) => {
+          const g = ct.adminName1 || ct.admin1 || ct.region || 'Others';
+          groups[g] = groups[g] || [];
+          groups[g].push(ct.name || ct);
+        });
+        const groupKeys = Object.keys(groups).sort();
+        if (!cancelled) setAvailableRegions(groupKeys);
+      } catch {
+        setAvailableRegions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pickerCountry]);
+
+  // when a region is selected, load its cities
+  useEffect(() => {
+    let cancelled = false;
+    if (!pickerCountry || !pickerRegion) { setAvailableCitiesForRegion([]); return; }
+    (async () => {
+      try {
+        const cities = await addressApi.getOfflineRegionCities(pickerCountry, pickerRegion);
+        if (!cancelled && cities && cities.length > 0) {
+          setAvailableCitiesForRegion(cities);
+          setCityHighlight(0);
+          return;
+        }
+      } catch { }
+      // fallback to bundled
+      try {
+        const countryObj = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
+        const cities = (countryObj.cities || []).filter((ct: any) => (ct.adminName1 || ct.admin1 || ct.region || 'Others') === pickerRegion).map((ct: any) => ct.name || ct).sort((a:any,b:any)=>a.localeCompare(b));
+        if (!cancelled) setAvailableCitiesForRegion(cities);
+      } catch {
+        if (!cancelled) setAvailableCitiesForRegion([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pickerCountry, pickerRegion]);
 
   const captureLocation = async () => {
     setLocationStatus('capturing');
@@ -115,7 +282,6 @@ export function Register() {
       const position = await getCurrentLocation();
       const { latitude, longitude } = position.coords;
       setRegistrationLocation({ lat: latitude, lng: longitude });
-      setRegistrationAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
       setLocationStatus('captured');
     } catch (err: unknown) {
       const isDenied = isGeolocationPositionError(err) && err.code === 1;
@@ -128,6 +294,214 @@ export function Register() {
     const newValue = field === 'requiredHours' ? Number(value) : value;
     setForm(p => ({ ...p, [field]: newValue }));
   };
+
+  useEffect(() => {
+    // Update cities when country changes
+    const country = (form as any).country;
+    if (!country) {
+      setAvailableCities([]);
+      setAvailableStreets([]);
+      return;
+    }
+    const found = availableCountries.find((c: any) => c.code === country || c.name === country);
+    const cities = found ? found.cities || [] : [];
+    setAvailableCities(cities);
+    // reset city/street/region/barangay when country changes
+    setForm(p => ({ ...p, city: '', street: '', region: '', barangay: '' }));
+  }, [(form as any).country]);
+
+  useEffect(() => {
+    // Update streets when city changes
+    const city = (form as any).city;
+    if (!city) {
+      setAvailableStreets([]);
+      return;
+    }
+    const country = (form as any).country;
+    const foundCountry = availableCountries.find((c: any) => c.code === country || c.name === country);
+    const foundCity = foundCountry?.cities?.find((ct: any) => ct.name === city);
+    setAvailableStreets(foundCity?.streets || []);
+    setForm(p => ({ ...p, street: '' }));
+  }, [(form as any).city]);
+
+  // Query autocomplete when query changes (debounced). Works with backend proxy or bundled dataset.
+  useEffect(() => {
+    if (!addrQuery || addrQuery.length < 2) {
+      setAddrSuggestions([]);
+      return;
+    }
+    if (addrDebounceRef.current) window.clearTimeout(addrDebounceRef.current);
+    addrDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const res = await autocompletePlaces(addrQuery);
+        setAddrSuggestions(res.geonames || []);
+        setShowAddrSuggestions(true);
+      } catch {
+        setAddrSuggestions([]);
+      }
+    }, 200);
+    return () => { if (addrDebounceRef.current) window.clearTimeout(addrDebounceRef.current); };
+  }, [addrQuery]);
+
+  // City suggestions (searchCities) — works offline with bundled dataset
+  useEffect(() => {
+    if (!cityQuery || cityQuery.length < 2) {
+      setCitySuggestions([]);
+      return;
+    }
+    if (cityDebounceRef.current) window.clearTimeout(cityDebounceRef.current);
+    cityDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const res = await searchCities((form as any).country || '', cityQuery);
+        setCitySuggestions(res.geonames || []);
+      } catch {
+        setCitySuggestions([]);
+      }
+    }, 200);
+    return () => { if (cityDebounceRef.current) window.clearTimeout(cityDebounceRef.current); };
+  }, [cityQuery, (form as any).country]);
+
+  // Street suggestions (OSM) — will call backend if configured, otherwise stays empty
+  useEffect(() => {
+    if (!streetQuery || streetQuery.length < 2) {
+      setStreetSuggestions([]);
+      return;
+    }
+    if (streetDebounceRef.current) window.clearTimeout(streetDebounceRef.current);
+    streetDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const res = await searchStreets((form as any).country || '', (form as any).city || '', streetQuery);
+        setStreetSuggestions(res.results || []);
+      } catch {
+        setStreetSuggestions([]);
+      }
+    }, 200);
+    return () => { if (streetDebounceRef.current) window.clearTimeout(streetDebounceRef.current); };
+  }, [streetQuery, (form as any).city, (form as any).country]);
+
+  // Keyboard navigation for picker modal
+  useEffect(() => {
+    if (!showPicker) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setShowPicker(false); return; }
+      const countriesLen = (availableCountries as any[]).length;
+      const regionsLen = (availableRegions || []).length;
+      const countryObj = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
+      const cities = (countryObj.cities || []).filter((ct: any) => !cityFilter || ct.name.toLowerCase().includes(cityFilter.toLowerCase()));
+      const citiesLen = cities.length;
+      const streetsLen = (availableStreets || []).length;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (activePane === 'country') setCountryHighlight(h => Math.min(h + 1, Math.max(0, countriesLen - 1)));
+        else if (activePane === 'region') setRegionHighlight(h => Math.min(h + 1, Math.max(0, regionsLen - 1)));
+        else if (activePane === 'city') setCityHighlight(h => Math.min(h + 1, Math.max(0, citiesLen - 1)));
+        else setStreetHighlight(h => Math.min(h + 1, Math.max(0, streetsLen - 1)));
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (activePane === 'country') setCountryHighlight(h => Math.max(0, h - 1));
+        else if (activePane === 'region') setRegionHighlight(h => Math.max(0, h - 1));
+        else if (activePane === 'city') setCityHighlight(h => Math.max(0, h - 1));
+        else setStreetHighlight(h => Math.max(0, h - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (activePane === 'country') setActivePane('region');
+        else if (activePane === 'region') setActivePane('city');
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (activePane === 'city') setActivePane('region');
+        else if (activePane === 'region') setActivePane('country');
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (activePane === 'country') {
+          const c = (availableCountries as any[])[countryHighlight];
+          if (c) { setPickerCountry(c.code); setPickerCity(''); setActivePane('region'); setRegionHighlight(0); }
+        } else if (activePane === 'region') {
+          const rg = (availableRegions || [])[regionHighlight];
+          if (rg) { setPickerRegion(rg); setPickerCity(''); setActivePane('city'); setCityHighlight(0); }
+        } else if (activePane === 'city') {
+          const countryObj2 = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
+          const cities2 = (countryObj2.cities || []).filter((ct: any) => !cityFilter || ct.name.toLowerCase().includes(cityFilter.toLowerCase()));
+          const ct = cities2[cityHighlight];
+          if (ct) { setPickerCity(ct.name); setActivePane('city'); setCityHighlight(0); }
+        } else if (activePane === 'street') {
+          const s = (availableStreets || [])[streetHighlight];
+          if (s) { update('street', s); setRegistrationAddress(`${s}, ${pickerCity || ''}`); setAddrQuery(`${s}, ${pickerCity || ''}`); setShowPicker(false); }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showPicker, availableCountries, pickerCountry, cityFilter, activePane, countryHighlight, cityHighlight, streetHighlight, availableStreets]);
+
+  // Focus trap and auto-focus when modal opens; restore focus on close
+  useEffect(() => {
+    if (!showPicker) {
+      try { prevActiveElementRef.current?.focus(); } catch {}
+      return;
+    }
+    // Save previous active element
+    prevActiveElementRef.current = document.activeElement as HTMLElement | null;
+    // Focus the city filter input
+    setTimeout(() => filterInputRef.current?.focus(), 0);
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const container = modalRef.current;
+      if (!container) return;
+      const focusables = Array.from(container.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleTab);
+    return () => {
+      window.removeEventListener('keydown', handleTab);
+      try { prevActiveElementRef.current?.focus(); } catch {}
+    };
+  }, [showPicker]);
+
+  // Auto-scroll highlighted items into view
+  useEffect(() => {
+    if (!showPicker) return;
+    // country
+    try {
+      const el = countryListRef.current?.querySelector<HTMLElement>(`[data-country-index='${countryHighlight}']`);
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    } catch {}
+  }, [countryHighlight, showPicker]);
+
+  useEffect(() => {
+    if (!showPicker) return;
+    try {
+      const el = cityListRef.current?.querySelector<HTMLElement>(`[data-city-index='${cityHighlight}']`);
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    } catch {}
+  }, [cityHighlight, showPicker]);
+
+  useEffect(() => {
+    if (!showPicker) return;
+    try {
+      const el = streetListRef.current?.querySelector<HTMLElement>(`[data-street-index='${streetHighlight}']`);
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    } catch {}
+  }, [streetHighlight, showPicker]);
 
   const handleNext = () => {
     if (step < steps.length - 1) setStep(s => s + 1);
@@ -158,16 +532,102 @@ export function Register() {
     }
 
     const empId = form.employeeId || `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+    // If OTP was verified against backend, attempt server registration first
+        if (otpVerified) {
+      try {
+          let first_name = form.first_name;
+          let last_name = form.last_name;
+          if (!first_name || !last_name) {
+            const parts = (form.name || '').trim().split(/\s+/);
+            first_name = parts.length > 0 ? parts[0] : form.name;
+            last_name = parts.length > 1 ? parts.slice(1).join(' ') : '';
+          }
+
+          if (role === 'admin' || role === 'trainee') {
+            const composedAddress = [ (form as any).street, (form as any).city, (form as any).country ]
+              .filter(Boolean)
+              .join(', ');
+            const payload = {
+              email: form.email,
+              password: generatedPassword,
+              first_name,
+              last_name,
+              middle_initial: form.middle_initial || undefined,
+              age: form.age ? Number(form.age) : undefined,
+              address: composedAddress || undefined,
+            };
+            const res = await authAPI.registerStudent(payload);
+          if (res.data && (res.data as any).tokens) {
+            localStorage.setItem('access_token', (res.data as any).tokens.access);
+            localStorage.setItem('refresh_token', (res.data as any).tokens.refresh);
+          }
+        } else if (role === 'hte') {
+          const payload = {
+            email: form.email,
+            first_name: first_name,
+            last_name: last_name,
+            company_name: form.companyName,
+            company_address: form.companyAddress,
+          };
+          const res = await authAPI.registerHTE(payload);
+          if (res.data && (res.data as any).tokens) {
+            localStorage.setItem('access_token', (res.data as any).tokens.access);
+            localStorage.setItem('refresh_token', (res.data as any).tokens.refresh);
+          }
+        }
+      } catch (err) {
+        // If server registration fails, fall back to local registration below
+      }
+    }
+
+    // If OAuth HTE flow pending (no OTP), attempt HTE registration via backend
+    if (oauthPending && role === 'hte') {
+      try {
+        const parts = (form.name || '').trim().split(/\s+/);
+        const first_name = parts[0] || '';
+        const last_name = parts.slice(1).join(' ') || '';
+        const payload = {
+          email: form.email,
+          first_name,
+          last_name,
+          company_name: form.companyName,
+          company_address: form.companyAddress,
+          contact_person: form.contactPerson,
+          contact_phone: form.contactPhone,
+        };
+        const res = await authAPI.registerHTE(payload);
+        if (res.data && (res.data as any).tokens) {
+          localStorage.setItem('access_token', (res.data as any).tokens.access);
+          localStorage.setItem('refresh_token', (res.data as any).tokens.refresh);
+        }
+      } catch (err) {
+        // fallback: continue to local registration
+      }
+      setOauthPending(false);
+    }
+
+    const buildAddrFromForm = () => {
+      const parts = [] as string[];
+      if (form.barangay) parts.push(form.barangay);
+      if ((form as any).street) parts.push((form as any).street);
+      if ((form as any).city) parts.push((form as any).city);
+      if ((form as any).region) parts.push((form as any).region);
+      if ((form as any).country) parts.push(((new Intl.DisplayNames(['en'], { type: 'region' })).of((form as any).country) || (form as any).country));
+      return parts.filter(Boolean).join(', ');
+    };
+
+    const computedAddress = registrationAddress || buildAddrFromForm() || undefined;
+
     const newEmp = registerEmployee({
       ...form,
       employeeId: empId,
-      position: role === 'admin' ? 'Administrator' : 'OJT Trainee',
+      position: role === 'admin' ? 'OJT Instructor' : 'OJT Trainee',
       requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
       faceRegistered,
       photo,
       active: true,
       registrationLocation,
-      registrationAddress: locationStatus === 'captured' ? registrationAddress : undefined,
+      registrationAddress: computedAddress,
       password: generatedPassword,
     });
 
@@ -339,8 +799,8 @@ export function Register() {
                       <ShieldCheck size={28} className="text-purple-600 group-hover:text-white" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-bold text-gray-800 mb-1">Administrator</h3>
-                      <p className="text-xs text-gray-500">Register as an admin or supervisor. You'll have access to manage employees, view reports, and configure settings.</p>
+                      <h3 className="font-bold text-gray-800 mb-1">OJT Instructor</h3>
+                      <p className="text-xs text-gray-500">Register as an OJT Instructor or supervisor. You'll have access to manage employees, view reports, and configure settings.</p>
                     </div>
                   </div>
                 </button>
@@ -359,6 +819,8 @@ export function Register() {
                     </div>
                   </div>
                 </button>
+
+                
 
                 <div className="mt-6 pt-4 border-t border-gray-100">
                   <p className="text-center text-xs text-gray-400">
@@ -380,22 +842,204 @@ export function Register() {
                   </div>
                   <h2 className="font-bold text-gray-800">Personal Information</h2>
                 </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Full Name *</label>
-                    <input value={form.name} onChange={e => update('name', e.target.value)}
-                      placeholder="Juan Dela Cruz" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                
+                  <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
+                      <input value={form.last_name} onChange={e => update('last_name', e.target.value)} placeholder="Dela Cruz" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
+                      <input value={form.first_name} onChange={e => update('first_name', e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
+                      <input value={form.middle_initial} onChange={e => update('middle_initial', e.target.value)} placeholder="D" maxLength={1} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
                     <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
                       placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          setOtpMessage(null);
+                          try {
+                            const fullName = `${form.first_name || ''} ${form.last_name || ''}`.trim() || form.name || 'User';
+                            await authAPI.requestOTP(form.email, fullName);
+                            setOtpRequested(true);
+                            setOtpMessage('OTP sent to your email.');
+                          } catch (err) {
+                            setOtpMessage('Unable to send OTP (server unavailable). Continuing offline.');
+                          }
+                        }}
+                        className="text-xs text-indigo-600 hover:text-indigo-800"
+                      >
+                        Request OTP
+                      </button>
+
+                      {otpRequested && (
+                        <div className="flex items-center gap-2">
+                          <input value={otpCode} onChange={e => setOtpCode(e.target.value)} placeholder="Enter OTP" className="px-2 py-1 text-sm border rounded" />
+                          <button
+                            onClick={async () => {
+                              setOtpMessage(null);
+                              try {
+                                const res = await authAPI.verifyOTP(form.email, otpCode);
+                                if (res.data && (res.data as any).success) {
+                                  setOtpVerified(true);
+                                  setOtpMessage('OTP verified');
+                                } else {
+                                  setOtpMessage((res.data as any)?.message || 'OTP verification failed');
+                                }
+                              } catch (err: any) {
+                                setOtpMessage('Unable to verify OTP (server unavailable).');
+                              }
+                            }}
+                            className="text-xs text-indigo-600 hover:text-indigo-800"
+                          >
+                            Verify OTP
+                          </button>
+                        </div>
+                      )}
+
+                      {otpMessage && <div className="text-xs text-gray-500 ml-2">{otpMessage}</div>}
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
-                    <input value={form.employeeId} onChange={e => update('employeeId', e.target.value)}
-                      placeholder="Auto-generated if empty" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Age *</label>
+                        <input value={form.age} onChange={e => update('age', e.target.value)} type="number" min={14}
+                          placeholder="e.g. 18" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Address</label>
+                        <div className="relative">
+                          <div className="flex gap-2">
+                            <input value={addrQuery} onChange={e => { setAddrQuery(e.target.value); }} placeholder="Start typing your address" className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                            <button type="button" onClick={() => setShowPicker(s => !s)} className="px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 text-sm">Pick</button>
+                          </div>
+                            {showAddrSuggestions && addrSuggestions.length > 0 && (
+                            <div className="absolute z-50 left-0 right-0 bg-white border border-gray-200 rounded mt-1 max-h-52 overflow-auto">
+                              {addrSuggestions.map((p: any) => (
+                                <div key={(p.geonameId || p.name)} onClick={async () => {
+                                  try {
+                                    // If the suggestion has an id, fetch details; otherwise derive from suggestion
+                                    let parsed: any = null;
+                                    if (p.geonameId) {
+                                      const det = await getPlaceDetails(p.geonameId);
+                                      parsed = parsePlaceComponents(det);
+                                    }
+                                    update('country', (parsed && parsed.country) || p.countryCode || '');
+                                    update('city', (parsed && parsed.city) || p.name || '');
+                                    update('street', (parsed && parsed.street) || parsed?.formatted || p.name || '');
+                                    setRegistrationAddress((parsed && parsed.formatted) || p.name || '');
+                                    setAddrQuery((parsed && parsed.formatted) || p.name || '');
+                                    setAddrSuggestions([]);
+                                    setShowAddrSuggestions(false);
+                                  } catch {
+                                    // ignore
+                                  }
+                                }} className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">{p.name}{p.adminName1 ? ', ' + p.adminName1 : ''}{p.countryName ? ', ' + p.countryName : ''}</div>
+                              ))}
+                            </div>
+                          )}
+                          {showPicker && (
+                            <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="address-picker-title" aria-describedby="address-picker-desc" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                              <div className="bg-white w-[90%] max-w-4xl rounded-2xl shadow-xl p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h3 id="address-picker-title" className="font-bold">Pick Address</h3>
+                                  <div className="flex items-center gap-2">
+                                    <input aria-label="Filter cities" ref={filterInputRef} value={cityFilter} onChange={e => { setCityFilter(e.target.value); setCityHighlight(0); }} placeholder="Filter cities" className="px-3 py-2 border rounded text-sm" />
+                                    <button onClick={() => { setShowPicker(false); }} className="text-sm underline">Close</button>
+                                  </div>
+                                </div>
+                                <p id="address-picker-desc" className="sr-only">Use arrow keys to navigate countries, cities, and streets. Press Enter to select.</p>
+
+                                <div className="grid grid-cols-3 gap-4 h-80">
+                                  {/* Countries */}
+                                  <div className="border rounded p-2 overflow-auto">
+                                    <div className="text-xs text-gray-500 mb-2">Country</div>
+                                    {(availableCountries as any[]).length === 0 ? (
+                                      <div className="text-sm text-gray-400">No countries</div>
+                                    ) : (
+                                      <ul role="listbox" aria-label="Countries" ref={countryListRef}>
+                                        {(availableCountries as any[]).map((c: any, idx: number) => (
+                                          <li id={`country-${idx}`} tabIndex={0} role="option" aria-selected={pickerCountry === c.code} data-country-index={idx} key={c.code} className={`px-2 py-1 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 ${pickerCountry === c.code ? 'bg-sky-100 font-semibold' : ''} ${countryHighlight === idx ? 'ring-2 ring-sky-200' : ''}`} onClick={() => { setPickerCountry(c.code); setPickerCity(''); setCountryHighlight(idx); setCityHighlight(0); setActivePane('city'); }} onMouseEnter={() => setCountryHighlight(idx)}>
+                                            {(new Intl.DisplayNames(['en'], {type: 'region'})).of(c.code) || c.name || c.code}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+
+                                  {/* Regions */}
+                                  <div className="border rounded p-2 overflow-auto">
+                                    <div className="text-xs text-gray-500 mb-2">Regions</div>
+                                    {!pickerCountry ? (
+                                      <div className="text-sm text-gray-400">Select a country</div>
+                                    ) : ((availableRegions || []).length === 0 ? (
+                                      <div className="text-sm text-gray-400">No regions available</div>
+                                    ) : (
+                                      <ul role="listbox" className="space-y-1">
+                                        {(availableRegions || []).map((g: string, idx: number) => (
+                                          <li key={g} id={`region-${idx}`} tabIndex={0} role="option" aria-selected={pickerRegion === g} data-region-index={idx} className={`px-2 py-1 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 ${pickerRegion === g ? 'bg-sky-100 font-semibold' : ''} ${regionHighlight === idx ? 'ring-2 ring-sky-200' : ''}`} onClick={() => { setPickerRegion(g); setPickerCity(''); setRegionHighlight(idx); setCityHighlight(0); setActivePane('city'); }} onMouseEnter={() => setRegionHighlight(idx)}>
+                                            {g}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ))}
+                                  </div>
+
+                                  {/* Cities in selected region */}
+                                  <div className="border rounded p-2 overflow-auto">
+                                    <div className="text-xs text-gray-500 mb-2">Cities</div>
+                                    {!pickerRegion ? (
+                                      <div className="text-sm text-gray-400">Select a region</div>
+                                    ) : (availableCitiesForRegion && availableCitiesForRegion.length > 0 ? (
+                                      <ul role="listbox" aria-label="Cities in region">
+                                        {availableCitiesForRegion.map((ct: string, idx: number) => (
+                                          <li key={ct} id={`city-${idx}`} tabIndex={0} role="option" aria-selected={pickerCity === ct} data-city-index={idx} className={`px-2 py-1 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 ${pickerCity === ct ? 'bg-sky-100 font-semibold' : ''} ${cityHighlight === idx ? 'ring-2 ring-sky-200' : ''}`} onClick={() => { setPickerCity(ct); setCityHighlight(idx); setActivePane('city'); }} onMouseEnter={() => setCityHighlight(idx)}>
+                                            {ct}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <div className="text-sm text-gray-400">No cities found for this region.</div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 flex justify-end gap-2">
+                                  <button onClick={() => { setShowPicker(false); }} className="px-3 py-2 border rounded">Cancel</button>
+                                  <button onClick={async () => {
+                                    const countryName = (new Intl.DisplayNames(['en'], {type: 'region'})).of(pickerCountry) || pickerCountry;
+                                    update('country', pickerCountry);
+                                    update('region', pickerRegion);
+                                    update('city', pickerCity);
+                                    // We intentionally do not auto-fill barangay/street — user will enter barangay manually
+                                    setRegistrationAddress(`${pickerCity || ''}${pickerCity ? ', ' : ''}${pickerRegion ? pickerRegion + ', ' : ''}${countryName}`);
+                                    setAddrQuery(`${pickerCity || ''}${pickerCity ? ', ' : ''}${pickerRegion ? pickerRegion + ', ' : ''}${countryName}`);
+                                    setShowPicker(false);
+                                    setAddrSuggestions([]);
+                                    setShowAddrSuggestions(false);
+                                  }} className="px-3 py-2 bg-sky-600 text-white rounded">Use</button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay / Neighborhood</label>
+                        <input value={form.barangay} onChange={e => update('barangay', e.target.value)} placeholder="e.g. San Isidro" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
+                        <input value={form.employeeId} onChange={e => update('employeeId', e.target.value)}
+                          placeholder="Auto-generated if empty" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Department</label>
                     <input value={form.department} onChange={e => update('department', e.target.value)}

@@ -114,6 +114,16 @@ export const authAPI = {
     contact_phone?: string;
   }) => api.post<AuthResponse>('/auth/register-hte/', data),
 
+  // OAuth-backed server registration
+  registerOauthStudent: (data: { email: string; first_name?: string; last_name?: string }) =>
+    api.post<AuthResponse>('/auth/register-oauth-student/', data),
+
+  registerOauthInstructor: (data: { email: string; first_name?: string; last_name?: string; course?: string; department?: string }) =>
+    api.post<AuthResponse>('/auth/register-oauth-instructor/', data),
+
+  // Verify instructor QR code
+  verifyQR: (qrData: string) => api.post<{ success: boolean; instructor?: any }>('/auth/verify-qr/', { qr_data: qrData }),
+
   // OJT Application
   submitApplication: (data: {
     user_id: number;
@@ -173,6 +183,14 @@ export const authAPI = {
 
   getAnnouncements: (instructorId: number) =>
     api.get<{ announcements: any[] }>('/announcement/list/', { params: { instructor_id: instructorId } }),
+
+  // Announcement submissions (employee responses)
+  submitAnnouncementResponse: (announcementId: string, userId: number, formData: FormData) =>
+    api.post<{ success: boolean; submission_id: number; image_url?: string }>(
+      '/announcement/submit/',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    ),
 
   // HTE Access
   requestHTEAccess: (hteId: number, applicationId: number) =>

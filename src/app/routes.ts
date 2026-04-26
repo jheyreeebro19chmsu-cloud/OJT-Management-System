@@ -1,13 +1,16 @@
 import React from 'react';
-import { createHashRouter, isRouteErrorResponse, useRouteError } from 'react-router-dom';
+import { createBrowserRouter, isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import OAuthCallback from './pages/OAuthCallback';
 import { EmployeeLayout } from './components/EmployeeLayout';
 import { AdminLayout } from './components/AdminLayout';
 import { Dashboard } from './pages/Dashboard';
 import { TimeRecord } from './pages/TimeRecord';
 import { Records } from './pages/Records';
 import { Profile } from './pages/Profile';
+import InstructorQR from './pages/InstructorQR';
+import QRScanner from './pages/QRScanner';
 import { Announcements } from './pages/Announcements';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminEmployees } from './pages/admin/AdminEmployees';
@@ -50,15 +53,25 @@ function RouteErrorFallback() {
 
 const routeErrorElement = React.createElement(RouteErrorFallback);
 
-export const router = createHashRouter([
+export const router = createBrowserRouter([
   {
     path: '/',
     Component: Login,
     errorElement: routeErrorElement,
   },
   {
+    path: '/login',
+    Component: Login,
+    errorElement: routeErrorElement,
+  },
+  {
     path: '/register',
     Component: Register,
+    errorElement: routeErrorElement,
+  },
+  {
+    path: '/oauth-callback',
+    Component: OAuthCallback,
     errorElement: routeErrorElement,
   },
   {
@@ -76,6 +89,8 @@ export const router = createHashRouter([
       { path: 'records', Component: Records },
       { path: 'announcements', Component: Announcements },
       { path: 'profile', Component: Profile },
+      { path: 'instructor-qr', Component: InstructorQR },
+      { path: 'scan-qr', Component: QRScanner },
     ],
   },
   {

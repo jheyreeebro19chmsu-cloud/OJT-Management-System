@@ -17,10 +17,13 @@ export function isWithinGeofence(
   userLng: number,
   zoneLat: number,
   zoneLng: number,
-  radiusMeters: number
+  radiusMeters: number,
+  accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  return distance <= radiusMeters;
+  const effectiveAccuracy = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? accuracyMeters : 0;
+  // Conservative check: user's reported position may be off by `accuracy`; require distance + accuracy <= radius
+  return distance + effectiveAccuracy <= radiusMeters;
 }
 
 export function formatDistance(meters: number): string {

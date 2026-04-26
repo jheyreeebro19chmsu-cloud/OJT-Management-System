@@ -654,7 +654,7 @@ Access: http://localhost:5173
 | Python Packages Added | 10+ |
 | Security Features | 10+ |
 | Email Features | 5+ |
-| Admin Features | 12+ |
+| Instructor Features | 12+ |
 
 ---
 
