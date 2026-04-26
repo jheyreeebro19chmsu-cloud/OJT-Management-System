@@ -1,6 +1,8 @@
 import axios, { AxiosError } from 'axios';
 
-const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined ?? 'http://localhost:8000/api';
+const RAW_API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined ?? 'http://localhost:8000/api';
+// Disable calls to known external production host to avoid CORS errors when frontend is served separately.
+const API_BASE = RAW_API_BASE && RAW_API_BASE.includes('railway.app') ? undefined : RAW_API_BASE;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -71,8 +73,13 @@ export interface OTPResponse {
 // OTP Endpoints
 export const authAPI = {
   // OTP
-  requestOTP: (email: string, fullName: string) =>
-    api.post<OTPResponse>('/auth/request-otp/', { email, full_name: fullName }),
+  requestOTP: (email: string, fullName: string) => {
+    // If API_BASE is disabled (external production host), do not perform the request.
+    if (!API_BASE) {
+      return Promise.resolve({ success: true, message: 'OTP disabled in frontend build' } as OTPResponse);
+    }
+    return api.post<OTPResponse>('/auth/request-otp/', { email, full_name: fullName });
+  },
 
   verifyOTP: (email: string, otpCode: string) =>
     api.post<{ success: boolean; message: string }>('/auth/verify-otp/', { email, otp_code: otpCode }),

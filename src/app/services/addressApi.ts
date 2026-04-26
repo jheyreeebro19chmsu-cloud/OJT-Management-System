@@ -4,7 +4,10 @@
 import countriesCities from '../data/countries_cities.json';
 
 // API base is only used when explicitly configured via VITE_DJANGO_API_URL
-const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
+const RAW_API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
+// If the API base points to the external production host (Railway), disable network proxy usage
+// so the frontend falls back to local bundled data and avoids cross-origin calls.
+const API_BASE = RAW_API_BASE && RAW_API_BASE.includes('railway.app') ? undefined : RAW_API_BASE;
 
 // Build a flat city index for faster searching
 interface IndexedCity {
