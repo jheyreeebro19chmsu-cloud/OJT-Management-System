@@ -790,46 +790,7 @@ export function Register() {
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
                     <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
                       placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          // Email sending disabled: mark OTP as requested locally
-                          setOtpMessage(null);
-                          setOtpRequested(true);
-                          setOtpMessage('OTP requested');
-                        }}
-                        className="text-xs text-indigo-600 hover:text-indigo-800"
-                      >
-                        Request OTP
-                      </button>
-
-                      {otpRequested && (
-                        <div className="flex items-center gap-2">
-                          <input value={otpCode} onChange={e => setOtpCode(e.target.value)} placeholder="Enter OTP" className="px-2 py-1 text-sm border rounded" />
-                          <button
-                            onClick={async () => {
-                              setOtpMessage(null);
-                              try {
-                                const res = await authAPI.verifyOTP(form.email, otpCode);
-                                if (res.data && (res.data as any).success) {
-                                  setOtpVerified(true);
-                                  setOtpMessage('OTP verified');
-                                } else {
-                                  setOtpMessage((res.data as any)?.message || 'OTP verification failed');
-                                }
-                              } catch (err: any) {
-                                setOtpMessage('Unable to verify OTP (server unavailable).');
-                              }
-                            }}
-                            className="text-xs text-indigo-600 hover:text-indigo-800"
-                          >
-                            Verify OTP
-                          </button>
-                        </div>
-                      )}
-
-                      {otpMessage && <div className="text-xs text-gray-500 ml-2">{otpMessage}</div>}
-                    </div>
+                    {/* OTP UI removed per request */}
                   </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Age *</label>
