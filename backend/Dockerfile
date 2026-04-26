@@ -14,4 +14,4 @@ COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 COPY . .
-CMD python manage.py migrate && gunicorn ojt_backend.wsgi:application --bind 0.0.0.0:$PORT
+CMD python manage.py migrate && python -m gunicorn ojt_backend.wsgi:application --bind 0.0.0.0:$PORT
