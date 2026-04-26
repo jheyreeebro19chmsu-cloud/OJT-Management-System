@@ -28,3 +28,26 @@ python backend/scripts/geonames_import.py --input C:\path\to\PH.txt \
 Adjust `--min-pop` or `--max-per-region` to control output size.
 
 After running, commit `src/app/data/countries_cities.json` and redeploy the frontend.
+
+Global build
+------------
+
+To build a single global `countries_cities.json` from a full Geonames dump, use
+the `build_global_geonames.py` helper. This script will iterate country codes and
+invoke `geonames_import.py` per country so the entire job does not need to be
+kept in memory.
+
+Example (PowerShell):
+
+```powershell
+python backend/scripts/build_global_geonames.py --input C:\geonames\allCountries.txt --admin1 C:\geonames\admin1CodesASCII.txt --output src/app/data/countries_cities.json --min-pop 1000
+```
+
+Caveats:
+
+- The full global dataset is very large if you include every place (no
+   `--min-pop`); expect large file sizes and slower client performance.
+- Prefer generating per-country files and loading them on demand in the UI,
+   or use the backend proxy approach described earlier.
+- Use `--codes-file` to limit which countries are processed.
+
