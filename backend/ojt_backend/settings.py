@@ -122,6 +122,22 @@ if _cors:
 else:
     CORS_ALLOW_ALL_ORIGINS = True
 
+# Allow credentials for cross-site requests (cookies, Authorization headers)
+CORS_ALLOW_CREDENTIALS = True
+
+# Ensure deployed origin is allowed by default when environment variable is set
+_render_origin = "https://ojt-management-system-capstone-f35i.onrender.com"
+try:
+    if _cors:
+        if _render_origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(_render_origin)
+    else:
+        # when allow-all is enabled we still expose the allowed-origins list for clarity
+        CORS_ALLOWED_ORIGINS = [_render_origin]
+except Exception:
+    # keep defaults on any unexpected error
+    pass
+
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
