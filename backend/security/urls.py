@@ -13,6 +13,7 @@ urlpatterns = [
     path("face/register/", views.register_face, name="register_face"),
     path("face/verify/", views.verify_face, name="verify_face"),
     path("attendance/photo/", views.save_attendance_photo, name="save_attendance_photo"),
+    path("mobile/register/", views.mobile_register, name="mobile_register"),
     
     # Authentication endpoints
     path("auth/request-otp/", auth_views.request_otp, name="request_otp"),

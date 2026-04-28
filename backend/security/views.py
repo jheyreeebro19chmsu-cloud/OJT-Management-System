@@ -379,3 +379,90 @@ def osm_streets(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"results": data})
     except Exception as exc:
         return JsonResponse({"error": "osm_streets_failed", "detail": str(exc)}, status=502)
+
+
+@csrf_exempt
+def mobile_register(request: HttpRequest) -> JsonResponse:
+    """Simple receiver endpoint for mobile app prototype.
+
+    Accepts a multipart POST with:
+    - payload: JSON string containing fullName, age, email, address, location (optional)
+    - photo: optional uploaded image file
+
+    Creates a Django User + Student profile and stores photo as FaceRegistration for testing.
+    This endpoint is intentionally permissive for prototype/testing only.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    payload_raw = request.POST.get("payload")
+    data = {}
+    try:
+        if payload_raw:
+            data = json.loads(payload_raw)
+        else:
+            # fallback: try JSON body
+            data = _json_body(request)
+    except Exception:
+        data = {}
+
+    full_name = data.get("fullName") or data.get("name") or ''
+    age = data.get("age")
+    email = data.get("email")
+    address = data.get("address") or ''
+
+    if not full_name or not email:
+        return JsonResponse({"error": "fullName and email are required"}, status=400)
+
+    # split full name into first/last
+    parts = full_name.strip().split()
+    first_name = parts[0] if parts else ''
+    last_name = ' '.join(parts[1:]) if len(parts) > 1 else ''
+
+    from django.contrib.auth.models import User
+    # create or get user by email
+    user, created = User.objects.get_or_create(username=email, defaults={
+        'email': email,
+        'first_name': first_name,
+        'last_name': last_name,
+    })
+
+    # create Student profile if not exists
+    student = None
+    try:
+        student = user.student_profile
+    except Exception:
+        student = None
+
+    if not student:
+        # create a Student record
+        from .models import Student
+        student = Student.objects.create(user=user, age=(int(age) if age else None), address=address)
+    else:
+        # update fields
+        student.age = int(age) if age else student.age
+        if address:
+            student.address = address
+        student.save()
+
+    # Save attached photo (if provided) to FaceRegistration for quick testing
+    photo = request.FILES.get('photo')
+    if photo:
+        try:
+            from .models import FaceRegistration
+            emp_id = f"mobile-{int(uuid.uuid4().int >> 64)}"
+            reg = FaceRegistration.objects.create(employee_id=emp_id)
+            reg.image.save(photo.name, photo, save=True)
+            image_url = request.build_absolute_uri(reg.image.url)
+        except Exception:
+            image_url = None
+    else:
+        image_url = None
+
+    return JsonResponse({
+        "success": True,
+        "user_id": user.id,
+        "created": created,
+        "student_id": student.id if student else None,
+        "face_image_url": image_url,
+    })
