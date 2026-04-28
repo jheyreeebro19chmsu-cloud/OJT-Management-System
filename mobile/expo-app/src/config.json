@@ -1,3 +1,4 @@
 {
-  "BACKEND": "http://<YOUR_PC_IP>:8000"
+  "BACKEND": "http://<YOUR_PC_IP>:8000",
+  "API_KEY": "your-mobile-api-key-here"
 }

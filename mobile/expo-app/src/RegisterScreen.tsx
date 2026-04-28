@@ -4,7 +4,7 @@ import * as Location from 'expo-location';
 import { Camera } from 'expo-camera';
 import * as yup from 'yup';
 import { Formik } from 'formik';
-import { BACKEND } from './config';
+import { BACKEND, API_KEY } from './config';
 
 const schema = yup.object().shape({
   fullName: yup.string().required('Full name is required'),
@@ -76,6 +76,9 @@ export default function RegisterScreen() {
       const res = await fetch(`${BACKEND}/api/mobile/register/`, {
         method: 'POST',
         body: form,
+        headers: {
+          'X-OJT-API-KEY': API_KEY,
+        },
       });
       if (!res.ok) throw new Error('server error');
       Alert.alert('Success', 'Registration submitted');

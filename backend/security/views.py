@@ -395,6 +395,20 @@ def mobile_register(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
+    # API key check (if configured). Accept header `X-OJT-API-KEY` or `X-API-KEY`.
+    expected_key = getattr(settings, "SECURITY_API_KEY", "")
+    if expected_key:
+        provided = None
+        # Django exposes headers in META as HTTP_<HEADER_NAME_UPPER>
+        provided = request.META.get("HTTP_X_OJT_API_KEY") or request.META.get("HTTP_X_API_KEY")
+        # Also try common lowercase key via request.headers if available
+        try:
+            provided = provided or request.headers.get("X-OJT-API-KEY") or request.headers.get("X-API-KEY")
+        except Exception:
+            pass
+        if not provided or str(provided).strip() != str(expected_key).strip():
+            return JsonResponse({"error": "invalid_api_key"}, status=403)
+
     payload_raw = request.POST.get("payload")
     data = {}
     try:
