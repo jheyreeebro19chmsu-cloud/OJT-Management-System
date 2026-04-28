@@ -630,7 +630,12 @@ export function Register() {
     }
 
     // Trainee / HTE
-    if (step === 0) return hasName && hasEmail;
+    if (step === 0) {
+      // For trainees, require full name, age, address and email on manual registration
+      const hasAge = Boolean((form as any).age && String((form as any).age).trim());
+      const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
+      return hasName && hasEmail && hasAge && hasAddress;
+    }
     if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
     if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
     return faceRegistered;
