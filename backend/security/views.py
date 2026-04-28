@@ -2,6 +2,7 @@ import json
 import base64
 import uuid
 from typing import Any, Dict, List
+import logging
 
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
@@ -397,16 +398,20 @@ def mobile_register(request: HttpRequest) -> JsonResponse:
 
     # API key check (if configured). Accept header `X-OJT-API-KEY` or `X-API-KEY`.
     expected_key = getattr(settings, "SECURITY_API_KEY", "")
+    logger = logging.getLogger(__name__)
     if expected_key:
         provided = None
         # Django exposes headers in META as HTTP_<HEADER_NAME_UPPER>
         provided = request.META.get("HTTP_X_OJT_API_KEY") or request.META.get("HTTP_X_API_KEY")
-        # Also try common lowercase key via request.headers if available
+        # Also try common access via request.headers if available
         try:
             provided = provided or request.headers.get("X-OJT-API-KEY") or request.headers.get("X-API-KEY")
         except Exception:
             pass
         if not provided or str(provided).strip() != str(expected_key).strip():
+            # Log the failed attempt with remote addr and provided header (do not log expected key)
+            remote = request.META.get("REMOTE_ADDR") or request.META.get("HTTP_X_FORWARDED_FOR") or "unknown"
+            logger.warning("mobile_register: invalid api key from %s (provided=%s) path=%s", remote, provided, request.path)
             return JsonResponse({"error": "invalid_api_key"}, status=403)
 
     payload_raw = request.POST.get("payload")

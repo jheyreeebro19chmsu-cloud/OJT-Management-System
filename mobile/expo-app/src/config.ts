@@ -1,8 +1,11 @@
 import configJson from './config.json';
+import Constants from 'expo-constants';
 
-// Simple runtime config loader. Edit src/config.json to change backend URL during development.
-const cfg = (configJson as { BACKEND?: string; API_KEY?: string }) || {};
-export const BACKEND = cfg.BACKEND || 'http://localhost:8000';
-export const API_KEY = cfg.API_KEY || '';
+// Prefer expo runtime config (app.config.js) when available, fallback to local config.json.
+const extra = (Constants.expoConfig && Constants.expoConfig.extra) || (Constants.manifest && (Constants.manifest as any).extra) || {};
+const fileCfg = (configJson as { BACKEND?: string; API_KEY?: string }) || {};
+
+export const BACKEND = (extra.BACKEND as string) || fileCfg.BACKEND || 'http://localhost:8000';
+export const API_KEY = (extra.API_KEY as string) || fileCfg.API_KEY || '';
 
 export default { BACKEND, API_KEY };

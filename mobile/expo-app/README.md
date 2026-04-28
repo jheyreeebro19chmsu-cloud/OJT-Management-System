@@ -52,3 +52,22 @@ Testing notes
 - Use the `Tunnel` option in Expo if your phone cannot reach the dev IP.
 - Replace `BACKEND` with an ngrok HTTPS URL when using Tunnel or testing from other networks.
 
+Using environment variables (recommended for dev builds)
+- Instead of editing `src/config.json`, you can inject values at runtime via environment variables using `app.config.js`. This avoids committing secrets into source files.
+
+Examples:
+
+Unix / macOS:
+```bash
+BACKEND=http://192.168.1.42:8000 API_KEY=supersecret123 expo start
+```
+
+Windows PowerShell:
+```powershell
+$env:BACKEND='http://192.168.1.42:8000'
+$env:API_KEY='supersecret123'
+expo start
+```
+
+When using this flow the app reads `BACKEND` and `API_KEY` from `Constants.expoConfig.extra` (provided by `app.config.js`). `src/config.json` remains as a fallback.
+
