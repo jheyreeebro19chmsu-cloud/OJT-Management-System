@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Megaphone, Plus, Edit2, Trash2, X, Save, Pin, Bell, Info, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Megaphone, Plus, Edit2, Trash2, X, Save, Pin, Bell, Info, AlertTriangle, CheckCircle, Clock, Eye, Download } from 'lucide-react';
 import { useApp } from '../../store/AppContext';
 import authAPI from '../../services/authApi';
 import { Announcement } from '../../types';
@@ -47,6 +47,7 @@ export function AdminAnnouncements() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_FORM);
+  const [showSubmissionsId, setShowSubmissionsId] = useState<string | null>(null);
 
   const upd = (key: string, val: string | boolean) => setForm(p => ({ ...p, [key]: val }));
 
@@ -269,6 +270,13 @@ export function AdminAnnouncements() {
                               </div>
                             );
                           })}
+                          <button 
+                            onClick={() => setShowSubmissionsId(ann.id)}
+                            className="col-span-3 mt-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-purple-50 text-purple-700 text-xs font-bold border border-purple-100 hover:bg-purple-100 transition-colors"
+                          >
+                            <Eye size={14} />
+                            View Submissions
+                          </button>
                         </div>
                       )}
                     </div>
@@ -488,6 +496,69 @@ export function AdminAnnouncements() {
                   <Save size={15} />
                   {editId ? 'Update Announcement' : 'Post Announcement'}
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Submissions Modal */}
+      <AnimatePresence>
+        {showSubmissionsId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowSubmissionsId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                <div>
+                  <h3 className="font-bold text-gray-800">Task Submissions</h3>
+                  <p className="text-xs text-gray-500">{announcements.find(a => a.id === showSubmissionsId)?.title}</p>
+                </div>
+                <button onClick={() => setShowSubmissionsId(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              </div>
+
+              <div className="p-5 overflow-y-auto flex-1 space-y-4">
+                {employees.filter(e => e.active && e.position !== 'OJT Instructor').map(emp => {
+                  const sub = getAnnouncementSubmission(showSubmissionsId, emp.id);
+                  if (!sub) return null;
+                  return (
+                    <div key={emp.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="font-bold text-gray-800 text-sm">{emp.name}</p>
+                          <p className="text-xs text-gray-400 mb-2">{new Date(sub.submittedAt).toLocaleString()}</p>
+                          <p className="text-sm text-gray-700 bg-white p-3 rounded-xl border border-slate-200">{sub.message}</p>
+                        </div>
+                        {sub.photo && (
+                          <div className="shrink-0">
+                            <a href={sub.photo} target="_blank" rel="noreferrer" className="block relative group">
+                              <img src={sub.photo} alt="Submission" className="w-24 h-24 rounded-xl object-cover border border-slate-200" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
+                                <Download size={16} className="text-white" />
+                              </div>
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {employees.filter(e => e.active && e.position !== 'OJT Instructor').every(emp => !getAnnouncementSubmission(showSubmissionsId, emp.id)) && (
+                  <div className="text-center py-10 text-gray-400">
+                    <Clock size={40} className="mx-auto mb-2 opacity-20" />
+                    <p>No submissions found for this task yet.</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

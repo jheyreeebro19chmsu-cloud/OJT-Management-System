@@ -18,6 +18,7 @@ import { BarCodeScanner } from 'expo-barcode-scanner';
 import { supabase } from './lib/supabase';
 import RegisterScreen from './screens/RegisterScreen';
 import ApplicationScreen from './screens/ApplicationScreen';
+import TasksScreen from './screens/TasksScreen';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -29,6 +30,7 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [scannedInstructorId, setScannedInstructorId] = useState<string | null>(null);
   const [showApplication, setShowApplication] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
@@ -138,8 +140,12 @@ export default function App() {
                   });
                 }}
               />
-            ) : (
-              <View style={styles.dashboardContainer}>
+            ) : showTasks ? (
+                <TasksScreen 
+                  onBack={() => setShowTasks(false)}
+                />
+              ) : (
+                <View style={styles.dashboardContainer}>
                 <View style={styles.dashHeader}>
                   <View>
                     <Text style={styles.welcomeLabel}>Hello,</Text>
@@ -175,8 +181,15 @@ export default function App() {
                       
                       <Text style={styles.sectionTitle}>Quick Actions</Text>
                       <View style={styles.actionGrid}>
-                        <ActionBtn icon={<ClipboardList color="#2563eb" size={24} />} label="DTR" />
-                        <ActionBtn icon={<Bell color="#2563eb" size={24} />} label="Notifications" />
+                        <ActionBtn 
+                          icon={<ClipboardList color="#2563eb" size={24} />} 
+                          label="Tasks" 
+                          onPress={() => setShowTasks(true)} 
+                        />
+                        <ActionBtn 
+                          icon={<Bell color="#2563eb" size={24} />} 
+                          label="Notifications" 
+                        />
                       </View>
                     </>
                   ) : (
@@ -233,8 +246,8 @@ export default function App() {
   );
 }
 
-const ActionBtn = ({ icon, label }: any) => (
-  <TouchableOpacity style={styles.actionBtn}>
+const ActionBtn = ({ icon, label, onPress }: any) => (
+  <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
     <View style={styles.actionIcon}>{icon}</View>
     <Text style={styles.actionLabel}>{label}</Text>
   </TouchableOpacity>
