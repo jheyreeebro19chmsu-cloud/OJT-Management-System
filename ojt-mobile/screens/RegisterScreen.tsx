@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { User, Building, GraduationCap, ArrowLeft, ArrowRight, Camera, Check } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
-import { sendWelcomeEmailMobile } from '../lib/email';
+import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 
 type Role = 'trainee' | 'admin' | 'hte' | null;
@@ -26,6 +26,11 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  
+  const [otpCode, setOtpCode] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
   
   const [form, setForm] = useState({
     name: '',
@@ -72,6 +77,11 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   };
 
   const handleNext = () => {
+    if (step === 0 && role === 'trainee' && !isOtpVerified) {
+      Alert.alert('Verification Required', 'Please verify your email with the confirmation code first.');
+      return;
+    }
+
     if (step < steps.length - 1) {
       setStep(step + 1);
     } else {
@@ -153,6 +163,34 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       Alert.alert('Registration Error', error.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRequestOtp() {
+    if (!form.email) {
+      Alert.alert('Error', 'Please enter your email first');
+      return;
+    }
+    setLoading(true);
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(code);
+    try {
+      await sendOtpEmailMobile(form.email, code);
+      setOtpSent(true);
+      Alert.alert('Sent', 'Confirmation code has been sent to your email.');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to send code');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleVerifyOtp() {
+    if (otpCode === generatedOtp) {
+      setIsOtpVerified(true);
+      Alert.alert('Success', 'Email verified!');
+    } else {
+      Alert.alert('Error', 'Invalid code');
     }
   }
 
@@ -262,6 +300,43 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             <Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="juan@example.com" />
             
             <Input label="Address" value={form.address} onChange={v => updateForm('address', v)} placeholder="123 Street, City, Province" />
+            
+            {/* OTP UI Section */}
+            <View style={styles.otpSection}>
+              <Text style={styles.otpTitle}>Email Verification</Text>
+              {!isOtpVerified ? (
+                <View>
+                  {!otpSent ? (
+                    <TouchableOpacity style={styles.otpRequestBtn} onPress={handleRequestOtp} disabled={loading}>
+                      <Text style={styles.otpRequestBtnText}>{loading ? 'Sending...' : 'Request Confirmation Code'}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.otpVerifyContainer}>
+                      <TextInput 
+                        style={styles.otpInput} 
+                        placeholder="6-digit code" 
+                        value={otpCode} 
+                        onChangeText={setOtpCode}
+                        keyboardType="numeric"
+                        maxLength={6}
+                      />
+                      <TouchableOpacity style={styles.otpVerifyBtn} onPress={handleVerifyOtp}>
+                        <Text style={styles.otpVerifyBtnText}>Verify</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleRequestOtp}>
+                        <Text style={styles.resendLink}>Resend</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.verifiedBadge}>
+                  <Check color="#16a34a" size={16} />
+                  <Text style={styles.verifiedText}>Verified via Resend API</Text>
+                </View>
+              )}
+            </View>
+
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
           </>
         )}
@@ -522,6 +597,74 @@ const styles = StyleSheet.create({
   retakeText: {
     color: '#2563eb',
     marginTop: 12,
+    fontWeight: '600',
+  },
+  otpSection: {
+    backgroundColor: '#eff6ff',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  otpTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1e40af',
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  otpRequestBtn: {
+    backgroundColor: '#2563eb',
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  otpRequestBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  otpVerifyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  otpInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 10,
+    padding: 10,
+    textAlign: 'center',
+    fontWeight: 'bold',
+    fontSize: 16,
+    letterSpacing: 2,
+  },
+  otpVerifyBtn: {
+    backgroundColor: '#1e40af',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  otpVerifyBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  resendLink: {
+    fontSize: 10,
+    color: '#2563eb',
+    textDecorationLine: 'underline',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  verifiedText: {
+    color: '#166534',
+    fontSize: 14,
     fontWeight: '600',
   }
 });

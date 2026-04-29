@@ -7,12 +7,7 @@ import { Alert } from 'react-native';
 export async function sendWelcomeEmailMobile(toEmail: string, name: string) {
   // Use the same API key logic or a hardcoded placeholder if needed
   // Note: For mobile, it's better to get this from an environment variable or config
-  const RESEND_API_KEY = 'YOUR_RESEND_API_KEY'; 
-
-  if (RESEND_API_KEY === 'YOUR_RESEND_API_KEY') {
-    console.warn('Mobile: Resend API Key not set. Email skipped.');
-    return;
-  }
+  const RESEND_API_KEY = 're_JjQxYuJ5_ARGQvfjVip2y8vqnykCBRpUZ'; 
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
@@ -42,5 +37,40 @@ export async function sendWelcomeEmailMobile(toEmail: string, name: string) {
     return result;
   } catch (error) {
     console.error('Failed to send mobile email:', error);
+  }
+}
+
+/**
+ * Sends an OTP email using Resend API via Fetch
+ */
+export async function sendOtpEmailMobile(toEmail: string, otpCode: string) {
+  const RESEND_API_KEY = 're_JjQxYuJ5_ARGQvfjVip2y8vqnykCBRpUZ'; 
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: 'OJT System <onboarding@resend.dev>',
+        to: [toEmail],
+        subject: 'Your OJT Confirmation Code',
+        html: `
+          <div style="font-family: sans-serif; text-align: center; padding: 20px;">
+            <h2 style="color: #1e293b;">Verification Code</h2>
+            <p>Please use the following code to complete your OJT registration:</p>
+            <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 20px 0;">
+              <span style="font-size: 24px; font-weight: 800; letter-spacing: 5px; color: #2563eb;">${otpCode}</span>
+            </div>
+          </div>
+        `,
+      }),
+    });
+
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to send mobile OTP:', error);
   }
 }

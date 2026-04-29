@@ -36,3 +36,33 @@ export const sendWelcomeEmail = async (toEmail: string, name: string) => {
     return { error };
   }
 };
+
+/**
+ * Helper to send an OTP code for registration
+ */
+export const sendOtpEmail = async (toEmail: string, otpCode: string) => {
+  if (!resend) return { error: 'API Key missing' };
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'OJT System <onboarding@resend.dev>',
+      to: [toEmail],
+      subject: 'Your OJT Confirmation Code',
+      html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; text-align: center; padding: 40px; border: 1px solid #e2e8f0; border-radius: 20px;">
+          <h2 style="color: #1e293b;">Verification Code</h2>
+          <p style="color: #64748b;">Please use the following code to complete your OJT registration:</p>
+          <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 30px 0;">
+            <span style="font-size: 32px; font-weight: 800; letter-spacing: 10px; color: #2563eb;">${otpCode}</span>
+          </div>
+          <p style="color: #94a3b8; font-size: 12px;">This code will expire shortly. Do not share this code with anyone.</p>
+        </div>
+      `,
+    });
+
+    return { data, error };
+  } catch (error) {
+    console.error('Failed to send OTP:', error);
+    return { error };
+  }
+};

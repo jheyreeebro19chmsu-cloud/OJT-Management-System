@@ -10,7 +10,7 @@ import { authAPI } from '../services/authApi';
 import addressesData from '../data/addresses.json';
 import countriesCities from '../data/countries_cities.json';
 import addressApi, { autocompletePlaces, getPlaceDetails, parsePlaceComponents, searchCities, searchStreets } from '../services/addressApi';
-import { sendWelcomeEmail } from '../lib/resend';
+import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 const stepsAdmin = ['Personal Info', 'Face Registration'];
@@ -61,6 +61,13 @@ export function Register() {
     contactPerson: '', contactPhone: '', companyAddress: '',
     birthdate: '', age: '', country: '', region: '', city: '', street: '', barangay: '',
   });
+  
+  const [otpCode, setOtpCode] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
   const [otpRequested, setOtpRequested] = useState(false);
@@ -294,6 +301,37 @@ export function Register() {
       
       return newForm;
     });
+  };
+
+  const handleRequestOtp = async () => {
+    if (!form.email) {
+      alert('Please enter your email first');
+      return;
+    }
+    
+    setOtpVerifying(true);
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(code);
+    
+    try {
+      const { error } = await sendOtpEmail(form.email, code);
+      if (error) throw error;
+      setOtpSent(true);
+      alert('Confirmation code sent to your email!');
+    } catch (err: any) {
+      alert('Failed to send code: ' + err.message);
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
+  const verifyOtp = () => {
+    if (otpCode === generatedOtp) {
+      setIsOtpVerified(true);
+      alert('Email verified successfully!');
+    } else {
+      alert('Invalid confirmation code. Please try again.');
+    }
   };
 
   useEffect(() => {
@@ -668,7 +706,8 @@ export function Register() {
       // For trainees, require full name, age, address and email on manual registration
       const hasAge = Boolean((form as any).age && String((form as any).age).trim());
       const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
-      return hasName && hasEmail && hasAge && hasAddress;
+      const isVerified = role === 'trainee' ? otpVerified : true;
+      return hasName && hasEmail && hasAge && hasAddress && isVerified;
     }
     if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
     if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
@@ -834,8 +873,63 @@ export function Register() {
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
                     <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
                       placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                    {/* OTP UI removed per request */}
                   </div>
+                  
+                  {role === 'trainee' && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Email Verification</label>
+                        {isOtpVerified && (
+                          <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Verified</span>
+                        )}
+                      </div>
+                      
+                      {!isOtpVerified ? (
+                        <div className="flex gap-2">
+                          {!otpSent ? (
+                            <button 
+                              type="button" 
+                              onClick={handleRequestOtp}
+                              disabled={otpVerifying || !form.email}
+                              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+                            >
+                              {otpVerifying ? 'Sending...' : 'Request Confirmation Code'}
+                            </button>
+                          ) : (
+                            <>
+                              <input 
+                                value={otpCode} 
+                                onChange={e => setOtpCode(e.target.value)} 
+                                placeholder="6-digit code" 
+                                className="flex-1 px-3 py-2 border border-blue-200 rounded-xl text-center font-bold tracking-widest focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                maxLength={6}
+                              />
+                              <button 
+                                type="button" 
+                                onClick={verifyOtp}
+                                className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-bold"
+                              >
+                                Verify
+                              </button>
+                              <button 
+                                type="button" 
+                                onClick={handleRequestOtp}
+                                className="px-2 text-[10px] text-blue-600 underline"
+                              >
+                                Resend
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-green-700">
+                          <Check size={16} />
+                          <span className="text-sm font-medium">Email confirmed via Resend API</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
                         <input type="date" value={form.birthdate} onChange={e => update('birthdate', e.target.value)}
