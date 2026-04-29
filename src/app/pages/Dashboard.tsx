@@ -4,7 +4,9 @@ import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { Announcement } from '../types';
+import { Announcement, Employee } from '../types';
+import { supabase } from '../lib/supabase';
+import { sendWelcomeEmail } from '../lib/resend';
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
   info:    { bg: 'bg-blue-50',   border: 'border-blue-200',  icon: 'text-blue-600',   iconBg: 'bg-blue-100' },
@@ -30,6 +32,61 @@ export function Dashboard() {
   const allRecords = employee ? getEmployeeRecords(employee.id) : [];
   const [currentTime, setCurrentTime] = useState(new Date());
   const [dismissedAnn, setDismissedAnn] = useState<Set<string>>(new Set());
+  const [pendingApps, setPendingApps] = useState<Employee[]>([]);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isAdmin) {
+      const fetchPending = async () => {
+        const { data } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('instructor_id', currentUser?.id)
+          .eq('application_status', 'pending');
+        if (data) setPendingApps(data);
+      };
+      fetchPending();
+    }
+  }, [isAdmin, currentUser]);
+
+  const handleApprove = async (student: Employee) => {
+    setProcessingId(student.id);
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ application_status: 'approved' })
+        .eq('id', student.id);
+      if (error) throw error;
+      
+      setPendingApps(prev => prev.filter(a => a.id !== student.id));
+      
+      // Notify student via Resend
+      await sendWelcomeEmail(student.email, student.name); // Reusing welcome email for approval
+      alert('Application approved! Student has been notified.');
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleReject = async (student: Employee) => {
+    setProcessingId(student.id);
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .update({ application_status: 'rejected' })
+        .eq('id', student.id);
+      if (error) throw error;
+      
+      setPendingApps(prev => prev.filter(a => a.id !== student.id));
+      alert('Application rejected.');
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
 
   const activeAnnouncements = getActiveAnnouncements(isAdmin ? 'admin' : 'employee').filter(a => !dismissedAnn.has(a.id));
 
@@ -181,6 +238,55 @@ export function Dashboard() {
           </div>
         )}
       </motion.div>
+
+      {/* Instructor: Pending Applications */}
+      {isAdmin && pendingApps.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <User size={18} className="text-amber-600" />
+                </div>
+                <h3 className="font-bold text-gray-800">Pending OJT Applications</h3>
+              </div>
+              <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full">
+                {pendingApps.length} New
+              </span>
+            </div>
+            
+            <div className="space-y-4">
+              {pendingApps.map(app => (
+                <div key={app.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-bold text-gray-800">{app.name}</p>
+                      <p className="text-xs text-gray-500">{(app as any).year_section || 'No Section'}</p>
+                      <p className="text-xs text-blue-600 mt-1 font-medium">{app.companyName}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleApprove(app)}
+                        disabled={!!processingId}
+                        className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button 
+                        onClick={() => handleReject(app)}
+                        disabled={!!processingId}
+                        className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Quick Action */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
