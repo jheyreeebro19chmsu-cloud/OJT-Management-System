@@ -10,6 +10,7 @@ import { authAPI } from '../services/authApi';
 import addressesData from '../data/addresses.json';
 import countriesCities from '../data/countries_cities.json';
 import addressApi, { autocompletePlaces, getPlaceDetails, parsePlaceComponents, searchCities, searchStreets } from '../services/addressApi';
+import { sendWelcomeEmail } from '../lib/resend';
 
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 const stepsAdmin = ['Personal Info', 'Face Registration'];
@@ -626,8 +627,21 @@ export function Register() {
         if (response.success && response.image_url) {
           updateEmployee(newEmp.id, { photo: response.image_url, faceRegistered: true });
         }
+        // Send Welcome Email via Resend
+        try {
+          await sendWelcomeEmail(newEmp.email, newEmp.name);
+        } catch (emailErr) {
+          console.error('Failed to send welcome email:', emailErr);
+        }
       } catch {
         // Keep local photo if backend is unavailable
+      }
+    } else {
+      // Send Welcome Email even if no photo registration
+      try {
+        await sendWelcomeEmail(newEmp.email, newEmp.name);
+      } catch (emailErr) {
+        console.error('Failed to send welcome email:', emailErr);
       }
     }
     

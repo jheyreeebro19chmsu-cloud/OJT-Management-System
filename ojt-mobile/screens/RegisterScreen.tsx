@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { User, Building, GraduationCap, ArrowLeft, ArrowRight, Camera, Check } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
+import { sendWelcomeEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 
 type Role = 'trainee' | 'admin' | 'hte' | null;
@@ -138,6 +139,13 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         .upsert(profileData);
 
       if (profileError) throw profileError;
+
+      // Send Welcome Email
+      try {
+        await sendWelcomeEmailMobile(form.email, form.name || `${form.firstName} ${form.lastName}`);
+      } catch (emailErr) {
+        console.error('Email failed:', emailErr);
+      }
 
       Alert.alert('Success', 'Registration complete! You can now log in.');
       onSuccess();
