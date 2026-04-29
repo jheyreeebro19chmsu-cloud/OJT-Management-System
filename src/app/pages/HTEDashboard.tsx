@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HTELayout } from '../components/HTELayout';
 import { getHTEDashboard, isHTEAuthenticated } from '../services/hteApi';
-import { BarChart3, Users, Clock, CheckCircle2, AlertCircle, TrendingUp, Loader } from 'lucide-react';
+import { BarChart3, Users, Clock, CheckCircle2, AlertCircle, TrendingUp, Loader, Plus, Link, Search } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { toast } from 'sonner';
 
 interface DashboardMetrics {
   total_applications: number;
@@ -32,6 +34,9 @@ export function HTEDashboard() {
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [recentRecords, setRecentRecords] = useState<TimeRecord[]>([]);
+  const [linkedStudents, setLinkedStudents] = useState<any[]>([]);
+  const [searchId, setSearchId] = useState('');
+  const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,6 +62,56 @@ export function HTEDashboard() {
     }
 
     setLoading(false);
+    fetchLinkedStudents();
+  };
+
+  const fetchLinkedStudents = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('hte_student_access')
+      .select('*, employees(*)')
+      .eq('hte_id', user.id);
+    
+    if (data) setLinkedStudents(data);
+  };
+
+  const handleLinkStudent = async () => {
+    if (!searchId.trim()) return;
+    setIsLinking(true);
+    
+    try {
+      const { data: student } = await supabase
+        .from('employees')
+        .select('id')
+        .eq('id', searchId)
+        .single();
+      
+      if (!student) {
+        toast.error('Student ID not found');
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('hte_student_access')
+        .insert({
+          hte_id: user?.id,
+          student_id: student.id,
+          status: 'pending'
+        });
+      
+      if (error) throw error;
+      
+      toast.success('Access request sent to Instructor');
+      setSearchId('');
+      fetchLinkedStudents();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsLinking(false);
+    }
   };
 
   if (loading) {
@@ -104,52 +159,75 @@ export function HTEDashboard() {
         </div>
 
         {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Total Applications */}
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Total Applications</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{metrics?.total_applications || 0}</p>
-              </div>
-              <Users className="w-10 h-10 text-blue-500 opacity-20" />
+          </div>
+        </div>
+
+        {/* Link Student Section */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+              <Link className="text-blue-600" size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Link New Student</h3>
+              <p className="text-sm text-gray-500">Enter student ID from their mobile app to request monitoring access</p>
             </div>
           </div>
-
-          {/* Pending Applications */}
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-yellow-500">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Pending</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{metrics?.status_counts.pending || 0}</p>
-                <p className="text-xs text-yellow-600 mt-2">Awaiting approval</p>
-              </div>
-              <AlertCircle className="w-10 h-10 text-yellow-500 opacity-20" />
+          
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="text" 
+                value={searchId}
+                onChange={e => setSearchId(e.target.value)}
+                placeholder="Enter Student ID (UUID)..."
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              />
             </div>
+            <button 
+              onClick={handleLinkStudent}
+              disabled={isLinking || !searchId}
+              className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-2"
+            >
+              {isLinking ? <Loader size={18} className="animate-spin" /> : <Plus size={18} />}
+              Request Access
+            </button>
           </div>
+        </div>
 
-          {/* Approved Applications */}
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Approved</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{metrics?.status_counts.approved || 0}</p>
-                <p className="text-xs text-green-600 mt-2">Active placements</p>
+        {/* Linked Students Status */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-6">Monitoring Access</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {linkedStudents.map(link => (
+              <div key={link.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-gray-800">{link.employees?.name}</p>
+                    <p className="text-xs text-gray-500">{link.employees?.course}</p>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
+                    link.status === 'approved' ? 'bg-green-100 text-green-700' : 
+                    link.status === 'rejected' ? 'bg-red-100 text-red-700' : 
+                    'bg-amber-100 text-amber-700'
+                  }`}>
+                    {link.status}
+                  </span>
+                </div>
+                {link.status === 'approved' && (
+                  <button className="w-full mt-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 transition-colors">
+                    View Full Records
+                  </button>
+                )}
               </div>
-              <CheckCircle2 className="w-10 h-10 text-green-500 opacity-20" />
-            </div>
-          </div>
-
-          {/* Unique Students */}
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-medium">Unique Students</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{metrics?.unique_students || 0}</p>
-                <p className="text-xs text-purple-600 mt-2">Currently employed</p>
+            ))}
+            {linkedStudents.length === 0 && (
+              <div className="col-span-full py-10 text-center text-gray-400">
+                <Users size={32} className="mx-auto mb-2 opacity-20" />
+                <p>No students linked yet.</p>
               </div>
-              <TrendingUp className="w-10 h-10 text-purple-500 opacity-20" />
-            </div>
+            )}
           </div>
         </div>
 

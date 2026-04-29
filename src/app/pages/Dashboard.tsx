@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle, AlertTriangle, TrendingUp, Calendar, Camera, ChevronRight, Bell, Info, X, Megaphone } from 'lucide-react';
+import { Clock, CheckCircle, AlertTriangle, TrendingUp, Calendar, Camera, ChevronRight, Bell, Info, X, Megaphone, User, Building } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,6 +33,7 @@ export function Dashboard() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [dismissedAnn, setDismissedAnn] = useState<Set<string>>(new Set());
   const [pendingApps, setPendingApps] = useState<Employee[]>([]);
+  const [hteRequests, setHteRequests] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,9 +46,36 @@ export function Dashboard() {
           .eq('application_status', 'pending');
         if (data) setPendingApps(data);
       };
+
+      const fetchHteRequests = async () => {
+        const { data } = await supabase
+          .from('hte_student_access')
+          .select('*, host_supervisors(*), employees(*)')
+          .eq('status', 'pending');
+        if (data) setHteRequests(data);
+      };
+
       fetchPending();
+      fetchHteRequests();
     }
   }, [isAdmin, currentUser]);
+
+  const handleApproveHte = async (request: any) => {
+    setProcessingId(request.id);
+    try {
+      const { error } = await supabase
+        .from('hte_student_access')
+        .update({ status: 'approved', approved_at: new Date().toISOString() })
+        .eq('id', request.id);
+      if (error) throw error;
+      setHteRequests(prev => prev.filter(r => r.id !== request.id));
+      toast.success('HTE access approved');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
 
   const handleApprove = async (student: Employee) => {
     setProcessingId(student.id);
@@ -278,6 +306,47 @@ export function Dashboard() {
                         className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
                       >
                         Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Instructor: HTE Access Requests */}
+      {isAdmin && hteRequests.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Building size={18} className="text-blue-600" />
+                </div>
+                <h3 className="font-bold text-gray-800">HTE Access Requests</h3>
+              </div>
+              <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">
+                {hteRequests.length} New
+              </span>
+            </div>
+            
+            <div className="space-y-4">
+              {hteRequests.map(req => (
+                <div key={req.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">{req.host_supervisors?.company_name}</p>
+                      <p className="font-bold text-gray-800 mt-1">{req.host_supervisors?.name} <span className="font-normal text-gray-400">requests access to</span> {req.employees?.name}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleApproveHte(req)}
+                        disabled={!!processingId}
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        Approve
                       </button>
                     </div>
                   </div>

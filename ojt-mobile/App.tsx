@@ -20,6 +20,7 @@ import RegisterScreen from './screens/RegisterScreen';
 import ApplicationScreen from './screens/ApplicationScreen';
 import TasksScreen from './screens/TasksScreen';
 import DTRScreen from './screens/DTRScreen';
+import HTELinkScreen from './screens/HTELinkScreen';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -33,6 +34,7 @@ export default function App() {
   const [showApplication, setShowApplication] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
   const [showDTR, setShowDTR] = useState(false);
+  const [showHTELink, setShowHTELink] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
@@ -151,6 +153,11 @@ export default function App() {
                   profile={profile}
                   onBack={() => setShowDTR(false)}
                 />
+              ) : showHTELink ? (
+                <HTELinkScreen 
+                  profile={profile}
+                  onBack={() => setShowHTELink(false)}
+                />
               ) : (
                 <View style={styles.dashboardContainer}>
                 <View style={styles.dashHeader}>
@@ -197,6 +204,11 @@ export default function App() {
                           icon={<FileText color="#2563eb" size={24} />} 
                           label="Tasks" 
                           onPress={() => setShowTasks(true)} 
+                        />
+                        <ActionBtn 
+                          icon={<Building color="#2563eb" size={24} />} 
+                          label="HTE Link" 
+                          onPress={() => setShowHTELink(true)} 
                         />
                       </View>
                     </>
