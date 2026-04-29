@@ -19,6 +19,7 @@ import { supabase } from './lib/supabase';
 import RegisterScreen from './screens/RegisterScreen';
 import ApplicationScreen from './screens/ApplicationScreen';
 import TasksScreen from './screens/TasksScreen';
+import DTRScreen from './screens/DTRScreen';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -31,6 +32,7 @@ export default function App() {
   const [scannedInstructorId, setScannedInstructorId] = useState<string | null>(null);
   const [showApplication, setShowApplication] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
+  const [showDTR, setShowDTR] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
@@ -144,6 +146,11 @@ export default function App() {
                 <TasksScreen 
                   onBack={() => setShowTasks(false)}
                 />
+              ) : showDTR ? (
+                <DTRScreen 
+                  profile={profile}
+                  onBack={() => setShowDTR(false)}
+                />
               ) : (
                 <View style={styles.dashboardContainer}>
                 <View style={styles.dashHeader}>
@@ -183,12 +190,13 @@ export default function App() {
                       <View style={styles.actionGrid}>
                         <ActionBtn 
                           icon={<ClipboardList color="#2563eb" size={24} />} 
-                          label="Tasks" 
-                          onPress={() => setShowTasks(true)} 
+                          label="DTR" 
+                          onPress={() => setShowDTR(true)} 
                         />
                         <ActionBtn 
-                          icon={<Bell color="#2563eb" size={24} />} 
-                          label="Notifications" 
+                          icon={<FileText color="#2563eb" size={24} />} 
+                          label="Tasks" 
+                          onPress={() => setShowTasks(true)} 
                         />
                       </View>
                     </>
