@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "download-models": "node scripts/download-face-models.js"
+    "download-models": "node scripts/download-face-models.cjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
