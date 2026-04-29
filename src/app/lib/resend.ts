@@ -1,22 +1,22 @@
 /**
- * Browser-friendly Resend implementation using fetch
+ * Backend-proxied Resend implementation
+ * Calls the Railway backend to send emails securely without CORS issues
  */
 
-const resendApiKey = import.meta.env.VITE_RESEND_API_KEY;
-
-const RESEND_API_URL = 'https://api.resend.com/emails';
+const API_BASE = import.meta.env.VITE_DJANGO_API_URL;
+const API_KEY = import.meta.env.VITE_SECURITY_API_KEY;
 
 const sendEmail = async (payload: any) => {
-  if (!resendApiKey) {
-    return { error: 'VITE_RESEND_API_KEY is not set in environment variables' };
+  if (!API_BASE) {
+    return { error: 'VITE_DJANGO_API_URL is not set' };
   }
 
   try {
-    const response = await fetch(RESEND_API_URL, {
+    const response = await fetch(`${API_BASE}/email/send/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${resendApiKey}`,
+        'X-Api-Key': API_KEY || '',
       },
       body: JSON.stringify(payload),
     });
@@ -24,20 +24,19 @@ const sendEmail = async (payload: any) => {
     const data = await response.json();
 
     if (!response.ok) {
-      return { error: data.message || 'Failed to send email' };
+      return { error: data.error || data.message || 'Failed to send email via backend' };
     }
 
     return { data };
   } catch (error: any) {
-    console.error('Email send error:', error);
+    console.error('Email proxy error:', error);
     return { error: error.message || String(error) };
   }
 };
 
 export const sendWelcomeEmail = async (toEmail: string, name: string) => {
   return sendEmail({
-    from: 'OJT System <onboarding@resend.dev>',
-    to: [toEmail],
+    to: toEmail,
     subject: 'Welcome to OJT Management System',
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
@@ -51,8 +50,7 @@ export const sendWelcomeEmail = async (toEmail: string, name: string) => {
 
 export const sendOtpEmail = async (toEmail: string, otpCode: string) => {
   return sendEmail({
-    from: 'OJT System <onboarding@resend.dev>',
-    to: [toEmail],
+    to: toEmail,
     subject: 'Your OJT Confirmation Code',
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; text-align: center; padding: 40px; border: 1px solid #e2e8f0; border-radius: 20px;">

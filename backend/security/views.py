@@ -3,6 +3,7 @@ import base64
 import uuid
 from typing import Any, Dict, List
 import logging
+import resend
 
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
@@ -58,6 +59,40 @@ def _content_file_from_base64(data: str, prefix: str) -> ContentFile:
 
 def _employee_id_from_request(request: HttpRequest, data: Dict[str, Any]):
     return request.POST.get("employee_id") or data.get("employee_id")
+
+
+@csrf_exempt
+@require_security_api_key
+def send_email(request: HttpRequest) -> JsonResponse:
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    data = _json_body(request)
+    to_email = data.get("to")
+    subject = data.get("subject")
+    html_content = data.get("html")
+
+    if not to_email or not subject or not html_content:
+        return JsonResponse({"error": "to, subject, and html are required"}, status=400)
+
+    # Use API key from settings or env
+    api_key = getattr(settings, "RESEND_API_KEY", os.environ.get("VITE_RESEND_API_KEY"))
+    if not api_key:
+        return JsonResponse({"error": "Resend API key not configured on server"}, status=500)
+
+    resend.api_key = api_key
+    
+    try:
+        params = {
+            "from": "OJT System <onboarding@resend.dev>",
+            "to": to_email if isinstance(to_email, list) else [to_email],
+            "subject": subject,
+            "html": html_content,
+        }
+        r = resend.Emails.send(params)
+        return JsonResponse({"success": True, "data": r})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 @csrf_exempt
