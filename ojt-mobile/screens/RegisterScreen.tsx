@@ -31,6 +31,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     firstName: '',
     lastName: '',
     middleInitial: '',
+    birthdate: '',
     age: '',
     address: '',
     email: '',
@@ -48,7 +49,25 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
                 ['Personal', 'Company', 'School', 'Photo'];
 
   const updateForm = (key: string, value: string) => {
-    setForm(prev => ({ ...prev, [key]: value }));
+    setForm(prev => {
+      const newForm = { ...prev, [key]: value };
+      
+      // Auto-calculate age if birthdate changes
+      if (key === 'birthdate' && value.length >= 10) {
+        const birthDate = new Date(value);
+        if (!isNaN(birthDate.getTime())) {
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const m = today.getMonth() - birthDate.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          newForm.age = age.toString();
+        }
+      }
+      
+      return newForm;
+    });
   };
 
   const handleNext = () => {
@@ -213,12 +232,26 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Input label="Age" value={form.age} onChange={v => updateForm('age', v)} placeholder="20" keyboardType="numeric" />
+                <Input 
+                  label="Birthdate" 
+                  value={form.birthdate} 
+                  onChange={v => updateForm('birthdate', v)} 
+                  placeholder="YYYY-MM-DD" 
+                />
               </View>
-              <View style={{ flex: 2, marginLeft: 10 }}>
-                <Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="juan@example.com" />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Input 
+                  label="Age" 
+                  value={form.age} 
+                  onChange={v => updateForm('age', v)} 
+                  placeholder="20" 
+                  keyboardType="numeric" 
+                  editable={false}
+                />
               </View>
             </View>
+            
+            <Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="juan@example.com" />
             
             <Input label="Address" value={form.address} onChange={v => updateForm('address', v)} placeholder="123 Street, City, Province" />
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
@@ -304,17 +337,18 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   );
 }
 
-function Input({ label, value, onChange, placeholder, secure = false, keyboardType = 'default' }: any) {
+function Input({ label, value, onChange, placeholder, secure = false, keyboardType = 'default', editable = true }: any) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, !editable && { backgroundColor: '#f1f5f9', color: '#64748b' }]}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
         secureTextEntry={secure}
         keyboardType={keyboardType}
+        editable={editable}
         autoCapitalize={secure ? 'none' : 'words'}
       />
     </View>

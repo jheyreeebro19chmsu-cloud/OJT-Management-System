@@ -58,7 +58,7 @@ export function Register() {
     companyName: '', supervisorName: '', schoolName: '', course: '',
     employeeId: '', startDate: '', endDate: '', requiredHours: 486,
     contactPerson: '', contactPhone: '', companyAddress: '',
-    age: '', country: '', region: '', city: '', street: '', barangay: '',
+    birthdate: '', age: '', country: '', region: '', city: '', street: '', barangay: '',
   });
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
@@ -273,7 +273,27 @@ export function Register() {
     }
   };
 
-  const update = (field: string, value: string | number) => setForm(p => ({ ...p, [field]: value }));
+  const update = (field: string, value: string | number) => {
+    setForm(p => {
+      const newForm = { ...p, [field]: value };
+      
+      // Auto-calculate age if birthdate changes
+      if (field === 'birthdate' && typeof value === 'string' && value) {
+        const birthDate = new Date(value);
+        if (!isNaN(birthDate.getTime())) {
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const m = today.getMonth() - birthDate.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          newForm.age = age.toString();
+        }
+      }
+      
+      return newForm;
+    });
+  };
 
   useEffect(() => {
     // Update cities when country changes
@@ -803,9 +823,14 @@ export function Register() {
                     {/* OTP UI removed per request */}
                   </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Age *</label>
-                        <input value={form.age} onChange={e => update('age', e.target.value)} type="number" min={14}
-                          placeholder="e.g. 18" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
+                        <input type="date" value={form.birthdate} onChange={e => update('birthdate', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
+                        <input value={form.age} disabled type="number"
+                          placeholder="Enter birthdate first" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500" />
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Address</label>
