@@ -74,8 +74,6 @@ export function Register() {
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
   const [otpRequested, setOtpRequested] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [otpVerified, setOtpVerified] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
 
@@ -569,7 +567,7 @@ export function Register() {
   const handleSubmit = async () => {
     const empId = form.employeeId || `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
     // If OTP was verified against backend, attempt server registration first
-        if (otpVerified) {
+        if (isOtpVerified) {
       try {
           let first_name = form.first_name;
           let last_name = form.last_name;
@@ -728,7 +726,7 @@ export function Register() {
       // For trainees, require full name, age, address and email on manual registration
       const hasAge = Boolean((form as any).age && String((form as any).age).trim());
       const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
-      const isVerified = role === 'trainee' ? otpVerified : true;
+      const isVerified = role === 'trainee' ? isOtpVerified : true;
       return hasName && hasEmail && hasAge && hasAddress && isVerified;
     }
     if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
