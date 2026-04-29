@@ -31,9 +31,9 @@ export const sendWelcomeEmail = async (toEmail: string, name: string) => {
     });
 
     return { data, error };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to send email:', error);
-    return { error };
+    return { error: error.message || String(error) };
   }
 };
 
@@ -61,8 +61,8 @@ export const sendOtpEmail = async (toEmail: string, otpCode: string) => {
     });
 
     return { data, error };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to send OTP:', error);
-    return { error };
+    return { error: error.message || String(error) };
   }
 };

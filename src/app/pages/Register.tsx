@@ -315,12 +315,14 @@ export function Register() {
     setGeneratedOtp(code);
     
     try {
-      const { error } = await sendOtpEmail(form.email, code);
-      if (error) throw error;
+      const result = await sendOtpEmail(form.email, code);
+      if (result.error) throw new Error(typeof result.error === 'string' ? result.error : JSON.stringify(result.error));
+      
       setOtpSent(true);
       alert('Confirmation code sent to your email!');
     } catch (err: any) {
-      alert('Failed to send code: ' + err.message);
+      console.error('OTP Error:', err);
+      alert('Failed to send code: ' + (err.message || 'Unknown error'));
     } finally {
       setOtpVerifying(false);
     }
