@@ -11,6 +11,7 @@ import addressesData from '../data/addresses.json';
 import countriesCities from '../data/countries_cities.json';
 import addressApi, { autocompletePlaces, getPlaceDetails, parsePlaceComponents, searchCities, searchStreets } from '../services/addressApi';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
+import { QRCodeSVG } from 'qrcode.react';
 
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 const stepsAdmin = ['Personal Info', 'Face Registration'];
@@ -67,6 +68,8 @@ export function Register() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [registeredInstructorId, setRegisteredInstructorId] = useState('');
 
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
@@ -331,6 +334,14 @@ export function Register() {
       alert('Email verified successfully!');
     } else {
       alert('Invalid confirmation code. Please try again.');
+    }
+  };
+
+  const handleShareQr = () => {
+    const canvas = document.getElementById('instructor-qr') as HTMLCanvasElement;
+    if (canvas) {
+      // In a real browser app, we'd use navigator.share or download
+      alert('QR Code is ready! You can right-click the image to save and share it.');
     }
   };
 
@@ -656,6 +667,10 @@ export function Register() {
       password: generatedPassword,
     });
 
+    if (role === 'admin') {
+      setRegisteredInstructorId(newEmp.id);
+    }
+
     if (photo && isSecurityApiConfigured()) {
       try {
         const response = await registerFace({
@@ -686,6 +701,11 @@ export function Register() {
     // Auto-redirect based on role
     if (role === 'admin') {
       navigate('/admin');
+      if (role === 'admin') {
+        setRegistrationComplete(true);
+      } else {
+        navigate(role === 'host' ? '/host/dashboard' : '/employee/dashboard');
+      }
     } else {
       navigate('/app');
     }
@@ -697,7 +717,9 @@ export function Register() {
     const hasEmail = Boolean((form as any).email && (form as any).email.toString().trim());
 
     if (role === 'admin') {
-      if (step === 0) return hasName && hasEmail;
+      const hasDept = Boolean((form as any).department && (form as any).department.trim());
+      const hasCourse = Boolean((form as any).course && (form as any).course.trim());
+      if (step === 0) return hasName && hasEmail && hasDept && hasCourse && isOtpVerified;
       return faceRegistered;
     }
 
@@ -723,6 +745,40 @@ export function Register() {
   };
 
   const locConfig = locationStatusConfig[locationStatus];
+
+  if (registrationComplete && role === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white max-w-md w-full rounded-3xl shadow-xl p-8 text-center">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Check size={40} className="text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Registration Successful!</h2>
+          <p className="text-gray-500 mb-8">Your OJT Instructor account has been created. Here is your enrollment QR Code:</p>
+          
+          <div className="bg-slate-50 p-6 rounded-2xl inline-block mb-8 border-2 border-dashed border-slate-200">
+            <QRCodeSVG 
+              id="instructor-qr"
+              value={`enroll:${registeredInstructorId}`} 
+              size={200}
+              level="H"
+              includeMargin={true}
+            />
+          </div>
+          
+          <div className="space-y-3">
+            <button onClick={handleShareQr} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+              Share QR Code
+            </button>
+            <button onClick={() => navigate('/login')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+              Go to Login
+            </button>
+          </div>
+          <p className="mt-6 text-xs text-slate-400 uppercase tracking-widest font-bold">Instruction: Students must scan this code to enroll under you.</p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">

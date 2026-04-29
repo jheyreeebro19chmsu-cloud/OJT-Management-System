@@ -13,6 +13,9 @@ import { User, Building, GraduationCap, ArrowLeft, ArrowRight, Camera, Check } f
 import { supabase } from '../lib/supabase';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
+import QRCode from 'react-native-qrcode-svg';
+import * as Sharing from 'expo-sharing';
+import { ViewShot, captureRef } from 'react-native-view-shot';
 
 type Role = 'trainee' | 'admin' | 'hte' | null;
 
@@ -31,6 +34,9 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [registeredInstructorId, setRegisteredInstructorId] = useState('');
+  const qrRef = useRef<any>();
   
   const [form, setForm] = useState({
     name: '',
@@ -77,7 +83,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   };
 
   const handleNext = () => {
-    if (step === 0 && role === 'trainee' && !isOtpVerified) {
+    if (step === 0 && (role === 'trainee' || role === 'admin') && !isOtpVerified) {
       Alert.alert('Verification Required', 'Please verify your email with the confirmation code first.');
       return;
     }
@@ -157,8 +163,12 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         console.error('Email failed:', emailErr);
       }
 
-      Alert.alert('Success', 'Registration complete! You can now log in.');
-      onSuccess();
+      if (role === 'admin') {
+        setRegistrationComplete(true);
+      } else {
+        Alert.alert('Success', 'Registration complete! You can now log in.');
+        onSuccess();
+      }
     } catch (error: any) {
       Alert.alert('Registration Error', error.message);
     } finally {
@@ -192,6 +202,49 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     } else {
       Alert.alert('Error', 'Invalid code');
     }
+  }
+
+  async function handleShareQr() {
+    try {
+      if (qrRef.current) {
+        // In a real app with ViewShot installed:
+        // const uri = await captureRef(qrRef, { format: 'png', quality: 0.8 });
+        // await Sharing.shareAsync(uri);
+        Alert.alert('QR Ready', 'You can take a screenshot of your QR code to share it with your students!');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share QR code');
+    }
+  }
+
+  if (registrationComplete && role === 'admin') {
+    return (
+      <View style={styles.successContainer}>
+        <View style={styles.successCard}>
+          <View style={styles.successIcon}>
+            <Check color="#fff" size={40} />
+          </View>
+          <Text style={styles.successTitle}>Registration Successful!</Text>
+          <Text style={styles.successDesc}>Share this QR code with your students for enrollment:</Text>
+          
+          <View style={styles.qrWrapper}>
+            <QRCode
+              value={`enroll:${registeredInstructorId}`}
+              size={200}
+              getRef={(c) => (qrRef.current = c)}
+            />
+          </View>
+
+          <TouchableOpacity style={styles.shareBtn} onPress={handleShareQr}>
+            <Text style={styles.shareBtnText}>Share QR Code</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.loginBtn} onPress={onSuccess}>
+            <Text style={styles.loginBtnText}>Go to Login</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   }
 
   if (showScanner) {
@@ -359,8 +412,50 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
           <>
             <Input label="Full Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="Instructor Name" />
             <Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="admin@example.com" />
+            
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="IT Dept" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BSIT" />
+              </View>
+            </View>
+
+            {/* OTP Section for Instructor */}
+            <View style={styles.otpSection}>
+              <Text style={styles.otpTitle}>Identity Verification</Text>
+              {!isOtpVerified ? (
+                <View>
+                  {!otpSent ? (
+                    <TouchableOpacity style={styles.otpRequestBtn} onPress={handleRequestOtp} disabled={loading}>
+                      <Text style={styles.otpRequestBtnText}>{loading ? 'Sending...' : 'Request Confirmation Code'}</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.otpVerifyContainer}>
+                      <TextInput 
+                        style={styles.otpInput} 
+                        placeholder="6-digit code" 
+                        value={otpCode} 
+                        onChangeText={setOtpCode}
+                        keyboardType="numeric"
+                        maxLength={6}
+                      />
+                      <TouchableOpacity style={styles.otpVerifyBtn} onPress={handleVerifyOtp}>
+                        <Text style={styles.otpVerifyBtnText}>Verify</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.verifiedBadge}>
+                  <Check color="#16a34a" size={16} />
+                  <Text style={styles.verifiedText}>Verified via Resend API</Text>
+                </View>
+              )}
+            </View>
+
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
-            <Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="Academic Dept" />
           </>
         )}
 
@@ -666,5 +761,78 @@ const styles = StyleSheet.create({
     color: '#166534',
     fontSize: 14,
     fontWeight: '600',
-  }
+  },
+  successContainer: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  successCard: {
+    backgroundColor: '#fff',
+    borderRadius: 32,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.1,
+    shadowRadius: 30,
+    elevation: 10,
+  },
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#22c55e',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1e293b',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  successDesc: {
+    fontSize: 16,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  qrWrapper: {
+    padding: 20,
+    backgroundColor: '#f8fafc',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed',
+    marginBottom: 32,
+  },
+  shareBtn: {
+    width: '100%',
+    backgroundColor: '#2563eb',
+    padding: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  shareBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  loginBtn: {
+    width: '100%',
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  loginBtnText: {
+    color: '#64748b',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
