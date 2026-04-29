@@ -1,68 +1,66 @@
-import { Resend } from 'resend';
+/**
+ * Browser-friendly Resend implementation using fetch
+ */
 
-// Get API Key from environment variables
 const resendApiKey = import.meta.env.VITE_RESEND_API_KEY;
 
-export const resend = resendApiKey ? new Resend(resendApiKey) : null;
+const RESEND_API_URL = 'https://api.resend.com/emails';
 
-/**
- * Helper to send a welcome email to a new trainee
- */
-export const sendWelcomeEmail = async (toEmail: string, name: string) => {
-  if (!resend) {
-    console.warn('Resend API Key is missing. Email not sent.');
-    return { error: 'API Key missing' };
+const sendEmail = async (payload: any) => {
+  if (!resendApiKey) {
+    return { error: 'VITE_RESEND_API_KEY is not set in environment variables' };
   }
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'OJT System <onboarding@resend.dev>',
-      to: [toEmail],
-      subject: 'Welcome to OJT Management System',
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #2563eb;">Welcome, ${name}!</h1>
-          <p>Your registration for the OJT Management System was successful.</p>
-          <p>You can now log in to the portal to track your hours and manage your requirements.</p>
-          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="color: #64748b; font-size: 12px;">This is an automated message from your OJT Coordinator.</p>
-        </div>
-      `,
+    const response = await fetch(RESEND_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${resendApiKey}`,
+      },
+      body: JSON.stringify(payload),
     });
 
-    return { data, error };
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { error: data.message || 'Failed to send email' };
+    }
+
+    return { data };
   } catch (error: any) {
-    console.error('Failed to send email:', error);
+    console.error('Email send error:', error);
     return { error: error.message || String(error) };
   }
 };
 
-/**
- * Helper to send an OTP code for registration
- */
+export const sendWelcomeEmail = async (toEmail: string, name: string) => {
+  return sendEmail({
+    from: 'OJT System <onboarding@resend.dev>',
+    to: [toEmail],
+    subject: 'Welcome to OJT Management System',
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2563eb;">Welcome, ${name}!</h1>
+        <p>Your registration for the OJT Management System was successful.</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+      </div>
+    `,
+  });
+};
+
 export const sendOtpEmail = async (toEmail: string, otpCode: string) => {
-  if (!resend) return { error: 'API Key missing' };
-
-  try {
-    const { data, error } = await resend.emails.send({
-      from: 'OJT System <onboarding@resend.dev>',
-      to: [toEmail],
-      subject: 'Your OJT Confirmation Code',
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; text-align: center; padding: 40px; border: 1px solid #e2e8f0; border-radius: 20px;">
-          <h2 style="color: #1e293b;">Verification Code</h2>
-          <p style="color: #64748b;">Please use the following code to complete your OJT registration:</p>
-          <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 30px 0;">
-            <span style="font-size: 32px; font-weight: 800; letter-spacing: 10px; color: #2563eb;">${otpCode}</span>
-          </div>
-          <p style="color: #94a3b8; font-size: 12px;">This code will expire shortly. Do not share this code with anyone.</p>
+  return sendEmail({
+    from: 'OJT System <onboarding@resend.dev>',
+    to: [toEmail],
+    subject: 'Your OJT Confirmation Code',
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; text-align: center; padding: 40px; border: 1px solid #e2e8f0; border-radius: 20px;">
+        <h2 style="color: #1e293b;">Verification Code</h2>
+        <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 30px 0;">
+          <span style="font-size: 32px; font-weight: 800; letter-spacing: 10px; color: #2563eb;">${otpCode}</span>
         </div>
-      `,
-    });
-
-    return { data, error };
-  } catch (error: any) {
-    console.error('Failed to send OTP:', error);
-    return { error: error.message || String(error) };
-  }
+      </div>
+    `,
+  });
 };
