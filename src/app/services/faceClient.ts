@@ -7,17 +7,25 @@ export async function loadFaceModels(modelsPath = '/models') {
   if (_modelsLoaded) return true;
   if (_modelsLoading) return false;
   _modelsLoading = true;
-  const candidates = [modelsPath, 'https://cdn.jsdelivr.net/npm/face-api.js@0.20.0/weights'];
+  
+  // High-accuracy models usually require SsdMobilenetv1
+  const candidates = [
+    'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model', // High quality fallback
+    'https://cdn.jsdelivr.net/npm/face-api.js@0.20.0/weights',
+    modelsPath
+  ];
+
   for (const base of candidates) {
     try {
-      await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+      // Load SSD for better accuracy
+      await faceapi.nets.ssdMobilenetv1.loadFromUri(base);
       await faceapi.nets.faceRecognitionNet.loadFromUri(base);
       await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+      await faceapi.nets.tinyFaceDetector.loadFromUri(base);
       _modelsLoaded = true;
       return true;
     } catch (e) {
       console.warn('Failed to load face-api models from', base, e);
-      // try next
     }
   }
   _modelsLoaded = false;
@@ -41,8 +49,13 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   if (!ok) return false;
   try {
     const img = await createImageElement(dataUrl);
-    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
-    return !!detection;
+    // Use SSD Mobilenet for high accuracy detection
+    const detection = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 })).withFaceLandmarks();
+    if (detection) return true;
+    
+    // Fallback to Tiny with very loose threshold
+    const tiny = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 256 })).withFaceLandmarks();
+    return !!tiny;
   } catch (e) {
     console.warn('detectFaceInDataUrl error', e);
     return false;
@@ -54,9 +67,19 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   if (!ok) return null;
   try {
     const img = await createImageElement(dataUrl);
-    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-    if (!detection || !detection.descriptor) return null;
-    return detection.descriptor as Float32Array;
+    const detection = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+    
+    if (detection && detection.descriptor) return detection.descriptor as Float32Array;
+
+    // Tiny fallback
+    const tiny = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 256 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+      
+    if (tiny && tiny.descriptor) return tiny.descriptor as Float32Array;
+    return null;
   } catch (e) {
     console.warn('computeDescriptorFromDataUrl error', e);
     return null;
