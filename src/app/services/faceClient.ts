@@ -8,20 +8,14 @@ export async function loadFaceModels(modelsPath = '/models') {
   if (_modelsLoading) return false;
   _modelsLoading = true;
   
-  // High-accuracy models usually require SsdMobilenetv1
-  const candidates = [
-    'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model', // High quality fallback
-    'https://cdn.jsdelivr.net/npm/face-api.js@0.20.0/weights',
-    modelsPath
-  ];
+  // Use local models first for instant loading without internet
+  const candidates = [modelsPath, 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model'];
 
   for (const base of candidates) {
     try {
-      // Load SSD for better accuracy
-      await faceapi.nets.ssdMobilenetv1.loadFromUri(base);
-      await faceapi.nets.faceRecognitionNet.loadFromUri(base);
-      await faceapi.nets.faceLandmark68Net.loadFromUri(base);
       await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+      await faceapi.nets.faceRecognitionNet.loadFromUri(base);
       _modelsLoaded = true;
       return true;
     } catch (e) {
@@ -49,8 +43,8 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   if (!ok) return false;
   try {
     const img = await createImageElement(dataUrl);
-    // Optimized Tiny detector for speed + reliability
-    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 224 })).withFaceLandmarks();
+    // 160 is very fast but still accurate enough for a clear face
+    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 160 })).withFaceLandmarks();
     return !!detection;
   } catch (e) {
     console.warn('detectFaceInDataUrl error', e);
@@ -63,7 +57,7 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   if (!ok) return null;
   try {
     const img = await createImageElement(dataUrl);
-    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 224 }))
+    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 160 }))
       .withFaceLandmarks()
       .withFaceDescriptor();
     
