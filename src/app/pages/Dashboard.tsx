@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Clock, CheckCircle, AlertTriangle, TrendingUp, Calendar, Camera, ChevronRight, Bell, Info, X, Megaphone, User, Building } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
@@ -89,10 +90,10 @@ export function Dashboard() {
       setPendingApps(prev => prev.filter(a => a.id !== student.id));
       
       // Notify student via Resend
-      await sendWelcomeEmail(student.email, student.name); // Reusing welcome email for approval
-      alert('Application approved! Student has been notified.');
+      await sendWelcomeEmail(student.email, student.name);
+      toast.success('Application approved! Student notified.');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
     } finally {
       setProcessingId(null);
     }
@@ -108,9 +109,26 @@ export function Dashboard() {
       if (error) throw error;
       
       setPendingApps(prev => prev.filter(a => a.id !== student.id));
-      alert('Application rejected.');
+      toast.success('Application rejected.');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleRejectHte = async (request: any) => {
+    setProcessingId(request.id);
+    try {
+      const { error } = await supabase
+        .from('hte_student_access')
+        .update({ status: 'rejected' })
+        .eq('id', request.id);
+      if (error) throw error;
+      setHteRequests(prev => prev.filter(r => r.id !== request.id));
+      toast.success('HTE access rejected');
+    } catch (err: any) {
+      toast.error(err.message);
     } finally {
       setProcessingId(null);
     }
@@ -347,6 +365,13 @@ export function Dashboard() {
                         className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
                       >
                         Approve
+                      </button>
+                      <button 
+                        onClick={() => handleRejectHte(req)}
+                        disabled={!!processingId}
+                        className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
+                      >
+                        Reject
                       </button>
                     </div>
                   </div>

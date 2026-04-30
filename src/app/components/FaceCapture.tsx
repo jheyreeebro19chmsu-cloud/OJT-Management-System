@@ -152,21 +152,16 @@ export function FaceCapture({
       setScanMessage('Position your face within the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
-      await delay(2000);
+      // Reduced delay for better UX
+      await delay(800);
       setState('analyzing');
-      setScanMessage('Detecting facial features...');
-      setProgress(30);
+      setScanMessage('Detecting face...');
+      setProgress(40);
 
-      await delay(1500);
-      setScanMessage('Analyzing biometric data...');
-      setProgress(60);
-
-      await delay(1500);
+      await delay(500);
       setState('verifying');
-      setScanMessage(mode === 'verify' ? 'Verifying identity...' : 'Registering face...');
-      setProgress(85);
-
-      await delay(1200);
+      setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
+      setProgress(80);
 
       const img = captureFrame();
       const canUseBackend = mode === 'verify' && isSecurityApiConfigured() && Boolean(employeeId || registeredImage);

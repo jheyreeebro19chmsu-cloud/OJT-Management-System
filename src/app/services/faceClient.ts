@@ -49,13 +49,9 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   if (!ok) return false;
   try {
     const img = await createImageElement(dataUrl);
-    // Use SSD Mobilenet for high accuracy detection
-    const detection = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 })).withFaceLandmarks();
-    if (detection) return true;
-    
-    // Fallback to Tiny with very loose threshold
-    const tiny = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 256 })).withFaceLandmarks();
-    return !!tiny;
+    // Optimized Tiny detector for speed + reliability
+    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 224 })).withFaceLandmarks();
+    return !!detection;
   } catch (e) {
     console.warn('detectFaceInDataUrl error', e);
     return false;
@@ -67,18 +63,11 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   if (!ok) return null;
   try {
     const img = await createImageElement(dataUrl);
-    const detection = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 224 }))
       .withFaceLandmarks()
       .withFaceDescriptor();
     
     if (detection && detection.descriptor) return detection.descriptor as Float32Array;
-
-    // Tiny fallback
-    const tiny = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 256 }))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-      
-    if (tiny && tiny.descriptor) return tiny.descriptor as Float32Array;
     return null;
   } catch (e) {
     console.warn('computeDescriptorFromDataUrl error', e);
