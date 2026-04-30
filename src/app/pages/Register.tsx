@@ -941,7 +941,6 @@ export function Register() {
                       />
                     </div>
                   </div>
-                  </div>
                   
                   <div className="flex items-center gap-2 px-1">
                     <input type="checkbox" id="show-pw" checked={showPassword} onChange={() => setShowPassword(!showPassword)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
