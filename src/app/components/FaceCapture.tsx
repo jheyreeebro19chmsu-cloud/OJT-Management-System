@@ -408,21 +408,13 @@ export function FaceCapture({
       {/* Action buttons */}
       <div className="flex gap-3 w-full max-w-[320px]">
         {state === 'failed' && (
-          <div className="flex-1 flex flex-col gap-2">
-            <button
-              onClick={handleRetry}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 transition-colors"
-            >
-              <RefreshCw size={16} />
-              Try Again
-            </button>
-            <button
-              onClick={() => { stopCamera(); onSuccess(undefined); }}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold hover:bg-amber-100 transition-colors"
-            >
-              Skip & Use Demo Mode
-            </button>
-          </div>
+          <button
+            onClick={handleRetry}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 transition-colors"
+          >
+            <RefreshCw size={16} />
+            Try Again
+          </button>
         )}
         {!['success'].includes(state) && (
           <button
