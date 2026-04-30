@@ -1017,130 +1017,127 @@ export function Register() {
                               </AnimatePresence>
                             </div>
                           )}
-                    </div>
-                  </>
-                )}
-              </motion.div>
-            )}
+                        </div>
+                      </>
+                    )}
                   </motion.div>
                 )}
 
-            {step === 1 && (
-              <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
-                    <Building size={16} className="text-sky-700" />
-                  </div>
-                  <h2 className="font-bold text-gray-800">Company Information</h2>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
-                    <input value={form.companyName} onChange={e => update('companyName', e.target.value)}
-                      placeholder="Company Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
-                    <input value={form.supervisorName} onChange={e => update('supervisorName', e.target.value)}
-                      placeholder="Mr./Ms. Supervisor" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
-                      <input type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                {role !== null && step === 1 && (
+                  <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
+                        <Building size={16} className="text-sky-700" />
+                      </div>
+                      <h2 className="font-bold text-gray-800">Company Information</h2>
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
-                      <input type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
+                        <input value={form.companyName} onChange={e => update('companyName', e.target.value)}
+                          placeholder="Company Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
+                        <input value={form.supervisorName} onChange={e => update('supervisorName', e.target.value)}
+                          placeholder="Mr./Ms. Supervisor" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
+                          <input type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
+                          <input type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
+                        <input type="number" value={form.requiredHours} onChange={e => update('requiredHours', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
-                    <input type="number" value={form.requiredHours} onChange={e => update('requiredHours', e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 2 && (
-              <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                    <GraduationCap size={16} className="text-green-700" />
-                  </div>
-                  <h2 className="font-bold text-gray-800">School Information</h2>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">School / University *</label>
-                    <input value={form.schoolName} onChange={e => update('schoolName', e.target.value)}
-                      placeholder="University Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Program *</label>
-                    <input value={form.course} onChange={e => update('course', e.target.value)}
-                      placeholder="e.g. BS Information Technology" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-                </div>
-
-              </motion.div>
-            )}
-
-            {((role === 'trainee' && step === 3) || (role === 'admin' && step === 1)) && (
-              <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Camera size={16} className="text-purple-700" />
-                  </div>
-                  <h2 className="font-bold text-gray-800">Face Registration</h2>
-                </div>
-                <p className="text-sm text-gray-500 mb-4">Register your face for biometric time recording. The captured image will be stored in the system for identity verification during clock-in/out.</p>
-
-                {faceCapturing ? (
-                  <FaceCapture
-                    mode="register"
-                    employeeName={form.name}
-                    onSuccess={handleFaceSuccess}
-                    onCancel={() => setFaceCapturing(false)}
-                    autoStart
-                  />
-                ) : faceRegistered ? (
-                  <div className="flex flex-col items-center gap-3 py-4">
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300">
-                      {photo ? (
-                        <img src={photo} alt="Registered Face" className="w-full h-full object-cover rounded-full" style={{ transform: 'scaleX(-1)' }} />
-                      ) : (
-                        <Check size={36} className="text-green-600" />
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <p className="font-semibold text-green-700">Face Registered!</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Your biometric image has been captured and will be stored</p>
-                    </div>
-                    <button onClick={() => { setFaceRegistered(false); setFaceCapturing(true); }}
-                      className="text-xs text-blue-600 hover:text-blue-800">Re-register face</button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-4 py-4">
-                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
-                      <Camera size={28} className="text-gray-400" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-gray-700">No face registered yet</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
-                    </div>
-                    <button onClick={() => setFaceCapturing(true)}
-                      className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2">
-                      <Camera size={16} />
-                      Register Face
-                    </button>
-                  </div>
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
+
+                {role !== null && step === 2 && (
+                  <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                        <GraduationCap size={16} className="text-green-700" />
+                      </div>
+                      <h2 className="font-bold text-gray-800">School Information</h2>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">School / University *</label>
+                        <input value={form.schoolName} onChange={e => update('schoolName', e.target.value)}
+                          placeholder="University Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Program *</label>
+                        <input value={form.course} onChange={e => update('course', e.target.value)}
+                          placeholder="e.g. BS Information Technology" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {role !== null && ((role === 'trainee' && step === 3) || (role === 'admin' && step === 1)) && (
+                  <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <Camera size={16} className="text-purple-700" />
+                      </div>
+                      <h2 className="font-bold text-gray-800">Face Registration</h2>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-4">Register your face for biometric time recording. The captured image will be stored in the system for identity verification during clock-in/out.</p>
+
+                    {faceCapturing ? (
+                      <FaceCapture
+                        mode="register"
+                        employeeName={form.name}
+                        onSuccess={handleFaceSuccess}
+                        onCancel={() => setFaceCapturing(false)}
+                        autoStart
+                      />
+                    ) : faceRegistered ? (
+                      <div className="flex flex-col items-center gap-3 py-4">
+                        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300">
+                          {photo ? (
+                            <img src={photo} alt="Registered Face" className="w-full h-full object-cover rounded-full" style={{ transform: 'scaleX(-1)' }} />
+                          ) : (
+                            <Check size={36} className="text-green-600" />
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <p className="font-semibold text-green-700">Face Registered!</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Your biometric image has been captured and will be stored</p>
+                        </div>
+                        <button onClick={() => { setFaceRegistered(false); setFaceCapturing(true); }}
+                          className="text-xs text-blue-600 hover:text-blue-800">Re-register face</button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-4 py-4">
+                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
+                          <Camera size={28} className="text-gray-400" />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-gray-700">No face registered yet</p>
+                          <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
+                        </div>
+                        <button onClick={() => setFaceCapturing(true)}
+                          className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2">
+                          <Camera size={16} />
+                          Register Face
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
           </AnimatePresence>
 
 
