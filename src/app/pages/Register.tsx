@@ -697,6 +697,7 @@ export function Register() {
     if (step === 0) {
       // For trainees, require full name, age, address and email on manual registration
       const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
+      const hasAge = Boolean((form as any).age && String((form as any).age).trim());
       const isVerified = true; // Made optional for easier testing
       
       const hasUpper = /[A-Z]/.test(form.password);
