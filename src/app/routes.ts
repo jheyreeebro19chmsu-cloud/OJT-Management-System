@@ -21,6 +21,8 @@ import { AdminEvaluations } from './pages/admin/AdminEvaluations';
 import { AdminAnnouncements } from './pages/admin/AdminAnnouncements';
 import { HostFeedback } from './pages/HostFeedback';
 import { AdminHostFeedback } from './pages/admin/AdminHostFeedback';
+import { HTEDashboard } from './pages/HTEDashboard';
+import { HTESettings } from './pages/HTESettings';
 
 function RouteErrorFallback() {
   const error = useRouteError();
@@ -106,6 +108,14 @@ export const router = createBrowserRouter([
       { path: 'host-feedback', Component: AdminHostFeedback },
       { path: 'announcements', Component: AdminAnnouncements },
       { path: 'settings', Component: AdminSettings },
+    ],
+  },
+  {
+    path: '/hte',
+    errorElement: routeErrorElement,
+    children: [
+      { index: true, Component: HTEDashboard },
+      { path: 'settings', Component: HTESettings },
     ],
   },
 ]);

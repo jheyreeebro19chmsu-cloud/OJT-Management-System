@@ -30,40 +30,13 @@ const stepsHTE = ['Company Info', 'Contact Info'];
 type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
-const PASSWORD_LENGTH = 12;
-const PASSWORD_SETS = {
-  upper: 'ABCDEFGHJKLMNPQRSTUVWXYZ',
-  lower: 'abcdefghijkmnopqrstuvwxyz',
-  numbers: '23456789',
-  special: '!@#$%^&*?',
-};
-const PASSWORD_ALL = `${PASSWORD_SETS.upper}${PASSWORD_SETS.lower}${PASSWORD_SETS.numbers}${PASSWORD_SETS.special}`;
-
-function generatePassword(length: number = PASSWORD_LENGTH): string {
-  const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)];
-  const chars = [
-    pick(PASSWORD_SETS.upper),
-    pick(PASSWORD_SETS.lower),
-    pick(PASSWORD_SETS.numbers),
-    pick(PASSWORD_SETS.special),
-  ];
-  for (let i = chars.length; i < length; i += 1) {
-    chars.push(pick(PASSWORD_ALL));
-  }
-  for (let i = chars.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-  return chars.join('');
-}
 
 export function Register() {
   const { registerEmployee, updateEmployee } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
-  const [generatedPassword, setGeneratedPassword] = useState(() => generatePassword());
-  const [passwordCopied, setPasswordCopied] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
   const [form, setForm] = useState({
     name: '', first_name: '', last_name: '', middle_initial: '', email: '', department: '', position: 'OJT Trainee',
@@ -71,6 +44,7 @@ export function Register() {
     employeeId: '', startDate: '', endDate: '', requiredHours: 486,
     contactPerson: '', contactPhone: '', companyAddress: '',
     birthdate: '', age: '', country: '', region: '', city: '', street: '', barangay: '',
+    password: '', confirmPassword: '',
   });
   
   const [otpCode, setOtpCode] = useState('');
@@ -136,26 +110,11 @@ export function Register() {
   const selectRole = (nextRole: UserRole) => {
     setRole(nextRole);
     setStep(0);
-    setGeneratedPassword(generatePassword());
-    setPasswordCopied(false);
+    setStep(0);
     // store pending oauth role for Google sign-in flow
     localStorage.setItem('pending_oauth_role', nextRole || '');
   };
 
-  const regeneratePassword = () => {
-    setGeneratedPassword(generatePassword());
-    setPasswordCopied(false);
-  };
-
-  const copyPassword = async () => {
-    try {
-      await navigator.clipboard.writeText(generatedPassword);
-      setPasswordCopied(true);
-      setTimeout(() => setPasswordCopied(false), 1500);
-    } catch {
-      // Ignore clipboard errors (not supported or blocked)
-    }
-  };
 
   // Capture location on mount and detect OAuth HTE prefill
   useEffect(() => {
@@ -740,7 +699,8 @@ export function Register() {
       const hasAge = Boolean((form as any).age && String((form as any).age).trim());
       const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
       const isVerified = true; // Made optional for easier testing
-      return hasName && hasEmail && hasAge && hasAddress && isVerified;
+      const hasValidPassword = form.password && form.password.length >= 8 && form.password === form.confirmPassword;
+      return hasName && hasEmail && hasAge && hasAddress && isVerified && hasValidPassword;
     }
     if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
     if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
@@ -940,6 +900,42 @@ export function Register() {
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
                     <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
                       placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                      <div className="relative">
+                        <input 
+                          type={showPassword ? 'text' : 'password'} 
+                          value={form.password} 
+                          onChange={e => update('password', e.target.value)}
+                          placeholder="Min 8 characters" 
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                      <input 
+                        type={showPassword ? 'text' : 'password'} 
+                        value={form.confirmPassword} 
+                        onChange={e => update('confirmPassword', e.target.value)}
+                        placeholder="Repeat password" 
+                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`} 
+                      />
+                    </div>
+                  </div>
+                  {form.confirmPassword && form.password !== form.confirmPassword && (
+                    <p className="text-[10px] text-red-500 font-medium px-1">Passwords do not match</p>
+                  )}
+                  {form.password && form.password.length < 8 && (
+                    <p className="text-[10px] text-gray-500 font-medium px-1">Password must be at least 8 characters</p>
+                  )}
+                  
+                  <div className="flex items-center gap-2 px-1">
+                    <input type="checkbox" id="show-pw" checked={showPassword} onChange={() => setShowPassword(!showPassword)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">Show passwords</label>
                   </div>
                   
                   {role === 'trainee' && (
@@ -1311,35 +1307,6 @@ export function Register() {
             )}
           </AnimatePresence>
 
-          {role !== null && (
-            <div className="mt-4 bg-indigo-50 rounded-xl p-3 border border-indigo-100">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-indigo-700">Generated Password</p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={regeneratePassword}
-                    className="text-xs text-indigo-600 hover:text-indigo-800"
-                  >
-                    Regenerate
-                  </button>
-                  <button
-                    type="button"
-                    onClick={copyPassword}
-                    className="text-xs text-indigo-600 hover:text-indigo-800"
-                  >
-                    {passwordCopied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <code className="text-sm font-mono font-bold text-indigo-800 bg-white px-2 py-1 rounded-lg border border-indigo-100">
-                  {generatedPassword}
-                </code>
-              </div>
-              <p className="text-xs text-indigo-600 mt-2">Save this password. You'll need it to log in.</p>
-            </div>
-          )}
 
           {/* Navigation - Only show when role is selected */}
           {role !== null && (

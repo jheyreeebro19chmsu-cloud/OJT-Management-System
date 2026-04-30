@@ -216,6 +216,13 @@ export const authAPI = {
       request_id: requestId,
       reason,
     }),
+
+  // User Settings
+  updatePassword: (oldPassword: string, newPassword: string) =>
+    api.post<{ success: boolean; message: string }>('/auth/change-password/', { 
+      old_password: oldPassword, 
+      new_password: newPassword 
+    }),
 };
 
 export default api;

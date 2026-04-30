@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { User, Building, GraduationCap, Clock, Camera, Edit2, Check, X, MapPin, Award, Star } from 'lucide-react';
+import { User, Building, GraduationCap, Clock, Camera, Edit2, Check, X, MapPin, Award, Star, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { motion } from 'motion/react';
 
@@ -20,7 +21,7 @@ const CRITERIA_LABELS: Record<string, string> = {
 };
 
 export function Profile() {
-  const { getCurrentEmployee, getEmployeeRecords, updateEmployee, getEmployeeEvaluation, getLatestHostFeedback } = useApp();
+  const { getCurrentEmployee, getEmployeeRecords, updateEmployee, getEmployeeEvaluation, getLatestHostFeedback, changeCurrentUserPassword } = useApp();
   const employee = getCurrentEmployee();
   const records = employee ? getEmployeeRecords(employee.id) : [];
   const evaluation = employee ? getEmployeeEvaluation(employee.id) : null;
@@ -31,6 +32,7 @@ export function Profile() {
     email: employee?.email || '',
     supervisorName: employee?.supervisorName || '',
   });
+  const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
   if (!employee) return null;
 
@@ -41,6 +43,16 @@ export function Profile() {
   const handleSave = () => {
     updateEmployee(employee.id, form);
     setEditing(false);
+  };
+
+  const handlePasswordChange = async () => {
+    const result = await changeCurrentUserPassword(passwordForm.current, passwordForm.new);
+    if (result.success) {
+      toast.success(result.message);
+      setPasswordForm({ current: '', new: '', confirm: '' });
+    } else {
+      toast.error(result.message);
+    }
   };
 
   const Section = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
@@ -297,6 +309,56 @@ export function Profile() {
             )}
           </div>
         )}
+      </motion.div>
+
+      {/* Security Settings */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
+        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+            <KeyRound size={15} className="text-indigo-700" />
+          </div>
+          <h3 className="font-bold text-gray-800 text-sm">Security</h3>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-500 font-medium block mb-1">Current Password</label>
+            <input 
+              type="password" 
+              value={passwordForm.current}
+              onChange={e => setPasswordForm(p => ({ ...p, current: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+              placeholder="••••••••"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium block mb-1">New Password</label>
+            <input 
+              type="password" 
+              value={passwordForm.new}
+              onChange={e => setPasswordForm(p => ({ ...p, new: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+              placeholder="Min 8 characters"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium block mb-1">Confirm New Password</label>
+            <input 
+              type="password" 
+              value={passwordForm.confirm}
+              onChange={e => setPasswordForm(p => ({ ...p, confirm: e.target.value }))}
+              className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${passwordForm.confirm && passwordForm.new !== passwordForm.confirm ? 'border-red-300' : 'border-gray-200'}`} 
+              placeholder="••••••••"
+            />
+          </div>
+          <button
+            onClick={handlePasswordChange}
+            disabled={!passwordForm.current || !passwordForm.new || passwordForm.new !== passwordForm.confirm || passwordForm.new.length < 8}
+            className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all"
+          >
+            Update Password
+          </button>
+        </div>
       </motion.div>
 
       {/* Company Info */}
