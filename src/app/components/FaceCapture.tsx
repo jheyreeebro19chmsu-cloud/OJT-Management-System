@@ -145,7 +145,14 @@ export function FaceCapture({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Wait for video metadata to load
+        await new Promise((resolve) => {
+          if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
+          else resolve(null);
+        });
         await videoRef.current.play();
+        // Give the camera 500ms to auto-adjust exposure/white balance
+        await delay(500);
       }
 
       setState('scanning');
@@ -153,12 +160,12 @@ export function FaceCapture({
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
       // Reduced delay for better UX
-      await delay(800);
+      await delay(500);
       setState('analyzing');
       setScanMessage('Detecting face...');
       setProgress(40);
 
-      await delay(500);
+      await delay(300);
       setState('verifying');
       setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
       setProgress(80);
@@ -411,10 +418,19 @@ export function FaceCapture({
             Try Again
           </button>
         )}
+        {['scanning', 'analyzing', 'verifying'].includes(state) && (
+          <button
+            onClick={handleManualSnap}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200 animate-in fade-in zoom-in duration-300"
+          >
+            <Camera size={16} />
+            Take Photo Now
+          </button>
+        )}
         {!['success'].includes(state) && (
           <button
             onClick={() => { stopCamera(); onCancel(); }}
-            className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
+            className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
           >
             Cancel
           </button>
