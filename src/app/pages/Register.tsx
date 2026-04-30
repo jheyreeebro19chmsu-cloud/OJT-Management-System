@@ -110,7 +110,6 @@ export function Register() {
   const selectRole = (nextRole: UserRole) => {
     setRole(nextRole);
     setStep(0);
-    setStep(0);
     // store pending oauth role for Google sign-in flow
     localStorage.setItem('pending_oauth_role', nextRole || '');
   };
@@ -1300,7 +1299,7 @@ export function Register() {
               </motion.div>
             )}
 
-            {step === 3 && (
+            {((role === 'trainee' && step === 3) || (role === 'admin' && step === 1)) && (
               <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -1372,7 +1371,7 @@ export function Register() {
                   <ArrowRight size={14} />
                 </button>
               ) : (
-                <button onClick={handleSubmit} disabled={!faceRegistered}
+                <button onClick={handleSubmit} disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
                   className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   <Check size={14} />
                   Complete Registration
