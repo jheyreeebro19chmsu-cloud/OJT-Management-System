@@ -238,6 +238,7 @@ class FaceRegistration(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='face_registration', null=True, blank=True)
     employee_id = models.CharField(max_length=64, unique=True)
     image = models.ImageField(upload_to="face_registrations/")
+    face_encoding = models.JSONField(null=True, blank=True, help_text="Stored as a list of 128 floats")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

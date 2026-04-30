@@ -184,6 +184,19 @@ def register_face(request: HttpRequest) -> JsonResponse:
         registration.image.save(content.name, content, save=True)
 
     image_url = request.build_absolute_uri(registration.image.url)
+
+    # Pre-compute and save face encoding for faster future verification
+    try:
+        import face_recognition # type: ignore
+        img = face_recognition.load_image_file(registration.image.path)
+        encodings = face_recognition.face_encodings(img)
+        if encodings:
+            registration.face_encoding = list(encodings[0])
+            registration.save()
+    except Exception as e:
+        # Don't fail the whole registration if encoding fails, but log it
+        print(f"Encoding extraction failed: {e}")
+
     return JsonResponse({"success": True, "image_url": image_url})
 
 
@@ -212,6 +225,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
     default_tol = float(getattr(settings, "FACE_RECOGNITION_TOLERANCE", 0.6))
     tolerance = default_tol
 
+    known_encoding = None
     if employee_id:
         registration = FaceRegistration.objects.filter(employee_id=employee_id).first()
         if not registration or not registration.image:
@@ -219,9 +233,23 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 {"success": False, "message": "No registered face found for this employee."},
                 status=404,
             )
-        known_image = face_recognition.load_image_file(registration.image.path)
+        
+        # Use stored encoding if available (Much faster!)
+        if registration.face_encoding:
+            import numpy as np # type: ignore
+            known_encoding = np.array(registration.face_encoding)
+        else:
+            known_image = face_recognition.load_image_file(registration.image.path)
+            known_encodings = face_recognition.face_encodings(known_image)
+            if known_encodings:
+                known_encoding = known_encodings[0]
+                # Cache it for next time
+                registration.face_encoding = list(known_encoding)
+                registration.save()
     elif registered_file:
         known_image = face_recognition.load_image_file(registered_file)
+        known_encodings = face_recognition.face_encodings(known_image)
+        if known_encodings: known_encoding = known_encodings[0]
     else:
         registered_b64 = data.get("registered_image")
         if not registered_b64:
@@ -230,6 +258,14 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
         known_image = face_recognition.load_image_file(decode_base64_image(registered_b64))
+        known_encodings = face_recognition.face_encodings(known_image)
+        if known_encodings: known_encoding = known_encodings[0]
+
+    if known_encoding is None:
+        return JsonResponse(
+            {"success": False, "message": "No face found in registered image/data."},
+            status=422,
+        )
 
     if captured_file:
         unknown_image = face_recognition.load_image_file(captured_file)
@@ -246,14 +282,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             )
         unknown_image = face_recognition.load_image_file(decode_base64_image(captured_b64))
 
-    known_encodings = face_recognition.face_encodings(known_image)
     unknown_encodings = face_recognition.face_encodings(unknown_image)
-
-    if not known_encodings:
-        return JsonResponse(
-            {"success": False, "message": "No face found in registered image."},
-            status=422,
-        )
 
     if not unknown_encodings:
         return JsonResponse(
@@ -261,7 +290,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             status=422,
         )
 
-    distance = face_recognition.face_distance([known_encodings[0]], unknown_encodings[0])[0]
+    distance = face_recognition.face_distance([known_encoding], unknown_encodings[0])[0]
     matched = distance <= tolerance
     confidence = max(0.0, 1.0 - float(distance))
 
