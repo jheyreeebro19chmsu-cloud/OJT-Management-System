@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, ShieldCheck, Loader } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { FaceCapture } from '../components/FaceCapture';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
