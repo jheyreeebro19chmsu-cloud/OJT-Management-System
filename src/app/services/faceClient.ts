@@ -1,4 +1,5 @@
-import * as faceapi from 'face-api.js';
+// import * as faceapi from 'face-api.js';
+const faceapi = (window as any).faceapi;
 
 let _modelsLoaded = false;
 let _modelsLoading = false;

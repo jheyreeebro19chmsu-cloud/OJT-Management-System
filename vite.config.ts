@@ -28,12 +28,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'face-api': ['face-api.js'],
           'leaflet': ['leaflet', 'react-leaflet'],
           'vendor': ['react', 'react-dom', 'react-router-dom', 'motion'],
         }
       }
-    },
-    chunkSizeWarningLimit: 1000,
+    }
   }
 })
