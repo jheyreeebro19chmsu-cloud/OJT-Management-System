@@ -12,6 +12,19 @@ import countriesCities from '../data/countries_cities.json';
 import addressApi, { autocompletePlaces, getPlaceDetails, parsePlaceComponents, searchCities, searchStreets } from '../services/addressApi';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 import { QRCodeSVG } from 'qrcode.react';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+
+// Fix Leaflet marker icon
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+const DefaultIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
 
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 const stepsAdmin = ['Personal Info', 'Face Registration'];
@@ -101,6 +114,7 @@ export function Register() {
   const filterInputRef = React.useRef<HTMLInputElement | null>(null);
   const prevActiveElementRef = React.useRef<HTMLElement | null>(null);
   const [activePane, setActivePane] = useState<'country'|'region'|'city'>('country');
+  const [showLocationMap, setShowLocationMap] = useState(false);
   const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
   const useProxy = Boolean(API_BASE);
 
@@ -1123,22 +1137,54 @@ export function Register() {
                         <input value={form.employeeId} onChange={e => update('employeeId', e.target.value)}
                           placeholder="Auto-generated if empty" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
                       </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Department</label>
-                    <input value={form.department} onChange={e => update('department', e.target.value)}
-                      placeholder="e.g. Information Technology" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-                  {locationStatus === 'captured' && (
-                    <div className="bg-green-50 rounded-xl p-3 flex items-start gap-2">
-                      <MapPin size={14} className="text-green-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-xs font-semibold text-green-700">Registration Location Captured</p>
-                        <p className="text-xs text-green-600 font-mono mt-0.5">{registrationAddress}</p>
-                        <p className="text-xs text-green-500 mt-0.5">This will be stored with your registration record.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+
+                      {registrationLocation && (
+                        <div className="mt-4 space-y-3">
+                          <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+                            <div className="flex items-start gap-3">
+                              <MapPin className="text-green-600 mt-0.5" size={18} />
+                              <div>
+                                <p className="text-green-800 text-sm font-bold">Registration Location Captured</p>
+                                <p className="text-green-600 text-xs mt-0.5">Your official geofence location is locked.</p>
+                              </div>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => setShowLocationMap(!showLocationMap)}
+                              className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                            >
+                              {showLocationMap ? 'Hide Map' : 'See your location'}
+                            </button>
+                          </div>
+
+                          <AnimatePresence>
+                            {showLocationMap && (
+                              <motion.div 
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 200, opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
+                              >
+                                <MapContainer 
+                                  center={[registrationLocation.lat, registrationLocation.lng]} 
+                                  zoom={16} 
+                                  style={{ height: '100%', width: '100%' }}
+                                  dragging={false}
+                                  doubleClickZoom={false}
+                                  scrollWheelZoom={false}
+                                  touchZoom={false}
+                                  zoomControl={false}
+                                  boxZoom={false}
+                                >
+                                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                  <Marker position={[registrationLocation.lat, registrationLocation.lng]} />
+                                </MapContainer>
+                                <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
               </motion.div>
             )}
 
