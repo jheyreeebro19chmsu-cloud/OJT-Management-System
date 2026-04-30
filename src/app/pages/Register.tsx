@@ -7,11 +7,9 @@ import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
 import { motion, AnimatePresence } from 'motion/react';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { authAPI } from '../services/authApi';
-import addressesData from '../data/addresses.json';
-import countriesCities from '../data/countries_cities.json';
-import addressApi, { autocompletePlaces, getPlaceDetails, parsePlaceComponents, searchCities, searchStreets } from '../services/addressApi';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 import { QRCodeSVG } from 'qrcode.react';
+import { PH_ADDRESS_DATA, BARANGAY_SAMPLES } from '../data/ph_address_data';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -43,7 +41,7 @@ export function Register() {
     companyName: '', supervisorName: '', schoolName: '', course: '',
     employeeId: '', startDate: '', endDate: '', requiredHours: 486,
     contactPerson: '', contactPhone: '', companyAddress: '',
-    birthdate: '', age: '', country: '', region: '', city: '', street: '', barangay: '',
+    birthdate: '', age: '', country: 'PH', region: '', province: '', city: '', street: '', barangay: '', barangay_manual: '',
     password: '', confirmPassword: '',
   });
   
@@ -65,43 +63,7 @@ export function Register() {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
   const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number } | undefined>();
   const [registrationAddress, setRegistrationAddress] = useState<string>('');
-  const [availableCountries, setAvailableCountries] = useState(() => (countriesCities as any).countries || []);
-  const [availableCities, setAvailableCities] = useState<any[]>([]);
-  const [availableStreets, setAvailableStreets] = useState<string[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerCountry, setPickerCountry] = useState('');
-  const [pickerRegion, setPickerRegion] = useState('');
-  const [pickerCity, setPickerCity] = useState('');
-  const [streetsLoading, setStreetsLoading] = useState(false);
-  const [cityFilter, setCityFilter] = useState('');
-  const [countryHighlight, setCountryHighlight] = useState(0);
-  const [regionHighlight, setRegionHighlight] = useState(0);
-  const [cityHighlight, setCityHighlight] = useState(0);
-  const [streetHighlight, setStreetHighlight] = useState(0);
-  const modalRef = React.useRef<HTMLDivElement | null>(null);
-  const countryListRef = React.useRef<HTMLUListElement | null>(null);
-  const cityListRef = React.useRef<HTMLDivElement | null>(null);
-  const streetListRef = React.useRef<HTMLUListElement | null>(null);
-  const filterInputRef = React.useRef<HTMLInputElement | null>(null);
-  const prevActiveElementRef = React.useRef<HTMLElement | null>(null);
-  const [activePane, setActivePane] = useState<'country'|'region'|'city'>('country');
   const [showLocationMap, setShowLocationMap] = useState(false);
-  const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
-  const useProxy = Boolean(API_BASE);
-
-  // Autocomplete UI state (Geonames / proxy)
-  const [addrQuery, setAddrQuery] = useState('');
-  const [addrSuggestions, setAddrSuggestions] = useState<any[]>([]);
-  const [showAddrSuggestions, setShowAddrSuggestions] = useState(false);
-  const addrDebounceRef = React.useRef<number | null>(null);
-  const [cityQuery, setCityQuery] = useState('');
-  const [citySuggestions, setCitySuggestions] = useState<any[]>([]);
-  const cityDebounceRef = React.useRef<number | null>(null);
-  const [streetQuery, setStreetQuery] = useState('');
-  const [streetSuggestions, setStreetSuggestions] = useState<any[]>([]);
-  const streetDebounceRef = React.useRef<number | null>(null);
-  const [availableRegions, setAvailableRegions] = useState<string[]>([]);
-  const [availableCitiesForRegion, setAvailableCitiesForRegion] = useState<string[]>([]);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 
@@ -140,103 +102,7 @@ export function Register() {
     }
   }, []);
 
-  // Load countries from proxy if available
-  useEffect(() => {
-    (async () => {
-      try {
-        if (useProxy) {
-          const res = await getCountries();
-          if (res && res.geonames) {
-            // map geonames country info to {code,name,cities:[]}
-            const countries = (res.geonames || []).map((c: any) => ({ code: c.countryCode, name: c.countryName, cities: [] }));
-            countries.sort((a: any, b: any) => (a.name || a.code).localeCompare(b.name || b.code));
-            setAvailableCountries(countries);
-          }
-        }
-      } catch {
-        // ignore, keep local dataset
-      }
-    })();
-  }, [useProxy]);
 
-  // Ensure bundled countries are sorted alphabetically on mount
-  useEffect(() => {
-    try {
-      const c = ((countriesCities as any).countries || []).slice();
-      c.sort((a: any, b: any) => (a.name || a.code).localeCompare(b.name || b.code));
-      setAvailableCountries(c);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // When a country is picked, try to load offline details (regions + cities) and populate region list
-  useEffect(() => {
-    let cancelled = false;
-    if (!pickerCountry) {
-      setAvailableRegions([]);
-      setPickerRegion('');
-      setPickerCity('');
-      setAvailableCitiesForRegion([]);
-      return;
-    }
-    (async () => {
-      try {
-        await addressApi.loadOfflineStreets(pickerCountry);
-        const details = await addressApi.getOfflineDetails(pickerCountry, 200);
-        if (!cancelled && details && details.regions && details.regions.length > 0) {
-          setAvailableRegions(details.regions.slice().sort((a,b) => a.localeCompare(b)));
-          setPickerRegion('');
-          setPickerCity('');
-          setRegionHighlight(0);
-          return;
-        }
-      } catch {
-        // ignore
-      }
-      // fallback: use bundled countriesCities adminName1 grouping
-      try {
-        const countryObj = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
-        const cities = (countryObj.cities || []);
-        const groups: Record<string, any[]> = {};
-        cities.forEach((ct: any) => {
-          const g = ct.adminName1 || ct.admin1 || ct.region || 'Others';
-          groups[g] = groups[g] || [];
-          groups[g].push(ct.name || ct);
-        });
-        const groupKeys = Object.keys(groups).sort();
-        if (!cancelled) setAvailableRegions(groupKeys);
-      } catch {
-        setAvailableRegions([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [pickerCountry]);
-
-  // when a region is selected, load its cities
-  useEffect(() => {
-    let cancelled = false;
-    if (!pickerCountry || !pickerRegion) { setAvailableCitiesForRegion([]); return; }
-    (async () => {
-      try {
-        const cities = await addressApi.getOfflineRegionCities(pickerCountry, pickerRegion);
-        if (!cancelled && cities && cities.length > 0) {
-          setAvailableCitiesForRegion(cities);
-          setCityHighlight(0);
-          return;
-        }
-      } catch { }
-      // fallback to bundled
-      try {
-        const countryObj = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
-        const cities = (countryObj.cities || []).filter((ct: any) => (ct.adminName1 || ct.admin1 || ct.region || 'Others') === pickerRegion).map((ct: any) => ct.name || ct).sort((a:any,b:any)=>a.localeCompare(b));
-        if (!cancelled) setAvailableCitiesForRegion(cities);
-      } catch {
-        if (!cancelled) setAvailableCitiesForRegion([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [pickerCountry, pickerRegion]);
 
   const captureLocation = async () => {
     setLocationStatus('capturing');
@@ -314,213 +180,6 @@ export function Register() {
     }
   };
 
-  useEffect(() => {
-    // Update cities when country changes
-    const country = (form as any).country;
-    if (!country) {
-      setAvailableCities([]);
-      setAvailableStreets([]);
-      return;
-    }
-    const found = availableCountries.find((c: any) => c.code === country || c.name === country);
-    const cities = found ? found.cities || [] : [];
-    setAvailableCities(cities);
-    // reset city/street/region/barangay when country changes
-    setForm(p => ({ ...p, city: '', street: '', region: '', barangay: '' }));
-  }, [(form as any).country]);
-
-  useEffect(() => {
-    // Update streets when city changes
-    const city = (form as any).city;
-    if (!city) {
-      setAvailableStreets([]);
-      return;
-    }
-    const country = (form as any).country;
-    const foundCountry = availableCountries.find((c: any) => c.code === country || c.name === country);
-    const foundCity = foundCountry?.cities?.find((ct: any) => ct.name === city);
-    setAvailableStreets(foundCity?.streets || []);
-    setForm(p => ({ ...p, street: '' }));
-  }, [(form as any).city]);
-
-  // Query autocomplete when query changes (debounced). Works with backend proxy or bundled dataset.
-  useEffect(() => {
-    if (!addrQuery || addrQuery.length < 2) {
-      setAddrSuggestions([]);
-      return;
-    }
-    if (addrDebounceRef.current) window.clearTimeout(addrDebounceRef.current);
-    addrDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const res = await autocompletePlaces(addrQuery);
-        setAddrSuggestions(res.geonames || []);
-        setShowAddrSuggestions(true);
-      } catch {
-        setAddrSuggestions([]);
-      }
-    }, 200);
-    return () => { if (addrDebounceRef.current) window.clearTimeout(addrDebounceRef.current); };
-  }, [addrQuery]);
-
-  // City suggestions (searchCities) — works offline with bundled dataset
-  useEffect(() => {
-    if (!cityQuery || cityQuery.length < 2) {
-      setCitySuggestions([]);
-      return;
-    }
-    if (cityDebounceRef.current) window.clearTimeout(cityDebounceRef.current);
-    cityDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const res = await searchCities((form as any).country || '', cityQuery);
-        setCitySuggestions(res.geonames || []);
-      } catch {
-        setCitySuggestions([]);
-      }
-    }, 200);
-    return () => { if (cityDebounceRef.current) window.clearTimeout(cityDebounceRef.current); };
-  }, [cityQuery, (form as any).country]);
-
-  // Street suggestions (OSM) — will call backend if configured, otherwise stays empty
-  useEffect(() => {
-    if (!streetQuery || streetQuery.length < 2) {
-      setStreetSuggestions([]);
-      return;
-    }
-    if (streetDebounceRef.current) window.clearTimeout(streetDebounceRef.current);
-    streetDebounceRef.current = window.setTimeout(async () => {
-      try {
-        const res = await searchStreets((form as any).country || '', (form as any).city || '', streetQuery);
-        setStreetSuggestions(res.results || []);
-      } catch {
-        setStreetSuggestions([]);
-      }
-    }, 200);
-    return () => { if (streetDebounceRef.current) window.clearTimeout(streetDebounceRef.current); };
-  }, [streetQuery, (form as any).city, (form as any).country]);
-
-  // Keyboard navigation for picker modal
-  useEffect(() => {
-    if (!showPicker) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setShowPicker(false); return; }
-      const countriesLen = (availableCountries as any[]).length;
-      const regionsLen = (availableRegions || []).length;
-      const countryObj = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
-      const cities = (countryObj.cities || []).filter((ct: any) => !cityFilter || ct.name.toLowerCase().includes(cityFilter.toLowerCase()));
-      const citiesLen = cities.length;
-      const streetsLen = (availableStreets || []).length;
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (activePane === 'country') setCountryHighlight(h => Math.min(h + 1, Math.max(0, countriesLen - 1)));
-        else if (activePane === 'region') setRegionHighlight(h => Math.min(h + 1, Math.max(0, regionsLen - 1)));
-        else if (activePane === 'city') setCityHighlight(h => Math.min(h + 1, Math.max(0, citiesLen - 1)));
-        else setStreetHighlight(h => Math.min(h + 1, Math.max(0, streetsLen - 1)));
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (activePane === 'country') setCountryHighlight(h => Math.max(0, h - 1));
-        else if (activePane === 'region') setRegionHighlight(h => Math.max(0, h - 1));
-        else if (activePane === 'city') setCityHighlight(h => Math.max(0, h - 1));
-        else setStreetHighlight(h => Math.max(0, h - 1));
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        if (activePane === 'country') setActivePane('region');
-        else if (activePane === 'region') setActivePane('city');
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        if (activePane === 'city') setActivePane('region');
-        else if (activePane === 'region') setActivePane('country');
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (activePane === 'country') {
-          const c = (availableCountries as any[])[countryHighlight];
-          if (c) { setPickerCountry(c.code); setPickerCity(''); setActivePane('region'); setRegionHighlight(0); }
-        } else if (activePane === 'region') {
-          const rg = (availableRegions || [])[regionHighlight];
-          if (rg) { setPickerRegion(rg); setPickerCity(''); setActivePane('city'); setCityHighlight(0); }
-        } else if (activePane === 'city') {
-          const countryObj2 = ((countriesCities as any).countries || []).find((x: any) => x.code === pickerCountry) || {};
-          const cities2 = (countryObj2.cities || []).filter((ct: any) => !cityFilter || ct.name.toLowerCase().includes(cityFilter.toLowerCase()));
-          const ct = cities2[cityHighlight];
-          if (ct) { setPickerCity(ct.name); setActivePane('city'); setCityHighlight(0); }
-        } else if (activePane === 'street') {
-          const s = (availableStreets || [])[streetHighlight];
-          if (s) { update('street', s); setRegistrationAddress(`${s}, ${pickerCity || ''}`); setAddrQuery(`${s}, ${pickerCity || ''}`); setShowPicker(false); }
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [showPicker, availableCountries, pickerCountry, cityFilter, activePane, countryHighlight, cityHighlight, streetHighlight, availableStreets]);
-
-  // Focus trap and auto-focus when modal opens; restore focus on close
-  useEffect(() => {
-    if (!showPicker) {
-      try { prevActiveElementRef.current?.focus(); } catch {}
-      return;
-    }
-    // Save previous active element
-    prevActiveElementRef.current = document.activeElement as HTMLElement | null;
-    // Focus the city filter input
-    setTimeout(() => filterInputRef.current?.focus(), 0);
-
-    const handleTab = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const container = modalRef.current;
-      if (!container) return;
-      const focusables = Array.from(container.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
-      if (focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleTab);
-    return () => {
-      window.removeEventListener('keydown', handleTab);
-      try { prevActiveElementRef.current?.focus(); } catch {}
-    };
-  }, [showPicker]);
-
-  // Auto-scroll highlighted items into view
-  useEffect(() => {
-    if (!showPicker) return;
-    // country
-    try {
-      const el = countryListRef.current?.querySelector<HTMLElement>(`[data-country-index='${countryHighlight}']`);
-      if (el) el.scrollIntoView({ block: 'nearest' });
-    } catch {}
-  }, [countryHighlight, showPicker]);
-
-  useEffect(() => {
-    if (!showPicker) return;
-    try {
-      const el = cityListRef.current?.querySelector<HTMLElement>(`[data-city-index='${cityHighlight}']`);
-      if (el) el.scrollIntoView({ block: 'nearest' });
-    } catch {}
-  }, [cityHighlight, showPicker]);
-
-  useEffect(() => {
-    if (!showPicker) return;
-    try {
-      const el = streetListRef.current?.querySelector<HTMLElement>(`[data-street-index='${streetHighlight}']`);
-      if (el) el.scrollIntoView({ block: 'nearest' });
-    } catch {}
-  }, [streetHighlight, showPicker]);
 
   const handleNext = () => {
     if (step < steps.length - 1) setStep(s => s + 1);
@@ -549,12 +208,12 @@ export function Register() {
           }
 
           if (role === 'admin' || role === 'trainee') {
-            const composedAddress = [ (form as any).street, (form as any).city, (form as any).country ]
+            const composedAddress = [ form.street, form.city, form.country ]
               .filter(Boolean)
               .join(', ');
             const payload = {
               email: form.email,
-              password: generatedPassword,
+              password: form.password,
               first_name,
               last_name,
               middle_initial: form.middle_initial || undefined,
@@ -613,11 +272,23 @@ export function Register() {
 
     const buildAddrFromForm = () => {
       const parts = [] as string[];
-      if (form.barangay) parts.push(form.barangay);
-      if ((form as any).street) parts.push((form as any).street);
-      if ((form as any).city) parts.push((form as any).city);
-      if ((form as any).region) parts.push((form as any).region);
-      if ((form as any).country) parts.push(((new Intl.DisplayNames(['en'], { type: 'region' })).of((form as any).country) || (form as any).country));
+      if (form.barangay === 'other' && form.barangay_manual) {
+        parts.push(form.barangay_manual);
+      } else if (form.barangay) {
+        parts.push(form.barangay);
+      }
+      if (form.street) parts.push(form.street);
+      if (form.city) parts.push(form.city);
+      if (form.province) parts.push(form.province);
+      if (form.region) parts.push(form.region);
+      if (form.country) {
+        try {
+          const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+          parts.push(regionNames.of(form.country) || form.country);
+        } catch {
+          parts.push(form.country === 'PH' ? 'Philippines' : form.country);
+        }
+      }
       return parts.filter(Boolean).join(', ');
     };
 
@@ -633,7 +304,7 @@ export function Register() {
       active: true,
       registrationLocation,
       registrationAddress: computedAddress,
-      password: generatedPassword,
+      password: form.password,
     });
 
     if (role === 'admin') {
@@ -670,11 +341,9 @@ export function Register() {
     // Auto-redirect based on role
     if (role === 'admin') {
       navigate('/admin');
-      if (role === 'admin') {
-        setRegistrationComplete(true);
-      } else {
-        navigate(role === 'host' ? '/host/dashboard' : '/employee/dashboard');
-      }
+      setRegistrationComplete(true);
+    } else if (role === 'hte') {
+      navigate('/host/dashboard');
     } else {
       navigate('/app');
     }
@@ -682,13 +351,23 @@ export function Register() {
 
   const isStepValid = () => {
     // Support either full `name` field or separated `first_name`/`last_name` used in the UI.
-    const hasName = Boolean((form as any).name || (((form as any).first_name || '').trim() && ((form as any).last_name || '').trim()));
-    const hasEmail = Boolean((form as any).email && (form as any).email.toString().trim());
+    const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
+    const hasEmail = Boolean(form.email && form.email.toString().trim());
+
+    const hasUpper = /[A-Z]/.test(form.password);
+    const hasLower = /[a-z]/.test(form.password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
+    const hasLength = form.password.length >= 8;
+    const passwordsMatch = form.password && form.password === form.confirmPassword;
+    const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
 
     if (role === 'admin') {
-      const hasDept = Boolean((form as any).department && (form as any).department.trim());
-      const hasCourse = Boolean((form as any).course && (form as any).course.trim());
-      if (step === 0) return hasName && hasEmail && hasDept && hasCourse;
+      const hasDept = Boolean(form.department && form.department.trim());
+      const hasCourse = Boolean(form.course && form.course.trim());
+      if (step === 0) {
+        const hasAddress = form.country && form.region && form.city && (form.barangay || form.barangay_manual);
+        return hasName && hasEmail && hasDept && hasCourse && hasAddress && hasValidPassword;
+      }
       return faceRegistered;
     }
 
@@ -696,29 +375,24 @@ export function Register() {
     if (role === 'trainee') {
       if (step === 0) {
         // For trainees, require full name, age, address and email on manual registration
-        const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
+        const hasAddress = Boolean(form.country && form.region && form.city && (form.barangay || form.barangay_manual));
         // Fix: Allow age 0 (testing cases)
-        const hasAge = (form as any).age !== '' && (form as any).age !== undefined && (form as any).age !== null;
-        const isVerified = true; 
+        const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
         
-        const hasUpper = /[A-Z]/.test(form.password);
-        const hasLower = /[a-z]/.test(form.password);
-        const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
-        const hasLength = form.password.length >= 8;
-        const passwordsMatch = form.password === form.confirmPassword;
-        
-        const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
-        return hasName && hasEmail && hasAge && hasAddress && isVerified && hasValidPassword;
+        return hasName && hasEmail && hasAge && hasAddress && isOtpVerified && hasValidPassword && locationStatus === 'captured';
       }
-      if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
-      if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
+      if (step === 1) return Boolean(form.companyName && form.supervisorName && form.startDate && form.endDate);
+      if (step === 2) return Boolean(form.schoolName && form.course);
       return faceRegistered;
     }
 
     // HTE
     if (role === 'hte') {
-      if (step === 0) return Boolean((form as any).companyName && ((form as any).companyAddress || registrationAddress));
-      if (step === 1) return Boolean((form as any).contactPerson && (form as any).contactPhone && (form as any).email && form.password && form.password === form.confirmPassword);
+      if (step === 0) {
+        const hasAddress = form.country && form.region && form.city && (form.barangay || form.barangay_manual);
+        return Boolean(form.companyName && hasAddress && locationStatus === 'captured');
+      }
+      if (step === 1) return Boolean(form.contactPerson && form.contactPhone && form.email && hasValidPassword);
       return true;
     }
   };
@@ -887,315 +561,467 @@ export function Register() {
               </motion.div>
             )}
 
-            {/* Step 0: Personal Info - Only show when role is selected */}
+            {/* Step 0: Personal Info (Trainee/Admin) or Company Details (HTE) */}
             {role !== null && step === 0 && (
               <motion.div key="step0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <User size={16} className="text-blue-700" />
-                  </div>
-                  <h2 className="font-bold text-gray-800">Personal Information</h2>
-                </div>
-                
-                  <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
-                      <input value={form.last_name} onChange={e => update('last_name', e.target.value)} placeholder="Dela Cruz" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
-                      <input value={form.first_name} onChange={e => update('first_name', e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
-                      <input value={form.middle_initial} onChange={e => update('middle_initial', e.target.value)} placeholder="D" maxLength={1} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
-                    <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
-                      placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
-                      <div className="relative">
-                        <input 
-                          type={showPassword ? 'text' : 'password'} 
-                          value={form.password} 
-                          onChange={e => update('password', e.target.value)}
-                          placeholder="Min 8 characters" 
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
-                        />
+                {role === 'hte' ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                        <Building size={16} className="text-green-700" />
                       </div>
+                      <h2 className="font-bold text-gray-800">Company Details</h2>
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
-                      <input 
-                        type={showPassword ? 'text' : 'password'} 
-                        value={form.confirmPassword} 
-                        onChange={e => update('confirmPassword', e.target.value)}
-                        placeholder="Repeat password" 
-                        className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`} 
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 px-1">
-                    <input type="checkbox" id="show-pw" checked={showPassword} onChange={() => setShowPassword(!showPassword)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                    <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">Show passwords</label>
-                  </div>
-                  
-                  {role === 'trainee' && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Email Verification</label>
-                        {isOtpVerified && (
-                          <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Verified</span>
-                        )}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
+                        <input value={form.companyName} onChange={e => update('companyName', e.target.value)}
+                          placeholder="Host Training Establishment Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
                       </div>
                       
-                      {!isOtpVerified ? (
-                        <div className="flex gap-2">
-                          {!otpSent ? (
-                            <button 
-                              type="button" 
-                              onClick={handleRequestOtp}
-                              disabled={otpVerifying || !form.email}
-                              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
-                            >
-                              {otpVerifying ? 'Sending...' : 'Request Confirmation Code'}
-                            </button>
-                          ) : (
-                            <>
-                              <input 
-                                value={otpCode} 
-                                onChange={e => setOtpCode(e.target.value)} 
-                                placeholder="6-digit code" 
-                                className="flex-1 px-3 py-2 border border-blue-200 rounded-xl text-center font-bold tracking-widest focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                                maxLength={6}
-                              />
-                              <button 
-                                type="button" 
-                                onClick={verifyOtp}
-                                className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-bold"
-                              >
-                                Verify
-                              </button>
-                              <button 
-                                type="button" 
-                                onClick={handleRequestOtp}
-                                className="px-2 text-[10px] text-blue-600 underline"
-                              >
-                                Resend
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-green-700">
-                          <Check size={16} />
-                          <span className="text-sm font-medium">Email confirmed via Resend API</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
-                        <input type="date" value={form.birthdate} onChange={e => update('birthdate', e.target.value)}
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
-                        <input value={form.age} disabled type="number"
-                          placeholder="Enter birthdate first" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Address</label>
-                        <div className="relative">
-                          <div className="flex gap-2">
-                            <input value={addrQuery} onChange={e => { setAddrQuery(e.target.value); }} placeholder="Start typing your address" className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
-                            <button type="button" onClick={() => setShowPicker(s => !s)} className="px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 text-sm">Pick</button>
-                          </div>
-                            {showAddrSuggestions && addrSuggestions.length > 0 && (
-                            <div className="absolute z-50 left-0 right-0 bg-white border border-gray-200 rounded mt-1 max-h-52 overflow-auto">
-                              {addrSuggestions.map((p: any) => (
-                                <div key={(p.geonameId || p.name)} onClick={async () => {
-                                  try {
-                                    // If the suggestion has an id, fetch details; otherwise derive from suggestion
-                                    let parsed: any = null;
-                                    if (p.geonameId) {
-                                      const det = await getPlaceDetails(p.geonameId);
-                                      parsed = parsePlaceComponents(det);
-                                    }
-                                    update('country', (parsed && parsed.country) || p.countryCode || '');
-                                    update('city', (parsed && parsed.city) || p.name || '');
-                                    update('street', (parsed && parsed.street) || parsed?.formatted || p.name || '');
-                                    setRegistrationAddress((parsed && parsed.formatted) || p.name || '');
-                                    setAddrQuery((parsed && parsed.formatted) || p.name || '');
-                                    setAddrSuggestions([]);
-                                    setShowAddrSuggestions(false);
-                                  } catch {
-                                    // ignore
-                                  }
-                                }} className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">{p.name}{p.adminName1 ? ', ' + p.adminName1 : ''}{p.countryName ? ', ' + p.countryName : ''}</div>
-                              ))}
-                            </div>
-                          )}
-                          {showPicker && (
-                            <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="address-picker-title" aria-describedby="address-picker-desc" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                              <div className="bg-white w-[90%] max-w-4xl rounded-2xl shadow-xl p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                  <h3 id="address-picker-title" className="font-bold">Pick Address</h3>
-                                  <div className="flex items-center gap-2">
-                                    <input aria-label="Filter cities" ref={filterInputRef} value={cityFilter} onChange={e => { setCityFilter(e.target.value); setCityHighlight(0); }} placeholder="Filter cities" className="px-3 py-2 border rounded text-sm" />
-                                    <button onClick={() => { setShowPicker(false); }} className="text-sm underline">Close</button>
-                                  </div>
-                                </div>
-                                <p id="address-picker-desc" className="sr-only">Use arrow keys to navigate countries, cities, and streets. Press Enter to select.</p>
-
-                                <div className="grid grid-cols-3 gap-4 h-80">
-                                  {/* Countries */}
-                                  <div className="border rounded p-2 overflow-auto">
-                                    <div className="text-xs text-gray-500 mb-2">Country</div>
-                                    {(availableCountries as any[]).length === 0 ? (
-                                      <div className="text-sm text-gray-400">No countries</div>
-                                    ) : (
-                                      <ul role="listbox" aria-label="Countries" ref={countryListRef}>
-                                        {(availableCountries as any[]).map((c: any, idx: number) => (
-                                          <li id={`country-${idx}`} tabIndex={0} role="option" aria-selected={pickerCountry === c.code} data-country-index={idx} key={c.code} className={`px-2 py-1 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 ${pickerCountry === c.code ? 'bg-sky-100 font-semibold' : ''} ${countryHighlight === idx ? 'ring-2 ring-sky-200' : ''}`} onClick={() => { setPickerCountry(c.code); setPickerCity(''); setCountryHighlight(idx); setCityHighlight(0); setActivePane('city'); }} onMouseEnter={() => setCountryHighlight(idx)}>
-                                            {(new Intl.DisplayNames(['en'], {type: 'region'})).of(c.code) || c.name || c.code}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                  </div>
-
-                                  {/* Regions */}
-                                  <div className="border rounded p-2 overflow-auto">
-                                    <div className="text-xs text-gray-500 mb-2">Regions</div>
-                                    {!pickerCountry ? (
-                                      <div className="text-sm text-gray-400">Select a country</div>
-                                    ) : ((availableRegions || []).length === 0 ? (
-                                      <div className="text-sm text-gray-400">No regions available</div>
-                                    ) : (
-                                      <ul role="listbox" className="space-y-1">
-                                        {(availableRegions || []).map((g: string, idx: number) => (
-                                          <li key={g} id={`region-${idx}`} tabIndex={0} role="option" aria-selected={pickerRegion === g} data-region-index={idx} className={`px-2 py-1 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 ${pickerRegion === g ? 'bg-sky-100 font-semibold' : ''} ${regionHighlight === idx ? 'ring-2 ring-sky-200' : ''}`} onClick={() => { setPickerRegion(g); setPickerCity(''); setRegionHighlight(idx); setCityHighlight(0); setActivePane('city'); }} onMouseEnter={() => setRegionHighlight(idx)}>
-                                            {g}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    ))}
-                                  </div>
-
-                                  {/* Cities in selected region */}
-                                  <div className="border rounded p-2 overflow-auto">
-                                    <div className="text-xs text-gray-500 mb-2">Cities</div>
-                                    {!pickerRegion ? (
-                                      <div className="text-sm text-gray-400">Select a region</div>
-                                    ) : (availableCitiesForRegion && availableCitiesForRegion.length > 0 ? (
-                                      <ul role="listbox" aria-label="Cities in region">
-                                        {availableCitiesForRegion.map((ct: string, idx: number) => (
-                                          <li key={ct} id={`city-${idx}`} tabIndex={0} role="option" aria-selected={pickerCity === ct} data-city-index={idx} className={`px-2 py-1 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 ${pickerCity === ct ? 'bg-sky-100 font-semibold' : ''} ${cityHighlight === idx ? 'ring-2 ring-sky-200' : ''}`} onClick={() => { setPickerCity(ct); setCityHighlight(idx); setActivePane('city'); }} onMouseEnter={() => setCityHighlight(idx)}>
-                                            {ct}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    ) : (
-                                      <div className="text-sm text-gray-400">No cities found for this region.</div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                <div className="mt-3 flex justify-end gap-2">
-                                  <button onClick={() => { setShowPicker(false); }} className="px-3 py-2 border rounded">Cancel</button>
-                                  <button onClick={async () => {
-                                    const countryName = (new Intl.DisplayNames(['en'], {type: 'region'})).of(pickerCountry) || pickerCountry;
-                                    update('country', pickerCountry);
-                                    update('region', pickerRegion);
-                                    update('city', pickerCity);
-                                    // We intentionally do not auto-fill barangay/street — user will enter barangay manually
-                                    setRegistrationAddress(`${pickerCity || ''}${pickerCity ? ', ' : ''}${pickerRegion ? pickerRegion + ', ' : ''}${countryName}`);
-                                    setAddrQuery(`${pickerCity || ''}${pickerCity ? ', ' : ''}${pickerRegion ? pickerRegion + ', ' : ''}${countryName}`);
-                                    setShowPicker(false);
-                                    setAddrSuggestions([]);
-                                    setShowAddrSuggestions(false);
-                                  }} className="px-3 py-2 bg-sky-600 text-white rounded">Use</button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay / Neighborhood</label>
-                        <input value={form.barangay} onChange={e => update('barangay', e.target.value)} placeholder="e.g. San Isidro" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
-                        <input value={form.employeeId} onChange={e => update('employeeId', e.target.value)}
-                          placeholder="Auto-generated if empty" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-
-                      {registrationLocation && (
-                        <div className="mt-4 space-y-3">
-                          <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
-                            <div className="flex items-start gap-3">
-                              <MapPin className="text-green-600 mt-0.5" size={18} />
-                              <div>
-                                <p className="text-green-800 text-sm font-bold">Registration Location Captured</p>
-                                <p className="text-green-600 text-xs mt-0.5">Your official geofence location is locked.</p>
-                              </div>
-                            </div>
-                            <button 
-                              type="button"
-                              onClick={() => {
-                                setShowLocationMap(!showLocationMap);
-                                // Force a resize event after a short delay to fix Leaflet "half-grey" issue
-                                setTimeout(() => {
-                                  window.dispatchEvent(new Event('resize'));
-                                }, 300);
+                      <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4">
+                        <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Company Location (Geofencing)</p>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Region *</label>
+                            <select 
+                              value={form.region} 
+                              onChange={e => {
+                                update('region', e.target.value);
+                                update('province', '');
+                                update('city', '');
+                                update('barangay', '');
                               }}
-                              className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             >
-                              {showLocationMap ? 'Hide Map' : 'See your location'}
-                            </button>
+                              <option value="">Select Region</option>
+                              {PH_ADDRESS_DATA.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
+                            </select>
                           </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
+                            <select 
+                              value={form.province} 
+                              onChange={e => {
+                                update('province', e.target.value);
+                                update('city', '');
+                                update('barangay', '');
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            >
+                              <option value="">Select Province</option>
+                              {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                            </select>
+                          </div>
+                        </div>
 
-                          <AnimatePresence>
-                            {showLocationMap && (
-                              <motion.div 
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 200, opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
-                              >
-                                <MapContainer 
-                                  key={registrationLocation ? `${registrationLocation.lat}-${registrationLocation.lng}` : 'map'}
-                                  center={[registrationLocation.lat, registrationLocation.lng]} 
-                                  zoom={16} 
-                                  style={{ height: '100%', width: '100%' }}
-                                  dragging={false}
-                                  doubleClickZoom={false}
-                                  scrollWheelZoom={false}
-                                  touchZoom={false}
-                                  zoomControl={false}
-                                  boxZoom={false}
-                                >
-                                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                  <Marker position={[registrationLocation.lat, registrationLocation.lng]} />
-                                </MapContainer>
-                                <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">City/Municipality *</label>
+                            <select 
+                              value={form.city} 
+                              onChange={e => {
+                                update('city', e.target.value);
+                                update('barangay', '');
+                                const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
+                                setRegistrationAddress(fullAddr);
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            >
+                              <option value="">Select City</option>
+                              {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.find(p => p.name === form.province)?.cities.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay *</label>
+                            <select 
+                              value={form.barangay} 
+                              onChange={e => {
+                                update('barangay', e.target.value);
+                                const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
+                                setRegistrationAddress(fullAddr);
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            >
+                              <option value="">Select Barangay</option>
+                              {(form.city && BARANGAY_SAMPLES[form.city] || []).map(b => <option key={b} value={b}>{b}</option>)}
+                              <option value="other">Other</option>
+                            </select>
+                          </div>
+                        </div>
+                        
+                        {form.barangay === 'other' && (
+                          <input 
+                            value={form.barangay_manual || ''} 
+                            onChange={e => {
+                              update('barangay_manual', e.target.value);
+                              const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
+                              setRegistrationAddress(fullAddr);
+                            }}
+                            placeholder="Type barangay name"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        )}
+
+                        <div className="mt-2">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Capture Precise Location</label>
+                          <button 
+                            type="button" 
+                            onClick={captureLocation}
+                            className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${locationStatus === 'captured' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'}`}
+                          >
+                            {locationStatus === 'capturing' ? <Loader className="animate-spin" size={16} /> : <MapPin size={16} />}
+                            {locationStatus === 'captured' ? 'Location Secured' : 'Pin Precise Company Location'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <User size={16} className="text-blue-700" />
+                      </div>
+                      <h2 className="font-bold text-gray-800">Personal Information</h2>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
+                          <input value={form.last_name} onChange={e => update('last_name', e.target.value)} placeholder="Dela Cruz" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
+                          <input value={form.first_name} onChange={e => update('first_name', e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
+                          <input value={form.middle_initial} onChange={e => update('middle_initial', e.target.value)} placeholder="D" maxLength={1} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
+                        <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
+                          placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                          <div className="relative">
+                            <input 
+                              type={showPassword ? 'text' : 'password'} 
+                              value={form.password} 
+                              onChange={e => update('password', e.target.value)}
+                              placeholder="Min 8 characters" 
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                          <input 
+                            type={showPassword ? 'text' : 'password'} 
+                            value={form.confirmPassword} 
+                            onChange={e => update('confirmPassword', e.target.value)}
+                            placeholder="Repeat password" 
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`} 
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 px-1">
+                        <input type="checkbox" id="show-pw" checked={showPassword} onChange={() => setShowPassword(!showPassword)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                        <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">Show passwords</label>
+                      </div>
+                      
+                      {role === 'admin' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+                            <input value={form.department} onChange={e => update('department', e.target.value)}
+                              placeholder="e.g. CICS" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Field *</label>
+                            <input value={form.course} onChange={e => update('course', e.target.value)}
+                              placeholder="e.g. IT" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          </div>
                         </div>
                       )}
+                      
+                      {role === 'trainee' && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Email Verification</label>
+                            {isOtpVerified && (
+                              <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Verified</span>
+                            )}
+                          </div>
+                          
+                          {!isOtpVerified ? (
+                            <div className="flex gap-2">
+                              {!otpSent ? (
+                                <button 
+                                  type="button" 
+                                  onClick={handleRequestOtp}
+                                  disabled={otpVerifying || !form.email}
+                                  className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+                                >
+                                  {otpVerifying ? 'Sending...' : 'Request Confirmation Code'}
+                                </button>
+                              ) : (
+                                <>
+                                  <input 
+                                    value={otpCode} 
+                                    onChange={e => setOtpCode(e.target.value)} 
+                                    placeholder="6-digit code" 
+                                    className="flex-1 px-3 py-2 border border-blue-200 rounded-xl text-center font-bold tracking-widest focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                    maxLength={6}
+                                  />
+                                  <button 
+                                    type="button" 
+                                    onClick={verifyOtp}
+                                    className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-bold"
+                                  >
+                                    Verify
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    onClick={handleRequestOtp}
+                                    className="px-2 text-[10px] text-blue-600 underline"
+                                  >
+                                    Resend
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-green-700">
+                              <Check size={16} />
+                              <span className="text-sm font-medium">Email confirmed via Resend API</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
+                            <input type="date" value={form.birthdate} onChange={e => update('birthdate', e.target.value)}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
+                            <input value={form.age} disabled type="number"
+                              placeholder="Enter birthdate first" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
+                              <select 
+                                value={form.country || 'PH'} 
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  update('country', val);
+                                  update('region', '');
+                                  update('province', '');
+                                  update('city', '');
+                                  update('barangay', '');
+                                }}
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                              >
+                                <option value="PH">Philippines</option>
+                                <option value="US">United States</option>
+                                <option value="CA">Canada</option>
+                                <option value="GB">United Kingdom</option>
+                                <option value="AU">Australia</option>
+                                <option value="OTHER">Other</option>
+                              </select>
+                            </div>
+                            
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Region *</label>
+                              {form.country === 'PH' ? (
+                                <select 
+                                  value={form.region} 
+                                  onChange={e => {
+                                    update('region', e.target.value);
+                                    update('province', '');
+                                    update('city', '');
+                                    update('barangay', '');
+                                  }}
+                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                >
+                                  <option value="">Select Region</option>
+                                  {PH_ADDRESS_DATA.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
+                                </select>
+                              ) : (
+                                <input value={form.region} onChange={e => update('region', e.target.value)} placeholder="State/Region" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                              )}
+                            </div>
+                          </div>
+
+                          {form.country === 'PH' && form.region && (
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
+                                <select 
+                                  value={form.province} 
+                                  onChange={e => {
+                                    update('province', e.target.value);
+                                    update('city', '');
+                                    update('barangay', '');
+                                  }}
+                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                >
+                                  <option value="">Select Province</option>
+                                  {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-600 block mb-1">City/Municipality *</label>
+                                <select 
+                                  value={form.city} 
+                                  onChange={e => {
+                                    update('city', e.target.value);
+                                    update('barangay', '');
+                                    const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
+                                    setRegistrationAddress(fullAddr);
+                                  }}
+                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                >
+                                  <option value="">Select City</option>
+                                  {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.find(p => p.name === form.province)?.cities.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                          )}
+
+                          {form.country !== 'PH' && (
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs font-semibold text-gray-600 block mb-1">City *</label>
+                                <input value={form.city} onChange={e => update('city', e.target.value)} placeholder="City" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-600 block mb-1">Street Address</label>
+                                <input value={form.street} onChange={e => update('street', e.target.value)} placeholder="Street name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay / Neighborhood *</label>
+                            {form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] ? (
+                              <div className="space-y-2">
+                                <select 
+                                  value={form.barangay} 
+                                  onChange={e => {
+                                    update('barangay', e.target.value);
+                                    if (e.target.value !== 'other') {
+                                      const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
+                                      setRegistrationAddress(fullAddr);
+                                    }
+                                  }}
+                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                >
+                                  <option value="">Select Barangay</option>
+                                  {BARANGAY_SAMPLES[form.city].map(b => <option key={b} value={b}>{b}</option>)}
+                                  <option value="other">Other (Type manually)</option>
+                                </select>
+                                {form.barangay === 'other' && (
+                                  <input 
+                                    value={form.barangay_manual || ''} 
+                                    onChange={e => {
+                                      update('barangay_manual', e.target.value);
+                                      const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
+                                      setRegistrationAddress(fullAddr);
+                                    }} 
+                                    placeholder="Enter barangay name" 
+                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <input 
+                                value={form.barangay} 
+                                onChange={e => {
+                                  update('barangay', e.target.value);
+                                  const fullAddr = `${e.target.value}, ${form.city || ''}, ${form.province || ''}, ${form.region || ''}, ${form.country === 'PH' ? 'Philippines' : form.country}`;
+                                  setRegistrationAddress(fullAddr);
+                                }} 
+                                placeholder="e.g. San Isidro" 
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+                              />
+                            )}
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
+                            <input value={form.employeeId} onChange={e => update('employeeId', e.target.value)}
+                              placeholder="Auto-generated if empty" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          </div>
+
+                          {registrationLocation && (
+                            <div className="mt-4 space-y-3">
+                              <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+                                <div className="flex items-start gap-3">
+                                  <MapPin className="text-green-600 mt-0.5" size={18} />
+                                  <div>
+                                    <p className="text-green-800 text-sm font-bold">Registration Location Captured</p>
+                                    <p className="text-green-600 text-xs mt-0.5">Your official geofence location is locked.</p>
+                                  </div>
+                                </div>
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    setShowLocationMap(!showLocationMap);
+                                    setTimeout(() => {
+                                      window.dispatchEvent(new Event('resize'));
+                                    }, 300);
+                                  }}
+                                  className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                                >
+                                  {showLocationMap ? 'Hide Map' : 'See your location'}
+                                </button>
+                              </div>
+
+                              <AnimatePresence>
+                                {showLocationMap && (
+                                  <motion.div 
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 200, opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
+                                  >
+                                    <MapContainer 
+                                      key={registrationLocation ? `${registrationLocation.lat}-${registrationLocation.lng}` : 'map'}
+                                      center={[registrationLocation.lat, registrationLocation.lng]} 
+                                      zoom={16} 
+                                      style={{ height: '100%', width: '100%' }}
+                                      dragging={false}
+                                      doubleClickZoom={false}
+                                      scrollWheelZoom={false}
+                                      touchZoom={false}
+                                      zoomControl={false}
+                                      boxZoom={false}
+                                    >
+                                      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                      <Marker position={[registrationLocation.lat, registrationLocation.lng]} />
+                                    </MapContainer>
+                                    <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
                     </div>
+                  </>
+                )}
+              </motion.div>
+            )}
                   </motion.div>
                 )}
 
