@@ -1185,8 +1185,9 @@ export function Register() {
                           </AnimatePresence>
                         </div>
                       )}
-              </motion.div>
-            )}
+                    </div>
+                  </motion.div>
+                )}
 
             {step === 1 && (
               <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
