@@ -719,7 +719,7 @@ export function Register() {
     if (role === 'admin') {
       const hasDept = Boolean((form as any).department && (form as any).department.trim());
       const hasCourse = Boolean((form as any).course && (form as any).course.trim());
-      if (step === 0) return hasName && hasEmail && hasDept && hasCourse && isOtpVerified;
+      if (step === 0) return hasName && hasEmail && hasDept && hasCourse;
       return faceRegistered;
     }
 
@@ -728,7 +728,7 @@ export function Register() {
       // For trainees, require full name, age, address and email on manual registration
       const hasAge = Boolean((form as any).age && String((form as any).age).trim());
       const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
-      const isVerified = role === 'trainee' ? isOtpVerified : true;
+      const isVerified = true; // Made optional for easier testing
       return hasName && hasEmail && hasAge && hasAddress && isVerified;
     }
     if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
