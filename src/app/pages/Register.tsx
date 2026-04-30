@@ -696,10 +696,16 @@ export function Register() {
     // Trainee / HTE
     if (step === 0) {
       // For trainees, require full name, age, address and email on manual registration
-      const hasAge = Boolean((form as any).age && String((form as any).age).trim());
       const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
       const isVerified = true; // Made optional for easier testing
-      const hasValidPassword = form.password && form.password.length >= 8 && form.password === form.confirmPassword;
+      
+      const hasUpper = /[A-Z]/.test(form.password);
+      const hasLower = /[a-z]/.test(form.password);
+      const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
+      const hasLength = form.password.length >= 8;
+      const passwordsMatch = form.password === form.confirmPassword;
+      
+      const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
       return hasName && hasEmail && hasAge && hasAddress && isVerified && hasValidPassword;
     }
     if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
@@ -926,11 +932,42 @@ export function Register() {
                       />
                     </div>
                   </div>
-                  {form.confirmPassword && form.password !== form.confirmPassword && (
-                    <p className="text-[10px] text-red-500 font-medium px-1">Passwords do not match</p>
-                  )}
-                  {form.password && form.password.length < 8 && (
-                    <p className="text-[10px] text-gray-500 font-medium px-1">Password must be at least 8 characters</p>
+                  {form.password && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-1.5">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Security Checklist</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3 h-3 rounded-full flex items-center justify-center ${form.password.length >= 8 ? 'bg-green-500' : 'bg-slate-200'}`}>
+                            <Check size={8} className="text-white" />
+                          </div>
+                          <span className={`text-[10px] ${form.password.length >= 8 ? 'text-green-700 font-medium' : 'text-slate-500'}`}>8+ Characters</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3 h-3 rounded-full flex items-center justify-center ${/[A-Z]/.test(form.password) ? 'bg-green-500' : 'bg-slate-200'}`}>
+                            <Check size={8} className="text-white" />
+                          </div>
+                          <span className={`text-[10px] ${/[A-Z]/.test(form.password) ? 'text-green-700 font-medium' : 'text-slate-500'}`}>Uppercase (A-Z)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3 h-3 rounded-full flex items-center justify-center ${/[a-z]/.test(form.password) ? 'bg-green-500' : 'bg-slate-200'}`}>
+                            <Check size={8} className="text-white" />
+                          </div>
+                          <span className={`text-[10px] ${/[a-z]/.test(form.password) ? 'text-green-700 font-medium' : 'text-slate-500'}`}>Lowercase (a-z)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-3 h-3 rounded-full flex items-center justify-center ${/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? 'bg-green-500' : 'bg-slate-200'}`}>
+                            <Check size={8} className="text-white" />
+                          </div>
+                          <span className={`text-[10px] ${/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? 'text-green-700 font-medium' : 'text-slate-500'}`}>Special Char</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 col-span-2">
+                          <div className={`w-3 h-3 rounded-full flex items-center justify-center ${form.confirmPassword && form.password === form.confirmPassword ? 'bg-green-500' : 'bg-slate-200'}`}>
+                            <Check size={8} className="text-white" />
+                          </div>
+                          <span className={`text-[10px] ${form.confirmPassword && form.password === form.confirmPassword ? 'text-green-700 font-medium' : 'text-slate-500'}`}>Passwords Match</span>
+                        </div>
+                      </div>
+                    </div>
                   )}
                   
                   <div className="flex items-center gap-2 px-1">
