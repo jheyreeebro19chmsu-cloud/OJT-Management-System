@@ -693,25 +693,34 @@ export function Register() {
       return faceRegistered;
     }
 
-    // Trainee / HTE
-    if (step === 0) {
-      // For trainees, require full name, age, address and email on manual registration
-      const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
-      const hasAge = Boolean((form as any).age && String((form as any).age).trim());
-      const isVerified = true; // Made optional for easier testing
-      
-      const hasUpper = /[A-Z]/.test(form.password);
-      const hasLower = /[a-z]/.test(form.password);
-      const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
-      const hasLength = form.password.length >= 8;
-      const passwordsMatch = form.password === form.confirmPassword;
-      
-      const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
-      return hasName && hasEmail && hasAge && hasAddress && isVerified && hasValidPassword;
+    // Trainee
+    if (role === 'trainee') {
+      if (step === 0) {
+        // For trainees, require full name, age, address and email on manual registration
+        const hasAddress = Boolean(registrationAddress || (form as any).street || (form as any).city || (form as any).region || (form as any).country || (form as any).barangay);
+        const hasAge = Boolean((form as any).age && String((form as any).age).trim());
+        const isVerified = true; 
+        
+        const hasUpper = /[A-Z]/.test(form.password);
+        const hasLower = /[a-z]/.test(form.password);
+        const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
+        const hasLength = form.password.length >= 8;
+        const passwordsMatch = form.password === form.confirmPassword;
+        
+        const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
+        return hasName && hasEmail && hasAge && hasAddress && isVerified && hasValidPassword;
+      }
+      if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
+      if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
+      return faceRegistered;
     }
-    if (step === 1) return Boolean((form as any).companyName && (form as any).supervisorName && (form as any).startDate && (form as any).endDate);
-    if (step === 2) return Boolean((form as any).schoolName && (form as any).course);
-    return faceRegistered;
+
+    // HTE
+    if (role === 'hte') {
+      if (step === 0) return Boolean((form as any).companyName && ((form as any).companyAddress || registrationAddress));
+      if (step === 1) return Boolean((form as any).contactPerson && (form as any).contactPhone && (form as any).email && form.password && form.password === form.confirmPassword);
+      return true;
+    }
   };
 
   const locationStatusConfig = {
