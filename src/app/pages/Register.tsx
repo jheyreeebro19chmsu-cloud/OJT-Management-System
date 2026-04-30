@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, Loader, ShieldCheck, UserCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, ShieldCheck } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { FaceCapture } from '../components/FaceCapture';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
@@ -15,16 +15,13 @@ import { QRCodeSVG } from 'qrcode.react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 
-// Fix Leaflet marker icon
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-const DefaultIcon = L.icon({
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
+// Fix Leaflet marker icon using a method that's safer for production builds
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png',
 });
-L.Marker.prototype.options.icon = DefaultIcon;
 
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 const stepsAdmin = ['Personal Info', 'Face Registration'];
