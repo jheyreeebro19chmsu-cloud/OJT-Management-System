@@ -1147,7 +1147,13 @@ export function Register() {
                             </div>
                             <button 
                               type="button"
-                              onClick={() => setShowLocationMap(!showLocationMap)}
+                              onClick={() => {
+                                setShowLocationMap(!showLocationMap);
+                                // Force a resize event after a short delay to fix Leaflet "half-grey" issue
+                                setTimeout(() => {
+                                  window.dispatchEvent(new Event('resize'));
+                                }, 300);
+                              }}
                               className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
                             >
                               {showLocationMap ? 'Hide Map' : 'See your location'}
@@ -1163,6 +1169,7 @@ export function Register() {
                                 className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
                               >
                                 <MapContainer 
+                                  key={registrationLocation ? `${registrationLocation.lat}-${registrationLocation.lng}` : 'map'}
                                   center={[registrationLocation.lat, registrationLocation.lng]} 
                                   zoom={16} 
                                   style={{ height: '100%', width: '100%' }}
