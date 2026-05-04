@@ -1,3 +1,7 @@
+@import "fonts.css";
+@import "theme.css";
+@import "tailwind.css";
+
 /* From Uiverse.io by zanina-yassine */ 
 .premium-btn {
   min-width: 120px;
