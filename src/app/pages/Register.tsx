@@ -580,7 +580,7 @@ export function Register() {
             {locConfig.icon}
             <span className="flex-1 truncate">{locConfig.label}</span>
             {(locationStatus === 'denied' || locationStatus === 'error') && (
-              <button onClick={captureLocation} className="underline shrink-0">Retry</button>
+              <button onClick={captureLocation} className="premium-btn !min-w-[60px] !py-1 !px-3 !text-[10px] !rounded-md !bg-white/20">Retry</button>
             )}
           </div>
         )}
@@ -959,7 +959,7 @@ export function Register() {
                           <button 
                             type="button" 
                             onClick={captureLocation}
-                            className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${locationStatus === 'captured' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'}`}
+                            className={`premium-btn w-full !rounded-xl ${locationStatus === 'captured' ? '!bg-green-600 !text-white' : '!bg-blue-600 !text-white'}`}
                           >
                             {locationStatus === 'capturing' ? <Loader className="animate-spin" size={16} /> : <MapPin size={16} />}
                             {locationStatus === 'captured' ? 'Location Secured' : 'Pin Precise Company Location'}
@@ -1338,7 +1338,7 @@ export function Register() {
                                       window.dispatchEvent(new Event('resize'));
                                     }, 300);
                                   }}
-                                  className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                                  className="premium-btn !min-w-[100px] !py-1.5 !px-3 !text-[10px] !bg-white !text-slate-700 !border !border-slate-200"
                                 >
                                   {showLocationMap ? 'Hide Map' : 'See your location'}
                                 </button>
@@ -1486,8 +1486,8 @@ export function Register() {
                           <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
                         </div>
                         <button onClick={() => setFaceCapturing(true)}
-                          className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2">
-                          <Camera size={16} />
+                          className="premium-btn px-8 py-3 bg-purple-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-purple-200">
+                          <Camera size={18} />
                           Register Face
                         </button>
                       </div>
@@ -1510,20 +1510,20 @@ export function Register() {
               <div className="flex gap-3">
                 {step > 0 && (
                   <button onClick={handleBack}
-                    className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                    className="premium-btn !min-w-[100px] !bg-slate-50 border border-slate-200 !text-slate-600">
                     <ArrowLeft size={14} />
                     Back
                   </button>
                 )}
                 {step < steps.length - 1 ? (
                   <button onClick={handleNext} disabled={!isStepValid()}
-                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200">
+                    className="premium-btn flex-1 shadow-lg shadow-blue-200">
                     Next
                     <ArrowRight size={14} />
                   </button>
                 ) : (
                   <button onClick={handleSubmit} disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
-                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200">
+                    className="premium-btn flex-1 !bg-green-600 !text-white shadow-lg shadow-green-200">
                     <Check size={14} />
                     Complete Registration
                   </button>

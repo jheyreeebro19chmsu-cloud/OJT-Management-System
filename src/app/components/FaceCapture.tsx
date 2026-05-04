@@ -475,7 +475,7 @@ export function FaceCapture({
         {state === 'failed' && (
           <button
             onClick={handleRetry}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 transition-colors"
+            className="premium-btn flex-1 !bg-sky-600 !text-white"
           >
             <RefreshCw size={16} />
             Try Again
@@ -484,7 +484,7 @@ export function FaceCapture({
         {['scanning', 'analyzing', 'verifying'].includes(state) && (
           <button
             onClick={handleManualSnap}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200 animate-in fade-in zoom-in duration-300"
+            className="premium-btn flex-1 !bg-purple-600 !text-white shadow-lg shadow-purple-200"
           >
             <Camera size={16} />
             Take Photo Now
@@ -493,7 +493,7 @@ export function FaceCapture({
         {!['success'].includes(state) && (
           <button
             onClick={() => { stopCamera(); onCancel(); }}
-            className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
+            className="premium-btn !min-w-[100px] !bg-slate-100 !text-slate-600"
           >
             Cancel
           </button>
@@ -501,7 +501,7 @@ export function FaceCapture({
         {state === 'idle' && (
           <button
             onClick={startScan}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 transition-colors"
+            className="premium-btn flex-1 !bg-sky-600 !text-white"
           >
             <Camera size={16} />
             Start Scan
