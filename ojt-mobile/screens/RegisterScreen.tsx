@@ -83,10 +83,13 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   };
 
   const handleNext = () => {
+    // Email verification bypassed
+    /*
     if (step === 0 && (role === 'trainee' || role === 'admin') && !isOtpVerified) {
       Alert.alert('Verification Required', 'Please verify your email with the confirmation code first.');
       return;
     }
+    */
 
     if (step < steps.length - 1) {
       setStep(step + 1);
@@ -354,8 +357,9 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             
             <Input label="Address" value={form.address} onChange={v => updateForm('address', v)} placeholder="123 Street, City, Province" />
             
-            {/* OTP UI Section */}
-            <View style={styles.otpSection}>
+            {/* Email Verification Hidden */}
+            {false && (
+              <View style={styles.otpSection}>
               <Text style={styles.otpTitle}>Email Verification</Text>
               {!isOtpVerified ? (
                 <View>
@@ -422,8 +426,9 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
               </View>
             </View>
 
-            {/* OTP Section for Instructor */}
-            <View style={styles.otpSection}>
+            {/* Identity Verification Hidden */}
+            {false && (
+              <View style={styles.otpSection}>
               <Text style={styles.otpTitle}>Identity Verification</Text>
               {!isOtpVerified ? (
                 <View>

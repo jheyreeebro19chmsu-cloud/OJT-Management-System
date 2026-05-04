@@ -178,18 +178,50 @@ export function Register() {
         update('region', parsed.region);
         update('province', parsed.province);
         update('city', parsed.city);
-        update('barangay', parsed.barangay);
+        
+        // If it's PH, check if the city/barangay exists in our local data
+        if (parsed.country === 'PH') {
+          const regionData = PH_ADDRESS_DATA.find(r => r.name === parsed.region);
+          const provinceData = regionData?.provinces.find(p => p.name === parsed.province);
+          const cityExists = provinceData?.cities.includes(parsed.city);
+          
+          if (!cityExists) {
+            update('city', 'other');
+            update('city_manual', parsed.city);
+          }
+          
+          const barangayList = BARANGAY_SAMPLES[parsed.city] || [];
+          if (!barangayList.includes(parsed.barangay)) {
+            update('barangay', 'other');
+            update('barangay_manual', parsed.barangay);
+          } else {
+            update('barangay', parsed.barangay);
+          }
+        } else {
+          update('barangay', parsed.barangay);
+        }
+        
         update('street', parsed.street);
         setRegistrationAddress(parsed.formatted);
       }
     } else {
       // GeoNames logic
+      const countryCode = s.countryCode || 'PH';
       setAddressSearch(s.name + (s.adminName2 ? `, ${s.adminName2}` : '') + (s.countryName ? `, ${s.countryName}` : ''));
-      update('country', s.countryCode || '');
-      update('region', s.adminCode1 || s.adminName1 || '');
+      update('country', countryCode);
+      update('region', s.adminName1 || '');
       update('province', s.adminName2 || '');
-      update('city', s.adminName2 || s.name || '');
-      update('barangay', s.name || '');
+      
+      if (countryCode === 'PH') {
+        update('city', 'other');
+        update('city_manual', s.adminName2 || s.name || '');
+        update('barangay', 'other');
+        update('barangay_manual', s.name || '');
+      } else {
+        update('city', s.adminName2 || s.name || '');
+        update('barangay', s.name || '');
+      }
+      
       const fullAddr = [s.name, s.adminName2, s.adminName1, s.countryName].filter(Boolean).join(', ');
       setRegistrationAddress(fullAddr);
     }
@@ -254,7 +286,7 @@ export function Register() {
   const handleSubmit = async () => {
     const empId = form.employeeId || `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
     // If OTP was verified against backend, attempt server registration first
-        if (isOtpVerified) {
+        if (true) { // bypass isOtpVerified check
       try {
           let first_name = form.first_name;
           let last_name = form.last_name;
@@ -406,56 +438,44 @@ export function Register() {
     }
   };
 
-    const isStepValid = () => {
-      const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
-      const hasEmail = Boolean(form.email && form.email.toString().trim());
-
-      const hasUpper = /[A-Z]/.test(form.password);
-      const hasLower = /[a-z]/.test(form.password);
-      const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
-      const hasLength = form.password.length >= 8;
-      const passwordsMatch = form.password && form.password === form.confirmPassword;
-      const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
-
-      const hasValidCountry = form.country === 'other' ? Boolean(form.country_manual?.trim()) : Boolean(form.country);
-      const hasValidRegion = form.region === 'other' ? Boolean(form.region_manual?.trim()) : Boolean(form.region);
-      const hasValidCity = form.city === 'other' ? Boolean(form.city_manual?.trim()) : Boolean(form.city);
-      const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangay_manual?.trim()) : Boolean(form.barangay);
-      
-      // Province is specifically for PH or manual state/province fields
-      const hasValidProvince = form.country === 'PH' 
-        ? (form.province === 'other' ? Boolean(form.province_manual?.trim()) : Boolean(form.province))
-        : true; // Non-PH countries use State (Region) and City
-
-      const hasFullAddress = hasValidCountry && hasValidRegion && hasValidCity && hasValidBarangay && hasValidProvince;
-
-      if (role === 'admin') {
-        const hasDept = Boolean(form.department && form.department.trim());
-        const hasCourse = Boolean(form.course && form.course.trim());
-        if (step === 0) {
-          return hasName && hasEmail && hasDept && hasCourse && hasFullAddress && hasValidPassword;
+      const getValidationErrors = () => {
+        const errors = [];
+        if (!hasName) errors.push("Full Name");
+        if (!hasEmail) errors.push("Valid Email");
+        if (!hasValidPassword) {
+          if (!hasLength) errors.push("Password (min 8 chars)");
+          if (!hasUpper || !hasLower) errors.push("Password (upper & lower case)");
+          if (!hasSpecial) errors.push("Password (special char)");
+          if (!passwordsMatch) errors.push("Passwords don't match");
         }
-        return faceRegistered;
-      }
+        if (!hasValidCountry) errors.push("Country");
+        if (!hasValidRegion) errors.push("Region");
+        if (!hasValidProvince) errors.push("Province");
+        if (!hasValidCity) errors.push("City/Municipality");
+        if (!hasValidBarangay) errors.push("Barangay");
 
-      if (role === 'trainee') {
-        if (step === 0) {
-          const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
-          return hasName && hasEmail && hasAge && hasFullAddress && isOtpVerified && hasValidPassword && locationStatus === 'captured';
+        if (role === 'admin') {
+          if (!Boolean(form.department?.trim())) errors.push("Department");
+          if (!Boolean(form.course?.trim())) errors.push("Course");
         }
-        if (step === 1) return Boolean(form.companyName && form.supervisorName && form.startDate && form.endDate);
-        if (step === 2) return Boolean(form.schoolName && form.course);
-        return faceRegistered;
-      }
+        
+        if (role === 'trainee') {
+          if (step === 0) {
+            const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
+            if (!hasAge) errors.push("Birthdate/Age");
+            // Email Verification Code check removed
+            if (locationStatus !== 'captured') errors.push("Capture Location");
+          }
+        }
+        
+        return errors;
+      };
 
-      if (role === 'hte') {
-        if (step === 0) {
-          return Boolean(form.companyName && hasFullAddress && locationStatus === 'captured');
-        }
-        if (step === 1) return Boolean(form.contactPerson && form.contactPhone && form.email && hasValidPassword);
-        return true;
-      }
-    };
+      const isStepValid = () => {
+        return getValidationErrors().length === 0;
+      };
+
+      const validationErrors = getValidationErrors();
 
   const locationStatusConfig = {
     idle: { color: 'bg-gray-50 border-gray-200', text: 'text-gray-500', label: 'Waiting for location...', icon: <MapPin size={14} className="text-gray-400" /> },
@@ -1004,7 +1024,8 @@ export function Register() {
                         </div>
                       )}
                       
-                      {role === 'trainee' && (
+                      {/* Email Verification hidden as requested */}
+                      {false && role === 'trainee' && (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
                           <div className="flex items-center justify-between">
                             <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Email Verification</label>
@@ -1459,27 +1480,36 @@ export function Register() {
 
           {/* Navigation - Only show when role is selected */}
           {role !== null && (
-            <div className="flex gap-3 mt-6">
-              {step > 0 && (
-                <button onClick={handleBack}
-                  className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-                  <ArrowLeft size={14} />
-                  Back
-                </button>
+            <div className="mt-6">
+              {validationErrors.length > 0 && step === 0 && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl">
+                  <p className="text-[10px] font-bold text-red-800 uppercase tracking-wider mb-1">Missing Requirements:</p>
+                  <p className="text-xs text-red-600 font-medium">{validationErrors.join(' • ')}</p>
+                </div>
               )}
-              {step < steps.length - 1 ? (
-                <button onClick={handleNext} disabled={!isStepValid()}
-                  className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  Next
-                  <ArrowRight size={14} />
-                </button>
-              ) : (
-                <button onClick={handleSubmit} disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
-                  className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  <Check size={14} />
-                  Complete Registration
-                </button>
-              )}
+              
+              <div className="flex gap-3">
+                {step > 0 && (
+                  <button onClick={handleBack}
+                    className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                    <ArrowLeft size={14} />
+                    Back
+                  </button>
+                )}
+                {step < steps.length - 1 ? (
+                  <button onClick={handleNext} disabled={!isStepValid()}
+                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200">
+                    Next
+                    <ArrowRight size={14} />
+                  </button>
+                ) : (
+                  <button onClick={handleSubmit} disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
+                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200">
+                    <Check size={14} />
+                    Complete Registration
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
