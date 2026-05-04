@@ -440,6 +440,25 @@ export function Register() {
 
       const getValidationErrors = () => {
         const errors = [];
+        
+        const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
+        const hasEmail = Boolean(form.email && form.email.toString().trim());
+
+        const hasUpper = /[A-Z]/.test(form.password);
+        const hasLower = /[a-z]/.test(form.password);
+        const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
+        const hasLength = (form.password || '').length >= 8;
+        const passwordsMatch = form.password && form.password === form.confirmPassword;
+        const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
+
+        const hasValidCountry = form.country === 'other' ? Boolean(form.country_manual?.trim()) : Boolean(form.country);
+        const hasValidRegion = form.region === 'other' ? Boolean(form.region_manual?.trim()) : Boolean(form.region);
+        const hasValidCity = form.city === 'other' ? Boolean(form.city_manual?.trim()) : Boolean(form.city);
+        const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangay_manual?.trim()) : Boolean(form.barangay);
+        const hasValidProvince = form.country === 'PH' 
+          ? (form.province === 'other' ? Boolean(form.province_manual?.trim()) : Boolean(form.province))
+          : true;
+
         if (!hasName) errors.push("Full Name");
         if (!hasEmail) errors.push("Valid Email");
         if (!hasValidPassword) {
