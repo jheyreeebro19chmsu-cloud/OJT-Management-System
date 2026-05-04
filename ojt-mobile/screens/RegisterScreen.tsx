@@ -36,7 +36,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [registrationComplete, setRegistrationComplete] = useState(false);
   const [registeredInstructorId, setRegisteredInstructorId] = useState('');
-  const qrRef = useRef<any>();
+  const qrRef = React.useRef<any>(null);
   
   const [form, setForm] = useState({
     name: '',

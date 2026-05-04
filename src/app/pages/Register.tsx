@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, ShieldCheck, Loader, UserCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, ShieldCheck, Loader, UserCircle, Search, X } from 'lucide-react';
 import { useApp } from '../store/AppContext';
 import { FaceCapture } from '../components/FaceCapture';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
@@ -13,6 +13,7 @@ import { PH_ADDRESS_DATA, BARANGAY_SAMPLES } from '../data/ph_address_data';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { Country, State, City } from 'country-state-city';
+import addressApi from '../services/addressApi';
 
 // Fix Leaflet marker icon using a method that's safer for production builds
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -65,6 +66,9 @@ export function Register() {
   const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number } | undefined>();
   const [registrationAddress, setRegistrationAddress] = useState<string>('');
   const [showLocationMap, setShowLocationMap] = useState(false);
+  const [addressSearch, setAddressSearch] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([]);
+  const [searchingAddress, setSearchingAddress] = useState(false);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 
@@ -138,6 +142,58 @@ export function Register() {
       
       return newForm;
     });
+  };
+
+  const handleAddressSearch = async (val: string) => {
+    setAddressSearch(val);
+    if (val.length < 3) {
+      setAddressSuggestions([]);
+      return;
+    }
+    setSearchingAddress(true);
+    try {
+      // Fetch from both GeoNames and OSM for maximum coverage
+      const [geoRes, osmRes] = await Promise.all([
+        addressApi.autocompletePlaces(val),
+        addressApi.searchGlobalAddress(val)
+      ]);
+      
+      const geoItems = (geoRes.geonames || []).map((s: any) => ({ ...s, source: 'geonames' }));
+      const osmItems = (osmRes.results || []).map((s: any) => ({ ...s, source: 'osm' }));
+      
+      setAddressSuggestions([...osmItems, ...geoItems].slice(0, 15));
+    } catch (err) {
+      console.error('Search error:', err);
+    } finally {
+      setSearchingAddress(false);
+    }
+  };
+
+  const selectAddressSuggestion = async (s: any) => {
+    if (s.source === 'osm') {
+      const parsed = addressApi.parseOsmAddress(s);
+      if (parsed) {
+        setAddressSearch(parsed.formatted);
+        update('country', parsed.country);
+        update('region', parsed.region);
+        update('province', parsed.province);
+        update('city', parsed.city);
+        update('barangay', parsed.barangay);
+        update('street', parsed.street);
+        setRegistrationAddress(parsed.formatted);
+      }
+    } else {
+      // GeoNames logic
+      setAddressSearch(s.name + (s.adminName2 ? `, ${s.adminName2}` : '') + (s.countryName ? `, ${s.countryName}` : ''));
+      update('country', s.countryCode || '');
+      update('region', s.adminCode1 || s.adminName1 || '');
+      update('province', s.adminName2 || '');
+      update('city', s.adminName2 || s.name || '');
+      update('barangay', s.name || '');
+      const fullAddr = [s.name, s.adminName2, s.adminName1, s.countryName].filter(Boolean).join(', ');
+      setRegistrationAddress(fullAddr);
+    }
+    setAddressSuggestions([]);
   };
 
   const handleRequestOtp = async () => {
@@ -584,8 +640,53 @@ export function Register() {
                       </div>
                       
                       <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4">
-                        <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Company Location (Geofencing)</p>
+                        <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Company Location (GeoNames Search)</p>
                         
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search size={14} className="text-blue-400" />
+                          </div>
+                          <input 
+                            value={addressSearch}
+                            onChange={e => handleAddressSearch(e.target.value)}
+                            placeholder="Search your company address..."
+                            className="w-full pl-9 pr-3 py-2.5 bg-white border border-blue-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                          />
+                          {searchingAddress && (
+                            <div className="absolute right-3 top-2.5">
+                              <Loader size={14} className="animate-spin text-blue-500" />
+                            </div>
+                          )}
+                          
+                          {addressSuggestions.length > 0 && (
+                            <div className="absolute z-[2000] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                              {addressSuggestions.map((s, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => selectAddressSuggestion(s)}
+                                  className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
+                                >
+                                  <div className="flex justify-between items-center mb-1">
+                                    <p className="text-sm font-bold text-gray-800 truncate flex-1">
+                                      {s.source === 'osm' ? (s.name || s.display_name?.split(',')[0]) : s.name}
+                                    </p>
+                                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 uppercase tracking-tighter">
+                                      {s.source}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 line-clamp-1">
+                                    {s.source === 'osm' ? s.display_name : `${s.adminName2 ? `${s.adminName2}, ` : ''}${s.adminName1}, ${s.countryName}`}
+                                  </p>
+                                </button>
+                              ))}
+                              <div className="p-2 bg-gray-50 border-t border-gray-100 text-[8px] text-center text-gray-400">
+                                Search powered by OpenStreetMap & GeoNames
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
@@ -968,6 +1069,43 @@ export function Register() {
                             <input value={form.age} disabled type="number"
                               placeholder="Enter birthdate first" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500" />
                           </div>
+                          <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4 mb-4">
+                            <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Home Address (GeoNames Search)</p>
+                            
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <Search size={14} className="text-blue-400" />
+                              </div>
+                              <input 
+                                value={addressSearch}
+                                onChange={e => handleAddressSearch(e.target.value)}
+                                placeholder="Search your home address..."
+                                className="w-full pl-9 pr-3 py-2.5 bg-white border border-blue-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                              />
+                              {searchingAddress && (
+                                <div className="absolute right-3 top-2.5">
+                                  <Loader size={14} className="animate-spin text-blue-500" />
+                                </div>
+                              )}
+                              
+                              {addressSuggestions.length > 0 && (
+                                <div className="absolute z-[2000] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                  {addressSuggestions.map((s, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={() => selectAddressSuggestion(s)}
+                                      className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
+                                    >
+                                      <p className="text-sm font-bold text-gray-800">{s.name}</p>
+                                      <p className="text-[10px] text-gray-500">{s.adminName2 ? `${s.adminName2}, ` : ''}{s.adminName1}, {s.countryName}</p>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>

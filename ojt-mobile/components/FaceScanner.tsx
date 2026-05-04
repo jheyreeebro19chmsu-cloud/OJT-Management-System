@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Camera, CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -12,7 +12,9 @@ interface FaceScannerProps {
 export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(false);
-  const cameraRef = useRef<any>(null);
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [lastCaptureTime, setLastCaptureTime] = useState(0);
+  const cameraRef = React.useRef<any>(null);
 
   useEffect(() => {
     if (!permission) {
@@ -40,30 +42,45 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
   async function takePicture() {
     if (cameraRef.current && !isCapturing) {
+      const now = Date.now();
+      if (now - lastCaptureTime < 2000) return; // Debounce auto-capture
+      
       setIsCapturing(true);
+      setLastCaptureTime(now);
+      
       try {
+        // Take a low-res picture directly for maximum speed
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.5,
+          quality: 0.3,
           base64: true,
+          shutterSound: false,
+          skipProcessing: true, // Crucial for "instant" feel
         });
 
-        // Resize image to be smaller for faster processing/upload
-        const resized = await ImageManipulator.manipulateAsync(
-          photo.uri,
-          [{ resize: { width: 320 } }],
-          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-        );
-
-        if (resized.base64) {
-          onCapture(`data:image/jpeg;base64,${resized.base64}`);
+        if (photo.base64) {
+          onCapture(`data:image/jpeg;base64,${photo.base64}`);
         }
       } catch (error) {
-        Alert.alert('Error', 'Failed to capture image');
+        console.error('Capture error:', error);
       } finally {
         setIsCapturing(false);
       }
     }
   }
+
+  const handleFacesDetected = ({ faces }: any) => {
+    if (faces.length > 0) {
+      const face = faces[0];
+      // Basic check if face is roughly centered and large enough
+      if (face.bounds.size.width > 100) {
+        setFaceDetected(true);
+        // Auto-capture after a tiny delay to ensure focus
+        setTimeout(() => takePicture(), 100);
+      }
+    } else {
+      setFaceDetected(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -71,10 +88,19 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
         style={styles.camera} 
         facing="user" 
         ref={cameraRef}
+        onFacesDetected={handleFacesDetected}
+        barcodeScannerSettings={{}} // Needed to trigger some internal optimizations
       >
         <View style={styles.overlay}>
-          {/* Guide frame */}
-          <View style={styles.guideFrame} />
+          {/* Guide frame with color feedback */}
+          <View style={[
+            styles.guideFrame, 
+            faceDetected && { borderColor: '#22c55e', borderStyle: 'solid', borderWidth: 3 }
+          ]} />
+          
+          {faceDetected && (
+            <Text style={styles.captureAlert}>Capturing...</Text>
+          )}
           
           <View style={styles.controls}>
             <TouchableOpacity style={styles.closeButton} onPress={onCancel}>
@@ -124,12 +150,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   guideFrame: {
-    width: 250,
-    height: 350,
+    width: 260,
+    height: 360,
     borderWidth: 2,
-    borderColor: '#fff',
-    borderRadius: 125,
+    borderColor: 'rgba(255,255,255,0.5)',
+    borderRadius: 130,
     borderStyle: 'dashed',
+  },
+  captureAlert: {
+    position: 'absolute',
+    top: '30%',
+    color: '#22c55e',
+    fontSize: 24,
+    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 5,
   },
   controls: {
     position: 'absolute',

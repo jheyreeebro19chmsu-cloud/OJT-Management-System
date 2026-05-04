@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -14,7 +14,7 @@ import {
   SafeAreaView
 } from 'react-native';
 import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check } from 'lucide-react-native';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
 import RegisterScreen from './screens/RegisterScreen';
 import ApplicationScreen from './screens/ApplicationScreen';
@@ -36,6 +36,7 @@ export default function App() {
   const [showDTR, setShowDTR] = useState(false);
   const [showHTELink, setShowHTELink] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -120,16 +121,39 @@ export default function App() {
           {session && profile ? (
             scanning ? (
               <View style={styles.scannerContainer}>
-                <BarCodeScanner
-                  onBarCodeScanned={handleBarCodeScanned}
-                  style={StyleSheet.absoluteFillObject}
-                />
-                <View style={styles.scannerOverlay}>
-                  <Text style={styles.scannerText}>Scan Instructor's QR Code</Text>
-                  <TouchableOpacity style={styles.cancelScanBtn} onPress={() => setScanning(false)}>
-                    <Text style={styles.cancelScanBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
+                {!permission ? (
+                  <View style={styles.centered}><ActivityIndicator size="large" /></View>
+                ) : !permission.granted ? (
+                  <View style={styles.centered}>
+                    <Text style={{ textAlign: 'center', marginBottom: 20 }}>We need your permission to show the camera</Text>
+                    <TouchableOpacity 
+                      style={[styles.loginButton, { paddingHorizontal: 40 }]} 
+                      onPress={requestPermission}
+                    >
+                      <Text style={styles.loginButtonText}>Grant Permission</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={{ marginTop: 20 }} onPress={() => setScanning(false)}>
+                      <Text style={{ color: '#ef4444' }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <CameraView
+                      style={StyleSheet.absoluteFillObject}
+                      facing="back"
+                      onBarcodeScanned={handleBarCodeScanned}
+                      barcodeScannerSettings={{
+                        barcodeTypes: ['qr'],
+                      }}
+                    />
+                    <View style={styles.scannerOverlay}>
+                      <Text style={styles.scannerText}>Scan Instructor's QR Code</Text>
+                      <TouchableOpacity style={styles.cancelScanBtn} onPress={() => setScanning(false)}>
+                        <Text style={styles.cancelScanBtnText}>Cancel</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
               </View>
             ) : showApplication && scannedInstructorId ? (
               <ApplicationScreen 

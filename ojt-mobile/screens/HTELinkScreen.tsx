@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -17,7 +17,7 @@ interface HTELinkScreenProps {
 }
 
 export default function HTELinkScreen({ onBack, profile }: HTELinkScreenProps) {
-  const qrRef = useRef<any>();
+  const qrRef = React.useRef<any>(null);
 
   async function handleShare() {
     try {

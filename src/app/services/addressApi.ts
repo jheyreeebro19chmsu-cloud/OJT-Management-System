@@ -164,6 +164,49 @@ export async function searchStreets(country: string, city: string, q: string) {
   return json;
 }
 
+// Search for complete addresses using Nominatim (OpenStreetMap)
+export async function searchGlobalAddress(q: string) {
+  if (!q || q.length < 3) return { results: [] };
+  
+  if (!API_BASE) return { results: [] };
+
+  const params = new URLSearchParams();
+  params.set('q', q);
+  params.set('format', 'json');
+  params.set('addressdetails', '1');
+  params.set('limit', '10');
+  
+  // Reuse the osm/streets proxy logic but for general search
+  const url = `${API_BASE.replace(/\/$/, '')}/osm/streets/?q=${encodeURIComponent(q)}&limit=10`;
+  const res = await fetch(url);
+  return res.json();
+}
+
+// Parse OSM address components into our form structure
+export function parseOsmAddress(osmItem: any) {
+  if (!osmItem || !osmItem.address) return null;
+  const addr = osmItem.address;
+  
+  // Map OSM fields to our structure
+  // Barangay in PH is often 'suburb', 'neighbourhood', 'village', or 'quarter'
+  const barangay = addr.suburb || addr.neighbourhood || addr.village || addr.quarter || addr.hamlet || '';
+  const city = addr.city || addr.town || addr.municipality || addr.city_district || '';
+  const province = addr.province || addr.county || addr.state_district || '';
+  const region = addr.state || addr.region || '';
+  const country = addr.country_code ? addr.country_code.toUpperCase() : 'PH';
+  const street = addr.road || addr.pedestrian || addr.path || '';
+
+  return {
+    barangay,
+    city,
+    province,
+    region,
+    country,
+    street,
+    formatted: osmItem.display_name
+  };
+}
+
 // ---------------- IndexedDB simple helpers ----------------
 const DB_NAME = 'ojt_address_cache_v1';
 const DB_STORE = 'streets';
@@ -490,8 +533,8 @@ export default {
   getPlaceDetails,
   parsePlaceComponents,
   getCountries,
-  searchCities,
-  searchStreets,
+  searchGlobalAddress,
+  parseOsmAddress,
   loadOfflineStreets,
   registerOfflineStreets,
   clearStreetCache,
