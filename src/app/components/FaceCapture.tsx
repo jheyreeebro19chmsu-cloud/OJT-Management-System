@@ -151,21 +151,21 @@ export function FaceCapture({
           else resolve(null);
         });
         await videoRef.current.play();
-        // Give the camera 500ms to auto-adjust exposure/white balance
-        await delay(500);
+        // Give the camera a brief moment to auto-adjust
+        await delay(200);
       }
 
       setState('scanning');
       setScanMessage('Position your face within the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
-      // Reduced delay for better UX
-      await delay(500);
+      // Minimal delay for UX
+      await delay(200);
       setState('analyzing');
       setScanMessage('Detecting face...');
       setProgress(40);
 
-      await delay(300);
+      await delay(100);
       setState('verifying');
       setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
       setProgress(80);
