@@ -32,7 +32,7 @@ type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
 
 export function Register() {
-  const { registerEmployee, updateEmployee } = useApp();
+  const { registerEmployee, updateEmployee, employees, hostSupervisors } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
@@ -443,6 +443,14 @@ export function Register() {
         
         const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
         const hasEmail = Boolean(form.email && form.email.toString().trim());
+        
+        // Check for email duplication
+        const emailExists = employees.some(e => e.email.toLowerCase() === form.email.toLowerCase()) || 
+                          hostSupervisors.some(h => h.email.toLowerCase() === form.email.toLowerCase());
+        
+        if (hasEmail && emailExists) {
+          errors.push('this email is already use');
+        }
 
         const hasUpper = /[A-Z]/.test(form.password);
         const hasLower = /[a-z]/.test(form.password);
