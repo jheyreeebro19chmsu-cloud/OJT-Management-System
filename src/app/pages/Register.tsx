@@ -311,8 +311,7 @@ export function Register() {
             };
             const res = await authAPI.registerStudent(payload);
           if (res.data && (res.data as any).tokens) {
-            localStorage.setItem('access_token', (res.data as any).tokens.access);
-            localStorage.setItem('refresh_token', (res.data as any).tokens.refresh);
+            // No auto-login: don't store tokens
           }
         } else if (role === 'hte') {
           const payload = {
@@ -324,8 +323,7 @@ export function Register() {
           };
           const res = await authAPI.registerHTE(payload);
           if (res.data && (res.data as any).tokens) {
-            localStorage.setItem('access_token', (res.data as any).tokens.access);
-            localStorage.setItem('refresh_token', (res.data as any).tokens.refresh);
+            // No auto-login: don't store tokens
           }
         }
       } catch (err) {
@@ -350,8 +348,7 @@ export function Register() {
         };
         const res = await authAPI.registerHTE(payload);
         if (res.data && (res.data as any).tokens) {
-          localStorage.setItem('access_token', (res.data as any).tokens.access);
-          localStorage.setItem('refresh_token', (res.data as any).tokens.refresh);
+          // No auto-login: don't store tokens
         }
       } catch (err) {
         // fallback: continue to local registration
@@ -428,13 +425,14 @@ export function Register() {
     }
     
     // Auto-redirect based on role
+    // Redirect to login after successful registration
     if (role === 'admin') {
-      navigate('/admin');
+      // For admin, show the success screen with QR code
       setRegistrationComplete(true);
-    } else if (role === 'hte') {
-      navigate('/host/dashboard');
+      toast.success('Registration successful! Please save your QR code.');
     } else {
-      navigate('/app');
+      toast.success('Registration successful! Please log in.');
+      navigate('/login');
     }
   };
 
