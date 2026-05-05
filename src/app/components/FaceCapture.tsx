@@ -37,19 +37,31 @@ export function FaceCapture({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   const stopCamera = useCallback(() => {
+    console.log("FaceCapture: stopping camera and clearing tracks");
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current.getTracks().forEach(t => {
+        t.stop();
+        console.log("FaceCapture: stopped track", t.label);
+      });
       streamRef.current = null;
     }
-    cancelAnimationFrame(animFrameRef.current);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
   }, []);
 
   const drawOverlay = useCallback(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!canvas || !video || !video.videoWidth) return;
+    
+    try {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
     canvas.width = video.videoWidth || 300;
     canvas.height = video.videoHeight || 400;
@@ -120,7 +132,10 @@ export function FaceCapture({
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
       animFrameRef.current = requestAnimationFrame(drawOverlay);
     }
-  }, [state]);
+    } catch (err) {
+      console.error("FaceCapture: drawOverlay error", err);
+    }
+  }, [state, mode]);
 
   const captureFrame = (): string | undefined => {
     const video = videoRef.current;
@@ -136,17 +151,30 @@ export function FaceCapture({
 
   const startScan = useCallback(async () => {
     console.log("FaceCapture: starting scan in mode", mode);
+    
+    // Safety: ensure any previous stream is closed first
+    stopCamera();
+    await delay(300);
+
     setState('requesting');
     setScanMessage('Requesting camera access...');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'user', 
-          width: { ideal: 640 }, 
-          height: { ideal: 480 } 
-        },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'user', 
+            width: { ideal: 640 }, 
+            height: { ideal: 480 } 
+          },
+          audio: false,
+        });
+      } catch (err) {
+        console.warn("FaceCapture: ideal constraints failed, trying fallback", err);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
       
       console.log("FaceCapture: camera stream acquired");
       streamRef.current = stream;
@@ -156,13 +184,28 @@ export function FaceCapture({
         // Wait for video to be ready
         await new Promise((resolve, reject) => {
           if (!videoRef.current) return reject("Video ref lost");
+          
+          // If already ready, resolve immediately
+          if (videoRef.current.readyState >= 2) {
+            console.log("FaceCapture: video already ready");
+            return resolve(true);
+          }
+
           videoRef.current.onloadedmetadata = () => {
-            console.log("FaceCapture: metadata loaded");
+            console.log("FaceCapture: metadata loaded event fired");
             resolve(true);
           };
           videoRef.current.onerror = (e) => reject(e);
-          // Timeout as fallback
-          setTimeout(() => resolve(true), 1000);
+          // If it takes more than 3 seconds, something is wrong with the stream
+          setTimeout(() => {
+            if (videoRef.current && videoRef.current.readyState >= 2) {
+              console.log("FaceCapture: metadata load timeout - but readyState is OK");
+              resolve(true);
+            } else {
+              console.error("FaceCapture: metadata load timeout - video not ready");
+              reject("Camera initialization timed out. Please check your connection.");
+            }
+          }, 3500);
         });
 
         await videoRef.current.play();
@@ -414,8 +457,16 @@ export function FaceCapture({
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900">
             <Camera size={48} className="text-gray-600 mb-3" />
             <p className="text-gray-400 text-sm text-center px-4">
-              {state === 'no-camera' ? 'Camera unavailable' : 'Camera ready'}
+              {state === 'no-camera' ? 'Camera unavailable' : (state === 'requesting' ? 'Initializing camera...' : 'Camera ready')}
             </p>
+            {state === 'requesting' && (
+              <button 
+                onClick={() => { stopCamera(); setTimeout(startScan, 500); }}
+                className="mt-4 text-xs bg-white/20 text-white px-3 py-1.5 rounded-lg hover:bg-white/30"
+              >
+                Reset Camera
+              </button>
+            )}
           </div>
         )}
 

@@ -21,6 +21,7 @@ export function TimeRecord() {
   const [completedMessage, setCompletedMessage] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -124,6 +125,7 @@ export function TimeRecord() {
     setPageState('check-geofence');
     setGeofencePassed(false);
     setGeofenceCoords(undefined);
+    setRetryCount(p => p + 1);
     if (employee) {
       const rec = getTodayRecord(employee.id);
       setCurrentRecord(rec);
@@ -262,6 +264,7 @@ export function TimeRecord() {
 
             <div className="flex justify-center">
               <FaceCapture
+                key={`face-verify-${employee?.id}-${retryCount}`}
                 mode="verify"
                 employeeName={employee?.name}
                 employeeId={employee?.id}

@@ -1454,6 +1454,7 @@ export function Register() {
 
                     {faceCapturing ? (
                       <FaceCapture
+                        key={`face-reg-${retryCount}`}
                         mode="register"
                         employeeName={form.name}
                         onSuccess={handleFaceSuccess}
