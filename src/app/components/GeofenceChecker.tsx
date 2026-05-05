@@ -137,11 +137,11 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     } catch (err: unknown) {
       const isPermissionDenied = isGeolocationPositionError(err) && err.code === 1;
       if (isPermissionDenied) {
-        setResult({ state: 'demo', zoneName: 'Demo Mode (Location Access Denied)' });
-        onResult(true, undefined);
+        setResult({ state: 'denied', zoneName: 'Location Access Denied' });
+        onResult(false, undefined);
       } else {
-        setResult({ state: 'demo', zoneName: 'Demo Mode (Location Unavailable)' });
-        onResult(true, undefined);
+        setResult({ state: 'error', zoneName: 'Location Service Unavailable' });
+        onResult(false, undefined);
       }
     }
   }, [activeZones, settings.geofenceEnabled, onResult]);
@@ -154,7 +154,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     if (!autoCheck) return;
     const intervalId = window.setInterval(() => {
       checkGeofence();
-    }, 12000);
+    }, 5000); // Increased frequency to 5 seconds
     return () => window.clearInterval(intervalId);
   }, [autoCheck, checkGeofence]);
 
