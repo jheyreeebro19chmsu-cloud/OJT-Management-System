@@ -91,12 +91,12 @@ export async function searchCities(country: string, q: string) {
     buildCityIndex();
     const countryCode = country.toUpperCase();
     let results = cityIndex.filter(c => c.countryCode === countryCode);
-    
+
     if (q) {
       const queryLower = q.toLowerCase();
       results = results.filter(c => c.nameLower.includes(queryLower) || c.nameLower.startsWith(queryLower));
     }
-    
+
     // Return top results sorted by population
     const out = results.slice(0, 50).map(c => ({
       name: c.name,
@@ -114,7 +114,7 @@ export async function searchCities(country: string, q: string) {
 
 export async function searchStreets(country: string, city: string, q: string) {
   // caching + offline dataset support
-  const cacheKey = `streets:${(country||'').toUpperCase()}:${(city||'').toLowerCase()}:${(q||'').toLowerCase()}`;
+  const cacheKey = `streets:${(country || '').toUpperCase()}:${(city || '').toLowerCase()}:${(q || '').toLowerCase()}`;
 
   // If offline dataset for this country is loaded, use it
   const countryCode = (country || '').toUpperCase();
@@ -122,10 +122,10 @@ export async function searchStreets(country: string, city: string, q: string) {
     try {
       const data = offlineStreetsRegistry[countryCode];
       const cityKey = (city || '').toLowerCase();
-      const cityStreets: string[] = data.cities && data.cities[cityKey] ? data.cities[cityKey] : [];
+      const cityStreets = data.streets && data.streets[cityKey] ? data.streets[cityKey] : [];
       const qLower = (q || '').toLowerCase();
       const filtered = qLower ? cityStreets.filter(s => s.toLowerCase().includes(qLower)) : cityStreets.slice();
-      const sorted = filtered.slice().sort((a,b) => a.localeCompare(b));
+      const sorted = filtered.slice().sort((a, b) => a.localeCompare(b));
       return Promise.resolve({ results: sorted.map(s => ({ display_name: s, name: s })) });
     } catch {
       // fall through to network/cache
@@ -167,7 +167,7 @@ export async function searchStreets(country: string, city: string, q: string) {
 // Search for complete addresses using Nominatim (OpenStreetMap)
 export async function searchGlobalAddress(q: string) {
   if (!q || q.length < 3) return { results: [] };
-  
+
   if (!API_BASE) return { results: [] };
 
   const params = new URLSearchParams();
@@ -175,7 +175,7 @@ export async function searchGlobalAddress(q: string) {
   params.set('format', 'json');
   params.set('addressdetails', '1');
   params.set('limit', '10');
-  
+
   // Reuse the osm/streets proxy logic but for general search
   const url = `${API_BASE.replace(/\/$/, '')}/osm/streets/?q=${encodeURIComponent(q)}&limit=10`;
   const res = await fetch(url);
@@ -186,7 +186,7 @@ export async function searchGlobalAddress(q: string) {
 export function parseOsmAddress(osmItem: any) {
   if (!osmItem || !osmItem.address) return null;
   const addr = osmItem.address;
-  
+
   // Map OSM fields to our structure
   // Barangay in PH is often 'suburb', 'neighbourhood', 'village', or 'quarter'
   const barangay = addr.suburb || addr.neighbourhood || addr.village || addr.quarter || addr.hamlet || '';
@@ -292,7 +292,7 @@ export async function listOfflineCountries(): Promise<string[]> {
       if ((req as IDBRequest).onsuccess !== undefined) {
         (req as IDBRequest).onsuccess = () => {
           const keys = (req as any).result || [];
-          resolve((keys as string[]).map(k => String(k)).sort((a,b) => a.localeCompare(b)));
+          resolve((keys as string[]).map(k => String(k)).sort((a, b) => a.localeCompare(b)));
         };
         (req as IDBRequest).onerror = () => reject((req as IDBRequest).error);
       } else {
@@ -305,7 +305,7 @@ export async function listOfflineCountries(): Promise<string[]> {
             keys.push(String(cur.key));
             cur.continue();
           } else {
-            resolve(keys.sort((a,b) => a.localeCompare(b)));
+            resolve(keys.sort((a, b) => a.localeCompare(b)));
           }
         };
         cursorReq.onerror = () => reject(cursorReq.error);
@@ -365,7 +365,7 @@ export async function getOfflineDetails(countryCode: string, sampleLimit = 8): P
     const cityKeys = Object.keys(data.cities || {});
     const sampleCities = cityKeys.slice(0, sampleLimit).map(k => {
       const m = meta[k];
-      return (m && m.city) ? m.city : (k && k.split('-').map(p => p.charAt(0).toUpperCase()+p.slice(1)).join(' '));
+      return (m && m.city) ? m.city : (k && k.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' '));
     });
     return { country: code, name, regions, sampleCities };
   } catch {
@@ -380,7 +380,7 @@ export async function getOfflineRegionCities(countryCode: string, regionName: st
     const data = await idbGetOffline(code);
     if (!data) return [];
     // normalized shape uses 'regions' mapping
-    if (data.regions && data.regions[regionName]) return (data.regions[regionName] || []).slice().sort((a,b)=>a.localeCompare(b));
+    if (data.regions && data.regions[regionName]) return (data.regions[regionName] || []).slice().sort((a, b) => a.localeCompare(b));
     // older shape: try meta grouping
     const meta = data.meta || {};
     const cities: string[] = [];
@@ -388,7 +388,7 @@ export async function getOfflineRegionCities(countryCode: string, regionName: st
       const m = meta[k];
       if (m && m.region === regionName) cities.push(m.city || k);
     });
-    return cities.sort((a,b)=>a.localeCompare(b));
+    return cities.sort((a, b) => a.localeCompare(b));
   } catch {
     return [];
   }
@@ -411,6 +411,8 @@ type OfflineAddressData = {
   regions?: Record<string, string[]>;
   // cities mapping: cityKey -> { city: displayName, region?: regionName }
   cities?: Record<string, { city: string; region?: string }>;
+  // streets mapping: cityKey -> array of street names
+  streets?: Record<string, string[]>;
   meta?: any;
 };
 const offlineStreetsRegistry: Record<string, OfflineAddressData> = {};
@@ -460,7 +462,7 @@ export function registerOfflineStreets(countryCode: string, data: any) {
   offlineStreetsRegistry[code] = normalized;
   // persist normalized to IndexedDB for offline use
   try {
-    idbSetOffline(code, normalized).catch(() => {});
+    idbSetOffline(code, normalized).catch(() => { });
   } catch {
     // ignore
   }
@@ -469,7 +471,7 @@ export function registerOfflineStreets(countryCode: string, data: any) {
 
 function normalizeOfflineData(raw: any): OfflineAddressData {
   // If already in new format, return as-is
-  if (raw && (raw.regions || raw.cities) ) {
+  if (raw && (raw.regions || raw.cities)) {
     // Normalize cities mapping if cities is an array->streets old format
     const out: OfflineAddressData = { regions: {}, cities: {}, meta: raw.meta || {} };
     if (raw.regions && typeof raw.regions === 'object') {
@@ -477,7 +479,7 @@ function normalizeOfflineData(raw: any): OfflineAddressData {
       out.regions = {};
       Object.keys(raw.regions).forEach(r => {
         out.regions![r] = Array.isArray(raw.regions[r]) ? raw.regions[r].slice() : [];
-        out.regions![r].sort((a,b) => a.localeCompare(b));
+        out.regions![r].sort((a, b) => a.localeCompare(b));
       });
       // build cities map from regions
       out.cities = {};
@@ -494,8 +496,14 @@ function normalizeOfflineData(raw: any): OfflineAddressData {
     if (raw.cities && typeof raw.cities === 'object') {
       out.cities = {};
       out.regions = {};
+      out.streets = {};
       const meta = raw.meta || {};
       Object.keys(raw.cities).forEach(cityKey => {
+        // If the value is an array, it's streets
+        if (Array.isArray(raw.cities[cityKey])) {
+          out.streets![cityKey] = raw.cities[cityKey].slice();
+        }
+
         const cityName = (meta[cityKey] && meta[cityKey].city) ? meta[cityKey].city : cityKey.split('-').map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(' ');
         const region = (meta[cityKey] && meta[cityKey].region) ? meta[cityKey].region : 'Unknown';
         out.cities![cityKey] = { city: cityName, region };
