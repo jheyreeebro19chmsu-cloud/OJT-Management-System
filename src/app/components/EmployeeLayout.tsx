@@ -13,8 +13,9 @@ const navItems = [
 ];
 
 export function EmployeeLayout() {
-  const { logout } = useApp();
+  const { logout, getCurrentEmployee } = useApp();
   const navigate = useNavigate();
+  const employee = getCurrentEmployee();
 
   const handleLogout = () => {
     logout();
@@ -27,12 +28,16 @@ export function EmployeeLayout() {
       <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0">
         <div className="p-5 border-b border-blue-800">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow">
-              <Clock size={18} className="text-white" />
+            <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow overflow-hidden">
+              {employee?.photo ? (
+                <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+              ) : (
+                <Clock size={18} className="text-white" />
+              )}
             </div>
             <div>
-              <div className="text-white font-bold text-sm leading-tight">OJT DTR</div>
-              <div className="text-blue-300 text-xs">Employee Panel</div>
+              <div className="text-white font-bold text-sm leading-tight truncate max-w-[120px]">{employee?.name || 'OJT DTR'}</div>
+              <div className="text-blue-300 text-[10px] uppercase tracking-wider font-bold">{employee?.employeeId || 'Employee Panel'}</div>
             </div>
           </div>
         </div>
@@ -83,12 +88,16 @@ export function EmployeeLayout() {
         <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10">
           <div className="max-w-md lg:max-w-none mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center shadow">
-                <Clock size={16} className="text-white" />
+              <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center shadow overflow-hidden">
+                {employee?.photo ? (
+                  <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                ) : (
+                  <Clock size={16} className="text-white" />
+                )}
               </div>
               <div>
                 <div className="text-xs text-blue-200 leading-tight">OJT System</div>
-                <div className="text-sm font-bold leading-tight">Daily Time Record</div>
+                <div className="text-sm font-bold leading-tight">{employee?.name || 'Daily Time Record'}</div>
               </div>
             </div>
             <button

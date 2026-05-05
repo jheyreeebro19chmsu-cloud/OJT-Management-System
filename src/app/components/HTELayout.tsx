@@ -9,6 +9,14 @@ interface HTELayoutProps {
 
 export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutProps) {
   const navigate = useNavigate();
+  const hteUser = React.useMemo(() => {
+    try {
+      const stored = localStorage.getItem('ojt_hte_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const handleLogout = () => {
     // Clear JWT tokens from localStorage
@@ -46,10 +54,14 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
               </button>
               <button
                 onClick={() => navigate('/hte/profile')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="w-10 h-10 hover:bg-gray-100 rounded-full transition-all overflow-hidden flex items-center justify-center border border-gray-200"
                 title="Profile"
               >
-                <User size={20} className="text-gray-600" />
+                {hteUser?.photo ? (
+                  <img src={hteUser.photo} alt={hteUser.name} className="w-full h-full object-cover" />
+                ) : (
+                  <User size={20} className="text-gray-600" />
+                )}
               </button>
               <button
                 onClick={handleLogout}
