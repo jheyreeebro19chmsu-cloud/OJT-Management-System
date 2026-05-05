@@ -24,21 +24,39 @@ interface GeofenceCheckerProps {
 }
 
 export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerProps) {
-  const { geofenceZones, settings } = useApp();
+  const { geofenceZones, settings, getCurrentEmployee } = useApp();
   const [result, setResult] = useState<GeofenceResult>({ state: 'idle' });
   const [watchCoords, setWatchCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  
+  const employee = getCurrentEmployee();
 
-  const activeZones = geofenceZones.filter(
-    z =>
-      Boolean(z)
-      && z.active
-      && Number.isFinite(z.lat)
-      && Number.isFinite(z.lng)
-      && Math.abs(z.lat) <= 90
-      && Math.abs(z.lng) <= 180
-      && Number.isFinite(z.radius)
-      && z.radius > 0,
-  );
+  const activeZones = React.useMemo(() => {
+    const zones = [...geofenceZones].filter(
+      z =>
+        Boolean(z)
+        && z.active
+        && Number.isFinite(z.lat)
+        && Number.isFinite(z.lng)
+        && Math.abs(z.lat) <= 90
+        && Math.abs(z.lng) <= 180
+        && Number.isFinite(z.radius)
+        && z.radius > 0,
+    );
+
+    // Add employee's custom registration location if it exists
+    if (employee?.registrationLocation?.lat && employee?.registrationLocation?.lng) {
+      zones.push({
+        id: `personal-${employee.id}`,
+        name: employee.registrationAddress || 'Your Registered Location',
+        address: employee.registrationAddress || '',
+        lat: employee.registrationLocation.lat,
+        lng: employee.registrationLocation.lng,
+        radius: 300, // Standard 300m radius for personal zones
+        active: true
+      });
+    }
+    return zones;
+  }, [geofenceZones, employee]);
 
   const checkGeofence = useCallback(async () => {
     if (!settings.geofenceEnabled) {
