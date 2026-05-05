@@ -135,37 +135,53 @@ export function FaceCapture({
   };
 
   const startScan = useCallback(async () => {
+    console.log("FaceCapture: starting scan in mode", mode);
     setState('requesting');
     setScanMessage('Requesting camera access...');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } },
+        video: { 
+          facingMode: 'user', 
+          width: { ideal: 640 }, 
+          height: { ideal: 480 } 
+        },
         audio: false,
       });
+      
+      console.log("FaceCapture: camera stream acquired");
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Wait for video metadata to load
-        await new Promise((resolve) => {
-          if (videoRef.current) videoRef.current.onloadedmetadata = resolve;
-          else resolve(null);
+        
+        // Wait for video to be ready
+        await new Promise((resolve, reject) => {
+          if (!videoRef.current) return reject("Video ref lost");
+          videoRef.current.onloadedmetadata = () => {
+            console.log("FaceCapture: metadata loaded");
+            resolve(true);
+          };
+          videoRef.current.onerror = (e) => reject(e);
+          // Timeout as fallback
+          setTimeout(() => resolve(true), 1000);
         });
+
         await videoRef.current.play();
-        // Give the camera a brief moment to auto-adjust
-        await delay(200);
+        console.log("FaceCapture: video playing");
+        // Essential delay for camera stabilization
+        await delay(500);
       }
 
       setState('scanning');
       setScanMessage('Position your face within the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
-      // Minimal delay for UX
-      await delay(200);
+      // Allow UX to breathe
+      await delay(800);
       setState('analyzing');
       setScanMessage('Detecting face...');
       setProgress(40);
 
-      await delay(100);
+      await delay(500);
       setState('verifying');
       setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
       setProgress(80);
