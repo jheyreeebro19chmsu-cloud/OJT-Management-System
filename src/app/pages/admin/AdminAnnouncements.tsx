@@ -227,17 +227,26 @@ export function AdminAnnouncements() {
             {announcements.length} total • {announcements.filter((a) => !isExpired(a)).length} active
           </p>
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
-        >
-          <Plus size={15} />
-          Post Announcement
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-medium hover:bg-gray-900 transition-colors shadow-sm no-print"
+          >
+            <Printer size={15} />
+            Print Board
+          </button>
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm no-print"
+          >
+            <Plus size={15} />
+            Post Announcement
+          </button>
+        </div>
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3 no-print">
         {(['info', 'warning', 'success', 'urgent'] as Announcement['type'][]).map((type) => {
           const c = TYPE_CONFIG[type];
           const count = announcements.filter((a) => a.type === type).length;
@@ -352,7 +361,7 @@ export function AdminAnnouncements() {
                           })}
                           <button
                             onClick={() => setShowSubmissionsId(ann.id)}
-                            className="col-span-3 mt-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-purple-50 text-purple-700 text-xs font-bold border border-purple-100 hover:bg-purple-100 transition-colors"
+                            className="col-span-3 mt-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-purple-50 text-purple-700 text-xs font-bold border border-purple-100 hover:bg-purple-100 transition-colors no-print"
                           >
                             <Eye size={14} />
                             View Submissions
@@ -360,7 +369,7 @@ export function AdminAnnouncements() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0 no-print">
                       <button
                         onClick={() => handleTogglePin(ann)}
                         title={ann.isPinned ? 'Unpin' : 'Pin to top'}
