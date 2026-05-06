@@ -2,30 +2,29 @@
 // Requires `VITE_GEONAMES_USERNAME` to be set in the frontend environment.
 
 import countriesCities from '../data/countries_cities.json';
+import { addressDb } from '../lib/db';
+import { 
+  IndexedCity, 
+  GeonamesResponse, 
+  GeonameItem, 
+  OsmItem, 
+  NormalizedAddress, 
+  OfflineAddressData, 
+  CacheEntry 
+} from './addressTypes';
 
-// API base is only used when explicitly configured via VITE_DJANGO_API_URL
 const RAW_API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
-// If the API base points to the external production host (Railway), disable network proxy usage
-// so the frontend falls back to local bundled data and avoids cross-origin calls.
 const API_BASE = RAW_API_BASE && RAW_API_BASE.includes('railway.app') ? undefined : RAW_API_BASE;
-
-// Build a flat city index for faster searching
-interface IndexedCity {
-  name: string;
-  countryCode: string;
-  population: number;
-  lat: number;
-  lon: number;
-  nameLower: string;
-}
 
 let cityIndex: IndexedCity[] = [];
 
 function buildCityIndex() {
-  if (cityIndex.length > 0) return; // already built
+  if (cityIndex.length > 0) return;
   const allCities: IndexedCity[] = [];
-  (countriesCities as any).countries.forEach((c: any) => {
-    c.cities.forEach((ct: any) => {
+  const typedData = countriesCities as { countries: { code: string, cities: { name: string, population: number, lat: number, lon: number }[] }[] };
+  
+  typedData.countries.forEach((c) => {
+    c.cities.forEach((ct) => {
       allCities.push({
         name: ct.name,
         countryCode: c.code,
@@ -36,23 +35,20 @@ function buildCityIndex() {
       });
     });
   });
-  // Sort by population descending for better ranking
   allCities.sort((a, b) => b.population - a.population);
   cityIndex = allCities;
 }
 
-// Search for places via backend Geonames proxy. Returns the raw JSON response.
-export async function autocompletePlaces(input: string) {
-  if (!input || input.length < 2) return { geonames: [] } as any;
+export async function autocompletePlaces(input: string): Promise<GeonamesResponse> {
+  if (!input || input.length < 2) return { geonames: [] };
   if (!API_BASE) {
-    // fallback: search bundled countries+cities by city name
     buildCityIndex();
     const q = input.toLowerCase();
     const matches = cityIndex
-      .filter(c => c.nameLower.includes(q) || c.nameLower.startsWith(q))
+      .filter((c) => c.nameLower.includes(q) || c.nameLower.startsWith(q))
       .slice(0, 10)
-      .map(c => ({ name: c.name, countryCode: c.countryCode, population: c.population }));
-    return { geonames: matches } as any;
+      .map((c) => ({ name: c.name, countryCode: c.countryCode, population: c.population }));
+    return { geonames: matches };
   }
   const q = encodeURIComponent(input);
   const url = `${API_BASE.replace(/\/$/, '')}/geonames/proxy/?q=${q}&maxRows=10`;
@@ -60,25 +56,34 @@ export async function autocompletePlaces(input: string) {
   return res.json();
 }
 
-// Get place details by geonameId via backend proxy
-export async function getPlaceDetails(geonameId: string | number) {
-  if (!geonameId) return null;
+export async function getPlaceDetails(geonameId: string | number): Promise<GeonameItem | null> {
+  if (!geonameId || !API_BASE) return null;
   const url = `${API_BASE.replace(/\/$/, '')}/geonames/proxy/?geonameId=${encodeURIComponent(String(geonameId))}`;
   const res = await fetch(url);
   return res.json();
 }
 
-export async function getCountries() {
+export async function getCountries(): Promise<GeonamesResponse> {
+  const typedData = countriesCities as { countries: { code: string }[] };
+  const base = (typedData.countries || []).map(c => ({
+    code: c.code,
+    countryCode: c.code,
+    name: new Intl.DisplayNames(['en'], { type: 'region' }).of(c.code) || c.code
+  }));
   if (!API_BASE) {
-    // include bundled countries + any persisted offline country codes
     try {
-      const base = (countriesCities as any).countries || [];
       const offline = await listOfflineCountries();
-      const missing = (offline || []).filter((c: string) => !base.find((b: any) => String(b.code).toUpperCase() === String(c).toUpperCase()));
-      const added = missing.map((c: string) => ({ name: c, code: c }));
-      return Promise.resolve({ geonames: base.concat(added) });
+      const missing = (offline || []).filter(
+        (c: string) => !base.find((b) => String(b.code).toUpperCase() === String(c).toUpperCase())
+      );
+      const added = missing.map((c: string) => ({ 
+        name: new Intl.DisplayNames(['en'], { type: 'region' }).of(c) || c, 
+        code: c,
+        countryCode: c
+      }));
+      return { geonames: base.concat(added as any) };
     } catch {
-      return Promise.resolve({ geonames: (countriesCities as any).countries || [] });
+      return { geonames: base as any };
     }
   }
   const url = `${API_BASE.replace(/\/$/, '')}/geonames/countries/`;
@@ -86,66 +91,58 @@ export async function getCountries() {
   return res.json();
 }
 
-export async function searchCities(country: string, q: string) {
+export async function searchCities(country: string, q: string): Promise<GeonamesResponse> {
   if (!API_BASE) {
     buildCityIndex();
     const countryCode = country.toUpperCase();
-    let results = cityIndex.filter(c => c.countryCode === countryCode);
+    let results = cityIndex.filter((c) => c.countryCode === countryCode);
 
     if (q) {
       const queryLower = q.toLowerCase();
-      results = results.filter(c => c.nameLower.includes(queryLower) || c.nameLower.startsWith(queryLower));
+      results = results.filter((c) => c.nameLower.includes(queryLower) || c.nameLower.startsWith(queryLower));
     }
 
-    // Return top results sorted by population
-    const out = results.slice(0, 50).map(c => ({
+    const out = results.slice(0, 50).map((c) => ({
       name: c.name,
       countryCode: c.countryCode,
       population: c.population,
       lat: c.lat,
       lon: c.lon,
     }));
-    return Promise.resolve({ geonames: out });
+    return { geonames: out };
   }
   const url = `${API_BASE.replace(/\/$/, '')}/geonames/cities/?q=${encodeURIComponent(q || '')}&country=${encodeURIComponent(country || '')}&maxRows=50`;
   const res = await fetch(url);
   return res.json();
 }
 
-export async function searchStreets(country: string, city: string, q: string) {
-  // caching + offline dataset support
-  const cacheKey = `streets:${(country || '').toUpperCase()}:${(city || '').toLowerCase()}:${(q || '').toLowerCase()}`;
+const STREET_CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days
 
-  // If offline dataset for this country is loaded, use it
+export async function searchStreets(country: string, city: string, q: string) {
+  const cacheKey = `streets:${(country || '').toUpperCase()}:${(city || '').toLowerCase()}:${(q || '').toLowerCase()}`;
   const countryCode = (country || '').toUpperCase();
+
   if (offlineStreetsRegistry[countryCode]) {
     try {
       const data = offlineStreetsRegistry[countryCode];
       const cityKey = (city || '').toLowerCase();
       const cityStreets = data.streets && data.streets[cityKey] ? data.streets[cityKey] : [];
       const qLower = (q || '').toLowerCase();
-      const filtered = qLower ? cityStreets.filter(s => s.toLowerCase().includes(qLower)) : cityStreets.slice();
+      const filtered = qLower ? cityStreets.filter((s) => s.toLowerCase().includes(qLower)) : cityStreets.slice();
       const sorted = filtered.slice().sort((a, b) => a.localeCompare(b));
-      return Promise.resolve({ results: sorted.map(s => ({ display_name: s, name: s })) });
-    } catch {
-      // fall through to network/cache
-    }
+      return { results: sorted.map((s) => ({ display_name: s, name: s })) };
+    } catch { /* fallback */ }
   }
 
-  // If no API base, try to return empty
-  if (!API_BASE) return Promise.resolve({ results: [] });
+  if (!API_BASE) return { results: [] };
 
-  // Try cache first
   try {
-    const cached = await idbGet(cacheKey);
-    if (cached && cached.ts && (Date.now() - cached.ts) < STREET_CACHE_TTL) {
+    const cached = await addressDb.get<CacheEntry<any>>('streets', cacheKey);
+    if (cached && Date.now() - cached.ts < STREET_CACHE_TTL) {
       return cached.payload;
     }
-  } catch {
-    // ignore idb errors
-  }
+  } catch { /* ignore */ }
 
-  // Fetch from proxy
   const params = new URLSearchParams();
   params.set('street', q || '');
   if (city) params.set('city', city);
@@ -155,40 +152,23 @@ export async function searchStreets(country: string, city: string, q: string) {
   const res = await fetch(url);
   const json = await res.json();
 
-  // store in cache
   try {
-    await idbSet(cacheKey, { ts: Date.now(), payload: json });
-  } catch {
-    // ignore cache set errors
-  }
+    await addressDb.set('streets', cacheKey, { ts: Date.now(), payload: json });
+  } catch { /* ignore */ }
   return json;
 }
 
-// Search for complete addresses using Nominatim (OpenStreetMap)
 export async function searchGlobalAddress(q: string) {
-  if (!q || q.length < 3) return { results: [] };
-
-  if (!API_BASE) return { results: [] };
-
-  const params = new URLSearchParams();
-  params.set('q', q);
-  params.set('format', 'json');
-  params.set('addressdetails', '1');
-  params.set('limit', '10');
-
-  // Reuse the osm/streets proxy logic but for general search
+  if (!q || q.length < 3 || !API_BASE) return { results: [] };
   const url = `${API_BASE.replace(/\/$/, '')}/osm/streets/?q=${encodeURIComponent(q)}&limit=10`;
   const res = await fetch(url);
   return res.json();
 }
 
-// Parse OSM address components into our form structure
-export function parseOsmAddress(osmItem: any) {
+export function parseOsmAddress(osmItem: OsmItem): NormalizedAddress | null {
   if (!osmItem || !osmItem.address) return null;
   const addr = osmItem.address;
 
-  // Map OSM fields to our structure
-  // Barangay in PH is often 'suburb', 'neighbourhood', 'village', or 'quarter'
   const barangay = addr.suburb || addr.neighbourhood || addr.village || addr.quarter || addr.hamlet || '';
   const city = addr.city || addr.town || addr.municipality || addr.city_district || '';
   const province = addr.province || addr.county || addr.state_district || '';
@@ -203,330 +183,197 @@ export function parseOsmAddress(osmItem: any) {
     region,
     country,
     street,
-    formatted: osmItem.display_name
+    formatted: osmItem.display_name,
   };
-}
-
-// ---------------- IndexedDB simple helpers ----------------
-const DB_NAME = 'ojt_address_cache_v1';
-const DB_STORE = 'streets';
-const OFFLINE_STORE = 'offline_streets';
-const STREET_CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days
-
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
-      if (!db.objectStoreNames.contains(OFFLINE_STORE)) db.createObjectStore(OFFLINE_STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbGet(key: string): Promise<any> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readonly');
-    const store = tx.objectStore(DB_STORE);
-    const r = store.get(key);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
-}
-
-async function idbSet(key: string, value: any): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, 'readwrite');
-    const store = tx.objectStore(DB_STORE);
-    const r = store.put(value, key);
-    r.onsuccess = () => resolve();
-    r.onerror = () => reject(r.error);
-  });
-}
-
-async function idbGetOffline(key: string): Promise<any> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(OFFLINE_STORE, 'readonly');
-    const store = tx.objectStore(OFFLINE_STORE);
-    const r = store.get(key);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
-}
-
-async function idbSetOffline(key: string, value: any): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(OFFLINE_STORE, 'readwrite');
-    const store = tx.objectStore(OFFLINE_STORE);
-    const r = store.put(value, key);
-    r.onsuccess = () => resolve();
-    r.onerror = () => reject(r.error);
-  });
 }
 
 export async function clearOfflineStreets() {
   try {
-    const db = await openDb();
-    const tx = db.transaction(OFFLINE_STORE, 'readwrite');
-    tx.objectStore(OFFLINE_STORE).clear();
+    await addressDb.clear('offline_streets');
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 export async function listOfflineCountries(): Promise<string[]> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    try {
-      const tx = db.transaction(OFFLINE_STORE, 'readonly');
-      const store = tx.objectStore(OFFLINE_STORE);
-      // use getAllKeys when available
-      const req = (store as any).getAllKeys ? (store as any).getAllKeys() : store.openCursor();
-      if ((req as IDBRequest).onsuccess !== undefined) {
-        (req as IDBRequest).onsuccess = () => {
-          const keys = (req as any).result || [];
-          resolve((keys as string[]).map(k => String(k)).sort((a, b) => a.localeCompare(b)));
-        };
-        (req as IDBRequest).onerror = () => reject((req as IDBRequest).error);
-      } else {
-        // fallback to cursor
-        const keys: string[] = [];
-        const cursorReq = store.openCursor();
-        cursorReq.onsuccess = () => {
-          const cur = cursorReq.result;
-          if (cur) {
-            keys.push(String(cur.key));
-            cur.continue();
-          } else {
-            resolve(keys.sort((a, b) => a.localeCompare(b)));
-          }
-        };
-        cursorReq.onerror = () => reject(cursorReq.error);
-      }
-    } catch (err) {
-      reject(err);
-    }
-  });
+  try {
+    const keys = await addressDb.getAllKeys('offline_streets');
+    return keys.map(k => String(k)).sort((a, b) => a.localeCompare(b));
+  } catch { return []; }
 }
 
-export async function getOfflineSummary(countryCode: string): Promise<{ country: string; citiesCount: number; hasMeta: boolean }> {
+export async function getOfflineSummary(countryCode: string) {
   if (!countryCode) return { country: '', citiesCount: 0, hasMeta: false };
   const code = countryCode.toUpperCase();
   try {
-    const data = await idbGetOffline(code);
+    const data = await addressDb.get<OfflineAddressData>('offline_streets', code);
     if (!data) return { country: code, citiesCount: 0, hasMeta: false };
-    const cities = data.cities || {};
-    const citiesCount = Object.keys(cities).length;
-    const hasMeta = !!data.meta;
-    return { country: code, citiesCount, hasMeta };
-  } catch {
-    return { country: code, citiesCount: 0, hasMeta: false };
-  }
+    const citiesCount = Object.keys(data.cities || {}).length;
+    return { country: code, citiesCount, hasMeta: !!data.meta };
+  } catch { return { country: code, citiesCount: 0, hasMeta: false }; }
 }
 
 export async function deleteOfflineCountry(countryCode: string): Promise<boolean> {
   if (!countryCode) return false;
   const code = countryCode.toUpperCase();
   try {
-    const db = await openDb();
-    const tx = db.transaction(OFFLINE_STORE, 'readwrite');
-    tx.objectStore(OFFLINE_STORE).delete(code);
-    // also remove from in-memory registry
+    await addressDb.delete('offline_streets', code);
     if (offlineStreetsRegistry[code]) delete offlineStreetsRegistry[code];
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-export async function getOfflineDetails(countryCode: string, sampleLimit = 8): Promise<{ country: string; name: string; regions: string[]; sampleCities: string[] }> {
+export async function getOfflineDetails(countryCode: string, sampleLimit = 8) {
   const code = (countryCode || '').toUpperCase();
   try {
-    const data = await idbGetOffline(code);
-    const nameFromBundle = ((countriesCities as any).countries || []).find((c: any) => String(c.code).toUpperCase() === code)?.name;
-    const name = nameFromBundle || code;
+    const data = await addressDb.get<OfflineAddressData>('offline_streets', code);
+    const typedData = countriesCities as { countries: { code: string }[] };
+    const countries = typedData.countries || [];
+    const countryObj = countries.find((c) => String(c.code).toUpperCase() === code);
+    const name = countryObj ? (new Intl.DisplayNames(['en'], { type: 'region' }).of(countryObj.code) || countryObj.code) : code;
     if (!data || !data.cities) return { country: code, name, regions: [], sampleCities: [] };
-    const meta = data.meta || {};
-    // collect regions from meta if present
+    
     const regionsSet = new Set<string>();
-    Object.keys(meta).forEach(cityKey => {
-      const m = meta[cityKey];
-      if (m && m.region) regionsSet.add(String(m.region));
+    Object.values(data.meta || {}).forEach((m) => {
+      const meta = m as { region?: string };
+      if (meta?.region) regionsSet.add(meta.region);
     });
-    const regions = Array.from(regionsSet).filter(Boolean).slice(0, 50);
-    // sample cities: take keys from cities object and map to display name via meta or capitalize
-    const cityKeys = Object.keys(data.cities || {});
-    const sampleCities = cityKeys.slice(0, sampleLimit).map(k => {
-      const m = meta[k];
-      return (m && m.city) ? m.city : (k && k.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' '));
+    const regions = Array.from(regionsSet).slice(0, 50);
+    
+    const sampleCities = Object.keys(data.cities || {}).slice(0, sampleLimit).map(k => {
+      const m = data.meta?.[k];
+      return m?.city || k.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
     });
     return { country: code, name, regions, sampleCities };
-  } catch {
-    return { country: code, name: code, regions: [], sampleCities: [] };
-  }
+  } catch { return { country: code, name: code, regions: [], sampleCities: [] }; }
 }
 
 export async function getOfflineRegionCities(countryCode: string, regionName: string): Promise<string[]> {
   if (!countryCode || !regionName) return [];
   const code = countryCode.toUpperCase();
   try {
-    const data = await idbGetOffline(code);
+    const data = await addressDb.get<OfflineAddressData>('offline_streets', code);
     if (!data) return [];
-    // normalized shape uses 'regions' mapping
-    if (data.regions && data.regions[regionName]) return (data.regions[regionName] || []).slice().sort((a, b) => a.localeCompare(b));
-    // older shape: try meta grouping
-    const meta = data.meta || {};
+    if (data.regions?.[regionName]) return [...data.regions[regionName]].sort((a, b) => a.localeCompare(b));
+    
     const cities: string[] = [];
-    Object.keys(meta).forEach(k => {
-      const m = meta[k];
-      if (m && m.region === regionName) cities.push(m.city || k);
+    Object.keys(data.meta || {}).forEach(k => {
+      if (data.meta[k]?.region === regionName) cities.push(data.meta[k].city || k);
     });
     return cities.sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export async function clearStreetCache() {
   try {
-    const db = await openDb();
-    const tx = db.transaction(DB_STORE, 'readwrite');
-    tx.objectStore(DB_STORE).clear();
+    await addressDb.clear('streets');
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-// ---------------- Offline address dataset (regions + cities) registry & loader ----------------
-type OfflineAddressData = {
-  // regions mapping: Region Name -> array of city display names
-  regions?: Record<string, string[]>;
-  // cities mapping: cityKey -> { city: displayName, region?: regionName }
-  cities?: Record<string, { city: string; region?: string }>;
-  // streets mapping: cityKey -> array of street names
-  streets?: Record<string, string[]>;
-  meta?: any;
-};
 const offlineStreetsRegistry: Record<string, OfflineAddressData> = {};
 
 export async function loadOfflineStreets(countryCode: string): Promise<boolean> {
   if (!countryCode) return false;
   const code = countryCode.toUpperCase();
   if (offlineStreetsRegistry[code]) return true;
+  
   try {
-    // First attempt to load persisted dataset from IndexedDB
-    try {
-      const persisted = await idbGetOffline(code);
-      if (persisted && (persisted.cities || persisted.regions)) {
-        // persisted may be older format or new format
-        const normalized = normalizeOfflineData(persisted);
-        offlineStreetsRegistry[code] = normalized;
-        return true;
-      }
-    } catch {
-      // ignore idb read errors and fall through to dynamic import
+    const persisted = await addressDb.get<OfflineAddressData>('offline_streets', code);
+    if (persisted && (persisted.cities || persisted.regions)) {
+      offlineStreetsRegistry[code] = normalizeOfflineData(persisted);
+      return true;
     }
-
-    // Attempt dynamic import from src/app/data/streets/{CODE}.json
-    // Note: the file must exist; bundlers may need the files present during build.
-    // This will fail gracefully if file is not present.
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
+    
     const mod = await import(`../data/streets/${code}.json`);
-    const data = (mod && mod.default) ? mod.default : mod;
+    const data = mod?.default || mod;
     if (data && (data.cities || data.regions)) {
       const normalized = normalizeOfflineData(data);
       offlineStreetsRegistry[code] = normalized;
-      // persist normalized for future
-      try { await idbSetOffline(code, normalized); } catch { }
+      await addressDb.set('offline_streets', code, normalized);
       return true;
     }
-  } catch (err) {
-    // file not found or import error
-  }
+  } catch { /* ignore */ }
   return false;
 }
 
-export function registerOfflineStreets(countryCode: string, data: any) {
+export function registerOfflineStreets(countryCode: string, data: Partial<OfflineAddressData>) {
   if (!countryCode || !data) return false;
   const code = countryCode.toUpperCase();
   const normalized = normalizeOfflineData(data);
   offlineStreetsRegistry[code] = normalized;
-  // persist normalized to IndexedDB for offline use
-  try {
-    idbSetOffline(code, normalized).catch(() => { });
-  } catch {
-    // ignore
-  }
+  addressDb.set('offline_streets', code, normalized).catch(() => {});
   return true;
 }
 
 function normalizeOfflineData(raw: any): OfflineAddressData {
-  // If already in new format, return as-is
-  if (raw && (raw.regions || raw.cities)) {
-    // Normalize cities mapping if cities is an array->streets old format
-    const out: OfflineAddressData = { regions: {}, cities: {}, meta: raw.meta || {} };
-    if (raw.regions && typeof raw.regions === 'object') {
-      // expected regions: { regionName: [cityNames...] }
-      out.regions = {};
-      Object.keys(raw.regions).forEach(r => {
-        out.regions![r] = Array.isArray(raw.regions[r]) ? raw.regions[r].slice() : [];
-        out.regions![r].sort((a, b) => a.localeCompare(b));
-      });
-      // build cities map from regions
-      out.cities = {};
-      Object.entries(out.regions).forEach(([r, cities]) => {
-        cities.forEach(c => {
-          const key = c.trim().toLowerCase().replace(/\s+/g, '-');
-          out.cities![key] = { city: c, region: r };
-        });
-      });
-      return out;
-    }
+  if (!raw) return { regions: {}, cities: {}, meta: {} };
+  
+  const out: OfflineAddressData = { 
+    regions: {}, 
+    cities: {}, 
+    streets: {}, 
+    meta: raw.meta || {} 
+  };
 
-    // older format: raw.cities: { cityKey: [streets...] } with raw.meta providing city display and region
-    if (raw.cities && typeof raw.cities === 'object') {
-      out.cities = {};
-      out.regions = {};
-      out.streets = {};
-      const meta = raw.meta || {};
-      Object.keys(raw.cities).forEach(cityKey => {
-        // If the value is an array, it's streets
-        if (Array.isArray(raw.cities[cityKey])) {
-          out.streets![cityKey] = raw.cities[cityKey].slice();
-        }
-
-        const cityName = (meta[cityKey] && meta[cityKey].city) ? meta[cityKey].city : cityKey.split('-').map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(' ');
-        const region = (meta[cityKey] && meta[cityKey].region) ? meta[cityKey].region : 'Unknown';
-        out.cities![cityKey] = { city: cityName, region };
-        out.regions![region] = out.regions![region] || [];
-        if (!out.regions![region].includes(cityName)) out.regions![region].push(cityName);
+  // If we have regions (array of cities per region)
+  if (raw.regions && typeof raw.regions === 'object') {
+    Object.keys(raw.regions).forEach(r => {
+      const citiesInRegion = Array.isArray(raw.regions[r]) ? raw.regions[r] : [];
+      out.regions![r] = [...citiesInRegion].sort((a, b) => a.localeCompare(b));
+      
+      citiesInRegion.forEach((c: string) => {
+        const key = c.trim().toLowerCase().replace(/\s+/g, '-');
+        out.cities![key] = { city: c, region: r };
       });
-      // sort regions and city lists
-      Object.keys(out.regions).forEach(r => out.regions![r].sort((a,b)=>a.localeCompare(b)));
-      return out;
-    }
+    });
   }
-  // unknown/raw shape -> empty
-  return { regions: {}, cities: {}, meta: raw && raw.meta ? raw.meta : {} };
+
+  // If we have cities (which might be an array of streets OR a metadata object)
+  if (raw.cities && typeof raw.cities === 'object') {
+    const rawCities = raw.cities as Record<string, any>;
+    const meta = raw.meta || {};
+    
+    Object.keys(rawCities).forEach(cityKey => {
+      const data = rawCities[cityKey];
+      
+      // If the city data is an array, it's a list of streets
+      if (Array.isArray(data)) {
+        out.streets![cityKey] = [...data];
+        
+        // Ensure city exists in metadata/regions
+        const cityName = meta[cityKey]?.city || cityKey.split('-').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+        const region = meta[cityKey]?.region || 'Unknown';
+        
+        if (!out.cities![cityKey]) {
+          out.cities![cityKey] = { city: cityName, region };
+          out.regions![region] = out.regions![region] || [];
+          if (!out.regions![region].includes(cityName)) out.regions![region].push(cityName);
+        }
+      } 
+      // If it's a metadata object (the normalized format)
+      else if (data && typeof data === 'object') {
+        out.cities![cityKey] = { 
+          city: data.city || cityKey, 
+          region: data.region || 'Unknown' 
+        };
+      }
+    });
+  }
+
+  // Final sort for regions
+  if (out.regions) {
+    Object.keys(out.regions).forEach(r => out.regions![r].sort((a, b) => a.localeCompare(b)));
+  }
+
+  return out;
 }
 
-// Parse Geonames result into a simple street/city/country structure
 export function parsePlaceComponents(details: any) {
   if (!details) return {};
-  // Geonames getJSON returns properties like name, countryCode, adminName1, adminName2
   const name = details.name || details.toponymName || '';
   const admin1 = details.adminName1 || '';
   const admin2 = details.adminName2 || '';
-  const country = details.countryCode || details.countryCode || '';
+  const country = details.countryCode || '';
   const formattedParts = [name, admin2 || admin1, country].filter(Boolean);
   return {
     street: name || undefined,

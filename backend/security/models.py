@@ -129,9 +129,11 @@ class StudentOJTApplication(models.Model):
     def __str__(self):
         return f"OJT Application: {self.student.user.get_full_name()} at {self.company_name}"
     
+    @property
     def is_completed(self):
         return self.rendered_hours >= self.required_hours
     
+    @property
     def remaining_hours(self):
         return max(0, self.required_hours - self.rendered_hours)
 
@@ -161,6 +163,7 @@ class TimeRecord(models.Model):
     def __str__(self):
         return f"TimeRecord: {self.student.user.get_full_name()} on {self.date}"
     
+    @property
     def calculate_hours(self):
         if self.time_in and self.time_out:
             delta = self.time_out - self.time_in

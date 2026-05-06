@@ -1,11 +1,23 @@
+import {
+  LayoutDashboard,
+  Users,
+  MapPin,
+  BarChart2,
+  Settings,
+  LogOut,
+  Clock,
+  Menu,
+  X,
+  Star,
+  Megaphone,
+  MessageSquare,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import {
-  LayoutDashboard, Users, MapPin, BarChart2, Settings, LogOut,
-  Clock, Menu, X, Star, Megaphone, MessageSquare
-} from 'lucide-react';
+
 import { useApp } from '../store/AppContext';
-import { motion, AnimatePresence } from 'motion/react';
+
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -29,7 +41,7 @@ export function AdminLayout() {
     navigate('/');
   };
 
-  const unreadAnn = announcements.filter(a => {
+  const unreadAnn = announcements.filter((a) => {
     if (a.expiresAt && new Date(a.expiresAt) < new Date()) return false;
     return true;
   }).length;
@@ -37,7 +49,7 @@ export function AdminLayout() {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0">
+      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0 no-print">
         <div className="p-5 border-b border-blue-800">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow">
@@ -59,9 +71,7 @@ export function AdminLayout() {
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
-                  isActive
-                    ? 'bg-sky-500 text-white shadow-sm'
-                    : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                  isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
                 }`
               }
             >
@@ -80,7 +90,12 @@ export function AdminLayout() {
           <div className="flex items-center gap-2 px-3 py-2 mb-2">
             <div className="w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center overflow-hidden">
               {employee?.photo ? (
-                <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                <img
+                  src={employee.photo}
+                  alt={employee.name}
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
               ) : (
                 <span className="text-white text-xs font-bold">AD</span>
               )}
@@ -116,7 +131,7 @@ export function AdminLayout() {
               animate={{ x: 0 }}
               exit={{ x: -240 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="lg:hidden fixed left-0 top-0 bottom-0 w-60 bg-blue-900 flex flex-col z-40"
+              className="lg:hidden fixed left-0 top-0 bottom-0 w-60 bg-blue-900 flex flex-col z-40 no-print"
             >
               <div className="p-5 border-b border-blue-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -172,12 +187,9 @@ export function AdminLayout() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="bg-white border-b border-gray-200 shadow-sm z-20">
+        <header className="bg-white border-b border-gray-200 shadow-sm z-20 no-print">
           <div className="px-4 py-3 flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden text-gray-500 hover:text-gray-700"
-            >
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700">
               <Menu size={22} />
             </button>
             <div className="flex-1">
@@ -186,7 +198,12 @@ export function AdminLayout() {
             <div className="hidden lg:flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
                 {employee?.photo ? (
-                  <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                  <img
+                    src={employee.photo}
+                    alt={employee.name}
+                    className="w-full h-full object-cover"
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
                 ) : (
                   <span className="text-blue-700 text-xs font-bold">AD</span>
                 )}

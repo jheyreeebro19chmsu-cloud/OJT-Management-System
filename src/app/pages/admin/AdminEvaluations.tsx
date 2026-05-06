@@ -1,16 +1,18 @@
-import React, { useState, useMemo } from 'react';
-import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle } from 'lucide-react';
-import { useApp } from '../../store/AppContext';
-import { Employee, Evaluation } from '../../types';
+import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 
+import { useApp } from '../../store/AppContext';
+import { Employee, Evaluation } from '../../types';
+
+
 const GRADE_CONFIG: Record<Evaluation['grade'], { color: string; bg: string; min: number }> = {
-  'Excellent':           { color: 'text-green-700',  bg: 'bg-green-100',  min: 90 },
-  'Very Good':           { color: 'text-blue-700',   bg: 'bg-blue-100',   min: 80 },
-  'Good':                { color: 'text-sky-700',    bg: 'bg-sky-100',    min: 70 },
-  'Satisfactory':        { color: 'text-yellow-700', bg: 'bg-yellow-100', min: 60 },
-  'Needs Improvement':   { color: 'text-red-700',    bg: 'bg-red-100',    min: 0  },
+  Excellent: { color: 'text-green-700', bg: 'bg-green-100', min: 90 },
+  'Very Good': { color: 'text-blue-700', bg: 'bg-blue-100', min: 80 },
+  Good: { color: 'text-sky-700', bg: 'bg-sky-100', min: 70 },
+  Satisfactory: { color: 'text-yellow-700', bg: 'bg-yellow-100', min: 60 },
+  'Needs Improvement': { color: 'text-red-700', bg: 'bg-red-100', min: 0 },
 };
 
 function getGrade(score: number): Evaluation['grade'] {
@@ -22,14 +24,14 @@ function getGrade(score: number): Evaluation['grade'] {
 }
 
 const CRITERIA = [
-  { key: 'attendanceScore',    label: 'Attendance & Punctuality', desc: 'Regularity and timeliness of attendance' },
-  { key: 'performanceScore',   label: 'Job Performance',          desc: 'Quality and quantity of work output' },
-  { key: 'attitudeScore',      label: 'Attitude & Conduct',       desc: 'Professional behavior and work ethic' },
-  { key: 'punctualityScore',   label: 'Time Management',          desc: 'Ability to manage tasks within deadlines' },
-  { key: 'communicationScore', label: 'Communication Skills',     desc: 'Verbal and written communication' },
+  { key: 'attendanceScore', label: 'Attendance & Punctuality', desc: 'Regularity and timeliness of attendance' },
+  { key: 'performanceScore', label: 'Job Performance', desc: 'Quality and quantity of work output' },
+  { key: 'attitudeScore', label: 'Attitude & Conduct', desc: 'Professional behavior and work ethic' },
+  { key: 'punctualityScore', label: 'Time Management', desc: 'Ability to manage tasks within deadlines' },
+  { key: 'communicationScore', label: 'Communication Skills', desc: 'Verbal and written communication' },
 ] as const;
 
-type CriteriaKey = typeof CRITERIA[number]['key'];
+type CriteriaKey = (typeof CRITERIA)[number]['key'];
 
 type EvaluationForm = Pick<
   Evaluation,
@@ -57,23 +59,31 @@ const BLANK_FORM: EvaluationForm = {
 };
 
 const TEXT_FIELDS = [
-  { key: 'strengths', label: 'Strengths & Achievements', placeholder: 'Describe the trainee\'s key strengths and notable achievements during the OJT period...' },
-  { key: 'areasForImprovement', label: 'Areas for Improvement', placeholder: 'What areas does the trainee need to work on...' },
+  {
+    key: 'strengths',
+    label: 'Strengths & Achievements',
+    placeholder: "Describe the trainee's key strengths and notable achievements during the OJT period...",
+  },
+  {
+    key: 'areasForImprovement',
+    label: 'Areas for Improvement',
+    placeholder: 'What areas does the trainee need to work on...',
+  },
   { key: 'recommendations', label: 'Recommendations', placeholder: 'Your overall recommendation for the trainee...' },
 ] as const;
-type TextFieldKey = typeof TEXT_FIELDS[number]['key'];
+type TextFieldKey = (typeof TEXT_FIELDS)[number]['key'];
 
 export function AdminEvaluations() {
   const { employees, timeRecords, evaluations, addEvaluation, updateEvaluation, deleteEvaluation } = useApp();
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState<EvaluationForm>(BLANK_FORM);
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>(  'list');
+  const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
 
-  const activeEmployees = employees.filter(e => e.active);
+  const activeEmployees = employees.filter((e) => e.active);
 
   const openNewEval = (emp: Employee) => {
-    const existing = evaluations.find(e => e.employeeId === emp.id);
+    const existing = evaluations.find((e) => e.employeeId === emp.id);
     setSelectedEmp(emp);
     if (existing) {
       setEditEvalId(existing.id);
@@ -90,8 +100,8 @@ export function AdminEvaluations() {
       });
     } else {
       // Auto-calculate attendance score from DTR
-      const recs = timeRecords.filter(r => r.employeeId === emp.id);
-      const lateCount = recs.filter(r => r.status === 'late').length;
+      const recs = timeRecords.filter((r) => r.employeeId === emp.id);
+      const lateCount = recs.filter((r) => r.status === 'late').length;
       const totalDays = recs.length;
       const autoAttendance = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 40)) : 80;
       const autoOnTime = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 60)) : 80;
@@ -108,7 +118,13 @@ export function AdminEvaluations() {
 
   const handleSave = (status: Evaluation['status']) => {
     if (!selectedEmp) return;
-    const scores = [form.attendanceScore, form.performanceScore, form.attitudeScore, form.punctualityScore, form.communicationScore];
+    const scores = [
+      form.attendanceScore,
+      form.performanceScore,
+      form.attitudeScore,
+      form.punctualityScore,
+      form.communicationScore,
+    ];
     const overallScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     const grade = getGrade(overallScore);
 
@@ -140,18 +156,23 @@ export function AdminEvaluations() {
   };
 
   const getEmpStats = (empId: string) => {
-    const recs = timeRecords.filter(r => r.employeeId === empId);
+    const recs = timeRecords.filter((r) => r.employeeId === empId);
     const totalHours = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
-    const present = recs.filter(r => r.status === 'present' || r.status === 'overtime').length;
-    const late = recs.filter(r => r.status === 'late').length;
+    const present = recs.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+    const late = recs.filter((r) => r.status === 'late').length;
     return { totalHours, present, late, totalDays: recs.length };
   };
 
-  const upd = (key: string, val: number | string) => setForm(p => ({ ...p, [key]: val }));
+  const upd = (key: string, val: number | string) => setForm((p) => ({ ...p, [key]: val }));
 
   const overallScore = Math.round(
-    [form.attendanceScore, form.performanceScore, form.attitudeScore, form.punctualityScore, form.communicationScore]
-      .reduce((a, b) => a + b, 0) / 5
+    [
+      form.attendanceScore,
+      form.performanceScore,
+      form.attitudeScore,
+      form.punctualityScore,
+      form.communicationScore,
+    ].reduce((a, b) => a + b, 0) / 5
   );
   const grade = getGrade(overallScore);
   const gradeConfig = GRADE_CONFIG[grade];
@@ -166,7 +187,9 @@ export function AdminEvaluations() {
           </button>
           <div>
             <h2 className="text-xl font-bold text-gray-800">OJT Evaluation Form</h2>
-            <p className="text-sm text-gray-500">{selectedEmp.name} • {selectedEmp.employeeId}</p>
+            <p className="text-sm text-gray-500">
+              {selectedEmp.name} • {selectedEmp.employeeId}
+            </p>
           </div>
         </div>
 
@@ -175,7 +198,12 @@ export function AdminEvaluations() {
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-blue-200 rounded-xl flex items-center justify-center overflow-hidden">
               {selectedEmp.photo ? (
-                <img src={selectedEmp.photo} alt="" className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                <img
+                  src={selectedEmp.photo}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
               ) : (
                 <span className="text-blue-700 font-bold text-lg">{selectedEmp.name.charAt(0)}</span>
               )}
@@ -212,13 +240,19 @@ export function AdminEvaluations() {
                   <p className="text-xs text-gray-400">{desc}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${
-                    form[key] >= 90 ? 'bg-green-100 text-green-700' :
-                    form[key] >= 80 ? 'bg-blue-100 text-blue-700' :
-                    form[key] >= 70 ? 'bg-sky-100 text-sky-700' :
-                    form[key] >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
+                  <span
+                    className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${
+                      form[key] >= 90
+                        ? 'bg-green-100 text-green-700'
+                        : form[key] >= 80
+                          ? 'bg-blue-100 text-blue-700'
+                          : form[key] >= 70
+                            ? 'bg-sky-100 text-sky-700'
+                            : form[key] >= 60
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-red-100 text-red-700'
+                    }`}
+                  >
                     {form[key]}%
                   </span>
                 </div>
@@ -229,18 +263,23 @@ export function AdminEvaluations() {
                 max={100}
                 step={5}
                 value={form[key]}
-                onChange={e => upd(key, parseInt(e.target.value))}
+                onChange={(e) => upd(key, parseInt(e.target.value))}
                 className="w-full accent-blue-600"
               />
               <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-                <span>0</span><span>50</span><span>100</span>
+                <span>0</span>
+                <span>50</span>
+                <span>100</span>
               </div>
             </div>
           ))}
         </div>
 
         {/* Overall Score */}
-        <div className={`rounded-2xl p-5 border-2 ${gradeConfig.bg} border-current`} style={{ borderColor: 'transparent' }}>
+        <div
+          className={`rounded-2xl p-5 border-2 ${gradeConfig.bg} border-current`}
+          style={{ borderColor: 'transparent' }}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Overall Score</p>
@@ -255,10 +294,15 @@ export function AdminEvaluations() {
           <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
             <motion.div
               className={`h-full rounded-full ${
-                overallScore >= 90 ? 'bg-green-500' :
-                overallScore >= 80 ? 'bg-blue-500' :
-                overallScore >= 70 ? 'bg-sky-500' :
-                overallScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                overallScore >= 90
+                  ? 'bg-green-500'
+                  : overallScore >= 80
+                    ? 'bg-blue-500'
+                    : overallScore >= 70
+                      ? 'bg-sky-500'
+                      : overallScore >= 60
+                        ? 'bg-yellow-500'
+                        : 'bg-red-500'
               }`}
               initial={{ width: 0 }}
               animate={{ width: `${overallScore}%` }}
@@ -275,7 +319,7 @@ export function AdminEvaluations() {
               <label className="text-xs font-semibold text-gray-600 block mb-1.5">{label}</label>
               <textarea
                 value={form[key as TextFieldKey]}
-                onChange={e => upd(key, e.target.value)}
+                onChange={(e) => upd(key, e.target.value)}
                 placeholder={placeholder}
                 rows={3}
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 resize-none"
@@ -306,7 +350,7 @@ export function AdminEvaluations() {
   }
 
   if (viewMode === 'view' && selectedEmp) {
-    const ev = evaluations.find(e => e.employeeId === selectedEmp.id);
+    const ev = evaluations.find((e) => e.employeeId === selectedEmp.id);
     if (!ev) return null;
     const gc = GRADE_CONFIG[ev.grade];
     return (
@@ -319,7 +363,9 @@ export function AdminEvaluations() {
             <h2 className="text-xl font-bold text-gray-800">Evaluation Result</h2>
             <p className="text-sm text-gray-500">{selectedEmp.name}</p>
           </div>
-          <span className={`text-xs px-3 py-1 rounded-full font-semibold ${ev.status === 'final' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+          <span
+            className={`text-xs px-3 py-1 rounded-full font-semibold ${ev.status === 'final' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}
+          >
             {ev.status === 'final' ? 'Finalized' : 'Draft'}
           </span>
         </div>
@@ -329,7 +375,10 @@ export function AdminEvaluations() {
           <Award size={40} className={`mx-auto mb-2 ${gc.color}`} />
           <p className={`text-3xl font-bold ${gc.color}`}>{ev.grade}</p>
           <p className="text-gray-600 text-lg mt-1">{ev.overallScore}% Overall Score</p>
-          <p className="text-xs text-gray-500 mt-2">Evaluated on {new Date(ev.evaluatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+          <p className="text-xs text-gray-500 mt-2">
+            Evaluated on{' '}
+            {new Date(ev.evaluatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+          </p>
         </div>
 
         {/* Score breakdown */}
@@ -360,15 +409,24 @@ export function AdminEvaluations() {
             { label: 'Strengths & Achievements', val: ev.strengths },
             { label: 'Areas for Improvement', val: ev.areasForImprovement },
             { label: 'Recommendations', val: ev.recommendations },
-          ].map(({ label, val }) => val ? (
-            <div key={label}>
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{label}</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{val}</p>
-            </div>
-          ) : null)}
+          ].map(({ label, val }) =>
+            val ? (
+              <div key={label}>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{label}</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{val}</p>
+              </div>
+            ) : null
+          )}
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 no-print">
+          <button
+            onClick={() => window.print()}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-800 text-white rounded-xl font-semibold text-sm hover:bg-gray-900 transition-colors"
+          >
+            <Printer size={15} />
+            Print Hard Copy
+          </button>
           <button
             onClick={() => openNewEval(selectedEmp)}
             className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-700 text-white rounded-xl font-semibold text-sm hover:bg-blue-800"
@@ -377,7 +435,10 @@ export function AdminEvaluations() {
             Edit Evaluation
           </button>
           <button
-            onClick={() => { handleDelete(ev.id); setViewMode('list'); }}
+            onClick={() => {
+              handleDelete(ev.id);
+              setViewMode('list');
+            }}
             className="px-4 py-3 bg-red-50 text-red-600 rounded-xl text-sm hover:bg-red-100 transition-colors"
           >
             <Trash2 size={15} />
@@ -399,13 +460,16 @@ export function AdminEvaluations() {
         <AlertCircle size={16} className="text-blue-600 shrink-0 mt-0.5" />
         <div className="text-sm text-blue-700">
           <p className="font-semibold mb-0.5">End-of-OJT Evaluation</p>
-          <p className="text-xs text-blue-600">Evaluate each trainee's performance at the end of their OJT period. Finalized evaluations are visible to the trainee in their profile.</p>
+          <p className="text-xs text-blue-600">
+            Evaluate each trainee's performance at the end of their OJT period. Finalized evaluations are visible to the
+            trainee in their profile.
+          </p>
         </div>
       </div>
 
       <div className="space-y-3">
-        {activeEmployees.map(emp => {
-          const ev = evaluations.find(e => e.employeeId === emp.id);
+        {activeEmployees.map((emp) => {
+          const ev = evaluations.find((e) => e.employeeId === emp.id);
           const stats = getEmpStats(emp.id);
           const progress = Math.min((stats.totalHours / emp.requiredHours) * 100, 100);
           const gc = ev ? GRADE_CONFIG[ev.grade] : null;
@@ -420,7 +484,12 @@ export function AdminEvaluations() {
               <div className="flex items-start gap-3">
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
                   {emp.photo ? (
-                    <img src={emp.photo} alt="" className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                    <img
+                      src={emp.photo}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
                   ) : (
                     <span className="text-blue-700 font-bold text-lg">{emp.name.charAt(0)}</span>
                   )}

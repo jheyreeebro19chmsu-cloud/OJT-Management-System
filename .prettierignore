@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+.next
+backend
+mobile
+ojt-mobile
+public
+package-lock.json
+*.json

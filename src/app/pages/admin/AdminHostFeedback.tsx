@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
 import { Star, User, Building, CheckCircle, Archive, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import React, { useMemo, useState } from 'react';
+
 import { useApp } from '../../store/AppContext';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
@@ -15,7 +16,7 @@ export function AdminHostFeedback() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   const filtered = useMemo(() => {
-    return hostFeedback.filter(item => {
+    return hostFeedback.filter((item) => {
       if (employeeFilter !== 'all' && item.employeeId !== employeeFilter) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
       return true;
@@ -27,17 +28,21 @@ export function AdminHostFeedback() {
     const total = hostFeedback.reduce((sum, f) => sum + f.overallScore, 0);
     return {
       avg: Math.round(total / hostFeedback.length),
-      submitted: hostFeedback.filter(f => f.status === 'submitted').length,
-      reviewed: hostFeedback.filter(f => f.status === 'reviewed').length,
-      archived: hostFeedback.filter(f => f.status === 'archived').length,
+      submitted: hostFeedback.filter((f) => f.status === 'submitted').length,
+      reviewed: hostFeedback.filter((f) => f.status === 'reviewed').length,
+      archived: hostFeedback.filter((f) => f.status === 'archived').length,
     };
   }, [hostFeedback]);
 
-  const employeeName = (id: string) => employees.find(e => e.id === id)?.name || 'Unknown Trainee';
+  const employeeName = (id: string) => employees.find((e) => e.id === id)?.name || 'Unknown Trainee';
 
   return (
     <div className="space-y-4">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+      >
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
             <Star size={18} className="text-blue-700" />
@@ -63,17 +68,21 @@ export function AdminHostFeedback() {
         </div>
         <select
           value={employeeFilter}
-          onChange={e => setEmployeeFilter(e.target.value)}
+          onChange={(e) => setEmployeeFilter(e.target.value)}
           className="px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-sm"
         >
           <option value="all">All Trainees</option>
-          {employees.filter(e => e.active && e.position !== 'OJT Instructor').map(e => (
-            <option key={e.id} value={e.id}>{e.name}</option>
-          ))}
+          {employees
+            .filter((e) => e.active && e.position !== 'OJT Instructor')
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
         </select>
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
+          onChange={(e) => setStatusFilter(e.target.value)}
           className="px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-sm"
         >
           <option value="all">All Status</option>
@@ -86,11 +95,15 @@ export function AdminHostFeedback() {
       <div className="space-y-3">
         <AnimatePresence>
           {filtered.length === 0 ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-2xl p-6 border border-gray-100 text-center text-gray-500">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-white rounded-2xl p-6 border border-gray-100 text-center text-gray-500"
+            >
               No host feedback records yet.
             </motion.div>
           ) : (
-            filtered.map(item => {
+            filtered.map((item) => {
               const style = STATUS_STYLES[item.status];
               return (
                 <motion.div
@@ -106,7 +119,13 @@ export function AdminHostFeedback() {
                         <Building size={12} />
                         {item.hostCompany} - {item.hostName}
                       </div>
-                      <div className="text-xs text-gray-400 mt-0.5">{new Date(item.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {new Date(item.submittedAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </div>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold ${style.bg} ${style.text}`}>
                       {item.status.charAt(0).toUpperCase() + item.status.slice(1)}

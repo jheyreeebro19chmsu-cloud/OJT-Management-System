@@ -14,11 +14,13 @@ import { Camera, FileText, Send, CheckCircle, Clock, ArrowLeft, Image as ImageIc
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../lib/supabase';
+import { announcementApi } from '../lib/api';
 import { decode } from 'base64-arraybuffer';
 import * as FileSystem from 'expo-file-system';
 
 interface TasksScreenProps {
   onBack: () => void;
+  profile: any;
 }
 
 export default function TasksScreen({ onBack }: TasksScreenProps) {
@@ -33,22 +35,33 @@ export default function TasksScreen({ onBack }: TasksScreenProps) {
 
   async function fetchTasks() {
     try {
-      const { data, error } = await supabase
+      // If student, we need to know their instructor
+      const instructorId = profile.instructor_id;
+      if (!instructorId) {
+        setTasks([]);
+        return;
+      }
+
+      const res = await announcementApi.list(instructorId);
+      if (res.success) {
+        const data = res.announcements || [];
+        setTasks(data);
+        
+        // Initialize response state
+        const initialResponses: any = {};
+        data.forEach((t: any) => {
+          initialResponses[t.id] = { message: '', photo: null };
+        });
+        setResponses(initialResponses);
+      }
+    } catch (err: any) {
+      console.error('Fetch tasks error:', err);
+      // Fallback to supabase if API fails
+      const { data } = await supabase
         .from('announcements')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setTasks(data || []);
-      
-      // Initialize response state
-      const initialResponses: any = {};
-      data?.forEach(t => {
-        initialResponses[t.id] = { message: '', photo: null };
-      });
-      setResponses(initialResponses);
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
+      if (data) setTasks(data);
     } finally {
       setLoading(false);
     }
@@ -86,36 +99,48 @@ export default function TasksScreen({ onBack }: TasksScreenProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not found');
 
-      let photoUrl = null;
-      if (response.photo) {
-        // Upload to Supabase Storage
-        const base64 = await FileSystem.readAsStringAsync(response.photo, { encoding: FileSystem.EncodingType.Base64 });
-        const filePath = `submissions/${user.id}/${task.id}_${Date.now()}.jpg`;
-        
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('task-submissions')
-          .upload(filePath, decode(base64), { contentType: 'image/jpeg' });
-
-        if (uploadError) throw uploadError;
-        
-        const { data: { publicUrl } } = supabase.storage
-          .from('task-submissions')
-          .getPublicUrl(filePath);
-        
-        photoUrl = publicUrl;
-      }
-
-      const { error } = await supabase
-        .from('announcement_submissions')
-        .insert({
+      // 1. Primary: Use Django API
+      try {
+        const formData = {
           announcement_id: task.id,
-          employee_id: user.id,
+          user_id: user.id,
           message: response.message,
-          photo: photoUrl,
-          submitted_at: new Date().toISOString()
-        });
+          image_b64: response.photo ? await FileSystem.readAsStringAsync(response.photo, { encoding: FileSystem.EncodingType.Base64 }) : null
+        };
+        await announcementApi.submit(formData);
+      } catch (apiErr) {
+        console.warn('API submission failed, falling back to direct Supabase:', apiErr);
+        
+        // 2. Fallback: Supabase direct insert
+        let photoUrl = null;
+        if (response.photo) {
+          const base64 = await FileSystem.readAsStringAsync(response.photo, { encoding: FileSystem.EncodingType.Base64 });
+          const filePath = `submissions/${user.id}/${task.id}_${Date.now()}.jpg`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('task-submissions')
+            .upload(filePath, decode(base64), { contentType: 'image/jpeg' });
 
-      if (error) throw error;
+          if (!uploadError) {
+            const { data: { publicUrl } } = supabase.storage
+              .from('task-submissions')
+              .getPublicUrl(filePath);
+            photoUrl = publicUrl;
+          }
+        }
+
+        const { error } = await supabase
+          .from('announcement_submissions')
+          .insert({
+            announcement_id: task.id,
+            employee_id: user.id,
+            message: response.message,
+            photo: photoUrl,
+            submitted_at: new Date().toISOString()
+          });
+
+        if (error) throw error;
+      }
 
       Alert.alert('Success', 'Your response has been submitted.');
       // Refresh or clear
@@ -145,7 +170,7 @@ export default function TasksScreen({ onBack }: TasksScreenProps) {
 
       <View style={styles.header}>
         <Text style={styles.title}>Tasks & Updates</Text>
-        <Text style={styles.subtitle}>Submit your progress to your instructor</Text>
+        <Text style={styles.subtitle}>Stay informed and submit your work</Text>
       </View>
 
       {tasks.length === 0 ? (
@@ -157,9 +182,9 @@ export default function TasksScreen({ onBack }: TasksScreenProps) {
         tasks.map(task => (
           <View key={task.id} style={styles.taskCard}>
             <View style={styles.taskHeader}>
-              <View style={[styles.typeBadge, { backgroundColor: task.type === 'urgent' ? '#fee2e2' : '#eff6ff' }]}>
-                <Text style={[styles.typeText, { color: task.type === 'urgent' ? '#ef4444' : '#2563eb' }]}>
-                  {task.type.toUpperCase()}
+              <View style={[styles.typeBadge, { backgroundColor: '#eff6ff' }]}>
+                <Text style={[styles.typeText, { color: '#2563eb' }]}>
+                  ANNOUNCEMENT
                 </Text>
               </View>
               {task.deadline_at && (
@@ -173,7 +198,7 @@ export default function TasksScreen({ onBack }: TasksScreenProps) {
             <Text style={styles.taskTitle}>{task.title}</Text>
             <Text style={styles.taskContent}>{task.content}</Text>
 
-            {task.requires_submission && (
+            {true && (
               <View style={styles.submissionSection}>
                 <Text style={styles.submissionLabel}>Your Response</Text>
                 <TextInput 
@@ -236,123 +261,140 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f8fafc',
   },
   backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
   },
   backBtnText: {
     marginLeft: 8,
     color: '#64748b',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   header: {
     marginBottom: 32,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1e293b',
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#0f172a',
   },
   subtitle: {
     fontSize: 16,
     color: '#64748b',
     marginTop: 4,
+    fontWeight: '500',
   },
   emptyCard: {
     backgroundColor: '#fff',
-    borderRadius: 24,
+    borderRadius: 32,
     padding: 60,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.02,
+    shadowRadius: 10,
+    elevation: 2,
   },
   emptyText: {
-    marginTop: 16,
+    marginTop: 20,
     color: '#94a3b8',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontSize: 16,
   },
   taskCard: {
     backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 32,
+    padding: 24,
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowRadius: 20,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
   },
   taskHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   typeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
   typeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   deadlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
   deadlineText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#64748b',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   taskTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '900',
     color: '#1e293b',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   taskContent: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#475569',
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: 24,
+    marginBottom: 24,
   },
   submissionSection: {
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
-    paddingTop: 20,
+    paddingTop: 24,
   },
   submissionLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748b',
-    marginBottom: 10,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#94a3b8',
+    marginBottom: 12,
     textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   responseInput: {
     backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 14,
+    borderRadius: 20,
+    padding: 20,
+    fontSize: 15,
     color: '#1e293b',
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    minHeight: 80,
+    minHeight: 120,
     textAlignVertical: 'top',
   },
   photoActions: {
-    marginVertical: 16,
+    marginVertical: 20,
   },
   addPhotoBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
     backgroundColor: '#eff6ff',
     borderWidth: 1,
     borderColor: '#dbeafe',
@@ -360,39 +402,53 @@ const styles = StyleSheet.create({
   },
   addPhotoText: {
     color: '#2563eb',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 14,
   },
   previewContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   previewImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 10,
+    width: 64,
+    height: 64,
+    borderRadius: 12,
   },
   removePhoto: {
     padding: 8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fee2e2',
   },
   removePhotoText: {
     color: '#ef4444',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   submitBtn: {
     backgroundColor: '#2563eb',
-    padding: 16,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 12,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 8,
   },
   submitBtnText: {
     color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
   }
 });

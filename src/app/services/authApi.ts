@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 
-const RAW_API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined ?? 'http://localhost:8000/api';
+const RAW_API_BASE =
+  ((import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined) ?? 'http://localhost:8000/api';
 // Disable calls to known external production host to avoid CORS errors when frontend is served separately.
 const API_BASE = RAW_API_BASE && RAW_API_BASE.includes('railway.app') ? undefined : RAW_API_BASE;
 
@@ -85,8 +86,7 @@ export const authAPI = {
     api.post<{ success: boolean; message: string }>('/auth/verify-otp/', { email, otp_code: otpCode }),
 
   // Authentication
-  login: (email: string, password: string) =>
-    api.post<AuthResponse>('/auth/login/', { email, password }),
+  login: (email: string, password: string) => api.post<AuthResponse>('/auth/login/', { email, password }),
 
   // Student Registration
   registerStudent: (data: {
@@ -125,11 +125,17 @@ export const authAPI = {
   registerOauthStudent: (data: { email: string; first_name?: string; last_name?: string }) =>
     api.post<AuthResponse>('/auth/register-oauth-student/', data),
 
-  registerOauthInstructor: (data: { email: string; first_name?: string; last_name?: string; course?: string; department?: string }) =>
-    api.post<AuthResponse>('/auth/register-oauth-instructor/', data),
+  registerOauthInstructor: (data: {
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    course?: string;
+    department?: string;
+  }) => api.post<AuthResponse>('/auth/register-oauth-instructor/', data),
 
   // Verify instructor QR code
-  verifyQR: (qrData: string) => api.post<{ success: boolean; instructor?: any }>('/auth/verify-qr/', { qr_data: qrData }),
+  verifyQR: (qrData: string) =>
+    api.post<{ success: boolean; instructor?: any }>('/auth/verify-qr/', { qr_data: qrData }),
 
   // OJT Application
   submitApplication: (data: {
@@ -170,34 +176,25 @@ export const authAPI = {
     }),
 
   timeOut: (userId: number, applicationId: number) =>
-    api.post<{ success: boolean; message: string; time_out: string; hours_rendered: number }>(
-      '/attendance/time-out/',
-      {
-        user_id: userId,
-        application_id: applicationId,
-      }
-    ),
+    api.post<{ success: boolean; message: string; time_out: string; hours_rendered: number }>('/attendance/time-out/', {
+      user_id: userId,
+      application_id: applicationId,
+    }),
 
   // Announcements
   postAnnouncement: (instructorId: number, formData: FormData) =>
-    api.post<{ success: boolean; message: string; announcement_id: number }>(
-      '/announcement/post/',
-      formData,
-      {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    ),
+    api.post<{ success: boolean; message: string; announcement_id: number; image_url?: string }>('/announcement/post/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 
   getAnnouncements: (instructorId: number) =>
     api.get<{ announcements: any[] }>('/announcement/list/', { params: { instructor_id: instructorId } }),
 
   // Announcement submissions (employee responses)
   submitAnnouncementResponse: (announcementId: string, userId: number, formData: FormData) =>
-    api.post<{ success: boolean; submission_id: number; image_url?: string }>(
-      '/announcement/submit/',
-      formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
-    ),
+    api.post<{ success: boolean; submission_id: number; image_url?: string }>('/announcement/submit/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 
   // HTE Access
   requestHTEAccess: (hteId: number, applicationId: number) =>
@@ -219,9 +216,9 @@ export const authAPI = {
 
   // User Settings
   updatePassword: (oldPassword: string, newPassword: string) =>
-    api.post<{ success: boolean; message: string }>('/auth/change-password/', { 
-      old_password: oldPassword, 
-      new_password: newPassword 
+    api.post<{ success: boolean; message: string }>('/auth/change-password/', {
+      old_password: oldPassword,
+      new_password: newPassword,
     }),
 };
 

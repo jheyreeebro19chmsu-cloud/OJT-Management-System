@@ -89,7 +89,9 @@ function getHeaders(): HeadersInit {
 /**
  * Get HTE dashboard metrics and recent activity
  */
-export async function getHTEDashboard(): Promise<ApiResponse<{ metrics: HTEDashboardMetrics; recent_time_records: TimeRecord[] }>> {
+export async function getHTEDashboard(): Promise<
+  ApiResponse<{ metrics: HTEDashboardMetrics; recent_time_records: TimeRecord[] }>
+> {
   try {
     const response = await fetch(`${API_BASE}/security/hte/dashboard/`, {
       method: 'GET',

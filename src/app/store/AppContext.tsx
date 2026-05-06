@@ -1,7 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, User, Evaluation, Announcement, AnnouncementSubmission, HostFeedback, HostSupervisor } from '../types';
+
 import { isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
+import {
+  Employee,
+  TimeRecord,
+  GeofenceZone,
+  AppSettings,
+  User,
+  Evaluation,
+  Announcement,
+  AnnouncementSubmission,
+  HostFeedback,
+  HostSupervisor,
+} from '../types';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -96,7 +108,7 @@ const MOCK_EMPLOYEES: Employee[] = [
     faceRegistered: true,
     createdAt: '2024-01-15',
     active: true,
-    registrationLocation: { lat: 14.5644, lng: 121.0310 },
+    registrationLocation: { lat: 14.5644, lng: 121.031 },
     registrationAddress: 'Taft Avenue, Manila',
   },
   {
@@ -116,7 +128,7 @@ const MOCK_EMPLOYEES: Employee[] = [
     faceRegistered: false,
     createdAt: '2024-02-01',
     active: true,
-    registrationLocation: { lat: 14.6095, lng: 120.9890 },
+    registrationLocation: { lat: 14.6095, lng: 120.989 },
     registrationAddress: 'España Blvd, Sampaloc, Manila',
   },
 ];
@@ -133,7 +145,8 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
   {
     id: 'ann-1',
     title: 'Welcome to OJT DTR System!',
-    content: 'Welcome to the On-the-Job Training Daily Time Record system. Please make sure to clock in and out every working day using facial recognition and location verification.',
+    content:
+      'Welcome to the On-the-Job Training Daily Time Record system. Please make sure to clock in and out every working day using facial recognition and location verification.',
     type: 'success',
     targetRole: 'all',
     isPinned: true,
@@ -143,7 +156,8 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
   {
     id: 'ann-2',
     title: 'Reminder: Attendance Policy',
-    content: 'Trainees are required to be within the geofenced zone to record attendance. Tardiness of more than 15 minutes will be marked as late. Please arrive on time.',
+    content:
+      'Trainees are required to be within the geofenced zone to record attendance. Tardiness of more than 15 minutes will be marked as late. Please arrive on time.',
     type: 'warning',
     targetRole: 'employee',
     isPinned: false,
@@ -237,6 +251,7 @@ interface AppContextType {
   announcements: Announcement[];
   announcementSubmissions: AnnouncementSubmission[];
   hostFeedback: HostFeedback[];
+  hostSupervisors: HostSupervisor[];
   login: (email: string, password: string) => User | null;
   logout: () => void;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
@@ -263,7 +278,12 @@ interface AppContextType {
   updateAnnouncement: (id: string, data: Partial<Announcement>) => void;
   deleteAnnouncement: (id: string) => void;
   getActiveAnnouncements: (role?: 'employee' | 'admin') => Announcement[];
-  submitAnnouncementResponse: (announcementId: string, employeeId: string, message: string, photo?: string) => AnnouncementSubmission;
+  submitAnnouncementResponse: (
+    announcementId: string,
+    employeeId: string,
+    message: string,
+    photo?: string
+  ) => AnnouncementSubmission;
   getAnnouncementSubmission: (announcementId: string, employeeId: string) => AnnouncementSubmission | null;
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
   // Host Feedback
@@ -298,7 +318,13 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
   const lat = Number(raw.lat);
   const lng = Number(raw.lng);
   const radius = Number(raw.radius);
-  const valid = isFiniteCoord(lat) && isFiniteCoord(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && Number.isFinite(radius) && radius > 0;
+  const valid =
+    isFiniteCoord(lat) &&
+    isFiniteCoord(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180 &&
+    Number.isFinite(radius) &&
+    radius > 0;
   if (!valid) return null;
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : `zone-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -313,9 +339,7 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
 
 function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
   if (!Array.isArray(inputs)) return [];
-  return inputs
-    .map(sanitizeGeofenceZone)
-    .filter((zone): zone is GeofenceZone => zone !== null);
+  return inputs.map(sanitizeGeofenceZone).filter((zone): zone is GeofenceZone => zone !== null);
 }
 
 function migrateGeofenceStorageOnce(): void {
@@ -373,10 +397,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   migrateInstructorPositionOnce();
   const [isLoading, setIsLoading] = useState(false);
   const [useSupabase, setUseSupabase] = useState(false);
-  
-  const [currentUser, setCurrentUser] = useState<User | null>(() =>
-    loadFromStorage(STORAGE_KEYS.CURRENT_USER, null)
-  );
+
+  const [currentUser, setCurrentUser] = useState<User | null>(() => loadFromStorage(STORAGE_KEYS.CURRENT_USER, null));
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
     if (stored.length === 0) {
@@ -399,12 +421,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sanitized = sanitizeGeofenceZones(stored);
     return sanitized.length > 0 ? sanitized : DEFAULT_GEOFENCE;
   });
-  const [settings, setSettings] = useState<AppSettings>(() =>
-    loadFromStorage(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS)
-  );
-  const [evaluations, setEvaluations] = useState<Evaluation[]>(() =>
-    loadFromStorage(STORAGE_KEYS.EVALUATIONS, [])
-  );
+  const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS));
+  const [evaluations, setEvaluations] = useState<Evaluation[]>(() => loadFromStorage(STORAGE_KEYS.EVALUATIONS, []));
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
     const stored = loadFromStorage<Announcement[]>(STORAGE_KEYS.ANNOUNCEMENTS, []);
     if (stored.length === 0) {
@@ -451,7 +469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const initializeData = async () => {
       const configured = isSupabaseConfigured();
-      
+
       if (!isMounted) return;
       setUseSupabase(configured);
 
@@ -469,7 +487,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           } catch {
             // ignore migration errors
           }
-          
+
           // Fetch all data from Supabase
           const [
             supabaseEmployees,
@@ -514,41 +532,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Save to localStorage only when not using Supabase
-  useEffect(() => { 
+  useEffect(() => {
     if (!useSupabase && employees.length > 0) {
       saveToStorage(STORAGE_KEYS.EMPLOYEES, employees);
     }
   }, [employees, useSupabase]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     if (!useSupabase && timeRecords.length > 0) {
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, timeRecords);
     }
   }, [timeRecords, useSupabase]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     if (!useSupabase && geofenceZones.length > 0) {
       saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, geofenceZones);
     }
   }, [geofenceZones, useSupabase]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     if (!useSupabase) {
       saveToStorage(STORAGE_KEYS.SETTINGS, settings);
     }
   }, [settings, useSupabase]);
-  
-  useEffect(() => { 
-    saveToStorage(STORAGE_KEYS.CURRENT_USER, currentUser); 
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.CURRENT_USER, currentUser);
   }, [currentUser]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     if (!useSupabase && evaluations.length > 0) {
       saveToStorage(STORAGE_KEYS.EVALUATIONS, evaluations);
     }
   }, [evaluations, useSupabase]);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     if (!useSupabase && announcements.length > 0) {
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, announcements);
     }
@@ -570,17 +588,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [passwords]);
 
   const setPasswordForEmail = (email: string, password: string) => {
-    setPasswords(prev => ({ ...prev, [normalizeEmail(email)]: password }));
+    setPasswords((prev) => ({ ...prev, [normalizeEmail(email)]: password }));
   };
 
   const login = (email: string, password: string): User | null => {
     const normalizedEmail = normalizeEmail(email);
-    const emp = employees.find(e => normalizeEmail(e.email) === normalizedEmail && e.active);
+    const emp = employees.find((e) => normalizeEmail(e.email) === normalizedEmail && e.active);
     if (emp) {
       const storedPassword = passwords[normalizedEmail];
-        const fallbackPassword = emp.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
-        if (password === (storedPassword || fallbackPassword)) {
-          const role: User['role'] = emp.position === 'OJT Instructor' ? 'admin' : 'employee';
+      const fallbackPassword = emp.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
+      if (password === (storedPassword || fallbackPassword)) {
+        const role: User['role'] = emp.position === 'OJT Instructor' ? 'admin' : 'employee';
         const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id };
         setCurrentUser(user);
         return user;
@@ -588,7 +606,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const host = hostSupervisors.find(h => normalizeEmail(h.email) === normalizedEmail && h.active);
+    const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedEmail && h.active);
     if (host) {
       const storedPassword = passwords[normalizedEmail];
       if (password === storedPassword) {
@@ -612,17 +630,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getCurrentUserEmail = (): string | null => {
     if (!currentUser) return null;
     if (currentUser.role === 'host') {
-      const host = hostSupervisors.find(h => h.id === currentUser.id);
+      const host = hostSupervisors.find((h) => h.id === currentUser.id);
       return host ? normalizeEmail(host.email) : null;
     }
-    const employee = employees.find(e => e.id === currentUser.employeeId || e.id === currentUser.id);
+    const employee = employees.find((e) => e.id === currentUser.employeeId || e.id === currentUser.id);
     return employee ? normalizeEmail(employee.email) : null;
   };
 
-  const changeCurrentUserPassword = (currentPassword: string, newPassword: string): { success: boolean; message: string } => {
+  const changeCurrentUserPassword = (
+    currentPassword: string,
+    newPassword: string
+  ): { success: boolean; message: string } => {
     const email = getCurrentUserEmail();
     if (!email) return { success: false, message: 'Current account not found.' };
-    const account = employees.find(e => normalizeEmail(e.email) === email);
+    const account = employees.find((e) => normalizeEmail(e.email) === email);
     const fallbackPassword = account?.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
     const existingPassword = passwords[email] || fallbackPassword;
     if (currentPassword !== existingPassword) {
@@ -652,27 +673,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (useSupabase) {
       supabaseService.createEmployee(employeeData).then((created) => {
         if (created) {
-          setEmployees(prev => [created, ...prev]);
+          setEmployees((prev) => [created, ...prev]);
         }
       });
     } else {
-      setEmployees(prev => [...prev, newEmp]);
+      setEmployees((prev) => [...prev, newEmp]);
     }
 
     return newEmp;
   };
 
   const updateEmployee = (id: string, data: Partial<Employee>) => {
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
-    
+    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
+
     if (useSupabase) {
       supabaseService.updateEmployee(id, data);
     }
   };
 
   const deleteEmployee = (id: string) => {
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, active: false } : e));
-    
+    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, active: false } : e)));
+
     if (useSupabase) {
       supabaseService.deleteEmployee(id);
     }
@@ -680,23 +701,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addTimeRecord = (record: Omit<TimeRecord, 'id'>): TimeRecord => {
     const newRecord: TimeRecord = { ...record, id: `rec-${Date.now()}` };
-    
+
     if (useSupabase) {
       supabaseService.createTimeRecord(record).then((created) => {
         if (created) {
-          setTimeRecords(prev => [created, ...prev]);
+          setTimeRecords((prev) => [created, ...prev]);
         }
       });
     } else {
-      setTimeRecords(prev => [...prev, newRecord]);
+      setTimeRecords((prev) => [...prev, newRecord]);
     }
-    
+
     return newRecord;
   };
 
   const updateTimeRecord = (id: string, data: Partial<TimeRecord>) => {
-    setTimeRecords(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
-    
+    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...data } : r)));
+
     if (useSupabase) {
       supabaseService.updateTimeRecord(id, data);
     }
@@ -704,13 +725,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getTodayRecord = (employeeId: string): TimeRecord | null => {
     const today = new Date().toISOString().split('T')[0];
-    return timeRecords.find(r => r.employeeId === employeeId && r.date === today) || null;
+    return timeRecords.find((r) => r.employeeId === employeeId && r.date === today) || null;
   };
 
   const getEmployeeRecords = (employeeId: string): TimeRecord[] => {
-    return timeRecords
-      .filter(r => r.employeeId === employeeId)
-      .sort((a, b) => b.date.localeCompare(a.date));
+    return timeRecords.filter((r) => r.employeeId === employeeId).sort((a, b) => b.date.localeCompare(a.date));
   };
 
   const updateGeofenceZones = (zones: GeofenceZone[]) => {
@@ -721,36 +740,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addGeofenceZone = (zone: Omit<GeofenceZone, 'id'>) => {
     const newZone = sanitizeGeofenceZone({ ...zone, id: `zone-${Date.now()}` });
     if (!newZone) return;
-    
+
     if (useSupabase) {
       supabaseService.createGeofenceZone(zone).then((created) => {
         const sanitizedCreated = sanitizeGeofenceZone(created);
         if (sanitizedCreated) {
-          setGeofenceZones(prev => [...prev, sanitizedCreated]);
+          setGeofenceZones((prev) => [...prev, sanitizedCreated]);
         }
       });
     } else {
-      setGeofenceZones(prev => [...prev, newZone]);
+      setGeofenceZones((prev) => [...prev, newZone]);
     }
   };
 
   const updateGeofenceZone = (id: string, data: Partial<GeofenceZone>) => {
-    setGeofenceZones(prev =>
-      prev.map(z => {
+    setGeofenceZones((prev) =>
+      prev.map((z) => {
         if (z.id !== id) return z;
         const merged = sanitizeGeofenceZone({ ...z, ...data });
         return merged || z;
-      }),
+      })
     );
-    
+
     if (useSupabase) {
       supabaseService.updateGeofenceZone(id, data);
     }
   };
 
   const deleteGeofenceZone = (id: string) => {
-    setGeofenceZones(prev => prev.filter(z => z.id !== id));
-    
+    setGeofenceZones((prev) => prev.filter((z) => z.id !== id));
+
     if (useSupabase) {
       supabaseService.deleteGeofenceZone(id);
     }
@@ -759,7 +778,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateSettings = (newSettings: Partial<AppSettings>) => {
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
-    
+
     if (useSupabase) {
       supabaseService.updateSettings(updated);
     }
@@ -767,74 +786,74 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getCurrentEmployee = (): Employee | null => {
     if (!currentUser?.employeeId) return null;
-    return employees.find(e => e.id === currentUser.employeeId) || null;
+    return employees.find((e) => e.id === currentUser.employeeId) || null;
   };
 
   // ─── Evaluations ─────────────────────────────────────────────────────────────
   const addEvaluation = (data: Omit<Evaluation, 'id'>): Evaluation => {
     const newEval: Evaluation = { ...data, id: `eval-${Date.now()}` };
-    
+
     if (useSupabase) {
       supabaseService.createEvaluation(data).then((created) => {
         if (created) {
-          setEvaluations(prev => [created, ...prev]);
+          setEvaluations((prev) => [created, ...prev]);
         }
       });
     } else {
-      setEvaluations(prev => [...prev, newEval]);
+      setEvaluations((prev) => [...prev, newEval]);
     }
-    
+
     return newEval;
   };
 
   const updateEvaluation = (id: string, data: Partial<Evaluation>) => {
-    setEvaluations(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
-    
+    setEvaluations((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
+
     if (useSupabase) {
       supabaseService.updateEvaluation(id, data);
     }
   };
 
   const deleteEvaluation = (id: string) => {
-    setEvaluations(prev => prev.filter(e => e.id !== id));
-    
+    setEvaluations((prev) => prev.filter((e) => e.id !== id));
+
     if (useSupabase) {
       supabaseService.deleteEvaluation(id);
     }
   };
 
   const getEmployeeEvaluation = (employeeId: string): Evaluation | null => {
-    return evaluations.find(e => e.employeeId === employeeId) || null;
+    return evaluations.find((e) => e.employeeId === employeeId) || null;
   };
 
   // ─── Announcements ────────────────────────────────────────────────────────────
   const addAnnouncement = (data: Omit<Announcement, 'id'>): Announcement => {
     const newAnn: Announcement = { ...data, id: `ann-${Date.now()}` };
-    
+
     if (useSupabase) {
       supabaseService.createAnnouncement(data).then((created) => {
         if (created) {
-          setAnnouncements(prev => [created, ...prev]);
+          setAnnouncements((prev) => [created, ...prev]);
         }
       });
     } else {
-      setAnnouncements(prev => [...prev, newAnn]);
+      setAnnouncements((prev) => [...prev, newAnn]);
     }
-    
+
     return newAnn;
   };
 
   const updateAnnouncement = (id: string, data: Partial<Announcement>) => {
-    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, ...data } : a));
-    
+    setAnnouncements((prev) => prev.map((a) => (a.id === id ? { ...a, ...data } : a)));
+
     if (useSupabase) {
       supabaseService.updateAnnouncement(id, data);
     }
   };
 
   const deleteAnnouncement = (id: string) => {
-    setAnnouncements(prev => prev.filter(a => a.id !== id));
-    
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+
     if (useSupabase) {
       supabaseService.deleteAnnouncement(id);
     }
@@ -843,7 +862,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getActiveAnnouncements = (role?: 'employee' | 'admin'): Announcement[] => {
     const now = new Date();
     return announcements
-      .filter(a => {
+      .filter((a) => {
         if (a.expiresAt && new Date(a.expiresAt) < now) return false;
         if (role && a.targetRole !== 'all' && a.targetRole !== role) return false;
         return true;
@@ -855,7 +874,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
   };
 
-  const submitAnnouncementResponse = (announcementId: string, employeeId: string, message: string, photo?: string): AnnouncementSubmission => {
+  const submitAnnouncementResponse = (
+    announcementId: string,
+    employeeId: string,
+    message: string,
+    photo?: string
+  ): AnnouncementSubmission => {
     const now = new Date().toISOString();
     let saved: AnnouncementSubmission = {
       id: `ann-sub-${Date.now()}`,
@@ -865,11 +889,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       photo,
       submittedAt: now,
     };
-    setAnnouncementSubmissions(prev => {
-      const existing = prev.find(s => s.announcementId === announcementId && s.employeeId === employeeId);
+    setAnnouncementSubmissions((prev) => {
+      const existing = prev.find((s) => s.announcementId === announcementId && s.employeeId === employeeId);
       if (existing) {
         saved = { ...existing, message, photo, submittedAt: now };
-        return prev.map(s => (s.id === existing.id ? saved : s));
+        return prev.map((s) => (s.id === existing.id ? saved : s));
       }
       return [saved, ...prev];
     });
@@ -877,10 +901,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getAnnouncementSubmission = (announcementId: string, employeeId: string): AnnouncementSubmission | null => {
-    return announcementSubmissions.find(s => s.announcementId === announcementId && s.employeeId === employeeId) || null;
+    return (
+      announcementSubmissions.find((s) => s.announcementId === announcementId && s.employeeId === employeeId) || null
+    );
   };
 
-  const getAnnouncementSubmissionStatus = (announcement: Announcement, employeeId: string): 'passed' | 'missed' | 'pending' => {
+  const getAnnouncementSubmissionStatus = (
+    announcement: Announcement,
+    employeeId: string
+  ): 'passed' | 'missed' | 'pending' => {
     if (!announcement.requiresSubmission) return 'passed';
     const submission = getAnnouncementSubmission(announcement.id, employeeId);
     if (submission) return 'passed';
@@ -893,11 +922,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     data: Omit<HostFeedback, 'id' | 'overallScore' | 'submittedAt' | 'status'>
   ): HostFeedback => {
     const totalScore =
-      data.attendanceScore +
-      data.performanceScore +
-      data.attitudeScore +
-      data.communicationScore +
-      data.teamworkScore;
+      data.attendanceScore + data.performanceScore + data.attitudeScore + data.communicationScore + data.teamworkScore;
     const overallScore = Math.round(totalScore / 5);
 
     const newFeedback: HostFeedback = {
@@ -908,21 +933,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: 'submitted',
     };
 
-    setHostFeedback(prev => [newFeedback, ...prev]);
+    setHostFeedback((prev) => [newFeedback, ...prev]);
     return newFeedback;
   };
 
   const updateHostFeedback = (id: string, updates: Partial<HostFeedback>) => {
-    setHostFeedback(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+    setHostFeedback((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
   };
 
   const deleteHostFeedback = (id: string) => {
-    setHostFeedback(prev => prev.filter(f => f.id !== id));
+    setHostFeedback((prev) => prev.filter((f) => f.id !== id));
   };
 
   const getEmployeeHostFeedback = (employeeId: string): HostFeedback[] => {
     return hostFeedback
-      .filter(f => f.employeeId === employeeId)
+      .filter((f) => f.employeeId === employeeId)
       .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
   };
 
@@ -943,17 +968,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AppContext.Provider value={{
-      currentUser, employees, timeRecords, geofenceZones, settings, evaluations, announcements, announcementSubmissions, hostFeedback,
-      login, logout, changeCurrentUserPassword, registerEmployee, updateEmployee, deleteEmployee,
-      addTimeRecord, updateTimeRecord, getTodayRecord, getEmployeeRecords,
-      updateGeofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone,
-      updateSettings, getCurrentEmployee,
-      addEvaluation, updateEvaluation, deleteEvaluation, getEmployeeEvaluation,
-      addAnnouncement, updateAnnouncement, deleteAnnouncement, getActiveAnnouncements,
-      submitAnnouncementResponse, getAnnouncementSubmission, getAnnouncementSubmissionStatus,
-      addHostFeedback, updateHostFeedback, deleteHostFeedback, getEmployeeHostFeedback, getLatestHostFeedback,
-    }}>
+    <AppContext.Provider
+      value={{
+        currentUser,
+        employees,
+        timeRecords,
+        geofenceZones,
+        settings,
+        evaluations,
+        announcements,
+        announcementSubmissions,
+        hostFeedback,
+        hostSupervisors,
+        login,
+        logout,
+        changeCurrentUserPassword,
+        registerEmployee,
+        updateEmployee,
+        deleteEmployee,
+        addTimeRecord,
+        updateTimeRecord,
+        getTodayRecord,
+        getEmployeeRecords,
+        updateGeofenceZones,
+        addGeofenceZone,
+        updateGeofenceZone,
+        deleteGeofenceZone,
+        updateSettings,
+        getCurrentEmployee,
+        addEvaluation,
+        updateEvaluation,
+        deleteEvaluation,
+        getEmployeeEvaluation,
+        addAnnouncement,
+        updateAnnouncement,
+        deleteAnnouncement,
+        getActiveAnnouncements,
+        submitAnnouncementResponse,
+        getAnnouncementSubmission,
+        getAnnouncementSubmissionStatus,
+        addHostFeedback,
+        updateHostFeedback,
+        deleteHostFeedback,
+        getEmployeeHostFeedback,
+        getLatestHostFeedback,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

@@ -1,6 +1,6 @@
+import { LogOut, Settings, User, Home } from 'lucide-react';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Settings, User, Home } from 'lucide-react';
 
 interface HTELayoutProps {
   children: React.ReactNode;
@@ -76,9 +76,7 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</main>
     </div>
   );
 }

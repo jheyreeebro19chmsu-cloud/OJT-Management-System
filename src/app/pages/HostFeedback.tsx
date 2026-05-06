@@ -1,7 +1,8 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import { Building, User, Star, CheckCircle, Send, Mail, Briefcase, ClipboardCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+
 import { useApp } from '../store/AppContext';
 
 const RATING_LABELS: Record<number, string> = {
@@ -23,10 +24,7 @@ type RatingsState = {
 export function HostFeedback() {
   const { employees, addHostFeedback, currentUser, logout } = useApp();
   const navigate = useNavigate();
-  const trainees = useMemo(
-    () => employees.filter(e => e.active && e.position !== 'OJT Instructor'),
-    [employees]
-  );
+  const trainees = useMemo(() => employees.filter((e) => e.active && e.position !== 'OJT Instructor'), [employees]);
 
   const [form, setForm] = useState({
     employeeId: trainees[0]?.id || '',
@@ -75,13 +73,13 @@ export function HostFeedback() {
 
   useEffect(() => {
     if (!form.employeeId && trainees[0]) {
-      setForm(prev => ({ ...prev, employeeId: trainees[0].id }));
+      setForm((prev) => ({ ...prev, employeeId: trainees[0].id }));
     }
   }, [trainees, form.employeeId]);
 
   useEffect(() => {
     if (currentUser?.role === 'host' && !form.hostName) {
-      setForm(prev => ({ ...prev, hostName: currentUser.name }));
+      setForm((prev) => ({ ...prev, hostName: currentUser.name }));
     }
   }, [currentUser, form.hostName]);
 
@@ -91,9 +89,8 @@ export function HostFeedback() {
     return () => clearTimeout(timer);
   }, [submitted]);
 
-  const updateForm = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
-  const updateRating = (key: keyof RatingsState, value: number) =>
-    setRatings(prev => ({ ...prev, [key]: value }));
+  const updateForm = (key: keyof typeof form, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const updateRating = (key: keyof RatingsState, value: number) => setRatings((prev) => ({ ...prev, [key]: value }));
 
   const overallRating = Math.round(
     (ratings.attendance + ratings.performance + ratings.attitude + ratings.communication + ratings.teamwork) / 5
@@ -116,11 +113,23 @@ export function HostFeedback() {
       teamworkScore: ratings.teamwork * 20,
       strengths: form.strengths,
       areasForImprovement: form.areasForImprovement,
-      recommendation: form.recommendation as 'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended',
+      recommendation: form.recommendation as
+        | 'Highly Recommended'
+        | 'Recommended'
+        | 'For Improvement'
+        | 'Not Recommended',
     });
 
     setSubmitted(true);
-    setForm(prev => ({ ...prev, hostName: '', hostCompany: '', hostPosition: '', hostEmail: '', strengths: '', areasForImprovement: '' }));
+    setForm((prev) => ({
+      ...prev,
+      hostName: '',
+      hostCompany: '',
+      hostPosition: '',
+      hostEmail: '',
+      strengths: '',
+      areasForImprovement: '',
+    }));
   };
 
   return (
@@ -161,8 +170,8 @@ export function HostFeedback() {
                 <p className="font-semibold text-sm">What We Need</p>
               </div>
               <p className="text-xs text-blue-100 leading-relaxed">
-                Please rate the trainee on attendance, performance, attitude, communication, and teamwork.
-                Your feedback will be shared with the school and the OJT coordinator.
+                Please rate the trainee on attendance, performance, attitude, communication, and teamwork. Your feedback
+                will be shared with the school and the OJT coordinator.
               </p>
             </div>
             <div className="rounded-2xl bg-white/10 border border-white/20 p-4 text-white">
@@ -207,11 +216,11 @@ export function HostFeedback() {
                 <label className="text-xs font-semibold text-gray-600 block mb-1">Trainee *</label>
                 <select
                   value={form.employeeId}
-                  onChange={e => updateForm('employeeId', e.target.value)}
+                  onChange={(e) => updateForm('employeeId', e.target.value)}
                   required
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {trainees.map(t => (
+                  {trainees.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} - {t.employeeId}
                     </option>
@@ -224,7 +233,7 @@ export function HostFeedback() {
                   <Building size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     value={form.hostCompany}
-                    onChange={e => updateForm('hostCompany', e.target.value)}
+                    onChange={(e) => updateForm('hostCompany', e.target.value)}
                     required
                     placeholder="Company or establishment name"
                     className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -237,7 +246,7 @@ export function HostFeedback() {
                   <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     value={form.hostName}
-                    onChange={e => updateForm('hostName', e.target.value)}
+                    onChange={(e) => updateForm('hostName', e.target.value)}
                     required
                     placeholder="Your full name"
                     className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -250,7 +259,7 @@ export function HostFeedback() {
                   <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     value={form.hostPosition}
-                    onChange={e => updateForm('hostPosition', e.target.value)}
+                    onChange={(e) => updateForm('hostPosition', e.target.value)}
                     placeholder="Training Supervisor"
                     className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -263,7 +272,7 @@ export function HostFeedback() {
                   <input
                     type="email"
                     value={form.hostEmail}
-                    onChange={e => updateForm('hostEmail', e.target.value)}
+                    onChange={(e) => updateForm('hostEmail', e.target.value)}
                     placeholder="email@company.com"
                     className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -272,11 +281,31 @@ export function HostFeedback() {
             </div>
 
             <div className="mt-6 space-y-4">
-              <RatingRow label="Attendance & punctuality" value={ratings.attendance} onChange={(v) => updateRating('attendance', v)} />
-              <RatingRow label="Performance & task quality" value={ratings.performance} onChange={(v) => updateRating('performance', v)} />
-              <RatingRow label="Attitude & professionalism" value={ratings.attitude} onChange={(v) => updateRating('attitude', v)} />
-              <RatingRow label="Communication skills" value={ratings.communication} onChange={(v) => updateRating('communication', v)} />
-              <RatingRow label="Teamwork & collaboration" value={ratings.teamwork} onChange={(v) => updateRating('teamwork', v)} />
+              <RatingRow
+                label="Attendance & punctuality"
+                value={ratings.attendance}
+                onChange={(v) => updateRating('attendance', v)}
+              />
+              <RatingRow
+                label="Performance & task quality"
+                value={ratings.performance}
+                onChange={(v) => updateRating('performance', v)}
+              />
+              <RatingRow
+                label="Attitude & professionalism"
+                value={ratings.attitude}
+                onChange={(v) => updateRating('attitude', v)}
+              />
+              <RatingRow
+                label="Communication skills"
+                value={ratings.communication}
+                onChange={(v) => updateRating('communication', v)}
+              />
+              <RatingRow
+                label="Teamwork & collaboration"
+                value={ratings.teamwork}
+                onChange={(v) => updateRating('teamwork', v)}
+              />
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -284,7 +313,7 @@ export function HostFeedback() {
                 <label className="text-xs font-semibold text-gray-600 block mb-1">Strengths / Highlights</label>
                 <textarea
                   value={form.strengths}
-                  onChange={e => updateForm('strengths', e.target.value)}
+                  onChange={(e) => updateForm('strengths', e.target.value)}
                   rows={3}
                   placeholder="Key strengths you observed"
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -294,7 +323,7 @@ export function HostFeedback() {
                 <label className="text-xs font-semibold text-gray-600 block mb-1">Areas for Improvement</label>
                 <textarea
                   value={form.areasForImprovement}
-                  onChange={e => updateForm('areasForImprovement', e.target.value)}
+                  onChange={(e) => updateForm('areasForImprovement', e.target.value)}
                   rows={3}
                   placeholder="Suggestions for growth"
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -307,7 +336,7 @@ export function HostFeedback() {
                 <label className="text-xs font-semibold text-gray-600 block mb-1">Overall Recommendation</label>
                 <select
                   value={form.recommendation}
-                  onChange={e => updateForm('recommendation', e.target.value)}
+                  onChange={(e) => updateForm('recommendation', e.target.value)}
                   className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option>Highly Recommended</option>
@@ -342,10 +371,12 @@ function RatingRow({ label, value, onChange }: { label: string; value: number; o
     <div className="bg-gray-50 rounded-2xl border border-gray-200 p-3">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-gray-600">{label}</span>
-        <span className="text-xs text-gray-500">{value}/5 - {RATING_LABELS[value]}</span>
+        <span className="text-xs text-gray-500">
+          {value}/5 - {RATING_LABELS[value]}
+        </span>
       </div>
       <div className="flex gap-2">
-        {[1, 2, 3, 4, 5].map(score => (
+        {[1, 2, 3, 4, 5].map((score) => (
           <button
             key={score}
             type="button"

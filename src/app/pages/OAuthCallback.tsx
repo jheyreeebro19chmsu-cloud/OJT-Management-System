@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+import { authAPI } from '../services/authApi';
 import supabaseAuth from '../services/supabaseAuth';
-import authApi from '../services/authApi';
 import { useApp } from '../store/AppContext';
 
 export default function OAuthCallback() {
@@ -46,13 +47,13 @@ export default function OAuthCallback() {
       const last_name = parts.slice(1).join(' ') || '';
       try {
         if (pendingRole === 'instructor') {
-          await authApi.registerOauthInstructor({ email, first_name, last_name });
+          await authAPI.registerOauthInstructor({ email, first_name, last_name });
         } else {
-          await authApi.registerOauthStudent({ email, first_name, last_name });
+          await authAPI.registerOauthStudent({ email, first_name, last_name });
         }
       } catch (err) {
         // fallback to local registration
-        const existing = app?.employees.find(e => e.email.toLowerCase() === email.toLowerCase());
+        const existing = app?.employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
         if (!existing) {
           app?.registerEmployee({
             name: name || email,

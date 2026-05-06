@@ -12,6 +12,7 @@ import {
 import { MapPin, Calendar, Clock, User, Check, Camera, ArrowLeft } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { applicationApi } from '../lib/api';
 import FaceScanner from '../components/FaceScanner';
 
 interface ApplicationScreenProps {
@@ -72,7 +73,26 @@ export default function ApplicationScreen({ instructorId, onCancel, onSuccess }:
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not found');
 
-      // Update employee profile with application data
+      // 1. Primary: Use Django API for enrollment tracking
+      try {
+        const djangoForm = {
+          user_id: user.id,
+          instructor_id: instructorId,
+          company_name: form.companyName,
+          company_address: form.companyAddress,
+          gps_latitude: location?.coords.latitude,
+          gps_longitude: location?.coords.longitude,
+          geofence_radius: 300,
+          start_date: form.startDate,
+          end_date: form.endDate,
+          required_hours: Number(form.requiredHours),
+        };
+        await applicationApi.submit(djangoForm);
+      } catch (apiErr) {
+        console.warn('Django Enrollment API failed, falling back to Supabase:', apiErr);
+      }
+
+      // 2. Secondary: Update Supabase profile for mobile UI
       const { error } = await supabase
         .from('employees')
         .update({

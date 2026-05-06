@@ -1,19 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, User, Building, GraduationCap, Camera, MapPin, ShieldCheck, Loader, UserCircle, Search, X } from 'lucide-react';
-import { useApp } from '../store/AppContext';
-import { FaceCapture } from '../components/FaceCapture';
-import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
-import { motion, AnimatePresence } from 'motion/react';
-import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
-import { authAPI } from '../services/authApi';
-import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
-import { QRCodeSVG } from 'qrcode.react';
-import { PH_ADDRESS_DATA, BARANGAY_SAMPLES } from '../data/ph_address_data';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
-import { Country, State, City } from 'country-state-city';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  User,
+  Building,
+  GraduationCap,
+  Camera,
+  MapPin,
+  ShieldCheck,
+  Loader,
+  UserCircle,
+  Search,
+  X,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { QRCodeSVG } from 'qrcode.react';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
+
+import { FaceCapture } from '../components/FaceCapture';
+import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
+
+
+import { PH_ADDRESS_DATA, BARANGAY_SAMPLES } from '../data/ph_address_data';
+
+
 import addressApi from '../services/addressApi';
+import { authAPI } from '../services/authApi';
+import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
+import { useApp } from '../store/AppContext';
+import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
 
 // Fix Leaflet marker icon using a method that's safer for production builds
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -30,7 +49,6 @@ const stepsHTE = ['Company Info', 'Contact Info'];
 type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
-
 export function Register() {
   const { registerEmployee, updateEmployee, employees, hostSupervisors } = useApp();
   const navigate = useNavigate();
@@ -39,20 +57,48 @@ export function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
   const [form, setForm] = useState({
-    name: '', first_name: '', last_name: '', middle_initial: '', email: '', department: '', position: 'OJT Trainee',
-    companyName: '', supervisorName: '', schoolName: '', course: '',
-    employeeId: '', startDate: '', endDate: '', requiredHours: 486,
-    contactPerson: '', contactPhone: '', companyAddress: '',
-    birthdate: '', age: '', country: 'PH', country_manual: '', region: '', region_manual: '', province: '', province_manual: '', city: '', city_manual: '', street: '', barangay: '', barangay_manual: '',
-    password: '', confirmPassword: '',
+    name: '',
+    first_name: '',
+    last_name: '',
+    middle_initial: '',
+    email: '',
+    department: '',
+    position: 'OJT Trainee',
+    companyName: '',
+    supervisorName: '',
+    schoolName: '',
+    course: '',
+    employeeId: '',
+    startDate: '',
+    endDate: '',
+    requiredHours: 486,
+    contactPerson: '',
+    contactPhone: '',
+    companyAddress: '',
+    birthdate: '',
+    age: '',
+    country: 'PH',
+    country_manual: '',
+    region: '',
+    region_manual: '',
+    province: '',
+    province_manual: '',
+    city: '',
+    city_manual: '',
+    street: '',
+    barangay: '',
+    barangay_manual: '',
+    password: '',
+    confirmPassword: '',
   });
-  
+
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [registeredInstructorId, setRegisteredInstructorId] = useState('');
 
   const [faceRegistered, setFaceRegistered] = useState(false);
@@ -81,7 +127,6 @@ export function Register() {
     localStorage.setItem('pending_oauth_role', nextRole || '');
   };
 
-
   // Capture location on mount and detect OAuth HTE prefill
   useEffect(() => {
     captureLocation();
@@ -107,8 +152,6 @@ export function Register() {
     }
   }, []);
 
-
-
   const captureLocation = async () => {
     setLocationStatus('capturing');
     try {
@@ -123,9 +166,9 @@ export function Register() {
   };
 
   const update = (field: string, value: string | number) => {
-    setForm(p => {
+    setForm((p) => {
       const newForm = { ...p, [field]: value };
-      
+
       // Auto-calculate age if birthdate changes
       if (field === 'birthdate' && typeof value === 'string' && value) {
         const birthDate = new Date(value);
@@ -139,7 +182,7 @@ export function Register() {
           newForm.age = age.toString();
         }
       }
-      
+
       return newForm;
     });
   };
@@ -155,12 +198,12 @@ export function Register() {
       // Fetch from both GeoNames and OSM for maximum coverage
       const [geoRes, osmRes] = await Promise.all([
         addressApi.autocompletePlaces(val),
-        addressApi.searchGlobalAddress(val)
+        addressApi.searchGlobalAddress(val),
       ]);
-      
+
       const geoItems = (geoRes.geonames || []).map((s: any) => ({ ...s, source: 'geonames' }));
       const osmItems = (osmRes.results || []).map((s: any) => ({ ...s, source: 'osm' }));
-      
+
       setAddressSuggestions([...osmItems, ...geoItems].slice(0, 15));
     } catch (err) {
       console.error('Search error:', err);
@@ -178,18 +221,18 @@ export function Register() {
         update('region', parsed.region);
         update('province', parsed.province);
         update('city', parsed.city);
-        
+
         // If it's PH, check if the city/barangay exists in our local data
         if (parsed.country === 'PH') {
-          const regionData = PH_ADDRESS_DATA.find(r => r.name === parsed.region);
-          const provinceData = regionData?.provinces.find(p => p.name === parsed.province);
+          const regionData = PH_ADDRESS_DATA.find((r) => r.name === parsed.region);
+          const provinceData = regionData?.provinces.find((p) => p.name === parsed.province);
           const cityExists = provinceData?.cities.includes(parsed.city);
-          
+
           if (!cityExists) {
             update('city', 'other');
             update('city_manual', parsed.city);
           }
-          
+
           const barangayList = BARANGAY_SAMPLES[parsed.city] || [];
           if (!barangayList.includes(parsed.barangay)) {
             update('barangay', 'other');
@@ -200,18 +243,20 @@ export function Register() {
         } else {
           update('barangay', parsed.barangay);
         }
-        
+
         update('street', parsed.street);
         setRegistrationAddress(parsed.formatted);
       }
     } else {
       // GeoNames logic
       const countryCode = s.countryCode || 'PH';
-      setAddressSearch(s.name + (s.adminName2 ? `, ${s.adminName2}` : '') + (s.countryName ? `, ${s.countryName}` : ''));
+      setAddressSearch(
+        s.name + (s.adminName2 ? `, ${s.adminName2}` : '') + (s.countryName ? `, ${s.countryName}` : '')
+      );
       update('country', countryCode);
       update('region', s.adminName1 || '');
       update('province', s.adminName2 || '');
-      
+
       if (countryCode === 'PH') {
         update('city', 'other');
         update('city_manual', s.adminName2 || s.name || '');
@@ -221,7 +266,7 @@ export function Register() {
         update('city', s.adminName2 || s.name || '');
         update('barangay', s.name || '');
       }
-      
+
       const fullAddr = [s.name, s.adminName2, s.adminName1, s.countryName].filter(Boolean).join(', ');
       setRegistrationAddress(fullAddr);
     }
@@ -233,15 +278,15 @@ export function Register() {
       alert('Please enter your email first');
       return;
     }
-    
+
     setOtpVerifying(true);
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setGeneratedOtp(code);
-    
+
     try {
       const result = await sendOtpEmail(form.email, code);
       if (result.error) throw new Error(typeof result.error === 'string' ? result.error : JSON.stringify(result.error));
-      
+
       setOtpSent(true);
       alert('Confirmation code sent to your email!');
     } catch (err: any) {
@@ -269,12 +314,11 @@ export function Register() {
     }
   };
 
-
   const handleNext = () => {
-    if (step < steps.length - 1) setStep(s => s + 1);
+    if (step < steps.length - 1) setStep((s) => s + 1);
   };
   const handleBack = () => {
-    if (step > 0) setStep(s => s - 1);
+    if (step > 0) setStep((s) => s - 1);
   };
 
   const handleFaceSuccess = (img?: string) => {
@@ -284,32 +328,33 @@ export function Register() {
   };
 
   const handleSubmit = async () => {
-    const empId = form.employeeId || `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+    const empId =
+      form.employeeId ||
+      `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
     // If OTP was verified against backend, attempt server registration first
-        if (true) { // bypass isOtpVerified check
+    if (true) {
+      // bypass isOtpVerified check
       try {
-          let first_name = form.first_name;
-          let last_name = form.last_name;
-          if (!first_name || !last_name) {
-            const parts = (form.name || '').trim().split(/\s+/);
-            first_name = parts.length > 0 ? parts[0] : form.name;
-            last_name = parts.length > 1 ? parts.slice(1).join(' ') : '';
-          }
+        let first_name = form.first_name;
+        let last_name = form.last_name;
+        if (!first_name || !last_name) {
+          const parts = (form.name || '').trim().split(/\s+/);
+          first_name = parts.length > 0 ? parts[0] : form.name;
+          last_name = parts.length > 1 ? parts.slice(1).join(' ') : '';
+        }
 
-          if (role === 'admin' || role === 'trainee') {
-            const composedAddress = [ form.street, form.city, form.country ]
-              .filter(Boolean)
-              .join(', ');
-            const payload = {
-              email: form.email,
-              password: form.password,
-              first_name,
-              last_name,
-              middle_initial: form.middle_initial || undefined,
-              age: form.age ? Number(form.age) : undefined,
-              address: composedAddress || undefined,
-            };
-            const res = await authAPI.registerStudent(payload);
+        if (role === 'admin' || role === 'trainee') {
+          const composedAddress = [form.street, form.city, form.country].filter(Boolean).join(', ');
+          const payload = {
+            email: form.email,
+            password: form.password,
+            first_name,
+            last_name,
+            middle_initial: form.middle_initial || undefined,
+            age: form.age ? Number(form.age) : undefined,
+            address: composedAddress || undefined,
+          };
+          const res = await authAPI.registerStudent(payload);
           if (res.data && (res.data as any).tokens) {
             // No auto-login: don't store tokens
           }
@@ -423,7 +468,7 @@ export function Register() {
         console.error('Failed to send welcome email:', emailErr);
       }
     }
-    
+
     // Auto-redirect based on role
     // Redirect to login after successful registration
     if (role === 'admin') {
@@ -436,78 +481,107 @@ export function Register() {
     }
   };
 
-      const getValidationErrors = () => {
-        const errors = [];
-        
-        const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
-        const hasEmail = Boolean(form.email && form.email.toString().trim());
-        
-        // Check for email duplication
-        const emailExists = employees.some(e => e.email.toLowerCase() === form.email.toLowerCase()) || 
-                          hostSupervisors.some(h => h.email.toLowerCase() === form.email.toLowerCase());
-        
-        if (hasEmail && emailExists) {
-          errors.push('this email is already use');
-        }
+  const getValidationErrors = () => {
+    const errors = [];
 
-        const hasUpper = /[A-Z]/.test(form.password);
-        const hasLower = /[a-z]/.test(form.password);
-        const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
-        const hasLength = (form.password || '').length >= 8;
-        const passwordsMatch = form.password && form.password === form.confirmPassword;
-        const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
+    const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
+    const hasEmail = Boolean(form.email && form.email.toString().trim());
 
-        const hasValidCountry = form.country === 'other' ? Boolean(form.country_manual?.trim()) : Boolean(form.country);
-        const hasValidRegion = form.region === 'other' ? Boolean(form.region_manual?.trim()) : Boolean(form.region);
-        const hasValidCity = form.city === 'other' ? Boolean(form.city_manual?.trim()) : Boolean(form.city);
-        const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangay_manual?.trim()) : Boolean(form.barangay);
-        const hasValidProvince = form.country === 'PH' 
-          ? (form.province === 'other' ? Boolean(form.province_manual?.trim()) : Boolean(form.province))
-          : true;
+    // Check for email duplication
+    const emailExists =
+      employees.some((e) => e.email.toLowerCase() === form.email.toLowerCase()) ||
+      hostSupervisors.some((h) => h.email.toLowerCase() === form.email.toLowerCase());
 
-        if (!hasName) errors.push("Full Name");
-        if (!hasEmail) errors.push("Valid Email");
-        if (!hasValidPassword) {
-          if (!hasLength) errors.push("Password (min 8 chars)");
-          if (!hasUpper || !hasLower) errors.push("Password (upper & lower case)");
-          if (!hasSpecial) errors.push("Password (special char)");
-          if (!passwordsMatch) errors.push("Passwords don't match");
-        }
-        if (!hasValidCountry) errors.push("Country");
-        if (!hasValidRegion) errors.push("Region");
-        if (!hasValidProvince) errors.push("Province");
-        if (!hasValidCity) errors.push("City/Municipality");
-        if (!hasValidBarangay) errors.push("Barangay");
+    if (hasEmail && emailExists) {
+      errors.push('this email is already use');
+    }
 
-        if (role === 'admin') {
-          if (!Boolean(form.department?.trim())) errors.push("Department");
-          if (!Boolean(form.course?.trim())) errors.push("Course");
-        }
-        
-        if (role === 'trainee') {
-          if (step === 0) {
-            const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
-            if (!hasAge) errors.push("Birthdate/Age");
-            // Email Verification Code check removed
-            if (locationStatus !== 'captured') errors.push("Capture Location");
-          }
-        }
-        
-        return errors;
-      };
+    const hasUpper = /[A-Z]/.test(form.password);
+    const hasLower = /[a-z]/.test(form.password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
+    const hasLength = (form.password || '').length >= 8;
+    const passwordsMatch = form.password && form.password === form.confirmPassword;
+    const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
 
-      const isStepValid = () => {
-        return getValidationErrors().length === 0;
-      };
+    const hasValidCountry = form.country === 'other' ? Boolean(form.country_manual?.trim()) : Boolean(form.country);
+    const hasValidRegion = form.region === 'other' ? Boolean(form.region_manual?.trim()) : Boolean(form.region);
+    const hasValidCity = form.city === 'other' ? Boolean(form.city_manual?.trim()) : Boolean(form.city);
+    const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangay_manual?.trim()) : Boolean(form.barangay);
+    const hasValidProvince =
+      form.country === 'PH'
+        ? form.province === 'other'
+          ? Boolean(form.province_manual?.trim())
+          : Boolean(form.province)
+        : true;
 
-      const validationErrors = getValidationErrors();
+    if (!hasName) errors.push('Full Name');
+    if (!hasEmail) errors.push('Valid Email');
+    if (!hasValidPassword) {
+      if (!hasLength) errors.push('Password (min 8 chars)');
+      if (!hasUpper || !hasLower) errors.push('Password (upper & lower case)');
+      if (!hasSpecial) errors.push('Password (special char)');
+      if (!passwordsMatch) errors.push("Passwords don't match");
+    }
+    if (!hasValidCountry) errors.push('Country');
+    if (!hasValidRegion) errors.push('Region');
+    if (!hasValidProvince) errors.push('Province');
+    if (!hasValidCity) errors.push('City/Municipality');
+    if (!hasValidBarangay) errors.push('Barangay');
+
+    if (role === 'admin') {
+      if (!form.department?.trim()) errors.push('Department');
+      if (!form.course?.trim()) errors.push('Course');
+    }
+
+    if (role === 'trainee') {
+      if (step === 0) {
+        const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
+        if (!hasAge) errors.push('Birthdate/Age');
+        // Email Verification Code check removed
+        if (locationStatus !== 'captured') errors.push('Capture Location');
+      }
+    }
+
+    return errors;
+  };
+
+  const isStepValid = () => {
+    return getValidationErrors().length === 0;
+  };
+
+  const validationErrors = getValidationErrors();
 
   const locationStatusConfig = {
-    idle: { color: 'bg-gray-50 border-gray-200', text: 'text-gray-500', label: 'Waiting for location...', icon: <MapPin size={14} className="text-gray-400" /> },
-    capturing: { color: 'bg-sky-50 border-sky-200', text: 'text-sky-700', label: 'Capturing your registration location...', icon: <Loader size={14} className="text-sky-500 animate-spin" /> },
-    captured: { color: 'bg-green-50 border-green-200', text: 'text-green-700', label: `Location captured: ${registrationAddress}`, icon: <Check size={14} className="text-green-500" /> },
-    denied: { color: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', label: 'Location permission denied. Continuing without location.', icon: <MapPin size={14} className="text-yellow-500" /> },
-    error: { color: 'bg-orange-50 border-orange-200', text: 'text-orange-700', label: 'Could not capture location. Continuing without it.', icon: <MapPin size={14} className="text-orange-500" /> },
+    idle: {
+      color: 'bg-gray-50 border-gray-200',
+      text: 'text-gray-500',
+      label: 'Waiting for location...',
+      icon: <MapPin size={14} className="text-gray-400" />,
+    },
+    capturing: {
+      color: 'bg-sky-50 border-sky-200',
+      text: 'text-sky-700',
+      label: 'Capturing your registration location...',
+      icon: <Loader size={14} className="text-sky-500 animate-spin" />,
+    },
+    captured: {
+      color: 'bg-green-50 border-green-200',
+      text: 'text-green-700',
+      label: `Location captured: ${registrationAddress}`,
+      icon: <Check size={14} className="text-green-500" />,
+    },
+    denied: {
+      color: 'bg-yellow-50 border-yellow-200',
+      text: 'text-yellow-700',
+      label: 'Location permission denied. Continuing without location.',
+      icon: <MapPin size={14} className="text-yellow-500" />,
+    },
+    error: {
+      color: 'bg-orange-50 border-orange-200',
+      text: 'text-orange-700',
+      label: 'Could not capture location. Continuing without it.',
+      icon: <MapPin size={14} className="text-orange-500" />,
+    },
   };
 
   const locConfig = locationStatusConfig[locationStatus];
@@ -515,32 +589,46 @@ export function Register() {
   if (registrationComplete && role === 'admin') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white max-w-md w-full rounded-3xl shadow-xl p-8 text-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white max-w-md w-full rounded-3xl shadow-xl p-8 text-center"
+        >
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Check size={40} className="text-green-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Registration Successful!</h2>
-          <p className="text-gray-500 mb-8">Your OJT Instructor account has been created. Here is your enrollment QR Code:</p>
-          
+          <p className="text-gray-500 mb-8">
+            Your OJT Instructor account has been created. Here is your enrollment QR Code:
+          </p>
+
           <div className="bg-slate-50 p-6 rounded-2xl inline-block mb-8 border-2 border-dashed border-slate-200">
-            <QRCodeSVG 
+            <QRCodeSVG
               id="instructor-qr"
-              value={`enroll:${registeredInstructorId}`} 
+              value={`enroll:${registeredInstructorId}`}
               size={200}
               level="H"
               includeMargin={true}
             />
           </div>
-          
+
           <div className="space-y-3">
-            <button onClick={handleShareQr} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+            <button
+              onClick={handleShareQr}
+              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            >
               Share QR Code
             </button>
-            <button onClick={() => navigate('/login')} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+            <button
+              onClick={() => navigate('/login')}
+              className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors"
+            >
               Go to Login
             </button>
           </div>
-          <p className="mt-6 text-xs text-slate-400 uppercase tracking-widest font-bold">Instruction: Students must scan this code to enroll under you.</p>
+          <p className="mt-6 text-xs text-slate-400 uppercase tracking-widest font-bold">
+            Instruction: Students must scan this code to enroll under you.
+          </p>
         </motion.div>
       </div>
     );
@@ -550,11 +638,7 @@ export function Register() {
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
       <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-sm"
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Link to="/" className="text-blue-200 hover:text-white transition-colors">
@@ -562,9 +646,17 @@ export function Register() {
           </Link>
           <div>
             <h1 className="text-white font-bold text-lg">
-              {role === null ? 'Select Registration Type' : role === 'admin' ? 'OJT Instructor Registration' : 'Trainee Registration'}
+              {role === null
+                ? 'Select Registration Type'
+                : role === 'admin'
+                  ? 'OJT Instructor Registration'
+                  : 'Trainee Registration'}
             </h1>
-            {role !== null && <p className="text-blue-200 text-xs">Step {step + 1} of {steps.length}</p>}
+            {role !== null && (
+              <p className="text-blue-200 text-xs">
+                Step {step + 1} of {steps.length}
+              </p>
+            )}
           </div>
         </div>
 
@@ -582,11 +674,15 @@ export function Register() {
 
         {/* Location status bar - Only show when role is selected */}
         {role !== null && (
-          <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border mb-4 ${locConfig.color} ${locConfig.text}`}>
+          <div
+            className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border mb-4 ${locConfig.color} ${locConfig.text}`}
+          >
             {locConfig.icon}
             <span className="flex-1 truncate">{locConfig.label}</span>
             {(locationStatus === 'denied' || locationStatus === 'error') && (
-              <button onClick={captureLocation} className="underline shrink-0">Retry</button>
+              <button onClick={captureLocation} className="underline shrink-0">
+                Retry
+              </button>
             )}
           </div>
         )}
@@ -618,7 +714,10 @@ export function Register() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-gray-800 mb-1">Trainee / Employee</h3>
-                      <p className="text-xs text-gray-500">Register as an OJT trainee or employee. You'll complete a full registration with company and school information.</p>
+                      <p className="text-xs text-gray-500">
+                        Register as an OJT trainee or employee. You'll complete a full registration with company and
+                        school information.
+                      </p>
                     </div>
                   </div>
                 </button>
@@ -633,7 +732,10 @@ export function Register() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-gray-800 mb-1">OJT Instructor</h3>
-                      <p className="text-xs text-gray-500">Register as an OJT Instructor or supervisor. You'll have access to manage employees, view reports, and configure settings.</p>
+                      <p className="text-xs text-gray-500">
+                        Register as an OJT Instructor or supervisor. You'll have access to manage employees, view
+                        reports, and configure settings.
+                      </p>
                     </div>
                   </div>
                 </button>
@@ -648,12 +750,13 @@ export function Register() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
-                      <p className="text-xs text-gray-500">Register as an HTE representative. You'll monitor employee attendance, rendered hours, and manage registrations.</p>
+                      <p className="text-xs text-gray-500">
+                        Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
+                        manage registrations.
+                      </p>
                     </div>
                   </div>
                 </button>
-
-                
 
                 <div className="mt-6 pt-4 border-t border-gray-100">
                   <p className="text-center text-xs text-gray-400">
@@ -668,7 +771,12 @@ export function Register() {
 
             {/* Step 0: Personal Info (Trainee/Admin) or Company Details (HTE) */}
             {role !== null && step === 0 && (
-              <motion.div key="step0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <motion.div
+                key="step0"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
                 {role === 'hte' ? (
                   <>
                     <div className="flex items-center gap-2 mb-4">
@@ -680,20 +788,26 @@ export function Register() {
                     <div className="space-y-4">
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
-                        <input value={form.companyName} onChange={e => update('companyName', e.target.value)}
-                          placeholder="Host Training Establishment Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        <input
+                          value={form.companyName}
+                          onChange={(e) => update('companyName', e.target.value)}
+                          placeholder="Host Training Establishment Name"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
                       </div>
-                      
+
                       <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4">
-                        <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Company Location (GeoNames Search)</p>
-                        
+                        <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">
+                          Company Location (GeoNames Search)
+                        </p>
+
                         <div className="relative">
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Search size={14} className="text-blue-400" />
                           </div>
-                          <input 
+                          <input
                             value={addressSearch}
-                            onChange={e => handleAddressSearch(e.target.value)}
+                            onChange={(e) => handleAddressSearch(e.target.value)}
                             placeholder="Search your company address..."
                             className="w-full pl-9 pr-3 py-2.5 bg-white border border-blue-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
                           />
@@ -702,7 +816,7 @@ export function Register() {
                               <Loader size={14} className="animate-spin text-blue-500" />
                             </div>
                           )}
-                          
+
                           {addressSuggestions.length > 0 && (
                             <div className="absolute z-[2000] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                               {addressSuggestions.map((s, idx) => (
@@ -714,14 +828,16 @@ export function Register() {
                                 >
                                   <div className="flex justify-between items-center mb-1">
                                     <p className="text-sm font-bold text-gray-800 truncate flex-1">
-                                      {s.source === 'osm' ? (s.name || s.display_name?.split(',')[0]) : s.name}
+                                      {s.source === 'osm' ? s.name || s.display_name?.split(',')[0] : s.name}
                                     </p>
                                     <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 uppercase tracking-tighter">
                                       {s.source}
                                     </span>
                                   </div>
                                   <p className="text-[10px] text-gray-500 line-clamp-1">
-                                    {s.source === 'osm' ? s.display_name : `${s.adminName2 ? `${s.adminName2}, ` : ''}${s.adminName1}, ${s.countryName}`}
+                                    {s.source === 'osm'
+                                      ? s.display_name
+                                      : `${s.adminName2 ? `${s.adminName2}, ` : ''}${s.adminName1}, ${s.countryName}`}
                                   </p>
                                 </button>
                               ))}
@@ -735,9 +851,9 @@ export function Register() {
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
-                            <select 
-                              value={form.country} 
-                              onChange={e => {
+                            <select
+                              value={form.country}
+                              onChange={(e) => {
                                 update('country', e.target.value);
                                 update('region', '');
                                 update('province', '');
@@ -746,26 +862,27 @@ export function Register() {
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             >
-                              {Country.getAllCountries().map(c => (
-                                <option key={c.isoCode} value={c.isoCode}>{c.name}</option>
-                              ))}
+                              <option value="PH">Philippines</option>
+                              <option value="US">United States</option>
                               <option value="other">Other (Type manually)</option>
                             </select>
                             {form.country === 'other' && (
-                              <input 
-                                value={form.country_manual || ''} 
-                                onChange={e => update('country_manual', e.target.value)}
+                              <input
+                                value={form.country_manual || ''}
+                                onChange={(e) => update('country_manual', e.target.value)}
                                 placeholder="Enter country name"
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mt-2"
                               />
                             )}
                           </div>
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">{form.country === 'PH' ? 'Region *' : 'State/Region *'}</label>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              {form.country === 'PH' ? 'Region *' : 'State/Region *'}
+                            </label>
                             {form.country === 'PH' ? (
-                              <select 
-                                value={form.region} 
-                                onChange={e => {
+                              <select
+                                value={form.region}
+                                onChange={(e) => {
                                   update('region', e.target.value);
                                   update('province', '');
                                   update('city', '');
@@ -774,13 +891,17 @@ export function Register() {
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                               >
                                 <option value="">Select Region</option>
-                                {PH_ADDRESS_DATA.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
+                                {PH_ADDRESS_DATA.map((r) => (
+                                  <option key={r.name} value={r.name}>
+                                    {r.name}
+                                  </option>
+                                ))}
                                 <option value="other">Other (Type manually)</option>
                               </select>
                             ) : (
-                              <select 
-                                value={form.region} 
-                                onChange={e => {
+                              <select
+                                value={form.region}
+                                onChange={(e) => {
                                   update('region', e.target.value);
                                   update('province', '');
                                   update('city', '');
@@ -789,16 +910,13 @@ export function Register() {
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                               >
                                 <option value="">Select State</option>
-                                {State.getStatesOfCountry(form.country).map(s => (
-                                  <option key={s.isoCode} value={s.isoCode}>{s.name}</option>
-                                ))}
                                 <option value="other">Other (Type manually)</option>
                               </select>
                             )}
                             {form.region === 'other' && (
-                              <input 
-                                value={form.region_manual || ''} 
-                                onChange={e => update('region_manual', e.target.value)}
+                              <input
+                                value={form.region_manual || ''}
+                                onChange={(e) => update('region_manual', e.target.value)}
                                 placeholder="Enter state/region name"
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mt-2"
                               />
@@ -808,12 +926,14 @@ export function Register() {
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">{form.country === 'PH' ? 'Province *' : 'City/Town *'}</label>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              {form.country === 'PH' ? 'Province *' : 'City/Town *'}
+                            </label>
                             {form.country === 'PH' ? (
                               <div className="space-y-2">
-                                <select 
-                                  value={form.province} 
-                                  onChange={e => {
+                                <select
+                                  value={form.province}
+                                  onChange={(e) => {
                                     update('province', e.target.value);
                                     update('city', '');
                                     update('barangay', '');
@@ -821,13 +941,17 @@ export function Register() {
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
                                   <option value="">Select Province</option>
-                                  {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                                  {PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
+                                    <option key={p.name} value={p.name}>
+                                      {p.name}
+                                    </option>
+                                  ))}
                                   <option value="other">Other (Type manually)</option>
                                 </select>
                                 {form.province === 'other' && (
-                                  <input 
-                                    value={form.province_manual || ''} 
-                                    onChange={e => update('province_manual', e.target.value)}
+                                  <input
+                                    value={form.province_manual || ''}
+                                    onChange={(e) => update('province_manual', e.target.value)}
                                     placeholder="Enter province name"
                                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                   />
@@ -835,34 +959,29 @@ export function Register() {
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                <select 
-                                  value={form.city} 
-                                  onChange={e => {
+                                <select
+                                  value={form.city}
+                                  onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
                                     if (e.target.value !== 'other') {
-                                      const stateName = State.getStatesOfCountry(form.country).find(s => s.isoCode === form.region)?.name || '';
-                                      const countryName = Country.getCountryByCode(form.country)?.name || '';
-                                      const fullAddr = `${e.target.value}, ${stateName}, ${countryName}`;
+                                      const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country;
+                                      const fullAddr = `${e.target.value}, ${form.region}, ${countryName}`;
                                       setRegistrationAddress(fullAddr);
                                     }
                                   }}
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
                                   <option value="">Select City</option>
-                                  {City.getCitiesOfState(form.country, form.region).map(c => (
-                                    <option key={c.name} value={c.name}>{c.name}</option>
-                                  ))}
                                   <option value="other">Other (Type manually)</option>
                                 </select>
                                 {form.city === 'other' && (
-                                  <input 
-                                    value={form.city_manual || ''} 
-                                    onChange={e => {
+                                  <input
+                                    value={form.city_manual || ''}
+                                    onChange={(e) => {
                                       update('city_manual', e.target.value);
-                                      const stateName = form.region === 'other' ? form.region_manual : (State.getStatesOfCountry(form.country).find(s => s.isoCode === form.region)?.name || '');
-                                      const countryName = form.country === 'other' ? form.country_manual : (Country.getCountryByCode(form.country)?.name || '');
-                                      const fullAddr = `${e.target.value}, ${stateName}, ${countryName}`;
+                                      const countryName = form.country === 'other' ? form.country_manual : (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
+                                      const fullAddr = `${e.target.value}, ${form.region}, ${countryName}`;
                                       setRegistrationAddress(fullAddr);
                                     }}
                                     placeholder="Enter city name"
@@ -873,12 +992,14 @@ export function Register() {
                             )}
                           </div>
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">{form.country === 'PH' ? 'City/Municipality *' : 'Neighborhood/Barangay'}</label>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              {form.country === 'PH' ? 'City/Municipality *' : 'Neighborhood/Barangay'}
+                            </label>
                             {form.country === 'PH' ? (
                               <div className="space-y-2">
-                                <select 
-                                  value={form.city} 
-                                  onChange={e => {
+                                <select
+                                  value={form.city}
+                                  onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
                                     if (e.target.value !== 'other') {
@@ -889,13 +1010,19 @@ export function Register() {
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
                                   <option value="">Select City</option>
-                                  {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.find(p => p.name === form.province)?.cities.map(c => <option key={c} value={c}>{c}</option>)}
+                                  {PH_ADDRESS_DATA.find((r) => r.name === form.region)
+                                    ?.provinces.find((p) => p.name === form.province)
+                                    ?.cities.map((c) => (
+                                      <option key={c} value={c}>
+                                        {c}
+                                      </option>
+                                    ))}
                                   <option value="other">Other (Type manually)</option>
                                 </select>
                                 {form.city === 'other' && (
-                                  <input 
-                                    value={form.city_manual || ''} 
-                                    onChange={e => {
+                                  <input
+                                    value={form.city_manual || ''}
+                                    onChange={(e) => {
                                       update('city_manual', e.target.value);
                                       const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
                                       setRegistrationAddress(fullAddr);
@@ -906,12 +1033,12 @@ export function Register() {
                                 )}
                               </div>
                             ) : (
-                              <input 
-                                value={form.barangay} 
-                                onChange={e => {
+                              <input
+                                value={form.barangay}
+                                onChange={(e) => {
                                   update('barangay', e.target.value);
-                                  const stateName = form.region === 'other' ? form.region_manual : (State.getStatesOfCountry(form.country).find(s => s.isoCode === form.region)?.name || '');
-                                  const countryName = form.country === 'other' ? form.country_manual : (Country.getCountryByCode(form.country)?.name || '');
+                                  const countryName = form.country === 'other' ? form.country_manual : (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
+                                  const stateName = form.region === 'other' ? form.region_manual : form.region;
                                   const cityName = form.city === 'other' ? form.city_manual : form.city;
                                   const fullAddr = `${cityName}, ${e.target.value}, ${stateName}, ${countryName}`;
                                   setRegistrationAddress(fullAddr);
@@ -922,13 +1049,13 @@ export function Register() {
                             )}
                           </div>
                         </div>
-                        
+
                         {form.country === 'PH' && (
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay *</label>
-                            <select 
-                              value={form.barangay} 
-                              onChange={e => {
+                            <select
+                              value={form.barangay}
+                              onChange={(e) => {
                                 update('barangay', e.target.value);
                                 if (e.target.value !== 'other') {
                                   const cityName = form.city === 'other' ? form.city_manual : form.city;
@@ -940,13 +1067,17 @@ export function Register() {
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             >
                               <option value="">Select Barangay</option>
-                              {(form.city && BARANGAY_SAMPLES[form.city] || []).map(b => <option key={b} value={b}>{b}</option>)}
+                              {((form.city && BARANGAY_SAMPLES[form.city]) || []).map((b) => (
+                                <option key={b} value={b}>
+                                  {b}
+                                </option>
+                              ))}
                               <option value="other">Other (Type manually)</option>
                             </select>
                             {form.barangay === 'other' && (
-                              <input 
-                                value={form.barangay_manual || ''} 
-                                onChange={e => {
+                              <input
+                                value={form.barangay_manual || ''}
+                                onChange={(e) => {
                                   update('barangay_manual', e.target.value);
                                   const cityName = form.city === 'other' ? form.city_manual : form.city;
                                   const provName = form.province === 'other' ? form.province_manual : form.province;
@@ -961,13 +1092,19 @@ export function Register() {
                         )}
 
                         <div className="mt-2">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Capture Precise Location</label>
-                          <button 
-                            type="button" 
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">
+                            Capture Precise Location
+                          </label>
+                          <button
+                            type="button"
                             onClick={captureLocation}
                             className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${locationStatus === 'captured' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'}`}
                           >
-                            {locationStatus === 'capturing' ? <Loader className="animate-spin" size={16} /> : <MapPin size={16} />}
+                            {locationStatus === 'capturing' ? (
+                              <Loader className="animate-spin" size={16} />
+                            ) : (
+                              <MapPin size={16} />
+                            )}
                             {locationStatus === 'captured' ? 'Location Secured' : 'Pin Precise Company Location'}
                           </button>
                         </div>
@@ -982,88 +1119,129 @@ export function Register() {
                       </div>
                       <h2 className="font-bold text-gray-800">Personal Information</h2>
                     </div>
-                    
+
                     <div className="space-y-3">
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
-                          <input value={form.last_name} onChange={e => update('last_name', e.target.value)} placeholder="Dela Cruz" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          <input
+                            value={form.last_name}
+                            onChange={(e) => update('last_name', e.target.value)}
+                            placeholder="Dela Cruz"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
-                          <input value={form.first_name} onChange={e => update('first_name', e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          <input
+                            value={form.first_name}
+                            onChange={(e) => update('first_name', e.target.value)}
+                            placeholder="Juan"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
-                          <input value={form.middle_initial} onChange={e => update('middle_initial', e.target.value)} placeholder="D" maxLength={1} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                          <input
+                            value={form.middle_initial}
+                            onChange={(e) => update('middle_initial', e.target.value)}
+                            placeholder="D"
+                            maxLength={1}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
                         </div>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
-                        <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
-                          placeholder="your@email.com" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        <input
+                          type="email"
+                          value={form.email}
+                          onChange={(e) => update('email', e.target.value)}
+                          placeholder="your@email.com"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
                           <div className="relative">
-                            <input 
-                              type={showPassword ? 'text' : 'password'} 
-                              value={form.password} 
-                              onChange={e => update('password', e.target.value)}
-                              placeholder="Min 8 characters" 
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              value={form.password}
+                              onChange={(e) => update('password', e.target.value)}
+                              placeholder="Min 8 characters"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             />
                           </div>
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
-                          <input 
-                            type={showPassword ? 'text' : 'password'} 
-                            value={form.confirmPassword} 
-                            onChange={e => update('confirmPassword', e.target.value)}
-                            placeholder="Repeat password" 
-                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`} 
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            value={form.confirmPassword}
+                            onChange={(e) => update('confirmPassword', e.target.value)}
+                            placeholder="Repeat password"
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
                           />
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-2 px-1">
-                        <input type="checkbox" id="show-pw" checked={showPassword} onChange={() => setShowPassword(!showPassword)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                        <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">Show passwords</label>
+                        <input
+                          type="checkbox"
+                          id="show-pw"
+                          checked={showPassword}
+                          onChange={() => setShowPassword(!showPassword)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">
+                          Show passwords
+                        </label>
                       </div>
-                      
+
                       {role === 'admin' && (
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
-                            <input value={form.department} onChange={e => update('department', e.target.value)}
-                              placeholder="e.g. CICS" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                            <input
+                              value={form.department}
+                              onChange={(e) => update('department', e.target.value)}
+                              placeholder="e.g. CICS"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            />
                           </div>
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Field *</label>
-                            <input value={form.course} onChange={e => update('course', e.target.value)}
-                              placeholder="e.g. IT" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                            <input
+                              value={form.course}
+                              onChange={(e) => update('course', e.target.value)}
+                              placeholder="e.g. IT"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            />
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Email Verification hidden as requested */}
                       {false && role === 'trainee' && (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Email Verification</label>
+                            <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">
+                              Email Verification
+                            </label>
                             {isOtpVerified && (
-                              <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Verified</span>
+                              <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                                Verified
+                              </span>
                             )}
                           </div>
-                          
+
                           {!isOtpVerified ? (
                             <div className="flex gap-2">
                               {!otpSent ? (
-                                <button 
-                                  type="button" 
+                                <button
+                                  type="button"
                                   onClick={handleRequestOtp}
                                   disabled={otpVerifying || !form.email}
                                   className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
@@ -1072,22 +1250,22 @@ export function Register() {
                                 </button>
                               ) : (
                                 <>
-                                  <input 
-                                    value={otpCode} 
-                                    onChange={e => setOtpCode(e.target.value)} 
-                                    placeholder="6-digit code" 
+                                  <input
+                                    value={otpCode}
+                                    onChange={(e) => setOtpCode(e.target.value)}
+                                    placeholder="6-digit code"
                                     className="flex-1 px-3 py-2 border border-blue-200 rounded-xl text-center font-bold tracking-widest focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                                     maxLength={6}
                                   />
-                                  <button 
-                                    type="button" 
+                                  <button
+                                    type="button"
                                     onClick={verifyOtp}
                                     className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-bold"
                                   >
                                     Verify
                                   </button>
-                                  <button 
-                                    type="button" 
+                                  <button
+                                    type="button"
                                     onClick={handleRequestOtp}
                                     className="px-2 text-[10px] text-blue-600 underline"
                                   >
@@ -1105,432 +1283,543 @@ export function Register() {
                         </div>
                       )}
 
-                          <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
-                            <input type="date" value={form.birthdate} onChange={e => update('birthdate', e.target.value)}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                          </div>
-                          <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
-                            <input value={form.age} disabled type="number"
-                              placeholder="Enter birthdate first" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500" />
-                          </div>
-                          <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4 mb-4">
-                            <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">Home Address (GeoNames Search)</p>
-                            
-                            <div className="relative">
-                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Search size={14} className="text-blue-400" />
-                              </div>
-                              <input 
-                                value={addressSearch}
-                                onChange={e => handleAddressSearch(e.target.value)}
-                                placeholder="Search your home address..."
-                                className="w-full pl-9 pr-3 py-2.5 bg-white border border-blue-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-                              />
-                              {searchingAddress && (
-                                <div className="absolute right-3 top-2.5">
-                                  <Loader size={14} className="animate-spin text-blue-500" />
-                                </div>
-                              )}
-                              
-                              {addressSuggestions.length > 0 && (
-                                <div className="absolute z-[2000] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                                  {addressSuggestions.map((s, idx) => (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => selectAddressSuggestion(s)}
-                                      className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
-                                    >
-                                      <p className="text-sm font-bold text-gray-800">{s.name}</p>
-                                      <p className="text-[10px] text-gray-500">{s.adminName2 ? `${s.adminName2}, ` : ''}{s.adminName1}, {s.countryName}</p>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
+                        <input
+                          type="date"
+                          value={form.birthdate}
+                          onChange={(e) => update('birthdate', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
+                        <input
+                          value={form.age}
+                          disabled
+                          type="number"
+                          placeholder="Enter birthdate first"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500"
+                        />
+                      </div>
+                      <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4 mb-4">
+                        <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2">
+                          Home Address (GeoNames Search)
+                        </p>
 
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
-                              <select 
-                                value={form.country} 
-                                onChange={e => {
-                                  update('country', e.target.value);
-                                  update('region', '');
-                                  update('province', '');
-                                  update('city', '');
-                                  update('barangay', '');
-                                }}
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                              >
-                                {Country.getAllCountries().map(c => (
-                                  <option key={c.isoCode} value={c.isoCode}>{c.name}</option>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search size={14} className="text-blue-400" />
+                          </div>
+                          <input
+                            value={addressSearch}
+                            onChange={(e) => handleAddressSearch(e.target.value)}
+                            placeholder="Search your home address..."
+                            className="w-full pl-9 pr-3 py-2.5 bg-white border border-blue-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                          />
+                          {searchingAddress && (
+                            <div className="absolute right-3 top-2.5">
+                              <Loader size={14} className="animate-spin text-blue-500" />
+                            </div>
+                          )}
+
+                          {addressSuggestions.length > 0 && (
+                            <div className="absolute z-[2000] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                              {addressSuggestions.map((s, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => selectAddressSuggestion(s)}
+                                  className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
+                                >
+                                  <p className="text-sm font-bold text-gray-800">{s.name}</p>
+                                  <p className="text-[10px] text-gray-500">
+                                    {s.adminName2 ? `${s.adminName2}, ` : ''}
+                                    {s.adminName1}, {s.countryName}
+                                  </p>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
+                          <select
+                            value={form.country}
+                            onChange={(e) => {
+                              update('country', e.target.value);
+                              update('region', '');
+                              update('province', '');
+                              update('city', '');
+                              update('barangay', '');
+                            }}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          >
+                            <option value="PH">Philippines</option>
+                            <option value="US">United States</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">
+                            {form.country === 'PH' ? 'Region *' : 'State/Region *'}
+                          </label>
+                          {form.country === 'PH' ? (
+                            <select
+                              value={form.region}
+                              onChange={(e) => {
+                                update('region', e.target.value);
+                                update('province', '');
+                                update('city', '');
+                                update('barangay', '');
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            >
+                              <option value="">Select Region</option>
+                              {PH_ADDRESS_DATA.map((r) => (
+                                <option key={r.name} value={r.name}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <select
+                              value={form.region}
+                              onChange={(e) => {
+                                update('region', e.target.value);
+                                update('province', '');
+                                update('city', '');
+                                update('barangay', '');
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            >
+                              <option value="">Select State</option>
+                              <option value="other">Other (Manual Entry)</option>
+                            </select>
+                          )}
+                        </div>
+                      </div>
+
+                      {form.country === 'PH' && form.region && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
+                            <select
+                              value={form.province}
+                              onChange={(e) => {
+                                update('province', e.target.value);
+                                update('city', '');
+                                update('barangay', '');
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            >
+                              <option value="">Select Province</option>
+                              {PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
+                                <option key={p.name} value={p.name}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              City/Municipality *
+                            </label>
+                            <select
+                              value={form.city}
+                              onChange={(e) => {
+                                update('city', e.target.value);
+                                update('barangay', '');
+                                const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
+                                setRegistrationAddress(fullAddr);
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            >
+                              <option value="">Select City</option>
+                              {PH_ADDRESS_DATA.find((r) => r.name === form.region)
+                                ?.provinces.find((p) => p.name === form.province)
+                                ?.cities.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
                                 ))}
-                              </select>
-                            </div>
-                            
-                            <div>
-                              <label className="text-xs font-semibold text-gray-600 block mb-1">{form.country === 'PH' ? 'Region *' : 'State/Region *'}</label>
-                              {form.country === 'PH' ? (
-                                <select 
-                                  value={form.region} 
-                                  onChange={e => {
-                                    update('region', e.target.value);
-                                    update('province', '');
-                                    update('city', '');
-                                    update('barangay', '');
-                                  }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                                >
-                                  <option value="">Select Region</option>
-                                  {PH_ADDRESS_DATA.map(r => <option key={r.name} value={r.name}>{r.name}</option>)}
-                                </select>
-                              ) : (
-                                <select 
-                                  value={form.region} 
-                                  onChange={e => {
-                                    update('region', e.target.value);
-                                    update('province', '');
-                                    update('city', '');
-                                    update('barangay', '');
-                                  }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                                >
-                                  <option value="">Select State</option>
-                                  {State.getStatesOfCountry(form.country).map(s => (
-                                    <option key={s.isoCode} value={s.isoCode}>{s.name}</option>
-                                  ))}
-                                </select>
-                              )}
-                            </div>
+                            </select>
                           </div>
+                        </div>
+                      )}
 
-                          {form.country === 'PH' && form.region && (
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
-                                <select 
-                                  value={form.province} 
-                                  onChange={e => {
-                                    update('province', e.target.value);
-                                    update('city', '');
-                                    update('barangay', '');
-                                  }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                                >
-                                  <option value="">Select Province</option>
-                                  {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-xs font-semibold text-gray-600 block mb-1">City/Municipality *</label>
-                                <select 
-                                  value={form.city} 
-                                  onChange={e => {
-                                    update('city', e.target.value);
-                                    update('barangay', '');
-                                    const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
-                                    setRegistrationAddress(fullAddr);
-                                  }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                                >
-                                  <option value="">Select City</option>
-                                  {PH_ADDRESS_DATA.find(r => r.name === form.region)?.provinces.find(p => p.name === form.province)?.cities.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                              </div>
-                            </div>
-                          )}
-
-                          {form.country !== 'PH' && form.region && (
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-xs font-semibold text-gray-600 block mb-1">City *</label>
-                                <select 
-                                  value={form.city} 
-                                  onChange={e => {
-                                    update('city', e.target.value);
-                                    update('barangay', '');
-                                    const stateName = State.getStatesOfCountry(form.country).find(s => s.isoCode === form.region)?.name || '';
-                                    const countryName = Country.getCountryByCode(form.country)?.name || '';
-                                    const fullAddr = `${e.target.value}, ${stateName}, ${countryName}`;
-                                    setRegistrationAddress(fullAddr);
-                                  }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                                >
-                                  <option value="">Select City</option>
-                                  {City.getCitiesOfState(form.country, form.region).map(c => (
-                                    <option key={c.name} value={c.name}>{c.name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-xs font-semibold text-gray-600 block mb-1">Street Address</label>
-                                <input value={form.street} onChange={e => update('street', e.target.value)} placeholder="Street name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                              </div>
-                            </div>
-                          )}
-
+                      {form.country !== 'PH' && form.region && (
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">{form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}</label>
-                            {form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] ? (
-                              <div className="space-y-2">
-                                <select 
-                                  value={form.barangay} 
-                                  onChange={e => {
-                                    update('barangay', e.target.value);
-                                    if (e.target.value !== 'other') {
-                                      const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
-                                      setRegistrationAddress(fullAddr);
-                                    }
-                                  }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                                >
-                                  <option value="">Select Barangay</option>
-                                  {BARANGAY_SAMPLES[form.city].map(b => <option key={b} value={b}>{b}</option>)}
-                                  <option value="other">Other (Type manually)</option>
-                                </select>
-                                {form.barangay === 'other' && (
-                                  <input 
-                                    value={form.barangay_manual || ''} 
-                                    onChange={e => {
-                                      update('barangay_manual', e.target.value);
-                                      const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
-                                      setRegistrationAddress(fullAddr);
-                                    }} 
-                                    placeholder="Enter barangay name" 
-                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
-                                  />
-                                )}
-                              </div>
-                            ) : (
-                              <input 
-                                value={form.barangay} 
-                                onChange={e => {
-                                  update('barangay', e.target.value);
-                                  const stateName = State.getStatesOfCountry(form.country).find(s => s.isoCode === form.region)?.name || '';
-                                  const countryName = Country.getCountryByCode(form.country)?.name || '';
-                                  const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateName}, ${countryName}`;
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">City *</label>
+                            <select
+                              value={form.city}
+                              onChange={(e) => {
+                                update('city', e.target.value);
+                                update('barangay', '');
+                                const countryName = (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
+                                const fullAddr = `${e.target.value}, ${form.region}, ${countryName}`;
+                                setRegistrationAddress(fullAddr);
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            >
+                              <option value="">Select City</option>
+                              <option value="other">Other (Manual Entry)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Street Address</label>
+                            <input
+                              value={form.street}
+                              onChange={(e) => update('street', e.target.value)}
+                              placeholder="Street name"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          {form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}
+                        </label>
+                        {form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] ? (
+                          <div className="space-y-2">
+                            <select
+                              value={form.barangay}
+                              onChange={(e) => {
+                                update('barangay', e.target.value);
+                                if (e.target.value !== 'other') {
+                                  const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
                                   setRegistrationAddress(fullAddr);
-                                }} 
-                                placeholder="e.g. Area name" 
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+                                }
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            >
+                              <option value="">Select Barangay</option>
+                              {BARANGAY_SAMPLES[form.city].map((b) => (
+                                <option key={b} value={b}>
+                                  {b}
+                                </option>
+                              ))}
+                              <option value="other">Other (Type manually)</option>
+                            </select>
+                            {form.barangay === 'other' && (
+                              <input
+                                value={form.barangay_manual || ''}
+                                onChange={(e) => {
+                                  update('barangay_manual', e.target.value);
+                                  const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
+                                  setRegistrationAddress(fullAddr);
+                                }}
+                                placeholder="Enter barangay name"
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                               />
                             )}
                           </div>
-                          <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
-                            <input value={form.employeeId} onChange={e => update('employeeId', e.target.value)}
-                              placeholder="Auto-generated if empty" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
+                        ) : (
+                          <input
+                            value={form.barangay}
+                            onChange={(e) => {
+                              update('barangay', e.target.value);
+                              const countryName = form.country === 'other' ? form.country_manual : (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
+                              const stateName = form.region === 'other' ? form.region_manual : form.region;
+                              const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateName}, ${countryName}`;
+                              setRegistrationAddress(fullAddr);
+                            }}
+                            placeholder="e.g. Area name"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
+                        <input
+                          value={form.employeeId}
+                          onChange={(e) => update('employeeId', e.target.value)}
+                          placeholder="Auto-generated if empty"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+
+                      {registrationLocation && (
+                        <div className="mt-4 space-y-3">
+                          <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+                            <div className="flex items-start gap-3">
+                              <MapPin className="text-green-600 mt-0.5" size={18} />
+                              <div>
+                                <p className="text-green-800 text-sm font-bold">Registration Location Captured</p>
+                                <p className="text-green-600 text-xs mt-0.5">
+                                  Your official geofence location is locked.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowLocationMap(!showLocationMap);
+                                setTimeout(() => {
+                                  window.dispatchEvent(new Event('resize'));
+                                }, 300);
+                              }}
+                              className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                            >
+                              {showLocationMap ? 'Hide Map' : 'See your location'}
+                            </button>
                           </div>
 
-                          {registrationLocation && (
-                            <div className="mt-4 space-y-3">
-                              <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
-                                <div className="flex items-start gap-3">
-                                  <MapPin className="text-green-600 mt-0.5" size={18} />
-                                  <div>
-                                    <p className="text-green-800 text-sm font-bold">Registration Location Captured</p>
-                                    <p className="text-green-600 text-xs mt-0.5">Your official geofence location is locked.</p>
-                                  </div>
-                                </div>
-                                <button 
-                                  type="button"
-                                  onClick={() => {
-                                    setShowLocationMap(!showLocationMap);
-                                    setTimeout(() => {
-                                      window.dispatchEvent(new Event('resize'));
-                                    }, 300);
-                                  }}
-                                  className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                          <AnimatePresence>
+                            {showLocationMap && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 200, opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
+                              >
+                                <MapContainer
+                                  key={
+                                    registrationLocation
+                                      ? `${registrationLocation.lat}-${registrationLocation.lng}`
+                                      : 'map'
+                                  }
+                                  center={[registrationLocation.lat, registrationLocation.lng]}
+                                  zoom={16}
+                                  style={{ height: '100%', width: '100%' }}
+                                  dragging={false}
+                                  doubleClickZoom={false}
+                                  scrollWheelZoom={false}
+                                  touchZoom={false}
+                                  zoomControl={false}
+                                  boxZoom={false}
                                 >
-                                  {showLocationMap ? 'Hide Map' : 'See your location'}
-                                </button>
-                              </div>
-
-                              <AnimatePresence>
-                                {showLocationMap && (
-                                  <motion.div 
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 200, opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
-                                  >
-                                    <MapContainer 
-                                      key={registrationLocation ? `${registrationLocation.lat}-${registrationLocation.lng}` : 'map'}
-                                      center={[registrationLocation.lat, registrationLocation.lng]} 
-                                      zoom={16} 
-                                      style={{ height: '100%', width: '100%' }}
-                                      dragging={false}
-                                      doubleClickZoom={false}
-                                      scrollWheelZoom={false}
-                                      touchZoom={false}
-                                      zoomControl={false}
-                                      boxZoom={false}
-                                    >
-                                      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                      <Marker position={[registrationLocation.lat, registrationLocation.lng]} />
-                                    </MapContainer>
-                                    <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          )}
+                                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                  <Marker position={[registrationLocation.lat, registrationLocation.lng]} />
+                                </MapContainer>
+                                <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
-                      </>
-                    )}
-                  </motion.div>
+                      )}
+                    </div>
+                  </>
                 )}
+              </motion.div>
+            )}
 
-                {role !== null && step === 1 && (
-                  <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
-                        <Building size={16} className="text-sky-700" />
-                      </div>
-                      <h2 className="font-bold text-gray-800">Company Information</h2>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
-                        <input value={form.companyName} onChange={e => update('companyName', e.target.value)}
-                          placeholder="Company Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
-                        <input value={form.supervisorName} onChange={e => update('supervisorName', e.target.value)}
-                          placeholder="Mr./Ms. Supervisor" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
-                          <input type="date" value={form.startDate} onChange={e => update('startDate', e.target.value)}
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
-                          <input type="date" value={form.endDate} onChange={e => update('endDate', e.target.value)}
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
-                        <input type="number" value={form.requiredHours} onChange={e => update('requiredHours', e.target.value)}
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {role !== null && step === 2 && (
-                  <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                        <GraduationCap size={16} className="text-green-700" />
-                      </div>
-                      <h2 className="font-bold text-gray-800">School Information</h2>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">School / University *</label>
-                        <input value={form.schoolName} onChange={e => update('schoolName', e.target.value)}
-                          placeholder="University Name" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Program *</label>
-                        <input value={form.course} onChange={e => update('course', e.target.value)}
-                          placeholder="e.g. BS Information Technology" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {role !== null && ((role === 'trainee' && step === 3) || (role === 'admin' && step === 1)) && (
-                  <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                        <Camera size={16} className="text-purple-700" />
-                      </div>
-                      <h2 className="font-bold text-gray-800">Face Registration</h2>
-                    </div>
-                    <p className="text-sm text-gray-500 mb-4">Register your face for biometric time recording. The captured image will be stored in the system for identity verification during clock-in/out.</p>
-
-                    {faceCapturing ? (
-                      <FaceCapture
-                        key={`face-reg-${retryCount}`}
-                        mode="register"
-                        employeeName={form.name}
-                        onSuccess={handleFaceSuccess}
-                        onCancel={() => setFaceCapturing(false)}
-                        autoStart
+            {role !== null && step === 1 && (
+              <motion.div
+                key="step1"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
+                    <Building size={16} className="text-sky-700" />
+                  </div>
+                  <h2 className="font-bold text-gray-800">Company Information</h2>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
+                    <input
+                      value={form.companyName}
+                      onChange={(e) => update('companyName', e.target.value)}
+                      placeholder="Company Name"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
+                    <input
+                      value={form.supervisorName}
+                      onChange={(e) => update('supervisorName', e.target.value)}
+                      placeholder="Mr./Ms. Supervisor"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
+                      <input
+                        type="date"
+                        value={form.startDate}
+                        onChange={(e) => update('startDate', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                       />
-                    ) : faceRegistered ? (
-                      <div className="flex flex-col items-center gap-3 py-4">
-                        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300">
-                          {photo ? (
-                            <img src={photo} alt="Registered Face" className="w-full h-full object-cover rounded-full" style={{ transform: 'scaleX(-1)' }} />
-                          ) : (
-                            <Check size={36} className="text-green-600" />
-                          )}
-                        </div>
-                        <div className="text-center">
-                          <p className="font-semibold text-green-700">Face Registered!</p>
-                          <p className="text-xs text-gray-500 mt-0.5">Your biometric image has been captured and will be stored</p>
-                        </div>
-                        <button onClick={() => { setFaceRegistered(false); setFaceCapturing(true); }}
-                          className="text-xs text-blue-600 hover:text-blue-800">Re-register face</button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-4 py-4">
-                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
-                          <Camera size={28} className="text-gray-400" />
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm font-medium text-gray-700">No face registered yet</p>
-                          <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
-                        </div>
-                        <button onClick={() => setFaceCapturing(true)}
-                          className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2">
-                          <Camera size={16} />
-                          Register Face
-                        </button>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-          </AnimatePresence>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
+                      <input
+                        type="date"
+                        value={form.endDate}
+                        onChange={(e) => update('endDate', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
+                    <input
+                      type="number"
+                      value={form.requiredHours}
+                      onChange={(e) => update('requiredHours', e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
+            {role !== null && step === 2 && (
+              <motion.div
+                key="step2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                    <GraduationCap size={16} className="text-green-700" />
+                  </div>
+                  <h2 className="font-bold text-gray-800">School Information</h2>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">School / University *</label>
+                    <input
+                      value={form.schoolName}
+                      onChange={(e) => update('schoolName', e.target.value)}
+                      placeholder="University Name"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Program *</label>
+                    <input
+                      value={form.course}
+                      onChange={(e) => update('course', e.target.value)}
+                      placeholder="e.g. BS Information Technology"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {role !== null && ((role === 'trainee' && step === 3) || (role === 'admin' && step === 1)) && (
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <Camera size={16} className="text-purple-700" />
+                  </div>
+                  <h2 className="font-bold text-gray-800">Face Registration</h2>
+                </div>
+                <p className="text-sm text-gray-500 mb-4">
+                  Register your face for biometric time recording. The captured image will be stored in the system for
+                  identity verification during clock-in/out.
+                </p>
+
+                {faceCapturing ? (
+                  <FaceCapture
+                    key={`face-reg-${retryCount}`}
+                    mode="register"
+                    employeeName={form.name}
+                    onSuccess={handleFaceSuccess}
+                    onCancel={() => setFaceCapturing(false)}
+                    autoStart
+                  />
+                ) : faceRegistered ? (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300">
+                      {photo ? (
+                        <img
+                          src={photo}
+                          alt="Registered Face"
+                          className="w-full h-full object-cover rounded-full"
+                          style={{ transform: 'scaleX(-1)' }}
+                        />
+                      ) : (
+                        <Check size={36} className="text-green-600" />
+                      )}
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold text-green-700">Face Registered!</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Your biometric image has been captured and will be stored
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setFaceRegistered(false);
+                        setFaceCapturing(true);
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Re-register face
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-4 py-4">
+                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
+                      <Camera size={28} className="text-gray-400" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-gray-700">No face registered yet</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
+                    </div>
+                    <button
+                      onClick={() => setFaceCapturing(true)}
+                      className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2"
+                    >
+                      <Camera size={16} />
+                      Register Face
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Navigation - Only show when role is selected */}
           {role !== null && (
             <div className="mt-6">
-              {validationErrors.length > 0 && step === 0 && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl">
-                  <p className="text-[10px] font-bold text-red-800 uppercase tracking-wider mb-1">Missing Requirements:</p>
-                  <p className="text-xs text-red-600 font-medium">{validationErrors.join(' • ')}</p>
-                </div>
-              )}
-              
+
               <div className="flex gap-3">
                 {step > 0 && (
-                  <button onClick={handleBack}
-                    className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={handleBack}
+                    className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
                     <ArrowLeft size={14} />
                     Back
                   </button>
                 )}
                 {step < steps.length - 1 ? (
-                  <button onClick={handleNext} disabled={!isStepValid()}
-                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200">
+                  <button
+                    onClick={handleNext}
+                    disabled={!isStepValid()}
+                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+                  >
                     Next
                     <ArrowRight size={14} />
                   </button>
                 ) : (
-                  <button onClick={handleSubmit} disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
-                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
+                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
+                  >
                     <Check size={14} />
                     Complete Registration
                   </button>

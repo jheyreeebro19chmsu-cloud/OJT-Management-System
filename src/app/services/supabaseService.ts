@@ -1,12 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import {
-  Employee,
-  TimeRecord,
-  GeofenceZone,
-  AppSettings,
-  Evaluation,
-  Announcement,
-} from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement } from '../types';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
 
@@ -27,10 +20,7 @@ interface SupabaseTimeRecord extends Omit<TimeRecord, 'timeInLocation' | 'timeOu
 export async function fetchEmployees(): Promise<Employee[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase
-    .from('employees')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching employees:', error);
@@ -40,9 +30,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
   return (data || []).map(transformSupabaseEmployee);
 }
 
-export async function createEmployee(
-  employee: Omit<Employee, 'id' | 'createdAt'>
-): Promise<Employee | null> {
+export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'>): Promise<Employee | null> {
   if (!isSupabaseConfigured()) return null;
 
   const supabaseEmployee = {
@@ -66,11 +54,7 @@ export async function createEmployee(
     registration_address: employee.registrationAddress,
   };
 
-  const { data, error } = await supabase
-    .from('employees')
-    .insert([supabaseEmployee])
-    .select()
-    .single();
+  const { data, error } = await supabase.from('employees').insert([supabaseEmployee]).select().single();
 
   if (error) {
     console.error('Error creating employee:', error);
@@ -80,10 +64,7 @@ export async function createEmployee(
   return transformSupabaseEmployee(data);
 }
 
-export async function updateEmployee(
-  id: string,
-  updates: Partial<Employee>
-): Promise<boolean> {
+export async function updateEmployee(id: string, updates: Partial<Employee>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   const supabaseUpdates: any = {};
@@ -109,10 +90,7 @@ export async function updateEmployee(
     supabaseUpdates.registration_address = updates.registrationAddress;
   }
 
-  const { error } = await supabase
-    .from('employees')
-    .update(supabaseUpdates)
-    .eq('id', id);
+  const { error } = await supabase.from('employees').update(supabaseUpdates).eq('id', id);
 
   if (error) {
     console.error('Error updating employee:', error);
@@ -126,10 +104,7 @@ export async function deleteEmployee(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   // Soft delete - just set active to false
-  const { error } = await supabase
-    .from('employees')
-    .update({ active: false })
-    .eq('id', id);
+  const { error } = await supabase.from('employees').update({ active: false }).eq('id', id);
 
   if (error) {
     console.error('Error deleting employee:', error);
@@ -144,10 +119,7 @@ export async function deleteEmployee(id: string): Promise<boolean> {
 export async function fetchTimeRecords(): Promise<TimeRecord[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase
-    .from('time_records')
-    .select('*')
-    .order('date', { ascending: false });
+  const { data, error } = await supabase.from('time_records').select('*').order('date', { ascending: false });
 
   if (error) {
     console.error('Error fetching time records:', error);
@@ -157,9 +129,7 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
   return (data || []).map(transformSupabaseTimeRecord);
 }
 
-export async function createTimeRecord(
-  record: Omit<TimeRecord, 'id'>
-): Promise<TimeRecord | null> {
+export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<TimeRecord | null> {
   if (!isSupabaseConfigured()) return null;
 
   const supabaseRecord = {
@@ -182,11 +152,7 @@ export async function createTimeRecord(
     notes: record.notes,
   };
 
-  const { data, error } = await supabase
-    .from('time_records')
-    .insert([supabaseRecord])
-    .select()
-    .single();
+  const { data, error } = await supabase.from('time_records').insert([supabaseRecord]).select().single();
 
   if (error) {
     console.error('Error creating time record:', error);
@@ -196,10 +162,7 @@ export async function createTimeRecord(
   return transformSupabaseTimeRecord(data);
 }
 
-export async function updateTimeRecord(
-  id: string,
-  updates: Partial<TimeRecord>
-): Promise<boolean> {
+export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   const supabaseUpdates: any = {};
@@ -223,10 +186,7 @@ export async function updateTimeRecord(
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
 
-  const { error } = await supabase
-    .from('time_records')
-    .update(supabaseUpdates)
-    .eq('id', id);
+  const { error } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id);
 
   if (error) {
     console.error('Error updating time record:', error);
@@ -241,10 +201,7 @@ export async function updateTimeRecord(
 export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase
-    .from('geofence_zones')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching geofence zones:', error);
@@ -262,16 +219,10 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
   }));
 }
 
-export async function createGeofenceZone(
-  zone: Omit<GeofenceZone, 'id'>
-): Promise<GeofenceZone | null> {
+export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'>): Promise<GeofenceZone | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const { data, error } = await supabase
-    .from('geofence_zones')
-    .insert([zone])
-    .select()
-    .single();
+  const { data, error } = await supabase.from('geofence_zones').insert([zone]).select().single();
 
   if (error) {
     console.error('Error creating geofence zone:', error);
@@ -289,16 +240,10 @@ export async function createGeofenceZone(
   };
 }
 
-export async function updateGeofenceZone(
-  id: string,
-  updates: Partial<GeofenceZone>
-): Promise<boolean> {
+export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZone>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
-    .from('geofence_zones')
-    .update(updates)
-    .eq('id', id);
+  const { error } = await supabase.from('geofence_zones').update(updates).eq('id', id);
 
   if (error) {
     console.error('Error updating geofence zone:', error);
@@ -340,10 +285,7 @@ export async function migrateAdministratorPosition(): Promise<number> {
 export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
-    .from('geofence_zones')
-    .delete()
-    .eq('id', id);
+  const { error } = await supabase.from('geofence_zones').delete().eq('id', id);
 
   if (error) {
     console.error('Error deleting geofence zone:', error);
@@ -358,10 +300,7 @@ export async function deleteGeofenceZone(id: string): Promise<boolean> {
 export async function fetchSettings(): Promise<AppSettings | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const { data, error } = await supabase
-    .from('app_settings')
-    .select('*')
-    .maybeSingle();
+  const { data, error } = await supabase.from('app_settings').select('*').maybeSingle();
 
   if (error) {
     if (error.code === 'PGRST116') {
@@ -398,16 +337,11 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
   };
 
   // Try to update first, if no rows affected, insert
-  const { error: updateError, count } = await supabase
-    .from('app_settings')
-    .update(supabaseSettings)
-    .eq('id', 1);
+  const { error: updateError, count } = await supabase.from('app_settings').update(supabaseSettings).eq('id', 1);
 
   if (updateError || count === 0) {
     // Insert new settings
-    const { error: insertError } = await supabase
-      .from('app_settings')
-      .insert([{ id: 1, ...supabaseSettings }]);
+    const { error: insertError } = await supabase.from('app_settings').insert([{ id: 1, ...supabaseSettings }]);
 
     if (insertError) {
       console.error('Error inserting settings:', insertError);
@@ -423,10 +357,7 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
 export async function fetchEvaluations(): Promise<Evaluation[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase
-    .from('evaluations')
-    .select('*')
-    .order('evaluated_at', { ascending: false });
+  const { data, error } = await supabase.from('evaluations').select('*').order('evaluated_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching evaluations:', error);
@@ -452,9 +383,7 @@ export async function fetchEvaluations(): Promise<Evaluation[]> {
   }));
 }
 
-export async function createEvaluation(
-  evaluation: Omit<Evaluation, 'id'>
-): Promise<Evaluation | null> {
+export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Promise<Evaluation | null> {
   if (!isSupabaseConfigured()) return null;
 
   const supabaseEval = {
@@ -474,11 +403,7 @@ export async function createEvaluation(
     status: evaluation.status,
   };
 
-  const { data, error } = await supabase
-    .from('evaluations')
-    .insert([supabaseEval])
-    .select()
-    .single();
+  const { data, error } = await supabase.from('evaluations').insert([supabaseEval]).select().single();
 
   if (error) {
     console.error('Error creating evaluation:', error);
@@ -504,10 +429,7 @@ export async function createEvaluation(
   };
 }
 
-export async function updateEvaluation(
-  id: string,
-  updates: Partial<Evaluation>
-): Promise<boolean> {
+export async function updateEvaluation(id: string, updates: Partial<Evaluation>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   const supabaseUpdates: any = {};
@@ -524,10 +446,7 @@ export async function updateEvaluation(
   if (updates.recommendations !== undefined) supabaseUpdates.recommendations = updates.recommendations;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
 
-  const { error } = await supabase
-    .from('evaluations')
-    .update(supabaseUpdates)
-    .eq('id', id);
+  const { error } = await supabase.from('evaluations').update(supabaseUpdates).eq('id', id);
 
   if (error) {
     console.error('Error updating evaluation:', error);
@@ -540,10 +459,7 @@ export async function updateEvaluation(
 export async function deleteEvaluation(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
-    .from('evaluations')
-    .delete()
-    .eq('id', id);
+  const { error } = await supabase.from('evaluations').delete().eq('id', id);
 
   if (error) {
     console.error('Error deleting evaluation:', error);
@@ -558,10 +474,7 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
 export async function fetchAnnouncements(): Promise<Announcement[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase
-    .from('announcements')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching announcements:', error);
@@ -581,9 +494,7 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
   }));
 }
 
-export async function createAnnouncement(
-  announcement: Omit<Announcement, 'id'>
-): Promise<Announcement | null> {
+export async function createAnnouncement(announcement: Omit<Announcement, 'id'>): Promise<Announcement | null> {
   if (!isSupabaseConfigured()) return null;
 
   const supabaseAnn = {
@@ -597,11 +508,7 @@ export async function createAnnouncement(
     created_by: announcement.createdBy,
   };
 
-  const { data, error } = await supabase
-    .from('announcements')
-    .insert([supabaseAnn])
-    .select()
-    .single();
+  const { data, error } = await supabase.from('announcements').insert([supabaseAnn]).select().single();
 
   if (error) {
     console.error('Error creating announcement:', error);
@@ -621,10 +528,7 @@ export async function createAnnouncement(
   };
 }
 
-export async function updateAnnouncement(
-  id: string,
-  updates: Partial<Announcement>
-): Promise<boolean> {
+export async function updateAnnouncement(id: string, updates: Partial<Announcement>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   const supabaseUpdates: any = {};
@@ -635,10 +539,7 @@ export async function updateAnnouncement(
   if (updates.isPinned !== undefined) supabaseUpdates.is_pinned = updates.isPinned;
   if (updates.expiresAt !== undefined) supabaseUpdates.expires_at = updates.expiresAt;
 
-  const { error } = await supabase
-    .from('announcements')
-    .update(supabaseUpdates)
-    .eq('id', id);
+  const { error } = await supabase.from('announcements').update(supabaseUpdates).eq('id', id);
 
   if (error) {
     console.error('Error updating announcement:', error);
@@ -651,10 +552,7 @@ export async function updateAnnouncement(
 export async function deleteAnnouncement(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
-    .from('announcements')
-    .delete()
-    .eq('id', id);
+  const { error } = await supabase.from('announcements').delete().eq('id', id);
 
   if (error) {
     console.error('Error deleting announcement:', error);
@@ -700,14 +598,9 @@ function transformSupabaseTimeRecord(data: any): TimeRecord {
     date: data.date,
     timeIn: data.time_in,
     timeOut: data.time_out,
-    timeInLocation:
-      data.time_in_lat && data.time_in_lng
-        ? { lat: data.time_in_lat, lng: data.time_in_lng }
-        : undefined,
+    timeInLocation: data.time_in_lat && data.time_in_lng ? { lat: data.time_in_lat, lng: data.time_in_lng } : undefined,
     timeOutLocation:
-      data.time_out_lat && data.time_out_lng
-        ? { lat: data.time_out_lat, lng: data.time_out_lng }
-        : undefined,
+      data.time_out_lat && data.time_out_lng ? { lat: data.time_out_lat, lng: data.time_out_lng } : undefined,
     timeInGeofenced: data.time_in_geofenced,
     timeOutGeofenced: data.time_out_geofenced,
     timeInFaceVerified: data.time_in_face_verified,

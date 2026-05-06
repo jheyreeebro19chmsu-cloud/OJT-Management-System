@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { CheckCircle, XCircle, Camera, RefreshCw, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+
 import { detectFaceInDataUrl, computeDescriptorFromDataUrl, descriptorDistance } from '../services/faceClient';
+import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
 
 type ScanState = 'idle' | 'requesting' | 'scanning' | 'analyzing' | 'verifying' | 'success' | 'failed' | 'no-camera';
 
@@ -24,7 +25,7 @@ export function FaceCapture({
   onSuccess,
   onCancel,
   autoStart = true,
-}: FaceCaptureProps) {
+}: FaceCaptureProps): React.JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -37,11 +38,11 @@ export function FaceCapture({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   const stopCamera = useCallback(() => {
-    console.log("FaceCapture: stopping camera and clearing tracks");
+    console.log('FaceCapture: stopping camera and clearing tracks');
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => {
+      streamRef.current.getTracks().forEach((t) => {
         t.stop();
-        console.log("FaceCapture: stopped track", t.label);
+        console.log('FaceCapture: stopped track', t.label);
       });
       streamRef.current = null;
     }
@@ -58,82 +59,98 @@ export function FaceCapture({
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video || !video.videoWidth) return;
-    
+
     try {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-    canvas.width = video.videoWidth || 300;
-    canvas.height = video.videoHeight || 400;
+      canvas.width = video.videoWidth || 300;
+      canvas.height = video.videoHeight || 400;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const fw = canvas.width * 0.55;
-    const fh = fw * 1.3;
-    const fx = cx - fw / 2;
-    const fy = cy - fh / 2;
-    const bLen = 28;
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const fw = canvas.width * 0.55;
+      const fh = fw * 1.3;
+      const fx = cx - fw / 2;
+      const fy = cy - fh / 2;
+      const bLen = 28;
 
-    // Dark overlay outside face zone
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.clearRect(fx, fy, fw, fh);
+      // Dark overlay outside face zone
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(fx, fy, fw, fh);
 
-    // Oval cutout
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.clearRect(fx, fy, fw, fh);
-    ctx.restore();
-
-    // Scanning line
-    const lineColor = state === 'success' ? '#22c55e' : state === 'failed' ? '#ef4444' : '#38bdf8';
-    scanLineRef.current = (scanLineRef.current + 2.5) % fh;
-    const lineY = fy + scanLineRef.current;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
-    ctx.clip();
-    const grad = ctx.createLinearGradient(0, lineY - 20, 0, lineY + 20);
-    grad.addColorStop(0, 'transparent');
-    grad.addColorStop(0.5, lineColor + 'aa');
-    grad.addColorStop(1, 'transparent');
-    ctx.fillStyle = grad;
-    ctx.fillRect(fx, lineY - 20, fw, 40);
-    ctx.restore();
-
-    // Corner brackets
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    // TL
-    ctx.beginPath(); ctx.moveTo(fx, fy + bLen); ctx.lineTo(fx, fy); ctx.lineTo(fx + bLen, fy); ctx.stroke();
-    // TR
-    ctx.beginPath(); ctx.moveTo(fx + fw - bLen, fy); ctx.lineTo(fx + fw, fy); ctx.lineTo(fx + fw, fy + bLen); ctx.stroke();
-    // BL
-    ctx.beginPath(); ctx.moveTo(fx, fy + fh - bLen); ctx.lineTo(fx, fy + fh); ctx.lineTo(fx + bLen, fy + fh); ctx.stroke();
-    // BR
-    ctx.beginPath(); ctx.moveTo(fx + fw - bLen, fy + fh); ctx.lineTo(fx + fw, fy + fh); ctx.lineTo(fx + fw, fy + fh - bLen); ctx.stroke();
-
-    // Success overlay
-    if (state === 'success') {
+      // Oval cutout
       ctx.save();
       ctx.beginPath();
       ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(34,197,94,0.18)';
-      ctx.fill();
+      ctx.clip();
+      ctx.clearRect(fx, fy, fw, fh);
       ctx.restore();
-    }
 
-    if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
-      animFrameRef.current = requestAnimationFrame(drawOverlay);
-    }
+      // Scanning line
+      const lineColor = state === 'success' ? '#22c55e' : state === 'failed' ? '#ef4444' : '#38bdf8';
+      scanLineRef.current = (scanLineRef.current + 2.5) % fh;
+      const lineY = fy + scanLineRef.current;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+      ctx.clip();
+      const grad = ctx.createLinearGradient(0, lineY - 20, 0, lineY + 20);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(0.5, lineColor + 'aa');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(fx, lineY - 20, fw, 40);
+      ctx.restore();
+
+      // Corner brackets
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      // TL
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + bLen);
+      ctx.lineTo(fx, fy);
+      ctx.lineTo(fx + bLen, fy);
+      ctx.stroke();
+      // TR
+      ctx.beginPath();
+      ctx.moveTo(fx + fw - bLen, fy);
+      ctx.lineTo(fx + fw, fy);
+      ctx.lineTo(fx + fw, fy + bLen);
+      ctx.stroke();
+      // BL
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + fh - bLen);
+      ctx.lineTo(fx, fy + fh);
+      ctx.lineTo(fx + bLen, fy + fh);
+      ctx.stroke();
+      // BR
+      ctx.beginPath();
+      ctx.moveTo(fx + fw - bLen, fy + fh);
+      ctx.lineTo(fx + fw, fy + fh);
+      ctx.lineTo(fx + fw, fy + fh - bLen);
+      ctx.stroke();
+
+      // Success overlay
+      if (state === 'success') {
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(34,197,94,0.18)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
+        animFrameRef.current = requestAnimationFrame(drawOverlay);
+      }
     } catch (err) {
-      console.error("FaceCapture: drawOverlay error", err);
+      // silent overlay update
     }
   }, [state, mode]);
 
@@ -150,66 +167,67 @@ export function FaceCapture({
   };
 
   const startScan = useCallback(async () => {
-    console.log("FaceCapture: starting scan in mode", mode);
-    
+    // Starting scan
+
     // Safety: ensure any previous stream is closed first
     stopCamera();
     await delay(300);
 
     setState('requesting');
     setScanMessage('Requesting camera access...');
+    try {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { 
-            facingMode: 'user', 
-            width: { ideal: 640 }, 
-            height: { ideal: 480 } 
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 480 },
           },
           audio: false,
         });
       } catch (err) {
-        console.warn("FaceCapture: ideal constraints failed, trying fallback", err);
+        console.warn('FaceCapture: ideal constraints failed, trying fallback', err);
         stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: false,
         });
       }
-      
-      console.log("FaceCapture: camera stream acquired");
+
+      // Camera stream acquired
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        
+
         // Wait for video to be ready
         await new Promise((resolve, reject) => {
-          if (!videoRef.current) return reject("Video ref lost");
-          
+          if (!videoRef.current) return reject('Video ref lost');
+
           // If already ready, resolve immediately
           if (videoRef.current.readyState >= 2) {
-            console.log("FaceCapture: video already ready");
+            // Video already ready
             return resolve(true);
           }
 
           videoRef.current.onloadedmetadata = () => {
-            console.log("FaceCapture: metadata loaded event fired");
+            // Metadata loaded
             resolve(true);
           };
           videoRef.current.onerror = (e) => reject(e);
           // If it takes more than 3 seconds, something is wrong with the stream
           setTimeout(() => {
             if (videoRef.current && videoRef.current.readyState >= 2) {
-              console.log("FaceCapture: metadata load timeout - but readyState is OK");
+              console.log('FaceCapture: metadata load timeout - but readyState is OK');
               resolve(true);
             } else {
-              console.error("FaceCapture: metadata load timeout - video not ready");
-              reject("Camera initialization timed out. Please check your connection.");
+              console.error('FaceCapture: metadata load timeout - video not ready');
+              reject('Camera initialization timed out. Please check your connection.');
             }
           }, 3500);
         });
 
         await videoRef.current.play();
-        console.log("FaceCapture: video playing");
+        console.log('FaceCapture: video playing');
         // Essential delay for camera stabilization
         await delay(500);
       }
@@ -263,7 +281,10 @@ export function FaceCapture({
             const registered = registeredImage ? registeredImage : undefined;
             if (registered) {
               // compute descriptors and compare
-              const [d1, d2] = await Promise.all([computeDescriptorFromDataUrl(registered), computeDescriptorFromDataUrl(img)]);
+              const [d1, d2] = await Promise.all([
+                computeDescriptorFromDataUrl(registered),
+                computeDescriptorFromDataUrl(img),
+              ]);
               if (d1 && d2) {
                 const dist = descriptorDistance(d1, d2);
                 const matched = dist <= 0.6; // typical threshold
@@ -358,12 +379,12 @@ export function FaceCapture({
 
   const handleManualSnap = useCallback(async () => {
     if (state === 'success' || state === 'failed') return;
-    
+
     stopCamera();
     setState('verifying');
     setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
     setProgress(80);
-    
+
     const img = captureFrame();
     if (!img) {
       setState('failed');
@@ -421,11 +442,13 @@ export function FaceCapture({
 
   useEffect(() => {
     if (autoStart) startScan();
-    return () => { stopCamera(); };
+    return () => {
+      stopCamera();
+    };
   }, [autoStart, startScan, stopCamera]);
 
   const handleRetry = () => {
-    setRetryCount(p => p + 1);
+    setRetryCount((p) => p + 1);
     setProgress(0);
     setCapturedImage(null);
     startScan();
@@ -446,22 +469,25 @@ export function FaceCapture({
           className="absolute inset-0 w-full h-full object-cover"
           style={{ transform: 'scaleX(-1)' }}
         />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
-          style={{ transform: 'scaleX(-1)' }}
-        />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ transform: 'scaleX(-1)' }} />
 
         {/* Idle / No Camera State */}
-        {(state === 'idle' || state === 'no-camera') && (
+        {(state === 'idle' || state === 'no-camera' || state === 'requesting') && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900">
             <Camera size={48} className="text-gray-600 mb-3" />
             <p className="text-gray-400 text-sm text-center px-4">
-              {state === 'no-camera' ? 'Camera unavailable' : (state === 'requesting' ? 'Initializing camera...' : 'Camera ready')}
+              {state === 'no-camera'
+                ? 'Camera unavailable'
+                : state === 'requesting'
+                  ? 'Initializing camera...'
+                  : 'Camera ready'}
             </p>
             {state === 'requesting' && (
-              <button 
-                onClick={() => { stopCamera(); setTimeout(startScan, 500); }}
+              <button
+                onClick={() => {
+                  stopCamera();
+                  setTimeout(startScan, 500);
+                }}
                 className="mt-4 text-xs bg-white/20 text-white px-3 py-1.5 rounded-lg hover:bg-white/30"
               >
                 Reset Camera
@@ -478,11 +504,7 @@ export function FaceCapture({
               animate={{ opacity: 1 }}
               className="absolute inset-0 flex flex-col items-center justify-center bg-black/40"
             >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: 'spring', stiffness: 300 }}
-              >
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}>
                 <CheckCircle size={64} className="text-green-400 drop-shadow-lg" />
               </motion.div>
             </motion.div>
@@ -559,7 +581,10 @@ export function FaceCapture({
         )}
         {!['success'].includes(state) && (
           <button
-            onClick={() => { stopCamera(); onCancel(); }}
+            onClick={() => {
+              stopCamera();
+              onCancel();
+            }}
             className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
           >
             Cancel
@@ -580,7 +605,7 @@ export function FaceCapture({
 }
 
 function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getFaceVerifyErrorMessage(err: unknown): string {

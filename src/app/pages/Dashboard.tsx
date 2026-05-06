@@ -1,30 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { toast } from 'sonner';
-import { Clock, CheckCircle, AlertTriangle, TrendingUp, Calendar, Camera, ChevronRight, Bell, Info, X, Megaphone, User, Building } from 'lucide-react';
-import { useApp } from '../store/AppContext';
-import { formatTime } from '../utils/geo';
+import {
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  TrendingUp,
+  Calendar,
+  Camera,
+  ChevronRight,
+  Bell,
+  Info,
+  X,
+  Megaphone,
+  User,
+  Building,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Announcement, Employee } from '../types';
-import { supabase } from '../lib/supabase';
+import { toast } from 'sonner';
+
 import { sendWelcomeEmail } from '../lib/resend';
+import { supabase } from '../lib/supabase';
+import { useApp } from '../store/AppContext';
+import { Announcement, Employee } from '../types';
+import { formatTime } from '../utils/geo';
+
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
-  info:    { bg: 'bg-blue-50',   border: 'border-blue-200',  icon: 'text-blue-600',   iconBg: 'bg-blue-100' },
-  warning: { bg: 'bg-amber-50',  border: 'border-amber-200', icon: 'text-amber-600',  iconBg: 'bg-amber-100' },
-  success: { bg: 'bg-green-50',  border: 'border-green-200', icon: 'text-green-600',  iconBg: 'bg-green-100' },
-  urgent:  { bg: 'bg-red-50',    border: 'border-red-300',   icon: 'text-red-600',    iconBg: 'bg-red-100' },
+  info: { bg: 'bg-blue-50', border: 'border-blue-200', icon: 'text-blue-600', iconBg: 'bg-blue-100' },
+  warning: { bg: 'bg-amber-50', border: 'border-amber-200', icon: 'text-amber-600', iconBg: 'bg-amber-100' },
+  success: { bg: 'bg-green-50', border: 'border-green-200', icon: 'text-green-600', iconBg: 'bg-green-100' },
+  urgent: { bg: 'bg-red-50', border: 'border-red-300', icon: 'text-red-600', iconBg: 'bg-red-100' },
 };
 
 const ANN_ICON: Record<Announcement['type'], React.ReactNode> = {
-  info:    <Info size={14} />,
+  info: <Info size={14} />,
   warning: <AlertTriangle size={14} />,
   success: <CheckCircle size={14} />,
-  urgent:  <Bell size={14} />,
+  urgent: <Bell size={14} />,
 };
 
 export function Dashboard() {
-  const { currentUser, getCurrentEmployee, getTodayRecord, getEmployeeRecords, settings, getActiveAnnouncements } = useApp();
+  const { currentUser, getCurrentEmployee, getTodayRecord, getEmployeeRecords, settings, getActiveAnnouncements } =
+    useApp();
   const employee = getCurrentEmployee();
   const isAdmin = currentUser?.role === 'admin';
   const displayName = employee?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
@@ -69,7 +86,7 @@ export function Dashboard() {
         .update({ status: 'approved', approved_at: new Date().toISOString() })
         .eq('id', request.id);
       if (error) throw error;
-      setHteRequests(prev => prev.filter(r => r.id !== request.id));
+      setHteRequests((prev) => prev.filter((r) => r.id !== request.id));
       toast.success('HTE access approved');
     } catch (err: any) {
       toast.error(err.message);
@@ -86,9 +103,9 @@ export function Dashboard() {
         .update({ application_status: 'approved' })
         .eq('id', student.id);
       if (error) throw error;
-      
-      setPendingApps(prev => prev.filter(a => a.id !== student.id));
-      
+
+      setPendingApps((prev) => prev.filter((a) => a.id !== student.id));
+
       // Notify student via Resend
       await sendWelcomeEmail(student.email, student.name);
       toast.success('Application approved! Student notified.');
@@ -107,8 +124,8 @@ export function Dashboard() {
         .update({ application_status: 'rejected' })
         .eq('id', student.id);
       if (error) throw error;
-      
-      setPendingApps(prev => prev.filter(a => a.id !== student.id));
+
+      setPendingApps((prev) => prev.filter((a) => a.id !== student.id));
       toast.success('Application rejected.');
     } catch (err: any) {
       toast.error('Error: ' + err.message);
@@ -120,12 +137,9 @@ export function Dashboard() {
   const handleRejectHte = async (request: any) => {
     setProcessingId(request.id);
     try {
-      const { error } = await supabase
-        .from('hte_student_access')
-        .update({ status: 'rejected' })
-        .eq('id', request.id);
+      const { error } = await supabase.from('hte_student_access').update({ status: 'rejected' }).eq('id', request.id);
       if (error) throw error;
-      setHteRequests(prev => prev.filter(r => r.id !== request.id));
+      setHteRequests((prev) => prev.filter((r) => r.id !== request.id));
       toast.success('HTE access rejected');
     } catch (err: any) {
       toast.error(err.message);
@@ -134,7 +148,9 @@ export function Dashboard() {
     }
   };
 
-  const activeAnnouncements = getActiveAnnouncements(isAdmin ? 'admin' : 'employee').filter(a => !dismissedAnn.has(a.id));
+  const activeAnnouncements = getActiveAnnouncements(isAdmin ? 'admin' : 'employee').filter(
+    (a) => !dismissedAnn.has(a.id)
+  );
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -144,8 +160,8 @@ export function Dashboard() {
   const totalHoursRendered = allRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
   const requiredHours = employee?.requiredHours ?? (isAdmin ? 0 : 486);
   const hoursProgress = requiredHours > 0 ? Math.min((totalHoursRendered / requiredHours) * 100, 100) : 0;
-  const presentDays = allRecords.filter(r => r.status === 'present' || r.status === 'overtime').length;
-  const lateDays = allRecords.filter(r => r.status === 'late').length;
+  const presentDays = allRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+  const lateDays = allRecords.filter((r) => r.status === 'late').length;
   const recentRecords = allRecords.slice(0, 5);
 
   const greeting = () => {
@@ -156,7 +172,12 @@ export function Dashboard() {
   };
 
   const timeStr = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateStr = currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const dateStr = currentTime.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 
   const statusColor = () => {
     if (!todayRecord) return 'from-gray-500 to-gray-600';
@@ -168,7 +189,11 @@ export function Dashboard() {
   const todayStatus = () => {
     if (!todayRecord) return { label: 'Not Clocked In', color: 'text-gray-500 bg-gray-100' };
     if (todayRecord.timeIn && todayRecord.timeOut) return { label: 'Completed', color: 'text-green-700 bg-green-100' };
-    if (todayRecord.timeIn) return { label: todayRecord.status === 'late' ? 'Clocked In (Late)' : 'Clocked In', color: todayRecord.status === 'late' ? 'text-orange-700 bg-orange-100' : 'text-sky-700 bg-sky-100' };
+    if (todayRecord.timeIn)
+      return {
+        label: todayRecord.status === 'late' ? 'Clocked In (Late)' : 'Clocked In',
+        color: todayRecord.status === 'late' ? 'text-orange-700 bg-orange-100' : 'text-sky-700 bg-sky-100',
+      };
     return { label: 'Absent', color: 'text-red-700 bg-red-100' };
   };
 
@@ -177,12 +202,8 @@ export function Dashboard() {
       {/* Announcements */}
       <AnimatePresence>
         {activeAnnouncements.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-2"
-          >
-            {activeAnnouncements.slice(0, 3).map(ann => {
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
+            {activeAnnouncements.slice(0, 3).map((ann) => {
               const c = ANN_COLORS[ann.type];
               return (
                 <motion.div
@@ -203,12 +224,13 @@ export function Dashboard() {
                       </div>
                       <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{ann.content}</p>
                       <p className="text-xs text-gray-400 mt-1">
-                        {new Date(ann.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {ann.createdBy}
+                        {new Date(ann.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ·{' '}
+                        {ann.createdBy}
                       </p>
                     </div>
                     {!ann.isPinned && (
                       <button
-                        onClick={() => setDismissedAnn(prev => new Set([...prev, ann.id]))}
+                        onClick={() => setDismissedAnn((prev) => new Set([...prev, ann.id]))}
                         className="text-gray-400 hover:text-gray-600 shrink-0"
                       >
                         <X size={14} />
@@ -300,9 +322,9 @@ export function Dashboard() {
                 {pendingApps.length} New
               </span>
             </div>
-            
+
             <div className="space-y-4">
-              {pendingApps.map(app => (
+              {pendingApps.map((app) => (
                 <div key={app.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
                   <div className="flex justify-between items-start">
                     <div>
@@ -311,14 +333,14 @@ export function Dashboard() {
                       <p className="text-xs text-blue-600 mt-1 font-medium">{app.companyName}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button 
+                      <button
                         onClick={() => handleApprove(app)}
                         disabled={!!processingId}
                         className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 disabled:opacity-50"
                       >
                         Approve
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleReject(app)}
                         disabled={!!processingId}
                         className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
@@ -349,24 +371,29 @@ export function Dashboard() {
                 {hteRequests.length} New
               </span>
             </div>
-            
+
             <div className="space-y-4">
-              {hteRequests.map(req => (
+              {hteRequests.map((req) => (
                 <div key={req.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">{req.host_supervisors?.company_name}</p>
-                      <p className="font-bold text-gray-800 mt-1">{req.host_supervisors?.name} <span className="font-normal text-gray-400">requests access to</span> {req.employees?.name}</p>
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                        {req.host_supervisors?.company_name}
+                      </p>
+                      <p className="font-bold text-gray-800 mt-1">
+                        {req.host_supervisors?.name}{' '}
+                        <span className="font-normal text-gray-400">requests access to</span> {req.employees?.name}
+                      </p>
                     </div>
                     <div className="flex gap-2">
-                      <button 
+                      <button
                         onClick={() => handleApproveHte(req)}
                         disabled={!!processingId}
                         className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
                       >
                         Approve
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleRejectHte(req)}
                         disabled={!!processingId}
                         className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
@@ -394,7 +421,11 @@ export function Dashboard() {
             </div>
             <div>
               <p className="font-semibold text-gray-800 text-sm">
-                {!todayRecord?.timeIn ? 'Clock In Now' : !todayRecord?.timeOut ? 'Clock Out Now' : 'View Today\'s Record'}
+                {!todayRecord?.timeIn
+                  ? 'Clock In Now'
+                  : !todayRecord?.timeOut
+                    ? 'Clock Out Now'
+                    : "View Today's Record"}
               </p>
               <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                 <Camera size={10} />
@@ -407,8 +438,12 @@ export function Dashboard() {
       </motion.div>
 
       {/* OJT Progress */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+      >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-blue-600" />
@@ -426,9 +461,7 @@ export function Dashboard() {
         </div>
         <div className="flex justify-between mt-2">
           <span className="text-xs text-gray-500">{totalHoursRendered.toFixed(1)} hrs rendered</span>
-          <span className="text-xs text-gray-500">
-            {requiredHours > 0 ? `${requiredHours} hrs required` : 'N/A'}
-          </span>
+          <span className="text-xs text-gray-500">{requiredHours > 0 ? `${requiredHours} hrs required` : 'N/A'}</span>
         </div>
         {employee && (
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -449,8 +482,12 @@ export function Dashboard() {
       </motion.div>
 
       {/* Schedule Info */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+      >
         <div className="flex items-center gap-2 mb-3">
           <Clock size={16} className="text-sky-600" />
           <h3 className="font-semibold text-gray-800 text-sm">Work Schedule</h3>
@@ -473,35 +510,55 @@ export function Dashboard() {
 
       {/* Recent Records */}
       {recentRecords.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+        >
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Calendar size={16} className="text-blue-600" />
               <h3 className="font-semibold text-gray-800 text-sm">Recent Records</h3>
             </div>
-            <Link to="/app/records" className="text-xs text-blue-600 hover:text-blue-800 font-medium">View all</Link>
+            <Link to="/app/records" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+              View all
+            </Link>
           </div>
           <div className="space-y-2">
-            {recentRecords.map(record => (
-              <div key={record.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+            {recentRecords.map((record) => (
+              <div
+                key={record.id}
+                className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+              >
                 <div>
                   <p className="text-sm font-medium text-gray-800">
-                    {new Date(record.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    {new Date(record.date).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
                   </p>
                   <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
                     {record.timeIn && <span>In: {formatTime(record.timeIn)}</span>}
                     {record.timeOut && <span>Out: {formatTime(record.timeOut)}</span>}
-                    {record.totalHours && <span className="text-blue-500 font-medium">{record.totalHours.toFixed(1)}h</span>}
+                    {record.totalHours && (
+                      <span className="text-blue-500 font-medium">{record.totalHours.toFixed(1)}h</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    record.status === 'present' ? 'bg-green-100 text-green-700' :
-                    record.status === 'late' ? 'bg-orange-100 text-orange-700' :
-                    record.status === 'absent' ? 'bg-red-100 text-red-700' :
-                    'bg-blue-100 text-blue-700'
-                  }`}>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      record.status === 'present'
+                        ? 'bg-green-100 text-green-700'
+                        : record.status === 'late'
+                          ? 'bg-orange-100 text-orange-700'
+                          : record.status === 'absent'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-blue-100 text-blue-700'
+                    }`}
+                  >
                     {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
                   </span>
                   {!record.timeInGeofenced && (

@@ -2,3 +2,25 @@
 @import './tailwind.css';
 @import './theme.css';
 @import 'leaflet/dist/leaflet.css';
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+  /* Ensure colors and backgrounds print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

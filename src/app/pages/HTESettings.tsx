@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { HTELayout } from '../components/HTELayout';
 import { KeyRound, ShieldCheck, Info } from 'lucide-react';
-import { useApp } from '../store/AppContext';
 import { motion } from 'motion/react';
+import React, { useState } from 'react';
 import { toast } from 'sonner';
+
+import { HTELayout } from '../components/HTELayout';
+import { useApp } from '../store/AppContext';
+
 
 export function HTESettings() {
   const { changeCurrentUserPassword } = useApp();
@@ -41,7 +43,7 @@ export function HTESettings() {
           <p className="text-gray-600 mt-1">Manage your account security and preferences</p>
         </div>
 
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
@@ -60,11 +62,11 @@ export function HTESettings() {
             <div className="grid gap-4">
               <div>
                 <label className="text-sm font-semibold text-gray-700 block mb-1.5">Current Password</label>
-                <input 
+                <input
                   type="password"
                   required
                   value={passwordForm.current}
-                  onChange={e => setPasswordForm(p => ({ ...p, current: e.target.value }))}
+                  onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                   placeholder="••••••••"
                 />
@@ -72,22 +74,22 @@ export function HTESettings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-semibold text-gray-700 block mb-1.5">New Password</label>
-                  <input 
+                  <input
                     type="password"
                     required
                     value={passwordForm.new}
-                    onChange={e => setPasswordForm(p => ({ ...p, new: e.target.value }))}
+                    onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     placeholder="Min 8 chars"
                   />
                 </div>
                 <div>
                   <label className="text-sm font-semibold text-gray-700 block mb-1.5">Confirm New Password</label>
-                  <input 
+                  <input
                     type="password"
                     required
                     value={passwordForm.confirm}
-                    onChange={e => setPasswordForm(p => ({ ...p, confirm: e.target.value }))}
+                    onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
                     className={`w-full px-4 py-2.5 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${passwordForm.confirm && passwordForm.new !== passwordForm.confirm ? 'border-red-300' : 'border-gray-200'}`}
                     placeholder="••••••••"
                   />
@@ -107,9 +109,11 @@ export function HTESettings() {
                 <ShieldCheck size={14} className="text-green-500" />
                 <span>Encrypted secure connection</span>
               </div>
-              <button 
+              <button
                 type="submit"
-                disabled={loading || !passwordForm.current || !passwordForm.new || passwordForm.new !== passwordForm.confirm}
+                disabled={
+                  loading || !passwordForm.current || !passwordForm.new || passwordForm.new !== passwordForm.confirm
+                }
                 className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all"
               >
                 {loading ? 'Updating...' : 'Change Password'}

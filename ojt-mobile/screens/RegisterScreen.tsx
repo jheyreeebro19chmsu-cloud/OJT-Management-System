@@ -15,7 +15,7 @@ import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 import QRCode from 'react-native-qrcode-svg';
 import * as Sharing from 'expo-sharing';
-import { ViewShot, captureRef } from 'react-native-view-shot';
+import * as FileSystem from 'expo-file-system';
 
 type Role = 'trainee' | 'admin' | 'hte' | null;
 
@@ -210,13 +210,19 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   async function handleShareQr() {
     try {
       if (qrRef.current) {
-        // In a real app with ViewShot installed:
-        // const uri = await captureRef(qrRef, { format: 'png', quality: 0.8 });
-        // await Sharing.shareAsync(uri);
+        qrRef.current.toDataURL(async (data: string) => {
+          const filename = `${FileSystem.documentDirectory}instructor_qr.png`;
+          await FileSystem.writeAsStringAsync(filename, data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          await Sharing.shareAsync(filename);
+        });
+      } else {
         Alert.alert('QR Ready', 'You can take a screenshot of your QR code to share it with your students!');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to share QR code');
+      console.error('Sharing error:', error);
+      Alert.alert('Error', 'Failed to share QR code image');
     }
   }
 
@@ -270,35 +276,36 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
           <Text style={styles.backLinkText}>Back to Login</Text>
         </TouchableOpacity>
         
-        <Text style={styles.roleTitle}>Select your role</Text>
+        <Text style={styles.roleTitle}>Create Account</Text>
+        <Text style={styles.roleSubtitle}>Select your role to get started</Text>
         
         <TouchableOpacity style={styles.roleCard} onPress={() => setRole('trainee')}>
-          <View style={[styles.roleIcon, { backgroundColor: '#dbeafe' }]}>
+          <View style={[styles.roleIcon, { backgroundColor: '#eff6ff' }]}>
             <User color="#2563eb" size={24} />
           </View>
-          <View>
+          <View style={styles.roleTextWrapper}>
             <Text style={styles.roleName}>Trainee / Student</Text>
-            <Text style={styles.roleDesc}>Complete daily time records</Text>
+            <Text style={styles.roleDesc}>Complete daily time records and track your OJT hours.</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.roleCard} onPress={() => setRole('admin')}>
-          <View style={[styles.roleIcon, { backgroundColor: '#fef3c7' }]}>
+          <View style={[styles.roleIcon, { backgroundColor: '#fffbeb' }]}>
             <GraduationCap color="#d97706" size={24} />
           </View>
-          <View>
+          <View style={styles.roleTextWrapper}>
             <Text style={styles.roleName}>OJT Instructor</Text>
-            <Text style={styles.roleDesc}>Manage trainees and reports</Text>
+            <Text style={styles.roleDesc}>Manage your students, approve records, and post tasks.</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.roleCard} onPress={() => setRole('hte')}>
-          <View style={[styles.roleIcon, { backgroundColor: '#dcfce7' }]}>
+          <View style={[styles.roleIcon, { backgroundColor: '#f0fdf4' }]}>
             <Building color="#166534" size={24} />
           </View>
-          <View>
-            <Text style={styles.roleName}>HTE / Host</Text>
-            <Text style={styles.roleDesc}>Host training supervisor</Text>
+          <View style={styles.roleTextWrapper}>
+            <Text style={styles.roleName}>HTE Supervisor</Text>
+            <Text style={styles.roleDesc}>Monitor trainee performance at your establishment.</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -542,59 +549,77 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   scrollContainer: {
     padding: 24,
     paddingTop: 60,
+    backgroundColor: '#f8fafc',
   },
   roleContainer: {
     padding: 24,
     flex: 1,
     justifyContent: 'center',
+    backgroundColor: '#f8fafc',
   },
   backLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 40,
   },
   backLinkText: {
     marginLeft: 8,
     color: '#64748b',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   roleTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 24,
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginBottom: 8,
+  },
+  roleSubtitle: {
+    fontSize: 16,
+    color: '#64748b',
+    marginBottom: 32,
+    fontWeight: '500',
   },
   roleCard: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 20,
+    padding: 24,
+    borderRadius: 28,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
   },
   roleIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 18,
+  },
+  roleTextWrapper: {
+    flex: 1,
   },
   roleName: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#1e293b',
   },
   roleDesc: {
     fontSize: 13,
     color: '#64748b',
-    marginTop: 2,
+    marginTop: 4,
+    lineHeight: 18,
   },
   stepHeader: {
     flexDirection: 'row',
@@ -606,20 +631,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stepText: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
+    fontSize: 11,
+    color: '#3b82f6',
+    fontWeight: '800',
     textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 2,
   },
   stepLabel: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1e293b',
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f172a',
   },
   formCard: {
     backgroundColor: '#fff',
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 32,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.05,
@@ -631,27 +658,33 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#475569',
     marginBottom: 8,
+    marginLeft: 4,
   },
   input: {
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    fontSize: 16,
+    fontSize: 15,
     color: '#1e293b',
   },
   nextButton: {
     backgroundColor: '#2563eb',
-    padding: 18,
-    borderRadius: 12,
+    padding: 20,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 8,
   },
   nextButtonText: {
     color: '#fff',
@@ -670,59 +703,67 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#e2e8f0',
     borderStyle: 'dashed',
-    borderRadius: 20,
+    borderRadius: 32,
     width: '100%',
+    backgroundColor: '#f8fafc',
   },
   photoButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#1e293b',
-    marginTop: 12,
+    marginTop: 16,
   },
   photoSubtext: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748b',
-    marginTop: 4,
+    marginTop: 6,
+    textAlign: 'center',
   },
   photoPreview: {
     alignItems: 'center',
-    padding: 20,
+    padding: 30,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 32,
+    width: '100%',
   },
   photoStatus: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#166534',
-    marginTop: 12,
+    marginTop: 16,
   },
   retakeText: {
     color: '#2563eb',
-    marginTop: 12,
-    fontWeight: '600',
+    marginTop: 16,
+    fontWeight: '700',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
   otpSection: {
     backgroundColor: '#eff6ff',
-    padding: 16,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 24,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#dbeafe',
   },
   otpTitle: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1e40af',
     textTransform: 'uppercase',
-    marginBottom: 10,
+    marginBottom: 12,
+    letterSpacing: 1,
   },
   otpRequestBtn: {
     backgroundColor: '#2563eb',
-    padding: 12,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 14,
     alignItems: 'center',
   },
   otpRequestBtnText: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 14,
   },
   otpVerifyContainer: {
@@ -735,37 +776,45 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#bfdbfe',
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: 14,
+    padding: 14,
     textAlign: 'center',
-    fontWeight: 'bold',
-    fontSize: 16,
-    letterSpacing: 2,
+    fontWeight: '900',
+    fontSize: 18,
+    letterSpacing: 4,
+    color: '#1e40af',
   },
   otpVerifyBtn: {
     backgroundColor: '#1e40af',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 14,
   },
   otpVerifyBtnText: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   resendLink: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#2563eb',
-    textDecorationLine: 'underline',
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
   },
   verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 100,
+    alignSelf: 'flex-start',
   },
   verifiedText: {
     color: '#166534',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 6,
   },
   successContainer: {
     flex: 1,
@@ -775,7 +824,7 @@ const styles = StyleSheet.create({
   },
   successCard: {
     backgroundColor: '#fff',
-    borderRadius: 32,
+    borderRadius: 40,
     padding: 32,
     alignItems: 'center',
     shadowColor: '#000',
@@ -785,59 +834,63 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   successIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: '#22c55e',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
   },
   successTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1e293b',
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0f172a',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   successDesc: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#64748b',
     textAlign: 'center',
+    lineHeight: 22,
     marginBottom: 32,
   },
   qrWrapper: {
-    padding: 20,
-    backgroundColor: '#f8fafc',
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderStyle: 'dashed',
+    padding: 24,
+    backgroundColor: '#fff',
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
     marginBottom: 32,
   },
   shareBtn: {
+    backgroundColor: '#eff6ff',
     width: '100%',
-    backgroundColor: '#2563eb',
     padding: 18,
-    borderRadius: 16,
+    borderRadius: 20,
     alignItems: 'center',
     marginBottom: 12,
   },
   shareBtnText: {
-    color: '#fff',
+    color: '#2563eb',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   loginBtn: {
+    backgroundColor: '#2563eb',
     width: '100%',
     padding: 18,
-    borderRadius: 16,
-    backgroundColor: '#f1f5f9',
+    borderRadius: 20,
     alignItems: 'center',
   },
   loginBtnText: {
-    color: '#64748b',
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
-  },
+    fontWeight: '800',
+  }
 });

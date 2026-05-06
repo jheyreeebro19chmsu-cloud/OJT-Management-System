@@ -1,8 +1,21 @@
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Camera,
+  ChevronDown,
+  Filter,
+  FileText,
+  AlertTriangle,
+  CheckCircle,
+  ShieldOff,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
-import { Calendar, Clock, MapPin, Camera, ChevronDown, Filter, FileText, AlertTriangle, CheckCircle, ShieldOff } from 'lucide-react';
+
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
-import { motion, AnimatePresence } from 'motion/react';
+
 
 const STATUS_COLORS: Record<string, string> = {
   present: 'bg-green-100 text-green-700',
@@ -23,12 +36,12 @@ export function Records() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [photoModal, setPhotoModal] = useState<{ src: string; label: string } | null>(null);
 
-  const filteredRecords = allRecords.filter(r => r.date.startsWith(filterMonth));
+  const filteredRecords = allRecords.filter((r) => r.date.startsWith(filterMonth));
 
   const totalHours = filteredRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
-  const presentCount = filteredRecords.filter(r => r.status === 'present' || r.status === 'overtime').length;
-  const lateCount = filteredRecords.filter(r => r.status === 'late').length;
-  const outsideCount = filteredRecords.filter(r => !r.timeInGeofenced || !r.timeOutGeofenced).length;
+  const presentCount = filteredRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+  const lateCount = filteredRecords.filter((r) => r.status === 'late').length;
+  const outsideCount = filteredRecords.filter((r) => !r.timeInGeofenced || !r.timeOutGeofenced).length;
 
   // Generate month options (last 6 months)
   const monthOptions = Array.from({ length: 6 }, (_, i) => {
@@ -51,13 +64,18 @@ export function Records() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 text-white">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 text-white"
+      >
         <div className="flex items-center gap-2 mb-3">
           <FileText size={18} />
           <h2 className="font-bold">Daily Time Records</h2>
         </div>
-        <p className="text-blue-200 text-xs mb-4">{employee?.name} • {employee?.employeeId}</p>
+        <p className="text-blue-200 text-xs mb-4">
+          {employee?.name} • {employee?.employeeId}
+        </p>
 
         {/* Month summary */}
         <div className="grid grid-cols-4 gap-2">
@@ -81,18 +99,24 @@ export function Records() {
       </motion.div>
 
       {/* Month Filter */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-        className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1 }}
+        className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100"
+      >
         <div className="flex items-center gap-2">
           <Filter size={14} className="text-gray-400" />
           <span className="text-xs text-gray-500 font-medium">Filter by month:</span>
           <select
             value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
+            onChange={(e) => setFilterMonth(e.target.value)}
             className="flex-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer"
           >
             {monthOptions.map(({ value, label }) => (
-              <option key={value} value={value}>{label}</option>
+              <option key={value} value={value}>
+                {label}
+              </option>
             ))}
           </select>
         </div>
@@ -100,8 +124,12 @@ export function Records() {
 
       {/* Records List */}
       {filteredRecords.length === 0 ? (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-          className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.15 }}
+          className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center"
+        >
           <Calendar size={40} className="text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500 font-medium">No records for this month</p>
           <p className="text-gray-400 text-sm mt-1">Clock in to start recording your attendance</p>
@@ -136,21 +164,26 @@ export function Records() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[record.status] || 'bg-gray-100 text-gray-600'}`}>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[record.status] || 'bg-gray-100 text-gray-600'}`}
+                      >
                         {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
                       </span>
                       {record.timeInFaceVerified && (
                         <span className="text-xs text-purple-500 flex items-center gap-0.5">
-                          <Camera size={10} />Face
+                          <Camera size={10} />
+                          Face
                         </span>
                       )}
                       {allPremises ? (
                         <span className="text-xs text-green-500 flex items-center gap-0.5">
-                          <MapPin size={10} />In Premises
+                          <MapPin size={10} />
+                          In Premises
                         </span>
                       ) : (
                         <span className="text-xs text-red-500 flex items-center gap-0.5">
-                          <ShieldOff size={10} />Off-premises
+                          <ShieldOff size={10} />
+                          Off-premises
                         </span>
                       )}
                     </div>
@@ -168,7 +201,10 @@ export function Records() {
                     {record.totalHours ? (
                       <span className="text-sm font-bold text-gray-700">{record.totalHours.toFixed(2)}h</span>
                     ) : null}
-                    <ChevronDown size={14} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    <ChevronDown
+                      size={14}
+                      className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    />
                   </div>
                 </button>
 
@@ -188,12 +224,18 @@ export function Records() {
                         </p>
                         <div className="mt-1.5 space-y-0.5">
                           {record.timeInFaceVerified && (
-                            <p className="text-xs text-purple-600 flex items-center gap-1"><Camera size={10} /> Face verified</p>
+                            <p className="text-xs text-purple-600 flex items-center gap-1">
+                              <Camera size={10} /> Face verified
+                            </p>
                           )}
                           {inPremises ? (
-                            <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={10} /> In premises</p>
+                            <p className="text-xs text-green-600 flex items-center gap-1">
+                              <CheckCircle size={10} /> In premises
+                            </p>
                           ) : (
-                            <p className="text-xs text-red-600 flex items-center gap-1"><ShieldOff size={10} /> Outside premises</p>
+                            <p className="text-xs text-red-600 flex items-center gap-1">
+                              <ShieldOff size={10} /> Outside premises
+                            </p>
                           )}
                         </div>
                         {record.timeInPhoto && (
@@ -220,17 +262,26 @@ export function Records() {
                         </p>
                         <div className="mt-1.5 space-y-0.5">
                           {record.timeOutFaceVerified && (
-                            <p className="text-xs text-purple-600 flex items-center gap-1"><Camera size={10} /> Face verified</p>
+                            <p className="text-xs text-purple-600 flex items-center gap-1">
+                              <Camera size={10} /> Face verified
+                            </p>
                           )}
-                          {record.timeOut && (outPremises ? (
-                            <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle size={10} /> In premises</p>
-                          ) : (
-                            <p className="text-xs text-red-600 flex items-center gap-1"><ShieldOff size={10} /> Outside premises</p>
-                          ))}
+                          {record.timeOut &&
+                            (outPremises ? (
+                              <p className="text-xs text-green-600 flex items-center gap-1">
+                                <CheckCircle size={10} /> In premises
+                              </p>
+                            ) : (
+                              <p className="text-xs text-red-600 flex items-center gap-1">
+                                <ShieldOff size={10} /> Outside premises
+                              </p>
+                            ))}
                         </div>
                         {record.timeOutPhoto && (
                           <button
-                            onClick={() => setPhotoModal({ src: record.timeOutPhoto!, label: 'Clock-Out Face Capture' })}
+                            onClick={() =>
+                              setPhotoModal({ src: record.timeOutPhoto!, label: 'Clock-Out Face Capture' })
+                            }
                             className="mt-2 w-full"
                           >
                             <img
@@ -257,7 +308,8 @@ export function Records() {
                         <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
                         <p className="text-xs text-red-700">
                           <span className="font-semibold">Outside premises warning: </span>
-                          This record indicates the trainee was not within the designated geofence zone during this attendance entry.
+                          This record indicates the trainee was not within the designated geofence zone during this
+                          attendance entry.
                         </p>
                       </div>
                     )}
@@ -291,18 +343,15 @@ export function Records() {
               animate={{ scale: 1 }}
               exit={{ scale: 0.8 }}
               className="bg-white rounded-2xl overflow-hidden max-w-xs w-full"
-              onClick={e => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-3 border-b border-gray-100 flex items-center justify-between">
                 <p className="text-sm font-semibold text-gray-800">{photoModal.label}</p>
-                <button onClick={() => setPhotoModal(null)} className="text-gray-400 text-xs">Close</button>
+                <button onClick={() => setPhotoModal(null)} className="text-gray-400 text-xs">
+                  Close
+                </button>
               </div>
-              <img
-                src={photoModal.src}
-                alt={photoModal.label}
-                className="w-full"
-                style={{ transform: 'scaleX(-1)' }}
-              />
+              <img src={photoModal.src} alt={photoModal.label} className="w-full" style={{ transform: 'scaleX(-1)' }} />
             </motion.div>
           </motion.div>
         )}

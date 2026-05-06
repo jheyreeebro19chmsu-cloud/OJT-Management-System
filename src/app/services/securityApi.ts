@@ -33,9 +33,9 @@ export interface AttendancePhotoResponse {
   message?: string;
 }
 
-const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
-const SECURITY_API_KEY = ((import.meta as ImportMeta).env.VITE_SECURITY_API_KEY as string | undefined)?.trim();
-const FACE_TOLERANCE_ENV = (import.meta as ImportMeta).env.VITE_FACE_VERIFICATION_TOLERANCE as string | undefined;
+const API_BASE = import.meta.env.VITE_DJANGO_API_URL;
+const SECURITY_API_KEY = (import.meta.env.VITE_SECURITY_API_KEY as string | undefined)?.trim();
+const FACE_TOLERANCE_ENV = import.meta.env.VITE_FACE_VERIFICATION_TOLERANCE;
 
 function baseUrl() {
   if (!API_BASE) return '';
@@ -103,10 +103,7 @@ export async function verifyFace(payload: {
   return postJson<FaceVerifyResponse>('/face/verify/', body);
 }
 
-export async function registerFace(payload: {
-  employee_id: string;
-  image: string;
-}): Promise<FaceRegisterResponse> {
+export async function registerFace(payload: { employee_id: string; image: string }): Promise<FaceRegisterResponse> {
   return postJson<FaceRegisterResponse>('/face/register/', payload);
 }
 

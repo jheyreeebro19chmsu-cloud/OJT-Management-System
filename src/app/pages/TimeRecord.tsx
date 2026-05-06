@@ -1,11 +1,17 @@
-import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle, MapPin, Camera, AlertCircle, XCircle, RefreshCw } from 'lucide-react';
-import { useApp } from '../store/AppContext';
+import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect } from 'react';
+
 import { FaceCapture } from '../components/FaceCapture';
 import { GeofenceChecker } from '../components/GeofenceChecker';
+import {
+  fetchSecurityHealth,
+  isSecurityApiConfigured,
+  type SecurityHealthResponse,
+  uploadAttendancePhoto,
+} from '../services/securityApi';
+import { useApp } from '../store/AppContext';
 import { formatTime, calculateTotalHours, getAttendanceStatus } from '../utils/geo';
-import { motion, AnimatePresence } from 'motion/react';
-import { fetchSecurityHealth, isSecurityApiConfigured, type SecurityHealthResponse, uploadAttendancePhoto } from '../services/securityApi';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
@@ -47,7 +53,7 @@ export function TimeRecord() {
       return;
     }
     fetchSecurityHealth()
-      .then(h => {
+      .then((h) => {
         if (mounted) setSecurityHealth(h);
       })
       .catch(() => {
@@ -104,7 +110,9 @@ export function TimeRecord() {
         timeInPhoto: storedImage,
       });
       setCurrentRecord(newRecord);
-      setCompletedMessage(`Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`);
+      setCompletedMessage(
+        `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
+      );
     } else if (currentRecord) {
       const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
       updateTimeRecord(currentRecord.id, {
@@ -125,7 +133,7 @@ export function TimeRecord() {
     setPageState('check-geofence');
     setGeofencePassed(false);
     setGeofenceCoords(undefined);
-    setRetryCount(p => p + 1);
+    setRetryCount((p) => p + 1);
     if (employee) {
       const rec = getTodayRecord(employee.id);
       setCurrentRecord(rec);
@@ -133,8 +141,17 @@ export function TimeRecord() {
     }
   };
 
-  const today = currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-  const timeDisplay = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const today = currentTime.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timeDisplay = currentTime.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
   const isCompleted = currentRecord?.timeIn && currentRecord?.timeOut;
 
   return (
@@ -149,7 +166,9 @@ export function TimeRecord() {
           <p className="text-blue-200 text-xs mb-1">{today}</p>
           <div className="text-3xl font-bold font-mono tracking-tight">{timeDisplay}</div>
           <p className="text-blue-200 text-sm mt-1">{employee?.name}</p>
-          <p className="text-blue-300 text-xs">{employee?.employeeId} • {employee?.department}</p>
+          <p className="text-blue-300 text-xs">
+            {employee?.employeeId} • {employee?.department}
+          </p>
         </div>
 
         {/* Today's Status Row */}
@@ -161,7 +180,11 @@ export function TimeRecord() {
               {currentRecord?.timeInFaceVerified && <Camera size={10} className="text-green-300 ml-auto" />}
             </div>
             <p className="text-white font-bold">{currentRecord?.timeIn ? formatTime(currentRecord.timeIn) : '— —'}</p>
-            {currentRecord?.timeInGeofenced && <p className="text-green-300 text-xs flex items-center gap-0.5 mt-0.5"><MapPin size={8} /> Geofenced</p>}
+            {currentRecord?.timeInGeofenced && (
+              <p className="text-green-300 text-xs flex items-center gap-0.5 mt-0.5">
+                <MapPin size={8} /> Geofenced
+              </p>
+            )}
           </div>
           <div className="bg-white/15 rounded-2xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -170,7 +193,11 @@ export function TimeRecord() {
               {currentRecord?.timeOutFaceVerified && <Camera size={10} className="text-green-300 ml-auto" />}
             </div>
             <p className="text-white font-bold">{currentRecord?.timeOut ? formatTime(currentRecord.timeOut) : '— —'}</p>
-            {currentRecord?.timeOutGeofenced && <p className="text-green-300 text-xs flex items-center gap-0.5 mt-0.5"><MapPin size={8} /> Geofenced</p>}
+            {currentRecord?.timeOutGeofenced && (
+              <p className="text-green-300 text-xs flex items-center gap-0.5 mt-0.5">
+                <MapPin size={8} /> Geofenced
+              </p>
+            )}
           </div>
         </div>
 
@@ -194,17 +221,28 @@ export function TimeRecord() {
             <CheckCircle size={48} className="text-green-500 mx-auto mb-3" />
             <h3 className="font-bold text-gray-800 mb-1">Attendance Completed</h3>
             <p className="text-sm text-gray-500">You have already clocked in and out for today.</p>
-            <div className={`inline-block mt-3 px-4 py-1.5 rounded-full text-sm font-medium ${
-              currentRecord?.status === 'present' ? 'bg-green-100 text-green-700' :
-              currentRecord?.status === 'late' ? 'bg-orange-100 text-orange-700' :
-              currentRecord?.status === 'overtime' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-            }`}>
+            <div
+              className={`inline-block mt-3 px-4 py-1.5 rounded-full text-sm font-medium ${
+                currentRecord?.status === 'present'
+                  ? 'bg-green-100 text-green-700'
+                  : currentRecord?.status === 'late'
+                    ? 'bg-orange-100 text-orange-700'
+                    : currentRecord?.status === 'overtime'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-gray-100 text-gray-700'
+              }`}
+            >
               {currentRecord?.status?.charAt(0).toUpperCase() + (currentRecord?.status?.slice(1) || '')}
             </div>
           </motion.div>
         ) : pageState === 'check-geofence' ? (
-          <motion.div key="geofence" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <motion.div
+            key="geofence"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+          >
             <div className="flex items-center gap-2 mb-4">
               <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center">
                 <MapPin size={18} className="text-blue-700" />
@@ -228,12 +266,19 @@ export function TimeRecord() {
               className="w-full mt-4 py-3 bg-blue-700 text-white rounded-2xl font-semibold text-sm hover:bg-blue-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Camera size={16} />
-              {geofencePassed ? `Proceed to Face Scan (Clock ${action === 'in' ? 'In' : 'Out'})` : 'Waiting for Location...'}
+              {geofencePassed
+                ? `Proceed to Face Scan (Clock ${action === 'in' ? 'In' : 'Out'})`
+                : 'Waiting for Location...'}
             </button>
           </motion.div>
         ) : pageState === 'face-scan' ? (
-          <motion.div key="face" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <motion.div
+            key="face"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+          >
             <div className="flex items-center gap-2 mb-4">
               <div className="w-9 h-9 bg-purple-100 rounded-xl flex items-center justify-center">
                 <Camera size={18} className="text-purple-700" />
@@ -255,7 +300,8 @@ export function TimeRecord() {
                 Backend: {isSecurityApiConfigured() ? 'Connected' : 'Not configured (VITE_DJANGO_API_URL missing)'}
               </p>
               <p className={`${securityHealth?.face_recognition_installed ? 'text-green-700' : 'text-amber-700'}`}>
-                Face model: {securityHealth?.face_recognition_installed ? 'Available on server' : 'Unknown / not installed'}
+                Face model:{' '}
+                {securityHealth?.face_recognition_installed ? 'Available on server' : 'Unknown / not installed'}
               </p>
               <p className={`${employee?.photo ? 'text-green-700' : 'text-amber-700'}`}>
                 Employee enrollment: {employee?.photo ? 'Has enrolled face photo' : 'No enrolled face found'}
@@ -276,8 +322,12 @@ export function TimeRecord() {
             </div>
           </motion.div>
         ) : pageState === 'completed' ? (
-          <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+          <motion.div
+            key="done"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center"
+          >
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
@@ -286,9 +336,7 @@ export function TimeRecord() {
             >
               <CheckCircle size={40} className="text-green-600" />
             </motion.div>
-            <h3 className="font-bold text-gray-800 text-lg mb-2">
-              Clock {action === 'in' ? 'In' : 'Out'} Successful!
-            </h3>
+            <h3 className="font-bold text-gray-800 text-lg mb-2">Clock {action === 'in' ? 'In' : 'Out'} Successful!</h3>
             <p className="text-sm text-gray-500 mb-4">{completedMessage}</p>
 
             <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
@@ -320,8 +368,12 @@ export function TimeRecord() {
       </AnimatePresence>
 
       {/* Info Footer */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-        className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 }}
+        className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3"
+      >
         <Clock size={16} className="text-blue-500 mt-0.5 shrink-0" />
         <div className="text-xs text-blue-700">
           <p className="font-semibold mb-1">How it works:</p>

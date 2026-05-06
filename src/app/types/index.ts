@@ -68,12 +68,12 @@ export interface Evaluation {
   id: string;
   employeeId: string;
   evaluatedBy: string;
-  attendanceScore: number;    // 0–100
-  performanceScore: number;   // 0–100
-  attitudeScore: number;      // 0–100
-  punctualityScore: number;   // 0–100
+  attendanceScore: number; // 0–100
+  performanceScore: number; // 0–100
+  attitudeScore: number; // 0–100
+  punctualityScore: number; // 0–100
   communicationScore: number; // 0–100
-  overallScore: number;       // average
+  overallScore: number; // average
   grade: 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Needs Improvement';
   strengths: string;
   areasForImprovement: string;
@@ -126,7 +126,7 @@ export interface Announcement {
   createdAt: string;
   expiresAt?: string;
   createdBy: string;
-  createdByRole?: 'admin' | 'host';
+  createdByRole?: 'admin' | 'host' | 'employee';
 }
 
 export interface AnnouncementSubmission {

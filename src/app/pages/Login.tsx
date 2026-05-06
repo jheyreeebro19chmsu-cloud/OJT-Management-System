@@ -1,8 +1,10 @@
+import { Clock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
+import { motion } from 'motion/react';
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Clock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
+
 import { useApp } from '../store/AppContext';
-import { motion } from 'motion/react';
+
 
 export function Login() {
   const { login } = useApp();
@@ -19,7 +21,7 @@ export function Login() {
     setLoading(true);
 
     // Local login
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 800));
     const user = login(email, password);
     if (user) {
       if (user.role === 'admin') navigate('/admin');
@@ -74,7 +76,7 @@ export function Login() {
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 required
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
@@ -86,14 +88,14 @@ export function Login() {
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 pr-10"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPass(p => !p)}
+                  onClick={() => setShowPass((p) => !p)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}

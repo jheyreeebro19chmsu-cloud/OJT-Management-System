@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+
 import 'leaflet/dist/leaflet.css';
 import './geofence-map.css';
 import type { GeofenceZone } from '../types';
@@ -36,7 +37,7 @@ export function GeofenceMap({
         iconSize: [18, 18],
         iconAnchor: [9, 9],
       }),
-    [],
+    []
   );
   const inactiveZoneIcon = useMemo(
     () =>
@@ -46,7 +47,7 @@ export function GeofenceMap({
         iconSize: [18, 18],
         iconAnchor: [9, 9],
       }),
-    [],
+    []
   );
   const pickedIcon = useMemo(
     () =>
@@ -56,7 +57,7 @@ export function GeofenceMap({
         iconSize: [20, 20],
         iconAnchor: [10, 10],
       }),
-    [],
+    []
   );
   const liveUserIcon = useMemo(
     () =>
@@ -66,20 +67,20 @@ export function GeofenceMap({
         iconSize: [20, 20],
         iconAnchor: [10, 10],
       }),
-    [],
+    []
   );
   const safeZones = useMemo(
     () =>
       zones.filter(
-        zone =>
-          Boolean(zone)
-          && typeof zone.lat === 'number'
-          && typeof zone.lng === 'number'
-          && isValidCoord(zone.lat, zone.lng)
-          && Number.isFinite(zone.radius)
-          && zone.radius > 0,
+        (zone) =>
+          Boolean(zone) &&
+          typeof zone.lat === 'number' &&
+          typeof zone.lng === 'number' &&
+          isValidCoord(zone.lat, zone.lng) &&
+          Number.isFinite(zone.radius) &&
+          zone.radius > 0
       ),
-    [zones],
+    [zones]
   );
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;
@@ -90,18 +91,13 @@ export function GeofenceMap({
 
   return (
     <div className={`relative ${className} min-h-[200px]`}>
-      <MapContainer
-        center={defaultCenter}
-        zoom={13}
-        scrollWheelZoom
-        className="absolute inset-0 z-0"
-      >
+      <MapContainer center={defaultCenter} zoom={13} scrollWheelZoom className="absolute inset-0 z-0">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {safeZones.map(zone => (
+        {safeZones.map((zone) => (
           <React.Fragment key={zone.id}>
             <Circle
               center={[zone.lat, zone.lng]}
@@ -113,10 +109,7 @@ export function GeofenceMap({
                 weight: 2,
               }}
             />
-            <Marker
-              center={[zone.lat, zone.lng]}
-              icon={zone.active ? zoneIcon : inactiveZoneIcon}
-            >
+            <Marker position={[zone.lat, zone.lng]} icon={zone.active ? zoneIcon : inactiveZoneIcon}>
               <Popup className="leaflet-geofence-popup">
                 <div className="leaflet-popup-card">
                   <p className="leaflet-popup-title">{zone.name || 'Geofence Zone'}</p>
@@ -129,10 +122,7 @@ export function GeofenceMap({
         ))}
 
         {safePickedCoords && (
-          <Marker
-            center={[safePickedCoords.lat, safePickedCoords.lng]}
-            icon={pickedIcon}
-          >
+          <Marker position={[safePickedCoords.lat, safePickedCoords.lng]} icon={pickedIcon}>
             <Popup className="leaflet-geofence-popup">
               <div className="leaflet-popup-card">
                 <p className="leaflet-popup-title">Picked Zone Center</p>
@@ -143,13 +133,16 @@ export function GeofenceMap({
           </Marker>
         )}
 
-        {safeLiveUser && typeof safeLiveUser.accuracy === 'number' && safeLiveUser.accuracy > 5 && safeLiveUser.accuracy < 5000 && (
-          <Circle
-            center={[safeLiveUser.lat, safeLiveUser.lng]}
-            radius={safeLiveUser.accuracy}
-            pathOptions={{ color: '#0284c7', weight: 1, fillColor: '#0ea5e9', fillOpacity: 0.12 }}
-          />
-        )}
+        {safeLiveUser &&
+          typeof safeLiveUser.accuracy === 'number' &&
+          safeLiveUser.accuracy > 5 &&
+          safeLiveUser.accuracy < 5000 && (
+            <Circle
+              center={[safeLiveUser.lat, safeLiveUser.lng]}
+              radius={safeLiveUser.accuracy}
+              pathOptions={{ color: '#0284c7', weight: 1, fillColor: '#0ea5e9', fillOpacity: 0.12 }}
+            />
+          )}
 
         {safeLiveUser && (
           <>
@@ -163,11 +156,13 @@ export function GeofenceMap({
               radius={7}
               pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0ea5e9', fillOpacity: 1 }}
             />
-            <Marker center={[safeLiveUser.lat, safeLiveUser.lng]} icon={liveUserIcon}>
+            <Marker position={[safeLiveUser.lat, safeLiveUser.lng]} icon={liveUserIcon}>
               <Popup className="leaflet-geofence-popup">
                 <div className="leaflet-popup-card">
                   <p className="leaflet-popup-title">Your Position</p>
-                  <p>{safeLiveUser.lat.toFixed(5)}, {safeLiveUser.lng.toFixed(5)}</p>
+                  <p>
+                    {safeLiveUser.lat.toFixed(5)}, {safeLiveUser.lng.toFixed(5)}
+                  </p>
                   {safeLiveUser.accuracy !== undefined && <p>Accuracy: ±{Math.round(safeLiveUser.accuracy)}m</p>}
                 </div>
               </Popup>
@@ -193,7 +188,9 @@ export function GeofenceMap({
           <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-sky-100">
             <span className="font-semibold text-sky-700">Your position</span>
             <span className="text-gray-500 mx-1">·</span>
-            <span className="font-mono text-gray-600">{safeLiveUser.lat.toFixed(5)}, {safeLiveUser.lng.toFixed(5)}</span>
+            <span className="font-mono text-gray-600">
+              {safeLiveUser.lat.toFixed(5)}, {safeLiveUser.lng.toFixed(5)}
+            </span>
             {safeLiveUser.accuracy !== undefined && (
               <span className="text-gray-500 ml-1">±{Math.round(safeLiveUser.accuracy)}m</span>
             )}
@@ -204,13 +201,7 @@ export function GeofenceMap({
   );
 }
 
-function MapClickHandler({
-  picking,
-  onPick,
-}: {
-  picking: boolean;
-  onPick?: (lat: number, lng: number) => void;
-}) {
+function MapClickHandler({ picking, onPick }: { picking: boolean; onPick?: (lat: number, lng: number) => void }) {
   useMapEvents({
     click(event) {
       if (!picking || !onPick) return;
@@ -241,7 +232,7 @@ function FitMapView({
     if (liveUser && !fittedLiveUserRef.current) {
       const points = [
         [liveUser.lat, liveUser.lng] as [number, number],
-        ...zones.map(zone => [zone.lat, zone.lng] as [number, number]),
+        ...zones.map((zone) => [zone.lat, zone.lng] as [number, number]),
       ].filter(([lat, lng]) => isValidCoord(lat, lng));
       if (points.length > 0) {
         try {
@@ -264,7 +255,7 @@ function FitMapView({
 
     if (!fittedZonesRef.current && zones.length > 0 && !liveUser) {
       const points = zones
-        .map(zone => [zone.lat, zone.lng] as [number, number])
+        .map((zone) => [zone.lat, zone.lng] as [number, number])
         .filter(([lat, lng]) => isValidCoord(lat, lng));
       if (points.length > 0) {
         try {

@@ -10,8 +10,8 @@ export async function signInWithGoogle(redirectTo?: string) {
 export async function handleOAuthCallback() {
   // supabase v2: getSessionFromUrl
   try {
-    const result = await supabase.auth.getSessionFromUrl();
-    return result;
+    const { data } = await supabase.auth.getSession();
+    return { data, error: null };
   } catch (err) {
     return { error: err };
   }

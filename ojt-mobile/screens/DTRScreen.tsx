@@ -11,6 +11,7 @@ import {
 import { Clock, MapPin, Camera, CheckCircle, ArrowLeft } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { attendanceApi } from '../lib/api';
 import FaceScanner from '../components/FaceScanner';
 
 interface DTRScreenProps {
@@ -95,6 +96,23 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
   async function submitAttendance(photo: string) {
     setLoading(true);
     try {
+      // 1. First, attempt to sync with Django Backend (Primary Logic)
+      try {
+        const applicationId = profile.application_id || profile.id; // Fallback if not set
+        if (scanType === 'in') {
+          await attendanceApi.timeIn(profile.id, applicationId);
+        } else {
+          await attendanceApi.timeOut(profile.id, applicationId);
+        }
+      } catch (apiErr) {
+        console.warn('Django API Sync failed, falling back to direct Supabase:', apiErr);
+        // If it's a "Not within allowed time-in window" error, we should probably stop
+        if (apiErr instanceof Error && apiErr.message.includes('window')) {
+          throw apiErr;
+        }
+      }
+
+      // 2. Direct Supabase update (for real-time dashboard visibility)
       const now = new Date();
       const today = now.toISOString().split('T')[0];
       const timeStr = now.toTimeString().split(' ')[0];
@@ -115,11 +133,9 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
           });
         if (error) throw error;
       } else {
-        // Calculate total hours
         const timeInParts = todayRecord.time_in.split(':');
         const timeInDate = new Date();
         timeInDate.setHours(parseInt(timeInParts[0]), parseInt(timeInParts[1]), parseInt(timeInParts[2]));
-        
         const totalHours = (now.getTime() - timeInDate.getTime()) / (1000 * 60 * 60);
 
         const { error } = await supabase

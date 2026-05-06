@@ -1,8 +1,10 @@
+import { Home, Clock, FileText, User, LogOut, Bell } from 'lucide-react';
+import { motion } from 'motion/react';
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Home, Clock, FileText, User, LogOut, Bell } from 'lucide-react';
+
 import { useApp } from '../store/AppContext';
-import { motion } from 'motion/react';
+
 
 const navItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
@@ -25,19 +27,28 @@ export function EmployeeLayout() {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0">
+      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0 no-print">
         <div className="p-5 border-b border-blue-800">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow overflow-hidden">
               {employee?.photo ? (
-                <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                <img
+                  src={employee.photo}
+                  alt={employee.name}
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
               ) : (
                 <Clock size={18} className="text-white" />
               )}
             </div>
             <div>
-              <div className="text-white font-bold text-sm leading-tight truncate max-w-[120px]">{employee?.name || 'OJT DTR'}</div>
-              <div className="text-blue-300 text-[10px] uppercase tracking-wider font-bold">{employee?.employeeId || 'Employee Panel'}</div>
+              <div className="text-white font-bold text-sm leading-tight truncate max-w-[120px]">
+                {employee?.name || 'OJT DTR'}
+              </div>
+              <div className="text-blue-300 text-[10px] uppercase tracking-wider font-bold">
+                {employee?.employeeId || 'Employee Panel'}
+              </div>
             </div>
           </div>
         </div>
@@ -49,9 +60,7 @@ export function EmployeeLayout() {
               end={end}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
-                  isActive
-                    ? 'bg-sky-500 text-white shadow-sm'
-                    : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                  isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
                 }`
               }
             >
@@ -85,12 +94,17 @@ export function EmployeeLayout() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10">
+        <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10 no-print">
           <div className="max-w-md lg:max-w-none mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center shadow overflow-hidden">
                 {employee?.photo ? (
-                  <img src={employee.photo} alt={employee.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                  <img
+                    src={employee.photo}
+                    alt={employee.name}
+                    className="w-full h-full object-cover"
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
                 ) : (
                   <Clock size={16} className="text-white" />
                 )}
@@ -118,7 +132,7 @@ export function EmployeeLayout() {
         </main>
 
         {/* Bottom Navigation (mobile only) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-20">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-20 no-print">
           <div className="max-w-md mx-auto px-2 py-1 grid grid-cols-5">
             {navItems.map(({ to, label, icon: Icon, end }) => (
               <NavLink

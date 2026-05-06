@@ -8,7 +8,7 @@ export async function loadFaceModels(modelsPath = '/models') {
   if (_modelsLoaded) return true;
   if (_modelsLoading) return false;
   _modelsLoading = true;
-  
+
   // Use local models first for instant loading without internet
   const candidates = [modelsPath, 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model'];
 
@@ -45,7 +45,9 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   try {
     const img = await createImageElement(dataUrl);
     // 160 is very fast but still accurate enough for a clear face
-    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 160 })).withFaceLandmarks();
+    const detection = await faceapi
+      .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 160 }))
+      .withFaceLandmarks();
     return !!detection;
   } catch (e) {
     console.warn('detectFaceInDataUrl error', e);
@@ -58,10 +60,11 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   if (!ok) return null;
   try {
     const img = await createImageElement(dataUrl);
-    const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 160 }))
+    const detection = await faceapi
+      .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 160 }))
       .withFaceLandmarks()
       .withFaceDescriptor();
-    
+
     if (detection && detection.descriptor) return detection.descriptor as Float32Array;
     return null;
   } catch (e) {

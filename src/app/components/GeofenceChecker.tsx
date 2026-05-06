@@ -1,11 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, CheckCircle, XCircle, Loader, AlertTriangle, Navigation, ShieldOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Circle, CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
+
 import 'leaflet/dist/leaflet.css';
-import { useApp } from '../store/AppContext';
-import { calculateDistance, formatDistance, getCurrentLocation, isGeolocationPositionError, isWithinGeofence } from '../utils/geo';
 import { checkGeofence as checkGeofenceApi, isSecurityApiConfigured } from '../services/securityApi';
+import { useApp } from '../store/AppContext';
+import {
+  calculateDistance,
+  formatDistance,
+  getCurrentLocation,
+  isGeolocationPositionError,
+  isWithinGeofence,
+} from '../utils/geo';
 
 type GeoState = 'idle' | 'checking' | 'inside' | 'outside' | 'denied' | 'error' | 'demo';
 
@@ -13,7 +20,7 @@ interface GeofenceResult {
   state: GeoState;
   distance?: number;
   zoneName?: string;
-  coords?: { lat: number; lng: number };
+  coords?: { lat: number; lng: number; accuracy?: number };
   accuracy?: number;
   verifiedBy?: 'server' | 'local';
 }
@@ -27,20 +34,20 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const { geofenceZones, settings, getCurrentEmployee } = useApp();
   const [result, setResult] = useState<GeofenceResult>({ state: 'idle' });
   const [watchCoords, setWatchCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
-  
+
   const employee = getCurrentEmployee();
 
   const activeZones = React.useMemo(() => {
     const zones = [...geofenceZones].filter(
-      z =>
-        Boolean(z)
-        && z.active
-        && Number.isFinite(z.lat)
-        && Number.isFinite(z.lng)
-        && Math.abs(z.lat) <= 90
-        && Math.abs(z.lng) <= 180
-        && Number.isFinite(z.radius)
-        && z.radius > 0,
+      (z) =>
+        Boolean(z) &&
+        z.active &&
+        Number.isFinite(z.lat) &&
+        Number.isFinite(z.lng) &&
+        Math.abs(z.lat) <= 90 &&
+        Math.abs(z.lng) <= 180 &&
+        Number.isFinite(z.radius) &&
+        z.radius > 0
     );
 
     // Add employee's custom registration location if it exists
@@ -52,7 +59,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         lat: employee.registrationLocation.lat,
         lng: employee.registrationLocation.lng,
         radius: 300, // Standard 300m radius for personal zones
-        active: true
+        active: true,
       });
     }
     return zones;
@@ -95,7 +102,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             lat: latitude,
             lng: longitude,
             accuracy: accuracy,
-            zones: activeZones.map(z => ({
+            zones: activeZones.map((z) => ({
               name: z.name,
               lat: z.lat,
               lng: z.lng,
@@ -112,7 +119,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             state: inside ? 'inside' : 'outside',
             distance,
             zoneName,
-            coords,
+            coords: { ...coords, accuracy },
             accuracy,
             verifiedBy: 'server',
           });
@@ -123,13 +130,20 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         }
       }
 
-      const inside = isWithinGeofence(latitude, longitude, closestZone.lat, closestZone.lng, closestZone.radius, accuracy);
+      const inside = isWithinGeofence(
+        latitude,
+        longitude,
+        closestZone.lat,
+        closestZone.lng,
+        closestZone.radius,
+        accuracy
+      );
 
       setResult({
         state: inside ? 'inside' : 'outside',
         distance: minDistance,
         zoneName: closestZone.name,
-        coords,
+        coords: { ...coords, accuracy },
         accuracy,
         verifiedBy: 'local',
       });
@@ -161,7 +175,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   useEffect(() => {
     if (!navigator.geolocation?.watchPosition) return;
     const watchId = navigator.geolocation.watchPosition(
-      position => {
+      (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         if (!isValidCoord(lat, lng)) return;
@@ -172,7 +186,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         });
       },
       () => {},
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
@@ -180,32 +194,70 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const getStatusConfig = () => {
     switch (result.state) {
       case 'checking':
-        return { icon: <Loader size={20} className="animate-spin text-sky-500" />, color: 'bg-sky-50 border-sky-200', label: 'Checking your location...', labelColor: 'text-sky-700' };
+        return {
+          icon: <Loader size={20} className="animate-spin text-sky-500" />,
+          color: 'bg-sky-50 border-sky-200',
+          label: 'Checking your location...',
+          labelColor: 'text-sky-700',
+        };
       case 'inside':
-        return { icon: <CheckCircle size={20} className="text-green-500" />, color: 'bg-green-50 border-green-200', label: 'Within geofence zone ✓', labelColor: 'text-green-700' };
+        return {
+          icon: <CheckCircle size={20} className="text-green-500" />,
+          color: 'bg-green-50 border-green-200',
+          label: 'Within geofence zone ✓',
+          labelColor: 'text-green-700',
+        };
       case 'outside':
-        return { icon: <ShieldOff size={20} className="text-red-600" />, color: 'bg-red-50 border-red-300', label: 'NOT within the designated work premises', labelColor: 'text-red-700' };
+        return {
+          icon: <ShieldOff size={20} className="text-red-600" />,
+          color: 'bg-red-50 border-red-300',
+          label: 'NOT within the designated work premises',
+          labelColor: 'text-red-700',
+        };
       case 'denied':
-        return { icon: <AlertTriangle size={20} className="text-yellow-500" />, color: 'bg-yellow-50 border-yellow-200', label: 'Location permission denied', labelColor: 'text-yellow-700' };
+        return {
+          icon: <AlertTriangle size={20} className="text-yellow-500" />,
+          color: 'bg-yellow-50 border-yellow-200',
+          label: 'Location permission denied',
+          labelColor: 'text-yellow-700',
+        };
       case 'demo':
-        return { icon: <Navigation size={20} className="text-purple-500" />, color: 'bg-purple-50 border-purple-200', label: 'Demo Mode Active', labelColor: 'text-purple-700' };
+        return {
+          icon: <Navigation size={20} className="text-purple-500" />,
+          color: 'bg-purple-50 border-purple-200',
+          label: 'Demo Mode Active',
+          labelColor: 'text-purple-700',
+        };
       case 'error':
-        return { icon: <AlertTriangle size={20} className="text-orange-500" />, color: 'bg-orange-50 border-orange-200', label: 'Location error occurred', labelColor: 'text-orange-700' };
+        return {
+          icon: <AlertTriangle size={20} className="text-orange-500" />,
+          color: 'bg-orange-50 border-orange-200',
+          label: 'Location error occurred',
+          labelColor: 'text-orange-700',
+        };
       default:
-        return { icon: <MapPin size={20} className="text-gray-400" />, color: 'bg-gray-50 border-gray-200', label: 'Location not checked', labelColor: 'text-gray-600' };
+        return {
+          icon: <MapPin size={20} className="text-gray-400" />,
+          color: 'bg-gray-50 border-gray-200',
+          label: 'Location not checked',
+          labelColor: 'text-gray-600',
+        };
     }
   };
 
   const config = getStatusConfig();
-  const liveCoords = watchCoords && isValidCoord(watchCoords.lat, watchCoords.lng)
-    ? watchCoords
-    : (result.coords && isValidCoord(result.coords.lat, result.coords.lng) ? result.coords : null);
+  const liveCoords =
+    watchCoords && isValidCoord(watchCoords.lat, watchCoords.lng)
+      ? watchCoords
+      : result.coords && isValidCoord(result.coords.lat, result.coords.lng)
+        ? result.coords
+        : null;
   const mapCenter = liveCoords
-    ? [liveCoords.lat, liveCoords.lng] as [number, number]
+    ? ([liveCoords.lat, liveCoords.lng] as [number, number])
     : activeZones.length > 0
-      ? [activeZones[0].lat, activeZones[0].lng] as [number, number]
+      ? ([activeZones[0].lat, activeZones[0].lng] as [number, number])
       : null;
-  const nearestZone = result.zoneName ? activeZones.find(z => z.name === result.zoneName) : activeZones[0];
+  const nearestZone = result.zoneName ? activeZones.find((z) => z.name === result.zoneName) : activeZones[0];
 
   return (
     <div className="w-full space-y-3">
@@ -229,11 +281,14 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             </div>
             <div className="bg-red-100 rounded-xl p-3 text-xs text-red-700 space-y-1">
               <p className="font-semibold">You cannot record your attendance from this location.</p>
-              <p>Please move to the designated work area: <span className="font-bold">{result.zoneName}</span></p>
+              <p>
+                Please move to the designated work area: <span className="font-bold">{result.zoneName}</span>
+              </p>
               {result.distance !== undefined && (
                 <p className="flex items-center gap-1 mt-1">
                   <MapPin size={11} />
-                  You are <span className="font-bold">{formatDistance(result.distance)}</span> away from the nearest zone
+                  You are <span className="font-bold">{formatDistance(result.distance)}</span> away from the nearest
+                  zone
                 </p>
               )}
             </div>
@@ -279,10 +334,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
               )}
             </div>
             {result.state !== 'checking' && result.state !== 'idle' && (
-              <button
-                onClick={checkGeofence}
-                className="text-xs text-sky-600 hover:text-sky-800 font-medium shrink-0"
-              >
+              <button onClick={checkGeofence} className="text-xs text-sky-600 hover:text-sky-800 font-medium shrink-0">
                 Recheck
               </button>
             )}
@@ -291,11 +343,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           {/* Radar animation for "inside" state */}
           <AnimatePresence>
             {result.state === 'inside' && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="mt-3 flex justify-center"
-              >
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-3 flex justify-center">
                 <div className="relative w-16 h-16 flex items-center justify-center">
                   <motion.div
                     className="absolute w-16 h-16 rounded-full border-2 border-green-400 opacity-30"
@@ -345,13 +393,16 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
                   pathOptions={{ color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.16, weight: 2 }}
                 />
               )}
-              {liveCoords && typeof liveCoords.accuracy === 'number' && liveCoords.accuracy > 5 && liveCoords.accuracy < 3000 && (
-                <Circle
-                  center={[liveCoords.lat, liveCoords.lng]}
-                  radius={liveCoords.accuracy}
-                  pathOptions={{ color: '#0284c7', fillColor: '#38bdf8', fillOpacity: 0.12, weight: 1 }}
-                />
-              )}
+              {liveCoords &&
+                typeof liveCoords.accuracy === 'number' &&
+                liveCoords.accuracy > 5 &&
+                liveCoords.accuracy < 3000 && (
+                  <Circle
+                    center={[liveCoords.lat, liveCoords.lng]}
+                    radius={liveCoords.accuracy}
+                    pathOptions={{ color: '#0284c7', fillColor: '#38bdf8', fillOpacity: 0.12, weight: 1 }}
+                  />
+                )}
               {liveCoords && isValidCoord(liveCoords.lat, liveCoords.lng) && (
                 <>
                   <CircleMarker

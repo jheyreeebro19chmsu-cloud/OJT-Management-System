@@ -53,13 +53,17 @@ export default function App() {
     if (session) {
       async function fetchProfile() {
         const { data } = await supabase
-          .from('employees') // Using employees table as primary profile
+          .from('employees') 
           .select('*')
           .eq('id', session.user.id)
           .single();
         
         if (data) {
-          setProfile({ ...data, role: data.position === 'OJT Instructor' ? 'admin' : 'employee' });
+          setProfile({ 
+            ...data, 
+            role: data.position === 'OJT Instructor' ? 'admin' : 'employee',
+            instructor_id: data.instructor_id 
+          });
         } else {
           // Check host supervisors if not in employees
           const { data: hostData } = await supabase.from('host_supervisors').select('*').eq('id', session.user.id).single();
@@ -170,6 +174,7 @@ export default function App() {
               />
             ) : showTasks ? (
                 <TasksScreen 
+                  profile={profile}
                   onBack={() => setShowTasks(false)}
                 />
               ) : showDTR ? (
@@ -186,11 +191,11 @@ export default function App() {
                 <View style={styles.dashboardContainer}>
                 <View style={styles.dashHeader}>
                   <View>
-                    <Text style={styles.welcomeLabel}>Hello,</Text>
+                    <Text style={styles.welcomeLabel}>Welcome back,</Text>
                     <Text style={styles.userName}>{profile.name || 'User'}</Text>
                   </View>
                   <TouchableOpacity onPress={() => supabase.auth.signOut()} style={styles.logoutBtn}>
-                    <LogOut color="#64748b" size={20} />
+                    <LogOut color="#ef4444" size={20} />
                   </TouchableOpacity>
                 </View>
 
@@ -199,56 +204,84 @@ export default function App() {
                     <>
                       {profile.application_status === 'pending' ? (
                         <View style={styles.statusCard}>
-                          <Clock color="#d97706" size={32} />
+                          <View style={styles.statusIconBg}>
+                            <Clock color="#d97706" size={32} />
+                          </View>
                           <Text style={styles.statusTitle}>Application Pending</Text>
-                          <Text style={styles.statusDesc}>Waiting for instructor approval.</Text>
+                          <Text style={styles.statusDesc}>Your application is being reviewed by your instructor.</Text>
                         </View>
                       ) : profile.application_status === 'approved' ? (
                         <View style={[styles.statusCard, { backgroundColor: '#f0fdf4', borderColor: '#dcfce7' }]}>
-                          <Check color="#16a34a" size={32} />
-                          <Text style={[styles.statusTitle, { color: '#166534' }]}>Enrolled</Text>
-                          <Text style={[styles.statusDesc, { color: '#166534' }]}>Currently enrolled in OJT.</Text>
+                          <View style={[styles.statusIconBg, { backgroundColor: '#dcfce7' }]}>
+                            <Check color="#16a34a" size={32} />
+                          </View>
+                          <Text style={[styles.statusTitle, { color: '#166534' }]}>Status: Enrolled</Text>
+                          <Text style={[styles.statusDesc, { color: '#166534' }]}>You are active in the OJT program.</Text>
                         </View>
                       ) : (
                         <TouchableOpacity style={styles.enrollCard} onPress={() => setScanning(true)}>
-                          <QrCode color="#2563eb" size={48} />
+                          <View style={styles.enrollIconBg}>
+                            <QrCode color="#2563eb" size={48} />
+                          </View>
                           <Text style={styles.enrollTitle}>Scan to Enroll</Text>
-                          <Text style={styles.enrollDesc}>Scan your Instructor's QR Code to apply.</Text>
+                          <Text style={styles.enrollDesc}>Scan your Instructor's QR Code to link your training.</Text>
                         </TouchableOpacity>
                       )}
                       
-                      <Text style={styles.sectionTitle}>Quick Actions</Text>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Quick Actions</Text>
+                        <Text style={styles.sectionSubtitle}>Manage your daily records</Text>
+                      </View>
+
                       <View style={styles.actionGrid}>
                         <ActionBtn 
-                          icon={<ClipboardList color="#2563eb" size={24} />} 
+                          icon={<Clock color="#2563eb" size={24} />} 
                           label="DTR" 
                           onPress={() => setShowDTR(true)} 
+                          color="#eff6ff"
                         />
                         <ActionBtn 
-                          icon={<FileText color="#2563eb" size={24} />} 
+                          icon={<ClipboardList color="#7c3aed" size={24} />} 
                           label="Tasks" 
                           onPress={() => setShowTasks(true)} 
+                          color="#f5f3ff"
                         />
                         <ActionBtn 
-                          icon={<Building color="#2563eb" size={24} />} 
+                          icon={<Building color="#0891b2" size={24} />} 
                           label="HTE Link" 
                           onPress={() => setShowHTELink(true)} 
+                          color="#ecfeff"
                         />
                       </View>
                     </>
                   ) : (
                     <>
-                      <View style={styles.instructorStats}>
-                        <StatBox label="Students" value="24" />
-                        <StatBox label="Pending" value="5" />
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Instructor Dashboard</Text>
                       </View>
-                      <TouchableOpacity style={styles.actionCard}>
-                        <Plus color="#2563eb" size={20} />
-                        <Text style={styles.actionCardText}>Post Announcement</Text>
+                      <View style={styles.instructorStats}>
+                        <StatBox label="Active Trainees" value="24" color="#dbeafe" textColor="#1e40af" />
+                        <StatBox label="New Requests" value="5" color="#fef3c7" textColor="#92400e" />
+                      </View>
+                      
+                      <TouchableOpacity style={styles.premiumActionCard}>
+                        <View style={[styles.actionIconContainer, { backgroundColor: '#eff6ff' }]}>
+                          <Plus color="#2563eb" size={20} />
+                        </View>
+                        <View style={styles.actionTextContainer}>
+                          <Text style={styles.actionCardTitle}>Post Announcement</Text>
+                          <Text style={styles.actionCardDesc}>Broadcast updates to all students</Text>
+                        </View>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.actionCard}>
-                        <ClipboardList color="#2563eb" size={20} />
-                        <Text style={styles.actionCardText}>Assign New Task</Text>
+
+                      <TouchableOpacity style={styles.premiumActionCard}>
+                        <View style={[styles.actionIconContainer, { backgroundColor: '#f5f3ff' }]}>
+                          <ClipboardList color="#7c3aed" size={20} />
+                        </View>
+                        <View style={styles.actionTextContainer}>
+                          <Text style={styles.actionCardTitle}>Assign New Task</Text>
+                          <Text style={styles.actionCardDesc}>Create individual assignments</Text>
+                        </View>
                       </TouchableOpacity>
                     </>
                   )}
@@ -290,16 +323,16 @@ export default function App() {
   );
 }
 
-const ActionBtn = ({ icon, label, onPress }: any) => (
+const ActionBtn = ({ icon, label, onPress, color }: any) => (
   <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
-    <View style={styles.actionIcon}>{icon}</View>
+    <View style={[styles.actionIcon, { backgroundColor: color || '#eff6ff' }]}>{icon}</View>
     <Text style={styles.actionLabel}>{label}</Text>
   </TouchableOpacity>
 );
 
-const StatBox = ({ label, value }: any) => (
-  <View style={styles.statBox}>
-    <Text style={styles.statValue}>{value}</Text>
+const StatBox = ({ label, value, color, textColor }: any) => (
+  <View style={[styles.statBox, { backgroundColor: color || '#fff' }]}>
+    <Text style={[styles.statValue, { color: textColor || '#2563eb' }]}>{value}</Text>
     <Text style={styles.statLabel}>{label}</Text>
   </View>
 );
@@ -396,143 +429,207 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingVertical: 24,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
+    zIndex: 10,
   },
   welcomeLabel: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#64748b',
+    fontWeight: '500',
   },
   userName: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#1e293b',
+    color: '#0f172a',
+    marginTop: 2,
   },
   logoutBtn: {
-    padding: 10,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#fff1f2',
+    borderRadius: 16,
   },
   dashContent: {
     padding: 24,
+    paddingTop: 32,
   },
   statusCard: {
     backgroundColor: '#fffbeb',
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 32,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
     borderWidth: 1,
     borderColor: '#fef3c7',
+  },
+  statusIconBg: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#fef3c7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   statusTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#92400e',
-    marginTop: 12,
   },
   statusDesc: {
     fontSize: 14,
     color: '#b45309',
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 8,
+    lineHeight: 20,
   },
   enrollCard: {
     backgroundColor: '#fff',
     padding: 32,
-    borderRadius: 32,
+    borderRadius: 40,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  enrollIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: '#eff6ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   enrollTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
     color: '#1e293b',
-    marginTop: 16,
   },
   enrollDesc: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#64748b',
     textAlign: 'center',
     marginTop: 8,
+    lineHeight: 22,
+  },
+  sectionHeader: {
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 16,
+    color: '#0f172a',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 2,
   },
   actionGrid: {
     flexDirection: 'row',
     gap: 16,
+    marginBottom: 32,
   },
   actionBtn: {
     flex: 1,
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 24,
+    paddingVertical: 24,
+    borderRadius: 32,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: '#eff6ff',
+    width: 56,
+    height: 56,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
   },
   actionLabel: {
-    fontWeight: '700',
-    color: '#475569',
+    fontWeight: '800',
+    color: '#334155',
     fontSize: 14,
   },
   instructorStats: {
     flexDirection: 'row',
     gap: 16,
-    marginBottom: 24,
+    marginBottom: 32,
   },
   statBox: {
     flex: 1,
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 24,
+    padding: 24,
+    borderRadius: 32,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#2563eb',
+    fontSize: 32,
+    fontWeight: '900',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748b',
     fontWeight: '700',
     marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  actionCard: {
+  premiumActionCard: {
     backgroundColor: '#fff',
     padding: 20,
-    borderRadius: 20,
+    borderRadius: 24,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  actionCardText: {
-    marginLeft: 12,
-    fontSize: 16,
-    fontWeight: '700',
+  actionIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionTextContainer: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  actionCardTitle: {
+    fontSize: 17,
+    fontWeight: '800',
     color: '#1e293b',
+  },
+  actionCardDesc: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 2,
   },
   scannerContainer: {
     flex: 1,
@@ -542,26 +639,34 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingBottom: 40,
+    paddingBottom: 60,
   },
   scannerText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 20,
+    fontWeight: '800',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 20,
+    marginBottom: 32,
+    overflow: 'hidden',
   },
   cancelScanBtn: {
     backgroundColor: '#ef4444',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 30,
+    paddingHorizontal: 40,
+    paddingVertical: 18,
+    borderRadius: 24,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 10,
   },
   cancelScanBtnText: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 16,
+    letterSpacing: 1,
   }
 });

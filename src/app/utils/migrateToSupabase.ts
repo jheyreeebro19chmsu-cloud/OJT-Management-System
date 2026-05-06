@@ -1,9 +1,9 @@
 /**
  * Migration utility to help transfer data from localStorage to Supabase
- * 
+ *
  * This is a one-time migration script that can be run from the browser console
  * to transfer existing localStorage data to your Supabase database.
- * 
+ *
  * Usage:
  * 1. Open browser console
  * 2. Import this module

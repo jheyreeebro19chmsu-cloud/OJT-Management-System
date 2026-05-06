@@ -1,10 +1,23 @@
+import {
+  BarChart3,
+  Users,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  Loader,
+  Plus,
+  Link,
+  Search,
+} from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HTELayout } from '../components/HTELayout';
-import { getHTEDashboard, isHTEAuthenticated } from '../services/hteApi';
-import { BarChart3, Users, Clock, CheckCircle2, AlertCircle, TrendingUp, Loader, Plus, Link, Search } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
+
+import { HTELayout } from '../components/HTELayout';
+import { supabase } from '../lib/supabase';
+import { getHTEDashboard, isHTEAuthenticated } from '../services/hteApi';
+
 
 interface DashboardMetrics {
   total_applications: number;
@@ -66,44 +79,39 @@ export function HTEDashboard() {
   };
 
   const fetchLinkedStudents = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from('hte_student_access')
-      .select('*, employees(*)')
-      .eq('hte_id', user.id);
-    
+    const { data, error } = await supabase.from('hte_student_access').select('*, employees(*)').eq('hte_id', user.id);
+
     if (data) setLinkedStudents(data);
   };
 
   const handleLinkStudent = async () => {
     if (!searchId.trim()) return;
     setIsLinking(true);
-    
+
     try {
-      const { data: student } = await supabase
-        .from('employees')
-        .select('id')
-        .eq('id', searchId)
-        .single();
-      
+      const { data: student } = await supabase.from('employees').select('id').eq('id', searchId).single();
+
       if (!student) {
         toast.error('Student ID not found');
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from('hte_student_access')
-        .insert({
-          hte_id: user?.id,
-          student_id: student.id,
-          status: 'pending'
-        });
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const { error } = await supabase.from('hte_student_access').insert({
+        hte_id: user?.id,
+        student_id: student.id,
+        status: 'pending',
+      });
+
       if (error) throw error;
-      
+
       toast.success('Access request sent to Instructor');
       setSearchId('');
       fetchLinkedStudents();
@@ -217,22 +225,24 @@ export function HTEDashboard() {
             </div>
             <div>
               <h3 className="text-lg font-bold text-gray-900">Link New Student</h3>
-              <p className="text-sm text-gray-500">Enter student ID from their mobile app to request monitoring access</p>
+              <p className="text-sm text-gray-500">
+                Enter student ID from their mobile app to request monitoring access
+              </p>
             </div>
           </div>
-          
+
           <div className="flex gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={searchId}
-                onChange={e => setSearchId(e.target.value)}
+                onChange={(e) => setSearchId(e.target.value)}
                 placeholder="Enter Student ID (UUID)..."
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               />
             </div>
-            <button 
+            <button
               onClick={handleLinkStudent}
               disabled={isLinking || !searchId}
               className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-2"
@@ -247,18 +257,22 @@ export function HTEDashboard() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h3 className="text-lg font-bold text-gray-900 mb-6">Monitoring Access</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {linkedStudents.map(link => (
+            {linkedStudents.map((link) => (
               <div key={link.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50">
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="font-bold text-gray-800">{link.employees?.name}</p>
                     <p className="text-xs text-gray-500">{link.employees?.course}</p>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
-                    link.status === 'approved' ? 'bg-green-100 text-green-700' : 
-                    link.status === 'rejected' ? 'bg-red-100 text-red-700' : 
-                    'bg-amber-100 text-amber-700'
-                  }`}>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
+                      link.status === 'approved'
+                        ? 'bg-green-100 text-green-700'
+                        : link.status === 'rejected'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
                     {link.status}
                   </span>
                 </div>
@@ -356,9 +370,7 @@ export function HTEDashboard() {
                       <td className="px-6 py-4 text-sm">
                         <span
                           className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            record.is_approved
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-yellow-100 text-yellow-800'
+                            record.is_approved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
                           {record.is_approved ? 'Approved' : 'Pending'}
