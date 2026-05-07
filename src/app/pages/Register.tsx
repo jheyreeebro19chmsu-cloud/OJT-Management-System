@@ -428,7 +428,7 @@ export function Register() {
     const newEmp = registerEmployee({
       ...form,
       employeeId: empId,
-      position: role === 'admin' ? 'OJT Instructor' : 'OJT Trainee',
+      position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
       requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
       faceRegistered,
       photo,
@@ -537,8 +537,18 @@ export function Register() {
       if (step === 0) {
         const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
         if (!hasAge) errors.push('Birthdate/Age');
-        // Email Verification Code check removed
         if (locationStatus !== 'captured') errors.push('Capture Location');
+      }
+    }
+
+    if (role === 'hte') {
+      if (step === 0) {
+        if (!form.companyName?.trim()) errors.push('Company Name');
+        if (locationStatus !== 'captured') errors.push('Company Location');
+      }
+      if (step === 1) {
+        if (!form.contactPerson?.trim()) errors.push('Contact Person');
+        if (!form.contactPhone?.trim()) errors.push('Contact Phone');
       }
     }
 
@@ -650,11 +660,13 @@ export function Register() {
                 ? 'Select Registration Type'
                 : role === 'admin'
                   ? 'OJT Instructor Registration'
-                  : 'Trainee Registration'}
+                  : role === 'hte'
+                    ? 'HTE Representative Registration'
+                    : 'Trainee Registration'}
             </h1>
             {role !== null && (
               <p className="text-blue-200 text-xs">
-                Step {step + 1} of {steps.length}
+                Step {step + 1} of {steps.length} • {steps[step]}
               </p>
             )}
           </div>
@@ -740,23 +752,25 @@ export function Register() {
                   </div>
                 </button>
 
-                <button
-                  onClick={() => selectRole('hte')}
-                  className="w-full p-5 border-2 border-green-200 rounded-2xl hover:border-green-500 hover:bg-green-50 transition-all text-left group"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 transition-colors shrink-0">
-                      <Building size={28} className="text-green-600 group-hover:text-white" />
+                {new URLSearchParams(window.location.search).get('h') === 'hte' && (
+                  <button
+                    onClick={() => selectRole('hte')}
+                    className="w-full p-5 border-2 border-green-200 rounded-2xl hover:border-green-500 hover:bg-green-50 transition-all text-left group"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 transition-colors shrink-0">
+                        <Building size={28} className="text-green-600 group-hover:text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
+                        <p className="text-xs text-gray-500">
+                          Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
+                          manage registrations.
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
-                      <p className="text-xs text-gray-500">
-                        Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
-                        manage registrations.
-                      </p>
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                )}
 
                 <div className="mt-6 pt-4 border-t border-gray-100">
                   <p className="text-center text-xs text-gray-400">
