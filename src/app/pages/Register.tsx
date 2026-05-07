@@ -492,10 +492,6 @@ export function Register() {
       employees.some((e) => e.email.toLowerCase() === form.email.toLowerCase()) ||
       hostSupervisors.some((h) => h.email.toLowerCase() === form.email.toLowerCase());
 
-    if (hasEmail && emailExists) {
-      errors.push('this email is already use');
-    }
-
     const hasUpper = /[A-Z]/.test(form.password);
     const hasLower = /[a-z]/.test(form.password);
     const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
@@ -514,27 +510,35 @@ export function Register() {
           : Boolean(form.province)
         : true;
 
-    if (!hasName) errors.push('Full Name');
-    if (!hasEmail) errors.push('Valid Email');
-    if (!hasValidPassword) {
-      if (!hasLength) errors.push('Password (min 8 chars)');
-      if (!hasUpper || !hasLower) errors.push('Password (upper & lower case)');
-      if (!hasSpecial) errors.push('Password (special char)');
-      if (!passwordsMatch) errors.push("Passwords don't match");
-    }
-    if (!hasValidCountry) errors.push('Country');
-    if (!hasValidRegion) errors.push('Region');
-    if (!hasValidProvince) errors.push('Province');
-    if (!hasValidCity) errors.push('City/Municipality');
-    if (!hasValidBarangay) errors.push('Barangay');
-
+    // Role-specific and Step-specific Validation
     if (role === 'admin') {
-      if (!form.department?.trim()) errors.push('Department');
-      if (!form.course?.trim()) errors.push('Course');
+      if (step === 0) {
+        if (!hasName) errors.push('Full Name');
+        if (!hasEmail) errors.push('Valid Email');
+        if (hasEmail && emailExists) errors.push('Email already in use');
+        if (!hasValidPassword) errors.push('Password');
+        if (!hasValidCountry) errors.push('Country');
+        if (!hasValidRegion) errors.push('Region');
+        if (!hasValidProvince) errors.push('Province');
+        if (!hasValidCity) errors.push('City/Municipality');
+        if (!hasValidBarangay) errors.push('Barangay');
+        if (!form.department?.trim()) errors.push('Department');
+        if (!form.course?.trim()) errors.push('Course');
+      }
     }
 
     if (role === 'trainee') {
       if (step === 0) {
+        if (!hasName) errors.push('Full Name');
+        if (!hasEmail) errors.push('Valid Email');
+        if (hasEmail && emailExists) errors.push('Email already in use');
+        if (!hasValidPassword) errors.push('Password');
+        if (!hasValidCountry) errors.push('Country');
+        if (!hasValidRegion) errors.push('Region');
+        if (!hasValidProvince) errors.push('Province');
+        if (!hasValidCity) errors.push('City/Municipality');
+        if (!hasValidBarangay) errors.push('Barangay');
+        
         const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
         if (!hasAge) errors.push('Birthdate/Age');
         if (locationStatus !== 'captured') errors.push('Capture Location');
@@ -544,9 +548,18 @@ export function Register() {
     if (role === 'hte') {
       if (step === 0) {
         if (!form.companyName?.trim()) errors.push('Company Name');
+        if (!hasValidCountry) errors.push('Country');
+        if (!hasValidRegion) errors.push('Region');
+        if (!hasValidProvince) errors.push('Province');
+        if (!hasValidCity) errors.push('City/Municipality');
+        if (!hasValidBarangay) errors.push('Barangay');
         if (locationStatus !== 'captured') errors.push('Company Location');
       }
       if (step === 1) {
+        if (!hasName) errors.push('Contact Name');
+        if (!hasEmail) errors.push('Contact Email');
+        if (hasEmail && emailExists) errors.push('Email already in use');
+        if (!hasValidPassword) errors.push('Password');
         if (!form.contactPerson?.trim()) errors.push('Contact Person');
         if (!form.contactPhone?.trim()) errors.push('Contact Phone');
       }
