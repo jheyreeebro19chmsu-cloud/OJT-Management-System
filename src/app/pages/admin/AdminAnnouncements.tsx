@@ -14,6 +14,7 @@ import {
   Eye,
   Download,
   Printer,
+  Camera,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
@@ -446,29 +447,41 @@ export function AdminAnnouncements() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Photo URL (optional)</label>
-                  <input
-                    value={form.photo}
-                    onChange={(e) => upd('photo', e.target.value)}
-                    placeholder="https://... or data:image/... "
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                  />
-                  <div className="mt-2">
-                    <label className="text-xs font-semibold text-gray-600 block mb-1.5">Upload Photo (optional)</label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          upd('photo', String(reader.result || ''));
-                        };
-                        reader.readAsDataURL(f);
-                      }}
-                      className="w-full"
-                    />
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Photo (optional)</label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all text-gray-500 hover:text-blue-600">
+                      <Camera size={18} />
+                      <span className="text-sm font-medium">Choose from device</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            upd('photo', String(reader.result || ''));
+                          };
+                          reader.readAsDataURL(f);
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                    {form.photo && (
+                      <div className="relative shrink-0">
+                        <img
+                          src={form.photo}
+                          className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md"
+                          alt="Preview"
+                        />
+                        <button
+                          onClick={() => upd('photo', '')}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
