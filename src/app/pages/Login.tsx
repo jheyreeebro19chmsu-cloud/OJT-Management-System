@@ -25,7 +25,10 @@ export function Login() {
     const user = login(email, password);
     if (user) {
       if (user.role === 'admin') navigate('/admin');
-      else if (user.role === 'host') navigate('/host/feedback');
+      else if (user.role === 'hte') {
+        localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+        navigate('/hte/dashboard');
+      } else if (user.role === 'host') navigate('/host/feedback');
       else navigate('/app');
     } else {
       setError('Invalid email or password. Please try again.');
@@ -72,12 +75,12 @@ export function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email Address</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email or Username</label>
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="email or username"
                 required
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
               />

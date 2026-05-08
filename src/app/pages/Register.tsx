@@ -88,6 +88,7 @@ export function Register() {
     street: '',
     barangay: '',
     barangay_manual: '',
+    username: '',
     password: '',
     confirmPassword: '',
   });
@@ -570,6 +571,7 @@ export function Register() {
         if (!hasEmail) errors.push('Contact Email');
         if (hasEmail && emailExists) errors.push('Email already in use');
         if (!hasValidPassword) errors.push('Password');
+        if (!form.username?.trim()) errors.push('Username');
         if (!form.contactPerson?.trim()) errors.push('Contact Person');
         if (!form.contactPhone?.trim()) errors.push('Contact Phone');
       }
@@ -1672,6 +1674,17 @@ export function Register() {
                           value={form.contactPerson}
                           onChange={(e) => update('contactPerson', e.target.value)}
                           placeholder="Full Name of Representative"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Username *
+                        </label>
+                        <input
+                          value={form.username}
+                          onChange={(e) => update('username', e.target.value)}
+                          placeholder="choose_a_username"
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
                       </div>

@@ -1,6 +1,7 @@
 import { KeyRound, ShieldCheck, Info } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { HTELayout } from '../components/HTELayout';
@@ -8,6 +9,7 @@ import { useApp } from '../store/AppContext';
 
 
 export function HTESettings() {
+  const navigate = useNavigate();
   const { changeCurrentUserPassword } = useApp();
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
   const [loading, setLoading] = useState(false);
@@ -32,6 +34,16 @@ export function HTESettings() {
       setPasswordForm({ current: '', new: '', confirm: '' });
     } else {
       toast.error(result.message);
+    }
+  };
+
+  const handleCloseAccount = () => {
+    if (window.confirm('Are you sure you want to close your account? You will be logged out immediately.')) {
+      // In a real app, this would call an API to set active: false
+      localStorage.removeItem('ojt_hte_user');
+      localStorage.removeItem('ojt_jwt_access_token');
+      toast.success('Account closed successfully');
+      navigate('/login');
     }
   };
 
@@ -120,6 +132,26 @@ export function HTESettings() {
               </button>
             </div>
           </form>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-red-50 rounded-2xl border border-red-100 p-6 flex items-center justify-between gap-4"
+        >
+          <div>
+            <h3 className="text-lg font-bold text-red-900">Close Account</h3>
+            <p className="text-sm text-red-700">
+              Deactivate your HTE account session and log out. This effectively closes your current access.
+            </p>
+          </div>
+          <button
+            onClick={handleCloseAccount}
+            className="px-6 py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all shrink-0"
+          >
+            Close Account
+          </button>
         </motion.div>
       </div>
     </HTELayout>

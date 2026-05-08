@@ -2,6 +2,7 @@ export interface Employee {
   id: string;
   name: string;
   employeeId: string;
+  username?: string;
   email: string;
   department: string;
   position: string;
@@ -60,7 +61,7 @@ export interface AppSettings {
 export interface User {
   id: string;
   name: string;
-  role: 'employee' | 'admin' | 'host';
+  role: 'employee' | 'admin' | 'host' | 'hte';
   employeeId?: string;
 }
 

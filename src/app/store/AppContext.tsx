@@ -591,14 +591,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPasswords((prev) => ({ ...prev, [normalizeEmail(email)]: password }));
   };
 
-  const login = (email: string, password: string): User | null => {
-    const normalizedEmail = normalizeEmail(email);
-    const emp = employees.find((e) => normalizeEmail(e.email) === normalizedEmail && e.active);
+  const login = (identifier: string, password: string): User | null => {
+    const normalizedId = identifier.toLowerCase().trim();
+    const emp = employees.find(
+      (e) =>
+        (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active
+    );
     if (emp) {
-      const storedPassword = passwords[normalizedEmail];
-      const fallbackPassword = emp.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
+      const storedPassword = passwords[normalizeEmail(emp.email)];
+      const fallbackPassword =
+        emp.position === 'OJT Instructor' ? 'admin123' : emp.position === 'HTE Representative' ? 'hte123' : 'ojt2024';
       if (password === (storedPassword || fallbackPassword)) {
-        const role: User['role'] = emp.position === 'OJT Instructor' ? 'admin' : 'employee';
+        const role: User['role'] =
+          emp.position === 'OJT Instructor' ? 'admin' : emp.position === 'HTE Representative' ? 'hte' : 'employee';
         const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id };
         setCurrentUser(user);
         return user;
@@ -606,9 +611,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedEmail && h.active);
+    const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedId && h.active);
     if (host) {
-      const storedPassword = passwords[normalizedEmail];
+      const storedPassword = passwords[normalizedId];
       if (password === storedPassword) {
         const user: User = { id: host.id, name: host.name, role: 'host' };
         setCurrentUser(user);
@@ -617,7 +622,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    if (normalizedEmail === 'admin@ojt.com' && password === 'admin123') {
+    if (normalizedId === 'admin@ojt.com' && password === 'admin123') {
       const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin' };
       setCurrentUser(user);
       return user;
