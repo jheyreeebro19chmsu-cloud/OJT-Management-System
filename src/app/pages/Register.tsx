@@ -765,25 +765,23 @@ export function Register() {
                   </div>
                 </button>
 
-                {new URLSearchParams(window.location.search).get('h') === 'hte' && (
-                  <button
-                    onClick={() => selectRole('hte')}
-                    className="w-full p-5 border-2 border-green-200 rounded-2xl hover:border-green-500 hover:bg-green-50 transition-all text-left group"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 transition-colors shrink-0">
-                        <Building size={28} className="text-green-600 group-hover:text-white" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
-                        <p className="text-xs text-gray-500">
-                          Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
-                          manage registrations.
-                        </p>
-                      </div>
+                <button
+                  onClick={() => selectRole('hte')}
+                  className="w-full p-5 border-2 border-green-200 rounded-2xl hover:border-green-500 hover:bg-green-50 transition-all text-left group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 transition-colors shrink-0">
+                      <Building size={28} className="text-green-600 group-hover:text-white" />
                     </div>
-                  </button>
-                )}
+                    <div className="flex-1">
+                      <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
+                      <p className="text-xs text-gray-500">
+                        Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
+                        provide feedback on their performance.
+                      </p>
+                    </div>
+                  </div>
+                </button>
 
                 <div className="mt-6 pt-4 border-t border-gray-100">
                   <p className="text-center text-xs text-gray-400">
