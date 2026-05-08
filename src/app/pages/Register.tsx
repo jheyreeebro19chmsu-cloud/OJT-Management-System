@@ -543,6 +543,16 @@ export function Register() {
         if (!hasAge) errors.push('Birthdate/Age');
         if (locationStatus !== 'captured') errors.push('Capture Location');
       }
+      if (step === 1) {
+        if (!form.companyName?.trim()) errors.push('Company Name');
+        if (!form.startDate) errors.push('Start Date');
+        if (!form.endDate) errors.push('End Date');
+        if (!form.requiredHours) errors.push('OJT Hours');
+      }
+      if (step === 2) {
+        if (!form.schoolName?.trim()) errors.push('School Name');
+        if (!form.course?.trim()) errors.push('Course');
+      }
     }
 
     if (role === 'hte') {
@@ -1636,7 +1646,7 @@ export function Register() {
               </motion.div>
             )}
 
-            {role !== null && step === 1 && (
+            {role !== null && role !== 'admin' && step === 1 && (
               <motion.div
                 key="step1"
                 initial={{ opacity: 0, x: 20 }}
@@ -1647,56 +1657,96 @@ export function Register() {
                   <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
                     <Building size={16} className="text-sky-700" />
                   </div>
-                  <h2 className="font-bold text-gray-800">Company Information</h2>
+                  <h2 className="font-bold text-gray-800">
+                    {role === 'hte' ? 'Contact Information' : 'Company Information'}
+                  </h2>
                 </div>
                 <div className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
-                    <input
-                      value={form.companyName}
-                      onChange={(e) => update('companyName', e.target.value)}
-                      placeholder="Company Name"
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
-                    <input
-                      value={form.supervisorName}
-                      onChange={(e) => update('supervisorName', e.target.value)}
-                      placeholder="Mr./Ms. Supervisor"
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
-                      <input
-                        type="date"
-                        value={form.startDate}
-                        onChange={(e) => update('startDate', e.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
-                      <input
-                        type="date"
-                        value={form.endDate}
-                        onChange={(e) => update('endDate', e.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
-                    <input
-                      type="number"
-                      value={form.requiredHours}
-                      onChange={(e) => update('requiredHours', e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                    />
-                  </div>
+                  {role === 'hte' ? (
+                    <>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Contact Person / Representative *
+                        </label>
+                        <input
+                          value={form.contactPerson}
+                          onChange={(e) => update('contactPerson', e.target.value)}
+                          placeholder="Full Name of Representative"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Contact Phone / Mobile *
+                        </label>
+                        <input
+                          value={form.contactPhone}
+                          onChange={(e) => update('contactPhone', e.target.value)}
+                          placeholder="e.g. 09123456789"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Position / Title</label>
+                        <input
+                          value={form.supervisorName}
+                          onChange={(e) => update('supervisorName', e.target.value)}
+                          placeholder="e.g. HR Manager"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
+                        <input
+                          value={form.companyName}
+                          onChange={(e) => update('companyName', e.target.value)}
+                          placeholder="Company Name"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
+                        <input
+                          value={form.supervisorName}
+                          onChange={(e) => update('supervisorName', e.target.value)}
+                          placeholder="Mr./Ms. Supervisor"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
+                          <input
+                            type="date"
+                            value={form.startDate}
+                            onChange={(e) => update('startDate', e.target.value)}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
+                          <input
+                            type="date"
+                            value={form.endDate}
+                            onChange={(e) => update('endDate', e.target.value)}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
+                        <input
+                          type="number"
+                          value={form.requiredHours}
+                          onChange={(e) => update('requiredHours', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </motion.div>
             )}
