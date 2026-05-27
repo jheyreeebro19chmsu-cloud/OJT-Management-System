@@ -83,6 +83,24 @@ const server = http.createServer((req, res) => {
 
       fs.readFile(filePath, (readErr, content) => {
         if (readErr) {
+          if (filePath.endsWith('index.html')) {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.end(`<!DOCTYPE html>
+<html>
+<head><title>OJT Management System</title></head>
+<body>
+  <div style="font-family: sans-serif; padding: 40px; text-align: center;">
+    <h2>OJT Management System</h2>
+    <p>The static assets directory was not found or is still building.</p>
+    <p style="color: gray; font-size: 12px;">Path: ${filePath}</p>
+  </div>
+</body>
+</html>`);
+            console.warn(`Served health-check fallback because index.html was missing at ${filePath}`);
+            return;
+          }
+
           res.statusCode = 500;
           res.setHeader('Content-Type', 'text/plain');
           res.end('500 Internal Server Error');
