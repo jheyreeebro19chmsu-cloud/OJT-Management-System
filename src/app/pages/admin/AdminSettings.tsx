@@ -63,8 +63,8 @@ export function AdminSettings() {
     }
   };
 
-  const handlePasswordChange = () => {
-    const result = changeCurrentUserPassword(currentPassword, newPassword);
+  const handlePasswordChange = async () => {
+    const result = await changeCurrentUserPassword(currentPassword, newPassword);
     if (result.success) {
       toast.success(result.message);
       setCurrentPassword('');

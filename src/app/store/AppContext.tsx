@@ -255,7 +255,7 @@ interface AppContextType {
   hostSupervisors: HostSupervisor[];
   login: (email: string, password: string) => Promise<User | null>;
   logout: () => void;
-  changeCurrentUserPassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
+  changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   registerEmployee: (data: RegisterEmployeeInput) => Employee;
   updateEmployee: (id: string, data: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
@@ -710,12 +710,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return employee ? normalizeEmail(employee.email) : null;
   };
 
-  const changeCurrentUserPassword = (
+  const changeCurrentUserPassword = async (
     currentPassword: string,
     newPassword: string
-  ): { success: boolean; message: string } => {
+  ): Promise<{ success: boolean; message: string }> => {
     const email = getCurrentUserEmail();
     if (!email) return { success: false, message: 'Current account not found.' };
+
+    if (useSupabase) {
+      try {
+        // 1. Verify the current password by signing in
+        const { error: verifyError } = await supabase.auth.signInWithPassword({
+          email: email,
+          password: currentPassword,
+        });
+
+        if (verifyError) {
+          return { success: false, message: 'Current password is incorrect.' };
+        }
+
+        // 2. Update to the new password in Supabase Auth
+        if (!newPassword || newPassword.length < 6) {
+          return { success: false, message: 'New password must be at least 6 characters.' };
+        }
+
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+        if (updateError) {
+          return { success: false, message: updateError.message };
+        }
+
+        return { success: true, message: 'Password updated successfully.' };
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Failed to update password.' };
+      }
+    }
+
+    // Local / Offline fallback logic
     const account = employees.find((e) => normalizeEmail(e.email) === email);
     const fallbackPassword = account?.position === 'OJT Instructor' ? 'admin123' : 'ojt2024';
     const existingPassword = passwords[email] || fallbackPassword;
@@ -734,7 +767,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const registerEmployee = (data: RegisterEmployeeInput): Employee => {
     const { password, ...employeeData } = data;
-    if (password) {
+    if (password && !useSupabase) {
       setPasswordForEmail(employeeData.email, password);
     }
 
