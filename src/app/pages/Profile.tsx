@@ -17,6 +17,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
+import { getPhotoUrl } from '../services/config';
 
 
 const GRADE_CONFIG = {
@@ -107,7 +108,7 @@ export function Profile() {
             <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center overflow-hidden">
               {employee.photo ? (
                 <img
-                  src={employee.photo}
+                  src={getPhotoUrl(employee.photo)}
                   alt={employee.name}
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}

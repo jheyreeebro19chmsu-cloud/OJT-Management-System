@@ -43,4 +43,14 @@ export const getSecurityApiKey = (): string => {
 export const API_BASE = getApiBase();
 export const SECURITY_API_KEY = getSecurityApiKey();
 
+export const getPhotoUrl = (photoPath: string | null | undefined): string => {
+  if (!photoPath) return '';
+  if (photoPath.startsWith('http://') || photoPath.startsWith('https://') || photoPath.startsWith('data:')) {
+    return photoPath;
+  }
+  const serverRoot = API_BASE.replace(/\/api$/, '').replace(/\/+$/, '');
+  const cleanPath = photoPath.startsWith('/') ? photoPath : `/${photoPath}`;
+  return `${serverRoot}${cleanPath}`;
+};
+
 console.log(`[Config] Resolved API_BASE: "${API_BASE}"`);

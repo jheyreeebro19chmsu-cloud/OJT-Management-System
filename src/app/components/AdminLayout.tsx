@@ -17,6 +17,7 @@ import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
+import { getPhotoUrl } from '../services/config';
 
 
 const navItems = [
@@ -91,7 +92,7 @@ export function AdminLayout() {
             <div className="w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center overflow-hidden">
               {employee?.photo ? (
                 <img
-                  src={employee.photo}
+                  src={getPhotoUrl(employee.photo)}
                   alt={employee.name}
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}
@@ -199,7 +200,7 @@ export function AdminLayout() {
               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
                 {employee?.photo ? (
                   <img
-                    src={employee.photo}
+                    src={getPhotoUrl(employee.photo)}
                     alt={employee.name}
                     className="w-full h-full object-cover"
                     style={{ transform: 'scaleX(-1)' }}

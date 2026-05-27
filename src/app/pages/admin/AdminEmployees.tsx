@@ -7,6 +7,7 @@ import { FaceCapture } from '../../components/FaceCapture';
 import { isSecurityApiConfigured, registerFace } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
 import { Employee } from '../../types';
+import { getPhotoUrl } from '../../services/config';
 
 
 
@@ -147,7 +148,7 @@ export function AdminEmployees() {
                     <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
                       {emp.photo ? (
                         <img
-                          src={emp.photo}
+                          src={getPhotoUrl(emp.photo)}
                           alt=""
                           className="w-full h-full object-cover"
                           style={{ transform: 'scaleX(-1)' }}
@@ -210,7 +211,7 @@ export function AdminEmployees() {
                     <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
                       {emp.photo ? (
                         <img
-                          src={emp.photo}
+                          src={getPhotoUrl(emp.photo)}
                           alt=""
                           className="w-full h-full object-cover"
                           style={{ transform: 'scaleX(-1)' }}
@@ -340,7 +341,7 @@ export function AdminEmployees() {
                         <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden">
                           {selectedEmp.photo ? (
                             <img
-                              src={selectedEmp.photo}
+                              src={getPhotoUrl(selectedEmp.photo)}
                               alt=""
                               className="w-full h-full object-cover"
                               style={{ transform: 'scaleX(-1)' }}

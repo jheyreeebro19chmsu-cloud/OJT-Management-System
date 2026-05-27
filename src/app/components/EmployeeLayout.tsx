@@ -4,6 +4,7 @@ import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
+import { getPhotoUrl } from '../services/config';
 
 
 const navItems = [
@@ -33,7 +34,7 @@ export function EmployeeLayout() {
             <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow overflow-hidden">
               {employee?.photo ? (
                 <img
-                  src={employee.photo}
+                  src={getPhotoUrl(employee.photo)}
                   alt={employee.name}
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}
@@ -100,7 +101,7 @@ export function EmployeeLayout() {
               <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center shadow overflow-hidden">
                 {employee?.photo ? (
                   <img
-                    src={employee.photo}
+                    src={getPhotoUrl(employee.photo)}
                     alt={employee.name}
                     className="w-full h-full object-cover"
                     style={{ transform: 'scaleX(-1)' }}
