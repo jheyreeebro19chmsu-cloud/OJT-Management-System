@@ -3,11 +3,37 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION AT STARTUP/RUNTIME:', reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 10000;
 const DIST_DIR = path.join(__dirname, 'dist');
+
+// Check at startup if dist directory and index.html exist
+try {
+  if (fs.existsSync(DIST_DIR)) {
+    console.log(`✓ Startup check: Directory ${DIST_DIR} exists.`);
+    const indexPath = path.join(DIST_DIR, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      console.log(`✓ Startup check: index.html exists at ${indexPath}.`);
+    } else {
+      console.warn(`⚠ Startup check: index.html is MISSING at ${indexPath}!`);
+    }
+  } else {
+    console.warn(`⚠ Startup check: Directory ${DIST_DIR} is MISSING! Did the build command run successfully?`);
+  }
+} catch (e) {
+  console.error('Failed to perform startup file checks:', e);
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -82,7 +108,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running at http://0.0.0.0:${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
   console.log(`Serving static files from: ${DIST_DIR}`);
 });

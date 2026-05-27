@@ -11,7 +11,6 @@ import {
   ShieldCheck,
   Loader,
   UserCircle,
-  Search,
   X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,9 +25,10 @@ import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 
 
 import { PH_ADDRESS_DATA, BARANGAY_SAMPLES } from '../data/ph_address_data';
+import { Country, State, City } from 'country-state-city';
 
 
-import addressApi from '../services/addressApi';
+
 import { authAPI } from '../services/authApi';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
@@ -113,6 +113,13 @@ export function Register() {
   const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number } | undefined>();
   const [registrationAddress, setRegistrationAddress] = useState<string>('');
   const [showLocationMap, setShowLocationMap] = useState(false);
+
+  // Load complete lists using country-state-city
+  const allCountries = Country.getAllCountries();
+  const statesList = form.country && form.country !== 'other' ? State.getStatesOfCountry(form.country) : [];
+  const citiesList = form.country && form.country !== 'other' && form.region && form.region !== 'other'
+    ? City.getCitiesOfState(form.country, form.region)
+    : [];
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 
@@ -761,18 +768,13 @@ export function Register() {
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             >
-                              <option value="PH">Philippines</option>
-                              <option value="US">United States</option>
-                              <option value="other">Other (Type manually)</option>
+                              <option value="">Select Country</option>
+                              {allCountries.map((c) => (
+                                <option key={c.isoCode} value={c.isoCode}>
+                                  {c.name}
+                                </option>
+                              ))}
                             </select>
-                            {form.country === 'other' && (
-                              <input
-                                value={form.country_manual || ''}
-                                onChange={(e) => update('country_manual', e.target.value)}
-                                placeholder="Enter country name"
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mt-2"
-                              />
-                            )}
                           </div>
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">
@@ -795,7 +797,6 @@ export function Register() {
                                     {r.name}
                                   </option>
                                 ))}
-                                <option value="other">Other (Type manually)</option>
                               </select>
                             ) : (
                               <select
@@ -808,17 +809,13 @@ export function Register() {
                                 }}
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                               >
-                                <option value="">Select State</option>
-                                <option value="other">Other (Type manually)</option>
+                                <option value="">Select State/Region</option>
+                                {statesList.map((s) => (
+                                  <option key={s.isoCode} value={s.isoCode}>
+                                    {s.name}
+                                  </option>
+                                ))}
                               </select>
-                            )}
-                            {form.region === 'other' && (
-                              <input
-                                value={form.region_manual || ''}
-                                onChange={(e) => update('region_manual', e.target.value)}
-                                placeholder="Enter state/region name"
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mt-2"
-                              />
                             )}
                           </div>
                         </div>
@@ -845,16 +842,7 @@ export function Register() {
                                       {p.name}
                                     </option>
                                   ))}
-                                  <option value="other">Other (Type manually)</option>
                                 </select>
-                                {form.province === 'other' && (
-                                  <input
-                                    value={form.province_manual || ''}
-                                    onChange={(e) => update('province_manual', e.target.value)}
-                                    placeholder="Enter province name"
-                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                  />
-                                )}
                               </div>
                             ) : (
                               <div className="space-y-2">
@@ -863,30 +851,20 @@ export function Register() {
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
-                                    if (e.target.value !== 'other') {
-                                      const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country;
-                                      const fullAddr = `${e.target.value}, ${form.region}, ${countryName}`;
-                                      setRegistrationAddress(fullAddr);
-                                    }
+                                    const countryObj = Country.getCountryByCode(form.country);
+                                    const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                                    const fullAddr = `${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                                    setRegistrationAddress(fullAddr);
                                   }}
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
                                   <option value="">Select City</option>
-                                  <option value="other">Other (Type manually)</option>
+                                  {citiesList.map((c) => (
+                                    <option key={c.name} value={c.name}>
+                                      {c.name}
+                                    </option>
+                                  ))}
                                 </select>
-                                {form.city === 'other' && (
-                                  <input
-                                    value={form.city_manual || ''}
-                                    onChange={(e) => {
-                                      update('city_manual', e.target.value);
-                                      const countryName = form.country === 'other' ? form.country_manual : (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
-                                      const fullAddr = `${e.target.value}, ${form.region}, ${countryName}`;
-                                      setRegistrationAddress(fullAddr);
-                                    }}
-                                    placeholder="Enter city name"
-                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                  />
-                                )}
                               </div>
                             )}
                           </div>
@@ -901,10 +879,8 @@ export function Register() {
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
-                                    if (e.target.value !== 'other') {
-                                      const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
-                                      setRegistrationAddress(fullAddr);
-                                    }
+                                    const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
+                                    setRegistrationAddress(fullAddr);
                                   }}
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
@@ -916,30 +892,16 @@ export function Register() {
                                         {c}
                                       </option>
                                     ))}
-                                  <option value="other">Other (Type manually)</option>
                                 </select>
-                                {form.city === 'other' && (
-                                  <input
-                                    value={form.city_manual || ''}
-                                    onChange={(e) => {
-                                      update('city_manual', e.target.value);
-                                      const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
-                                      setRegistrationAddress(fullAddr);
-                                    }}
-                                    placeholder="Enter city name"
-                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                  />
-                                )}
                               </div>
                             ) : (
                               <input
                                 value={form.barangay}
                                 onChange={(e) => {
                                   update('barangay', e.target.value);
-                                  const countryName = form.country === 'other' ? form.country_manual : (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
-                                  const stateName = form.region === 'other' ? form.region_manual : form.region;
-                                  const cityName = form.city === 'other' ? form.city_manual : form.city;
-                                  const fullAddr = `${cityName}, ${e.target.value}, ${stateName}, ${countryName}`;
+                                  const countryObj = Country.getCountryByCode(form.country);
+                                  const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                                  const fullAddr = `${form.city}, ${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
                                   setRegistrationAddress(fullAddr);
                                 }}
                                 placeholder="Area/Street"
@@ -956,12 +918,10 @@ export function Register() {
                               value={form.barangay}
                               onChange={(e) => {
                                 update('barangay', e.target.value);
-                                if (e.target.value !== 'other') {
-                                  const cityName = form.city === 'other' ? form.city_manual : form.city;
-                                  const provName = form.province === 'other' ? form.province_manual : form.province;
-                                  const fullAddr = `${e.target.value}, ${cityName}, ${provName}, ${form.region}, Philippines`;
-                                  setRegistrationAddress(fullAddr);
-                                }
+                                const cityName = form.city;
+                                const provName = form.province;
+                                const fullAddr = `${e.target.value}, ${cityName}, ${provName}, ${form.region}, Philippines`;
+                                setRegistrationAddress(fullAddr);
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             >
@@ -971,22 +931,7 @@ export function Register() {
                                   {b}
                                 </option>
                               ))}
-                              <option value="other">Other (Type manually)</option>
                             </select>
-                            {form.barangay === 'other' && (
-                              <input
-                                value={form.barangay_manual || ''}
-                                onChange={(e) => {
-                                  update('barangay_manual', e.target.value);
-                                  const cityName = form.city === 'other' ? form.city_manual : form.city;
-                                  const provName = form.province === 'other' ? form.province_manual : form.province;
-                                  const fullAddr = `${e.target.value}, ${cityName}, ${provName}, ${form.region}, Philippines`;
-                                  setRegistrationAddress(fullAddr);
-                                }}
-                                placeholder="Type barangay name"
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mt-2"
-                              />
-                            )}
                           </div>
                         )}
 
@@ -1217,9 +1162,12 @@ export function Register() {
                             }}
                             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                           >
-                            <option value="PH">Philippines</option>
-                            <option value="US">United States</option>
-                            <option value="other">Other</option>
+                            <option value="">Select Country</option>
+                            {allCountries.map((c) => (
+                              <option key={c.isoCode} value={c.isoCode}>
+                                {c.name}
+                              </option>
+                            ))}
                           </select>
                         </div>
 
@@ -1256,8 +1204,12 @@ export function Register() {
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
-                              <option value="">Select State</option>
-                              <option value="other">Other (Manual Entry)</option>
+                              <option value="">Select State/Region</option>
+                              {statesList.map((s) => (
+                                <option key={s.isoCode} value={s.isoCode}>
+                                  {s.name}
+                                </option>
+                              ))}
                             </select>
                           )}
                         </div>
@@ -1320,14 +1272,19 @@ export function Register() {
                               onChange={(e) => {
                                 update('city', e.target.value);
                                 update('barangay', '');
-                                const countryName = (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
-                                const fullAddr = `${e.target.value}, ${form.region}, ${countryName}`;
+                                const countryObj = Country.getCountryByCode(form.country);
+                                const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                                const fullAddr = `${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
                                 setRegistrationAddress(fullAddr);
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
                               <option value="">Select City</option>
-                              <option value="other">Other (Manual Entry)</option>
+                              {citiesList.map((c) => (
+                                <option key={c.name} value={c.name}>
+                                  {c.name}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div>
@@ -1352,10 +1309,8 @@ export function Register() {
                               value={form.barangay}
                               onChange={(e) => {
                                 update('barangay', e.target.value);
-                                if (e.target.value !== 'other') {
-                                  const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
-                                  setRegistrationAddress(fullAddr);
-                                }
+                                const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
+                                setRegistrationAddress(fullAddr);
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
@@ -1365,29 +1320,16 @@ export function Register() {
                                   {b}
                                 </option>
                               ))}
-                              <option value="other">Other (Type manually)</option>
                             </select>
-                            {form.barangay === 'other' && (
-                              <input
-                                value={form.barangay_manual || ''}
-                                onChange={(e) => {
-                                  update('barangay_manual', e.target.value);
-                                  const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
-                                  setRegistrationAddress(fullAddr);
-                                }}
-                                placeholder="Enter barangay name"
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                              />
-                            )}
                           </div>
                         ) : (
                           <input
                             value={form.barangay}
                             onChange={(e) => {
                               update('barangay', e.target.value);
-                              const countryName = form.country === 'other' ? form.country_manual : (new Intl.DisplayNames(['en'], { type: 'region' }).of(form.country) || form.country);
-                              const stateName = form.region === 'other' ? form.region_manual : form.region;
-                              const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateName}, ${countryName}`;
+                              const countryObj = Country.getCountryByCode(form.country);
+                              const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                              const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
                               setRegistrationAddress(fullAddr);
                             }}
                             placeholder="e.g. Area name"
