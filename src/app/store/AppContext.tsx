@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-import { isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import {
@@ -690,7 +690,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     if (useSupabase) {
-      supabaseService.createEmployee(cleanData).then(async (created) => {
+      const signUpAndCreate = async () => {
+        let authId: string | undefined;
+        try {
+          if (password) {
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+              email: cleanData.email,
+              password: password,
+              options: {
+                data: {
+                  full_name: cleanData.name,
+                  role: cleanData.position === 'OJT Instructor' ? 'admin' : cleanData.position === 'HTE Representative' ? 'host' : 'employee',
+                }
+              }
+            });
+            if (!authError && authData.user) {
+              authId = authData.user.id;
+            } else if (authError) {
+              console.error('Supabase Auth SignUp Error:', authError.message);
+            }
+          }
+        } catch (e) {
+          console.error('Auth signup failed:', e);
+        }
+
+        const employeePayload = {
+          ...cleanData,
+          id: authId
+        };
+
+        const created = await supabaseService.createEmployee(employeePayload);
         if (created) {
           setEmployees((prev) => [created, ...prev]);
 
@@ -710,8 +739,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
           }
         }
-      }).catch((err) => {
-        console.error('Supabase employee creation failed:', err);
+      };
+
+      signUpAndCreate().catch((err) => {
+        console.error('Supabase registration flow failed:', err);
       });
     } else {
       setEmployees((prev) => [...prev, newEmp]);

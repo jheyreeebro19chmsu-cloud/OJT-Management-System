@@ -30,10 +30,10 @@ export async function fetchEmployees(): Promise<Employee[]> {
   return (data || []).map(transformSupabaseEmployee);
 }
 
-export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'>): Promise<Employee | null> {
+export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'> & { id?: string }): Promise<Employee | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const supabaseEmployee = {
+  const supabaseEmployee: any = {
     name: employee.name,
     employee_id: employee.employeeId,
     email: employee.email,
@@ -53,6 +53,10 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     registration_lng: employee.registrationLocation?.lng,
     registration_address: employee.registrationAddress,
   };
+
+  if (employee.id) {
+    supabaseEmployee.id = employee.id;
+  }
 
   const { data, error } = await supabase.from('employees').insert([supabaseEmployee]).select().single();
 
