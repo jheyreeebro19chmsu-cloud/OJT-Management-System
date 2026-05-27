@@ -6,6 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "start": "node server.js",
     "download-models": "node scripts/download-face-models.cjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\""
