@@ -236,13 +236,14 @@ export function FaceCapture({
       setScanMessage('Position your face within the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
-      // Allow UX to breathe
-      await delay(800);
+      // Allow UX to breathe and let camera sensor adjust exposure (2.5 seconds)
+      await delay(2500);
       setState('analyzing');
       setScanMessage('Detecting face...');
       setProgress(40);
 
-      await delay(500);
+      // Brief pause for biometric scanning alignment (1.0 second)
+      await delay(1000);
       setState('verifying');
       setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
       setProgress(80);
