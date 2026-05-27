@@ -41,7 +41,9 @@ def _json_body(request: HttpRequest) -> Dict[str, Any]:
     try:
         if request.body:
             return json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
+    except Exception:
+        # For multipart/form-data and other non-JSON bodies, decoding may fail
+        # (UnicodeDecodeError, JSONDecodeError, etc.). Return empty dict in that case.
         return {}
     return {}
 
@@ -270,8 +272,9 @@ def register_face(request: HttpRequest) -> JsonResponse:
                 "success": False,
                 "message": "No face detected in the image. Please try again with a clear photo."
             }, status=422)
-    except Exception as e:
-        # Don't fail the whole registration if encoding fails, but log it
+    except BaseException as e:
+        # face_recognition may raise SystemExit or other BaseExceptions when models are missing.
+        # Don't fail the whole registration if encoding fails, but log it.
         logger.error(f"Encoding extraction failed for {employee_id}: {e}")
 
     return JsonResponse({

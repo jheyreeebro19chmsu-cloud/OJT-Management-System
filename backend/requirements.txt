@@ -13,3 +13,4 @@ python-dateutil>=2.8.2
 dj-database-url
 psycopg2-binary
 resend>=0.6.0
+git+https://github.com/ageitgey/face_recognition_models

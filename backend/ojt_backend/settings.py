@@ -19,6 +19,10 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 _hosts = os.environ.get("DJANGO_ALLOWED_HOSTS", "").strip()
 ALLOWED_HOSTS = [h.strip() for h in _hosts.split(",") if h.strip()] if _hosts else ["*"]
 
+# Ensure test harness host is allowed for local smoke tests and test clients.
+if "testserver" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("testserver")
+
 SECURITY_API_KEY = (os.environ.get("DJANGO_SECURITY_API_KEY") or "").strip()
 FACE_RECOGNITION_TOLERANCE = float(os.environ.get("FACE_RECOGNITION_TOLERANCE", "0.6"))
 
