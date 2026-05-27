@@ -30,6 +30,35 @@ media storage solution before production use.
 Note: `face-recognition` requires native dependencies (dlib). Install them if the
 package fails to build on your machine.
 
+## Build prerequisites for face recognition
+
+The `face-recognition` Python package depends on native libraries (notably `dlib`) and
+requires system build tools to compile on the host machine. If you plan to install
+`face-recognition` or `face_recognition_models` locally (or run the CI job), ensure the
+following prerequisites are available:
+
+- On Windows:
+   - Install **Visual Studio Build Tools** (C++ toolchain) so `cl.exe` is available on PATH.
+      Download from: https://visualstudio.microsoft.com/downloads/ (look for "Build Tools for Visual Studio").
+   - Install **CMake** (https://cmake.org/) or add it to PATH. Newer Windows builds may also use the
+      installer from kitware.
+
+- On Ubuntu/Debian (CI uses these packages):
+   - `build-essential`, `cmake`, `libopenblas-dev`, `liblapack-dev`, `libjpeg-dev`, and `pkg-config`.
+      (The CI workflow installs these packages before pip.)
+
+After the system prerequisites are installed, install Python packages:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install git+https://github.com/ageitgey/face_recognition_models
+```
+
+If you encounter build errors when installing `dlib`/`face-recognition`, the common cause is
+missing C++ build tools or an unsupported compiler version. Installing the Visual Studio Build Tools
+on Windows or the packages listed above on Linux usually resolves this.
+
 ## API key for mobile prototype
 
 The mobile prototype can send a shared API key with requests. Set the key on the server
