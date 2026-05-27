@@ -25,7 +25,7 @@ export function Login() {
 
     // Local login
     await new Promise((r) => setTimeout(r, 800));
-    const user = login(email, password);
+    const user = await login(email, password);
     if (user) {
       if (user.role === 'admin') navigate('/admin');
       else if (user.role === 'hte') {

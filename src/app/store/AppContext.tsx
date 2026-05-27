@@ -253,7 +253,7 @@ interface AppContextType {
   announcementSubmissions: AnnouncementSubmission[];
   hostFeedback: HostFeedback[];
   hostSupervisors: HostSupervisor[];
-  login: (email: string, password: string) => User | null;
+  login: (email: string, password: string) => Promise<User | null>;
   logout: () => void;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
   registerEmployee: (data: RegisterEmployeeInput) => Employee;
@@ -592,8 +592,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPasswords((prev) => ({ ...prev, [normalizeEmail(email)]: password }));
   };
 
-  const login = (identifier: string, password: string): User | null => {
+  const login = async (identifier: string, password: string): Promise<User | null> => {
     const normalizedId = identifier.toLowerCase().trim();
+
+    if (useSupabase) {
+      let targetEmail = normalizedId;
+      const emp = employees.find(
+        (e) =>
+          (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active
+      );
+      if (emp) {
+        targetEmail = normalizeEmail(emp.email);
+      } else {
+        const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedId && h.active);
+        if (host) {
+          targetEmail = normalizeEmail(host.email);
+        }
+      }
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: password,
+        });
+
+        if (!authError && authData.user) {
+          const userId = authData.user.id;
+          
+          // Try to match with loaded employees or host supervisors
+          const matchedEmp = employees.find((e) => e.id === userId && e.active);
+          if (matchedEmp) {
+            const role: User['role'] =
+              matchedEmp.position === 'OJT Instructor' ? 'admin' : matchedEmp.position === 'HTE Representative' ? 'hte' : 'employee';
+            const user: User = { id: matchedEmp.id, name: matchedEmp.name, role, employeeId: matchedEmp.id };
+            setCurrentUser(user);
+            setPasswordForEmail(matchedEmp.email, password);
+            return user;
+          }
+
+          const matchedHost = hostSupervisors.find((h) => h.id === userId && h.active);
+          if (matchedHost) {
+            const user: User = { id: matchedHost.id, name: matchedHost.name, role: 'host' };
+            setCurrentUser(user);
+            setPasswordForEmail(matchedHost.email, password);
+            return user;
+          }
+
+          // Fallback user construction from metadata
+          const roleFromMetadata = authData.user.user_metadata?.role;
+          const nameFromMetadata = authData.user.user_metadata?.full_name || authData.user.email || 'User';
+          
+          const role: User['role'] = roleFromMetadata === 'admin' ? 'admin' : roleFromMetadata === 'host' ? 'host' : 'employee';
+          const user: User = { id: userId, name: nameFromMetadata, role, employeeId: role === 'employee' ? userId : undefined };
+          setCurrentUser(user);
+          return user;
+        }
+      } catch (err) {
+        console.error('Supabase signInWithPassword exception, trying local fallback:', err);
+      }
+    }
+
+    // Local / Offline fallback logic
     const emp = employees.find(
       (e) =>
         (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active
@@ -628,10 +687,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentUser(user);
       return user;
     }
+
     return null;
   };
 
-  const logout = () => setCurrentUser(null);
+  const logout = () => {
+    setCurrentUser(null);
+    if (useSupabase) {
+      supabase.auth.signOut().catch((err) => {
+        console.error('Error signing out from Supabase:', err);
+      });
+    }
+  };
 
   const getCurrentUserEmail = (): string | null => {
     if (!currentUser) return null;
