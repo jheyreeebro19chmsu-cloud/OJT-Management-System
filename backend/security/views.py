@@ -3,7 +3,16 @@ import base64
 import uuid
 from typing import Any, Dict, List
 import logging
-import resend
+
+# `resend` is an optional dependency used for transactional emails.
+# Import it lazily and handle the case where it's not installed so
+# `manage.py check` and other import-time operations don't fail.
+try:
+    import resend  # type: ignore
+    RESEND_AVAILABLE = True
+except Exception:
+    resend = None  # type: ignore
+    RESEND_AVAILABLE = False
 
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
@@ -82,9 +91,12 @@ def send_email(request: HttpRequest) -> JsonResponse:
     if not api_key:
         return JsonResponse({"error": "Resend API key not configured on server"}, status=500)
 
-    resend.api_key = api_key
-    
+    if not RESEND_AVAILABLE:
+        return JsonResponse({"error": "Resend package is not installed on the server. Install `resend` or configure an alternate email sender."}, status=500)
+
+    # Configure resend client and send
     try:
+        resend.api_key = api_key
         params = {
             "from": "OJT System <onboarding@resend.dev>",
             "to": to_email if isinstance(to_email, list) else [to_email],
