@@ -14,6 +14,8 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
   const [lastCaptureTime, setLastCaptureTime] = useState(0);
+  const [brightness, setBrightness] = useState(128);
+  const [lightingStatus, setLightingStatus] = useState<'dark' | 'good' | 'bright'>('good');
   const cameraRef = React.useRef<any>(null);
 
   useEffect(() => {
@@ -45,6 +47,12 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
       const now = Date.now();
       if (now - lastCaptureTime < 2000) return; // Debounce auto-capture
       
+      // Check lighting before capturing
+      if (lightingStatus === 'dark') {
+        Alert.alert('Poor Lighting', 'The environment is too dark. Please move to a brighter area with good lighting and try again.');
+        return;
+      }
+      
       setIsCapturing(true);
       setLastCaptureTime(now);
       
@@ -67,6 +75,60 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
       }
     }
   }
+
+  // Function to calculate brightness from image data
+  const calculateBrightness = async () => {
+    if (!cameraRef.current) return;
+    
+    try {
+      // Take a photo in the background to check brightness
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.1, // Very low quality for speed
+        base64: true,
+        skipProcessing: true,
+      });
+
+      if (photo.base64) {
+        // Convert base64 to number array and calculate average brightness
+        const binaryString = atob(photo.base64);
+        let brightness = 0;
+        let pixelCount = 0;
+
+        // Sample every Nth pixel for speed
+        for (let i = 0; i < binaryString.length; i += 4) {
+          const r = binaryString.charCodeAt(i) || 0;
+          const g = binaryString.charCodeAt(i + 1) || 0;
+          const b = binaryString.charCodeAt(i + 2) || 0;
+          brightness += (r * 0.299 + g * 0.587 + b * 0.114); // Standard luminosity formula
+          pixelCount++;
+        }
+
+        const avgBrightness = Math.floor(brightness / pixelCount);
+        setBrightness(avgBrightness);
+
+        // Determine lighting status
+        if (avgBrightness < 60) {
+          setLightingStatus('dark');
+        } else if (avgBrightness > 200) {
+          setLightingStatus('bright');
+        } else {
+          setLightingStatus('good');
+        }
+      }
+    } catch (error) {
+      // Silently fail - brightness check is non-critical
+      console.debug('Brightness calculation error:', error);
+    }
+  };
+
+  // Check brightness periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      calculateBrightness();
+    }, 1000); // Check every second
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleFacesDetected = ({ faces }: any) => {
     if (faces.length > 0) {
@@ -92,13 +154,52 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
         barcodeScannerSettings={{}} // Needed to trigger some internal optimizations
       >
         <View style={styles.overlay}>
+          {/* Lighting Status Indicator */}
+          <View style={[
+            styles.lightingIndicator,
+            lightingStatus === 'dark' ? styles.lightingDark : 
+            lightingStatus === 'bright' ? styles.lightingBright : 
+            styles.lightingGood
+          ]}>
+            <Text style={styles.lightingText}>
+              {lightingStatus === 'dark' ? '🌙 Too Dark' : 
+               lightingStatus === 'bright' ? '☀️ Too Bright' : 
+               '✓ Good Lighting'}
+            </Text>
+          </View>
+
+          {/* Lighting Warning Message */}
+          {lightingStatus === 'dark' && (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningTitle}>⚠️ Poor Lighting Detected</Text>
+              <Text style={styles.warningMessage}>
+                The environment is too dark. Please move to a place with better lighting.{'\n'}
+                • Turn on lights{'\n'}
+                • Move to a window{'\n'}
+                • Increase brightness
+              </Text>
+            </View>
+          )}
+
+          {lightingStatus === 'bright' && (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningTitle}>⚠️ Overexposed Lighting</Text>
+              <Text style={styles.warningMessage}>
+                The lighting is too bright. Please reduce glare.{'\n'}
+                • Adjust your position{'\n'}
+                • Reduce screen brightness{'\n'}
+                • Move away from direct sunlight
+              </Text>
+            </View>
+          )}
+
           {/* Guide frame with color feedback */}
           <View style={[
             styles.guideFrame, 
             faceDetected && { borderColor: '#22c55e', borderStyle: 'solid', borderWidth: 3 }
           ]} />
           
-          {faceDetected && (
+          {faceDetected && lightingStatus !== 'dark' && (
             <Text style={styles.captureAlert}>Capturing...</Text>
           )}
           
@@ -108,9 +209,12 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.captureButton} 
+              style={[
+                styles.captureButton,
+                lightingStatus === 'dark' && { opacity: 0.5 }
+              ]}
               onPress={takePicture}
-              disabled={isCapturing}
+              disabled={isCapturing || lightingStatus === 'dark'}
             >
               {isCapturing ? (
                 <ActivityIndicator color="#fff" />
@@ -125,6 +229,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
       </CameraView>
       <View style={styles.footer}>
         <Text style={styles.hint}>Position your face inside the frame</Text>
+        <Text style={styles.brightnessText}>Brightness: {brightness}/255</Text>
       </View>
     </View>
   );
@@ -148,6 +253,51 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  lightingIndicator: {
+    position: 'absolute',
+    top: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightingDark: {
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+  },
+  lightingGood: {
+    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+  },
+  lightingBright: {
+    backgroundColor: 'rgba(249, 115, 22, 0.9)',
+  },
+  lightingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  warningBox: {
+    position: 'absolute',
+    bottom: 180,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    borderLeftWidth: 4,
+    borderLeftColor: '#ef4444',
+    padding: 12,
+    borderRadius: 8,
+  },
+  warningTitle: {
+    color: '#fca5a5',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  warningMessage: {
+    color: '#f5f5f5',
+    fontSize: 12,
+    lineHeight: 18,
   },
   guideFrame: {
     width: 260,
@@ -197,6 +347,11 @@ const styles = StyleSheet.create({
   hint: {
     color: '#fff',
     fontSize: 14,
+  },
+  brightnessText: {
+    color: '#9ca3af',
+    fontSize: 12,
+    marginTop: 8,
   },
   button: {
     backgroundColor: '#2563eb',

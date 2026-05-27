@@ -14,8 +14,10 @@ import urllib.request
 import urllib.parse
 
 from .api_auth import require_security_api_key
-from .utils import decode_base64_image, find_nearest_zone, safe_float
+from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness
 from .models import FaceRegistration, AttendancePhoto
+
+logger = logging.getLogger(__name__)
 
 
 def _face_backend_available() -> bool:
@@ -177,13 +179,69 @@ def register_face(request: HttpRequest) -> JsonResponse:
     if registration.image:
         registration.image.delete(save=False)
 
+    # Extract image binary data and format
+    image_binary_data = None
+    image_format = 'jpeg'
+    
     if image_file:
-        registration.image.save(image_file.name, image_file, save=True)
+        # Extract binary data from uploaded file
+        image_binary_data = image_file.read()
+        # Determine format from filename
+        filename_lower = image_file.name.lower()
+        if filename_lower.endswith('.png'):
+            image_format = 'png'
+        elif filename_lower.endswith('.jpg') or filename_lower.endswith('.jpeg'):
+            image_format = 'jpeg'
+        elif filename_lower.endswith('.gif'):
+            image_format = 'gif'
+        
+        # Save to file system (for backward compatibility)
+        image_file.seek(0)  # Reset file pointer
+        registration.image.save(image_file.name, image_file, save=False)
     else:
-        content = _content_file_from_base64(str(image_b64), f"{employee_id}_{uuid.uuid4().hex}")
-        registration.image.save(content.name, content, save=True)
+        # Extract binary data from base64
+        b64_string = str(image_b64)
+        if "," in b64_string:
+            # data:image/jpeg;base64,... format
+            header, b64_data = b64_string.split(",", 1)
+            # Extract format from header (e.g., data:image/jpeg;base64)
+            if "image/" in header:
+                image_format = header.split("image/")[1].split(";")[0]
+        else:
+            b64_data = b64_string
+        
+        # Decode base64 to binary
+        image_binary_data = base64.b64decode(b64_data)
+        
+        # Save to file system (for backward compatibility)
+        content = _content_file_from_base64(b64_string, f"{employee_id}_{uuid.uuid4().hex}")
+        registration.image.save(content.name, content, save=False)
+    
+    # Store binary data in database
+    registration.image_data = image_binary_data
+    registration.image_format = image_format
+    registration.save()
 
-    image_url = request.build_absolute_uri(registration.image.url)
+    # Validate brightness before processing
+    brightness_check = validate_image_brightness(registration.image.path)
+    if not brightness_check['valid']:
+        # Delete poor image and return error
+        registration.image.delete(save=False)
+        registration.image_data = None
+        registration.save()
+        logger.warning(f"Face registration rejected for {employee_id}: {brightness_check['message']}")
+        return JsonResponse(
+            {
+                "success": False,
+                "message": brightness_check['message'],
+                "status": brightness_check['status'],
+                "brightness": brightness_check['brightness'],
+                "recommendations": brightness_check['recommendations']
+            },
+            status=422
+        )
+
+    image_url = request.build_absolute_uri(registration.image.url) if registration.image else None
 
     # Pre-compute and save face encoding for faster future verification
     try:
@@ -193,11 +251,23 @@ def register_face(request: HttpRequest) -> JsonResponse:
         if encodings:
             registration.face_encoding = list(encodings[0])
             registration.save()
+            logger.info(f"Face registration successful for {employee_id} with brightness {brightness_check['brightness']:.1f} - Image stored in database")
+        else:
+            logger.warning(f"No face detected in registered image for {employee_id}")
+            return JsonResponse({
+                "success": False,
+                "message": "No face detected in the image. Please try again with a clear photo."
+            }, status=422)
     except Exception as e:
         # Don't fail the whole registration if encoding fails, but log it
-        print(f"Encoding extraction failed: {e}")
+        logger.error(f"Encoding extraction failed for {employee_id}: {e}")
 
-    return JsonResponse({"success": True, "image_url": image_url})
+    return JsonResponse({
+        "success": True,
+        "image_url": image_url,
+        "brightness": brightness_check['brightness'],
+        "status": brightness_check['status']
+    })
 
 
 @csrf_exempt
@@ -272,6 +342,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
         tol_raw = request.POST.get("tolerance")
         if tol_raw is not None:
             tolerance = safe_float(tol_raw, tolerance)
+        capture_image_path = captured_file.temporary_file_path()
     else:
         captured_b64 = data.get("captured_image")
         tolerance = safe_float(data.get("tolerance", tolerance), tolerance)
@@ -281,6 +352,37 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
         unknown_image = face_recognition.load_image_file(decode_base64_image(captured_b64))
+        # For base64 images, we need to save temporarily to check brightness
+        import tempfile
+        temp_fd, capture_image_path = tempfile.mkstemp(suffix='.jpg')
+        try:
+            from PIL import Image as PILImage
+            pil_img = PILImage.fromarray(unknown_image)
+            pil_img.save(capture_image_path, 'JPEG')
+        except Exception as e:
+            logger.warning(f"Could not save temporary image for brightness check: {e}")
+            capture_image_path = None
+        finally:
+            try:
+                os.close(temp_fd)
+            except:
+                pass
+
+    # NEW: Check brightness of captured image
+    if capture_image_path:
+        brightness_check = validate_image_brightness(capture_image_path)
+        if brightness_check['status'] == 'dark':
+            logger.warning(f"Captured image too dark for {employee_id}: brightness {brightness_check['brightness']:.1f}")
+            return JsonResponse(
+                {
+                    "success": False,
+                    "message": "The image is too dark. Please capture in a brighter environment.",
+                    "status": brightness_check['status'],
+                    "brightness": brightness_check['brightness'],
+                    "recommendations": brightness_check['recommendations']
+                },
+                status=422
+            )
 
     unknown_encodings = face_recognition.face_encodings(unknown_image)
 
@@ -329,14 +431,59 @@ def save_attendance_photo(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "image is required"}, status=400)
 
     record = AttendancePhoto(employee_id=employee_id, action=action)
+    
+    # Extract image binary data and format
+    image_binary_data = None
+    image_format = 'jpeg'
+    
     if image_file:
-        record.image.save(image_file.name, image_file, save=True)
+        # Extract binary data from uploaded file
+        image_binary_data = image_file.read()
+        # Determine format from filename
+        filename_lower = image_file.name.lower()
+        if filename_lower.endswith('.png'):
+            image_format = 'png'
+        elif filename_lower.endswith('.jpg') or filename_lower.endswith('.jpeg'):
+            image_format = 'jpeg'
+        elif filename_lower.endswith('.gif'):
+            image_format = 'gif'
+        
+        # Save to file system (for backward compatibility)
+        image_file.seek(0)  # Reset file pointer
+        record.image.save(image_file.name, image_file, save=False)
     else:
-        content = _content_file_from_base64(str(image_b64), f"{employee_id}_{action}_{uuid.uuid4().hex}")
-        record.image.save(content.name, content, save=True)
+        # Extract binary data from base64
+        b64_string = str(image_b64)
+        if "," in b64_string:
+            # data:image/jpeg;base64,... format
+            header, b64_data = b64_string.split(",", 1)
+            # Extract format from header (e.g., data:image/jpeg;base64)
+            if "image/" in header:
+                image_format = header.split("image/")[1].split(";")[0]
+        else:
+            b64_data = b64_string
+        
+        # Decode base64 to binary
+        image_binary_data = base64.b64decode(b64_data)
+        
+        # Save to file system (for backward compatibility)
+        content = _content_file_from_base64(b64_string, f"{employee_id}_{action}_{uuid.uuid4().hex}")
+        record.image.save(content.name, content, save=False)
+    
+    # Store binary data in database
+    record.image_data = image_binary_data
+    record.image_format = image_format
+    record.save()
+    
+    logger.info(f"Attendance photo saved for {employee_id} ({action}) - Image stored in database with format {image_format}")
 
-    image_url = request.build_absolute_uri(record.image.url)
-    return JsonResponse({"success": True, "image_url": image_url})
+    image_url = request.build_absolute_uri(record.image.url) if record.image else None
+    return JsonResponse({
+        "success": True,
+        "image_url": image_url,
+        "image_stored_in_database": True,
+        "image_format": image_format
+    })
 
 
 def geonames_proxy(request: HttpRequest) -> JsonResponse:

@@ -240,9 +240,13 @@ class StudentTask(models.Model):
 class FaceRegistration(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='face_registration', null=True, blank=True)
     employee_id = models.CharField(max_length=64, unique=True)
-    image = models.ImageField(upload_to="face_registrations/")
+    image = models.ImageField(upload_to="face_registrations/", null=True, blank=True)
+    # Store image binary data directly in database
+    image_data = models.BinaryField(null=True, blank=True, help_text="Image stored as binary data in database")
+    image_format = models.CharField(max_length=10, default='jpeg', help_text="Image format: jpeg, png, etc.")
     face_encoding = models.JSONField(null=True, blank=True, help_text="Stored as a list of 128 floats")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
         return f"FaceRegistration({self.employee_id})"
@@ -257,7 +261,10 @@ class AttendancePhoto(models.Model):
     employee_id = models.CharField(max_length=64)
     application = models.ForeignKey(StudentOJTApplication, on_delete=models.CASCADE, related_name='attendance_photos', null=True, blank=True)
     action = models.CharField(max_length=8, choices=ACTION_CHOICES)
-    image = models.ImageField(upload_to="attendance_photos/")
+    image = models.ImageField(upload_to="attendance_photos/", null=True, blank=True)
+    # Store image binary data directly in database
+    image_data = models.BinaryField(null=True, blank=True, help_text="Image stored as binary data in database")
+    image_format = models.CharField(max_length=10, default='jpeg', help_text="Image format: jpeg, png, etc.")
     geofence_verified = models.BooleanField(default=False)
     face_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
