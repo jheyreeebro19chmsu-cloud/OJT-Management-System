@@ -1,3 +1,6 @@
 # Optional / extras
 # Install these only if you want transactional email support via Resend
 resend>=0.6.0
+# Optional ML/face recognition (native build may fail on some hosts)
+face-recognition>=1.3.0
+git+https://github.com/ageitgey/face_recognition_models
