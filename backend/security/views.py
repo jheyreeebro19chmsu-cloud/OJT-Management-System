@@ -91,10 +91,12 @@ def send_email(request: HttpRequest) -> JsonResponse:
     # Use API key from settings or env
     api_key = getattr(settings, "RESEND_API_KEY", os.environ.get("VITE_RESEND_API_KEY"))
     if not api_key:
-        return JsonResponse({"error": "Resend API key not configured on server"}, status=500)
+        # Optional feature: transactional email is not configured.
+        return JsonResponse({"error": "Resend API key not configured on server. Install Resend and set RESEND_API_KEY to enable transactional emails."}, status=501)
 
     if not RESEND_AVAILABLE:
-        return JsonResponse({"error": "Resend package is not installed on the server. Install `resend` or configure an alternate email sender."}, status=500)
+        # The `resend` package is optional; return 501 to indicate not implemented.
+        return JsonResponse({"error": "Resend package is not installed on the server. Install `resend` or configure an alternate email sender."}, status=501)
 
     # Configure resend client and send
     try:

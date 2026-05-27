@@ -59,6 +59,22 @@ If you encounter build errors when installing `dlib`/`face-recognition`, the com
 missing C++ build tools or an unsupported compiler version. Installing the Visual Studio Build Tools
 on Windows or the packages listed above on Linux usually resolves this.
 
+Optional features
+-----------------
+The backend supports transactional email via the Resend API using the `resend` Python package.
+This is optional — the application will run normally without it. To enable transactional emails:
+
+1. Install the optional requirements:
+
+```bash
+pip install -r requirements-optional.txt
+```
+
+2. Set the `RESEND_API_KEY` environment variable (or add to `backend/.env`).
+
+If `resend` is not installed or `RESEND_API_KEY` is not configured, the `/api/email/send/` endpoint
+will return HTTP 501 and a helpful message instead of causing an import-time crash.
+
 ## API key for mobile prototype
 
 The mobile prototype can send a shared API key with requests. Set the key on the server
