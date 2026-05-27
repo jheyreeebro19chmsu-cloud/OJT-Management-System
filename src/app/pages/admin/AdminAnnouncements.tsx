@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 
 import { authAPI } from '../../services/authApi';
 import { useApp } from '../../store/AppContext';
+import { API_BASE } from '../../services/config';
 import { Announcement } from '../../types';
 
 
@@ -136,7 +137,7 @@ export function AdminAnnouncements() {
       createdByRole: (currentUser?.role === 'host' ? 'host' : 'admin') as 'admin' | 'host',
     };
 
-    const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
+    // Using dynamic API_BASE from configuration
 
     if (API_BASE) {
       // Upload to Django backend via multipart/form-data using authAPI

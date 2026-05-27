@@ -13,8 +13,7 @@ import {
   CacheEntry 
 } from './addressTypes';
 
-const RAW_API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
-const API_BASE = RAW_API_BASE && RAW_API_BASE.includes('railway.app') ? undefined : RAW_API_BASE;
+import { API_BASE } from './config';
 
 let cityIndex: IndexedCity[] = [];
 

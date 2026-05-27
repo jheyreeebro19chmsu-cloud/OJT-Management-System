@@ -3,8 +3,7 @@
  * Calls the Railway backend to send emails securely without CORS issues
  */
 
-const API_BASE = import.meta.env.VITE_DJANGO_API_URL;
-const API_KEY = import.meta.env.VITE_SECURITY_API_KEY;
+import { API_BASE, SECURITY_API_KEY as API_KEY } from '../services/config';
 
 const sendEmail = async (payload: any) => {
   if (!API_BASE) {

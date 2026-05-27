@@ -31,6 +31,7 @@ export default defineConfig({
         manualChunks: {
           'leaflet': ['leaflet', 'react-leaflet'],
           'vendor': ['react', 'react-dom', 'react-router-dom', 'motion', 'lucide-react'],
+          'country-state-city': ['country-state-city'],
         }
       }
     }

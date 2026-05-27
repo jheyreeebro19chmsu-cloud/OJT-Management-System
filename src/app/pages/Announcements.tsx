@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 
 import { useApp } from '../store/AppContext';
 import { authAPI } from '../services/authApi';
+import { API_BASE } from '../services/config';
 import type { Announcement } from '../types';
 
 export function Announcements() {
@@ -36,7 +37,6 @@ export function Announcements() {
     const photo = photoDrafts[announcement.id];
     if (!message && !photo) return;
     // If backend is configured, POST to server; else use local context
-    const API_BASE = (import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined;
     if (API_BASE) {
       const formData = new FormData();
       formData.append('announcement_id', announcement.id);

@@ -33,8 +33,7 @@ export interface AttendancePhotoResponse {
   message?: string;
 }
 
-const API_BASE = import.meta.env.VITE_DJANGO_API_URL;
-const SECURITY_API_KEY = (import.meta.env.VITE_SECURITY_API_KEY as string | undefined)?.trim();
+import { API_BASE, SECURITY_API_KEY } from './config';
 const FACE_TOLERANCE_ENV = import.meta.env.VITE_FACE_VERIFICATION_TOLERANCE;
 
 function baseUrl() {

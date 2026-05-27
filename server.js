@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
@@ -18,21 +19,18 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 10000;
 const DIST_DIR = path.join(__dirname, 'dist');
 
-// Check at startup if dist directory and index.html exist
+// Check at startup if dist directory and index.html exist; if not, trigger programmatic Vite build!
 try {
-  if (fs.existsSync(DIST_DIR)) {
-    console.log(`✓ Startup check: Directory ${DIST_DIR} exists.`);
-    const indexPath = path.join(DIST_DIR, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      console.log(`✓ Startup check: index.html exists at ${indexPath}.`);
-    } else {
-      console.warn(`⚠ Startup check: index.html is MISSING at ${indexPath}!`);
-    }
+  const indexPath = path.join(DIST_DIR, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    console.log('⚠ Startup check: dist/index.html is MISSING! Triggering programmatic Vite build...');
+    execSync('npm run build', { stdio: 'inherit' });
+    console.log('✓ Programmatic Vite build completed successfully!');
   } else {
-    console.warn(`⚠ Startup check: Directory ${DIST_DIR} is MISSING! Did the build command run successfully?`);
+    console.log(`✓ Startup check: index.html exists at ${indexPath}.`);
   }
 } catch (e) {
-  console.error('Failed to perform startup file checks:', e);
+  console.error('❌ Programmatic build check/run failed:', e);
 }
 
 const MIME_TYPES = {
@@ -126,7 +124,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Serving static files from: ${DIST_DIR}`);
 });

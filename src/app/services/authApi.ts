@@ -1,9 +1,6 @@
 import axios, { AxiosError } from 'axios';
 
-const RAW_API_BASE =
-  ((import.meta as ImportMeta).env.VITE_DJANGO_API_URL as string | undefined) ?? 'http://localhost:8000/api';
-// Disable calls to known external production host to avoid CORS errors when frontend is served separately.
-const API_BASE = RAW_API_BASE && RAW_API_BASE.includes('railway.app') ? undefined : RAW_API_BASE;
+import { API_BASE } from './config';
 
 const api = axios.create({
   baseURL: API_BASE,
