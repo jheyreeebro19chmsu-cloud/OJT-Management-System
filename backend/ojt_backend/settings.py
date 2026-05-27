@@ -120,6 +120,10 @@ CORS_ALLOWED_ORIGINS = [
     "https://ojt-management-system-production.up.railway.app",
 ]
 
+_cors_origins = (os.environ.get("DJANGO_CORS_ORIGINS") or "").strip()
+if _cors_origins:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGIN_REGEXES = [

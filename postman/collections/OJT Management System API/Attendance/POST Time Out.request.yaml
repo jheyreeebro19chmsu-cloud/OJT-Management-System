@@ -1,0 +1,30 @@
+$kind: http-request
+name: POST Time Out
+method: POST
+url: '{{base_url}}/api/attendance/time-out/'
+order: 3000
+description: |-
+  Record a student's time-out for their OJT attendance.
+  
+  Updates the existing attendance record with the current timestamp as time-out
+  and calculates the total hours rendered for the session.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Time out recorded successfully",
+    "time_out": "2026-05-27T12:00:00+08:00",
+    "hours_rendered": 4.0
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "user_id": 1,
+      "application_id": 1
+    }

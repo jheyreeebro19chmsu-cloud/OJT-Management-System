@@ -14,6 +14,9 @@ export function Login() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const { employees } = useApp();
+  const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +135,57 @@ export function Login() {
             <p className="text-center text-xs text-gray-400 mt-2">
               Host supervisor? Sign in with your host account to access the feedback portal.
             </p>
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                onClick={() => setShowForgot((s) => !s)}
+                className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            {showForgot && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mt-4 p-4 bg-blue-50/80 border border-blue-100 rounded-2xl text-sm"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-blue-900 flex items-center gap-1.5">
+                    <Clock size={16} /> Password Recovery
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgot(false)}
+                    className="text-xs text-blue-500 hover:text-blue-700 font-medium"
+                  >
+                    Close
+                  </button>
+                </div>
+                <p className="text-xs text-blue-700/80 mb-3">
+                  Please enter your email above to verify your registered home address and recover your password.
+                </p>
+                {matchedEmployee ? (
+                  <div className="space-y-2 bg-white/70 backdrop-blur-sm rounded-xl p-3 border border-blue-100/50">
+                    <div className="text-xs">
+                      <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">REGISTERED ADDRESS</span>
+                      <span className="text-gray-800 font-medium">{matchedEmployee.registrationAddress || 'No address registered.'}</span>
+                    </div>
+                    <div className="text-xs pt-1.5 border-t border-blue-100/50">
+                      <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">RECOVERED PASSWORD</span>
+                      <span className="text-blue-700 font-bold tracking-wide select-all text-sm bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        {localStorage.getItem('ojt_passwords') ? JSON.parse(localStorage.getItem('ojt_passwords')!)[matchedEmployee.email.toLowerCase()] || 'ojt2024' : 'ojt2024'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-red-50 text-red-700 text-xs p-2.5 rounded-xl border border-red-100 font-medium">
+                    No active account found. Enter your registered email in the input above.
+                  </div>
+                )}
+              </motion.div>
+            )}
           </div>
         </div>
       </motion.div>

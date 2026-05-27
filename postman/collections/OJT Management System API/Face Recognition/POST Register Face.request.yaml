@@ -1,0 +1,45 @@
+$kind: http-request
+name: POST Register Face
+method: POST
+url: '{{base_url}}/api/face/register/'
+order: 1000
+description: |-
+  Register a face image for an employee/student for future attendance verification.
+  
+  Accepts either multipart form-data (with a file upload) or JSON with a base64-encoded image.
+  The system analyzes image brightness and returns a quality status.
+  
+  **Requires:** `Authorization: Bearer {{api_key}}`
+  
+  **Example Success Response:**
+  ```json
+  {
+    "success": true,
+    "image_url": "http://localhost:8000/media/faces/EMP001.jpg",
+    "brightness": 128.5,
+    "status": "good"
+  }
+  ```
+  
+  **Example Error Response (422):**
+  ```json
+  {
+    "success": false,
+    "message": "Image too dark",
+    "status": "dark",
+    "brightness": 45.2,
+    "recommendations": ["Ensure adequate lighting", "Move to a brighter area"]
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "employee_id": "EMP001",
+      "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgAB..."
+    }

@@ -1,0 +1,37 @@
+$kind: http-request
+name: POST Login
+method: POST
+url: '{{base_url}}/api/auth/login/'
+order: 3000
+description: |-
+  Authenticate a user and receive JWT tokens.
+  
+  Returns access and refresh tokens along with user profile data.
+  The access token should be stored and used as Bearer token for protected endpoints.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "tokens": {
+      "refresh": "<refresh_token>",
+      "access": "<access_token>"
+    },
+    "user": {
+      "id": 1,
+      "email": "student@example.com",
+      "name": "Juan Dela Cruz",
+      "role": "student"
+    }
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "student@example.com",
+      "password": "password123"
+    }

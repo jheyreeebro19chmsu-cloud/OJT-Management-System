@@ -363,31 +363,13 @@ export function Register() {
       setRegisteredInstructorId(newEmp.id);
     }
 
-    if (photo && isSecurityApiConfigured()) {
-      try {
-        const response = await registerFace({
-          employee_id: newEmp.id,
-          image: photo,
-        });
-        if (response.success && response.image_url) {
-          updateEmployee(newEmp.id, { photo: response.image_url, faceRegistered: true });
-        }
-        // Send Welcome Email via Resend
-        try {
-          await sendWelcomeEmail(newEmp.email, newEmp.name);
-        } catch (emailErr) {
-          console.error('Failed to send welcome email:', emailErr);
-        }
-      } catch {
-        // Keep local photo if backend is unavailable
-      }
-    } else {
-      // Send Welcome Email even if no photo registration
-      try {
-        await sendWelcomeEmail(newEmp.email, newEmp.name);
-      } catch (emailErr) {
+    // Send Welcome Email
+    try {
+      sendWelcomeEmail(newEmp.email, newEmp.name).catch((emailErr) => {
         console.error('Failed to send welcome email:', emailErr);
-      }
+      });
+    } catch (e) {
+      console.error(e);
     }
 
     // Auto-redirect based on role

@@ -1,0 +1,31 @@
+$kind: http-request
+name: POST Approve HTE Access
+method: POST
+url: '{{base_url}}/api/hte/approve-access/'
+order: 2000
+description: |-
+  Approve a pending HTE access request.
+  
+  Grants the HTE access to view the student's OJT application data,
+  attendance records, and progress.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "HTE access approved successfully"
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request_id": 1
+    }

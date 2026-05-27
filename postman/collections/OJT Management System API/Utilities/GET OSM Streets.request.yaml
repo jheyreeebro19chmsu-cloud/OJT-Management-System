@@ -1,0 +1,21 @@
+$kind: http-request
+name: GET OSM Streets
+method: GET
+url: '{{base_url}}/api/osm/streets/'
+order: 5000
+description: |-
+  Retrieve nearby streets data from OpenStreetMap (OSM) for a given GPS coordinate.
+  
+  Returns street names and road data near the specified latitude/longitude.
+  Used for address resolution and location display in the mobile app.
+  
+  **Query Parameters:**
+  - `lat` (required): Latitude coordinate
+  - `lng` (required): Longitude coordinate
+queryParams:
+  - key: lat
+    value: '14.5995'
+    description: 'Latitude coordinate of the location to search near.'
+  - key: lng
+    value: '120.9842'
+    description: 'Longitude coordinate of the location to search near.'

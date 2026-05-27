@@ -1,0 +1,39 @@
+$kind: http-request
+name: POST Submit OJT Application
+method: POST
+url: '{{base_url}}/api/application/submit/'
+order: 1000
+description: |-
+  Submit a new OJT application for a student.
+  
+  Creates an OJT application linking a student to an instructor and company.
+  Includes GPS coordinates for geofencing and the required OJT hours.
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "OJT application submitted successfully",
+    "application_id": 1
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "user_id": 1,
+      "instructor_id": 1,
+      "company_name": "Tech Corp",
+      "company_address": "BGC, Taguig",
+      "gps_latitude": 14.5995,
+      "gps_longitude": 120.9842,
+      "geofence_radius": 100,
+      "start_date": "2026-06-01",
+      "end_date": "2026-08-31",
+      "required_hours": 486
+    }

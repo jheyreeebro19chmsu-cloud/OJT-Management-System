@@ -1,0 +1,45 @@
+$kind: http-request
+name: POST Register Instructor
+method: POST
+url: '{{base_url}}/api/auth/register-instructor/'
+order: 5000
+description: |-
+  Register a new instructor account in the OJT Management System.
+  
+  Creates an instructor user and returns JWT tokens along with a QR code URL
+  that students can scan to link their attendance to this instructor.
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "tokens": {
+      "refresh": "<refresh_token>",
+      "access": "<access_token>"
+    },
+    "user": {
+      "id": 1,
+      "email": "instructor@example.com",
+      "name": "Maria Santos",
+      "role": "instructor"
+    },
+    "qr_code_url": "/media/instructor_qrcodes/qr_1.png"
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "instructor@example.com",
+      "password": "password123",
+      "first_name": "Maria",
+      "last_name": "Santos",
+      "course": "BSIT",
+      "department": "IT Department",
+      "institution": "University of the Philippines"
+    }

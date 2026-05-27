@@ -1,0 +1,33 @@
+$kind: collection
+name: OJT Management System API
+description: |-
+  Complete API documentation for the OJT (On-the-Job Training) Management System.
+  
+  This API supports student OJT tracking with features including:
+  - User authentication (Student, Instructor, HTE roles)
+  - Face recognition for attendance verification
+  - GPS geofencing for location-based attendance
+  - OJT application management
+  - Time record tracking (DTR)
+  - Announcements and task management
+  - HTE (Host Training Establishment) monitoring dashboard
+  
+  ## Authentication
+  - **Security API Key**: Used for face recognition and geofence endpoints. Pass as `Authorization: Bearer <key>` or `X-OJT-API-Key: <key>`
+  - **JWT Bearer Token**: Used for HTE dashboard endpoints. Obtained from login/register responses.
+  
+  ## Base URL
+  Set the `base_url` environment variable to your server URL (e.g., `http://localhost:8000` for local development).
+variables:
+  - key: base_url
+    value: 'http://localhost:8000'
+    description: Base URL of the OJT Management System API server
+  - key: api_key
+    value: ''
+    description: Security API key for face recognition and geofence endpoints
+  - key: access_token
+    value: ''
+    description: JWT access token for authenticated endpoints (obtained from login/register)
+  - key: refresh_token
+    value: ''
+    description: JWT refresh token for renewing access tokens

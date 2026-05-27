@@ -1,0 +1,35 @@
+$kind: http-request
+name: GET HTE Time Records
+method: GET
+url: '{{base_url}}/api/hte/time-records/'
+order: 5000
+description: |-
+  Retrieve all time records (DTR) for students under the authenticated HTE.
+  
+  Returns a list of daily time records including time-in, time-out, hours rendered,
+  and approval status for each attendance entry.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "time_records": [
+      {
+        "id": 1,
+        "student_name": "Juan Dela Cruz",
+        "application_id": 1,
+        "date": "2026-05-27",
+        "time_in": "2026-05-27T08:00:00+08:00",
+        "time_out": "2026-05-27T12:00:00+08:00",
+        "hours_rendered": 4.0,
+        "is_approved": false,
+        "notes": ""
+      }
+    ]
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'

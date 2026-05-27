@@ -358,11 +358,28 @@ export function TimeRecord() {
 
             <button
               onClick={handleReset}
-              className="w-full py-3 bg-blue-700 text-white rounded-2xl font-semibold text-sm hover:bg-blue-800 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3 bg-blue-700 text-white rounded-2xl font-semibold text-sm hover:bg-blue-800 transition-all flex items-center justify-center gap-2 shadow-sm"
             >
               <RefreshCw size={14} />
               {currentRecord?.timeIn && !currentRecord?.timeOut ? 'Clock Out' : 'Done'}
             </button>
+
+            {currentRecord?.timeIn && currentRecord?.timeOut && (
+              <button
+                onClick={() => {
+                  setCurrentRecord(null);
+                  setAction('in');
+                  setPageState('check-geofence');
+                  setGeofencePassed(false);
+                  setGeofenceCoords(undefined);
+                  setRetryCount((p) => p + 1);
+                }}
+                className="w-full mt-3 py-3 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
+              >
+                <RefreshCw size={14} />
+                Clock In Again (New Shift)
+              </button>
+            )}
           </motion.div>
         ) : null}
       </AnimatePresence>

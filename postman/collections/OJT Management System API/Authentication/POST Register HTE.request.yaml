@@ -1,0 +1,44 @@
+$kind: http-request
+name: POST Register HTE
+method: POST
+url: '{{base_url}}/api/auth/register-hte/'
+order: 6000
+description: |-
+  Register a new Host Training Establishment (HTE) account.
+  
+  Creates an HTE user account for a company or organization that will host
+  OJT students. Returns JWT tokens for immediate authentication.
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "tokens": {
+      "refresh": "<refresh_token>",
+      "access": "<access_token>"
+    },
+    "user": {
+      "id": 1,
+      "email": "hte@company.com",
+      "name": "Pedro Reyes",
+      "role": "hte"
+    }
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "hte@company.com",
+      "first_name": "Pedro",
+      "last_name": "Reyes",
+      "company_name": "Tech Corp",
+      "company_address": "BGC, Taguig",
+      "contact_person": "Pedro Reyes",
+      "contact_phone": "09171234567"
+    }

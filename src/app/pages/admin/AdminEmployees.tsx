@@ -35,6 +35,8 @@ export function AdminEmployees() {
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState(BLANK_FORM);
   const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressValue, setAddressValue] = useState('');
 
   const filtered = employees.filter(
     (e) =>
@@ -47,6 +49,8 @@ export function AdminEmployees() {
   const openView = (emp: Employee) => {
     setSelectedEmp(emp);
     setFaceEnrollOpen(false);
+    setEditingAddress(false);
+    setAddressValue(emp.registrationAddress || '');
     setModalMode('view');
   };
   const openAdd = () => {
@@ -360,6 +364,47 @@ export function AdminEmployees() {
                             )}
                           </div>
                         </div>
+                      </div>
+
+                      <div className="mt-3">
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">Home Address</label>
+                        {!editingAddress ? (
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm text-gray-700">{selectedEmp.registrationAddress || '—'}</div>
+                            <button
+                              onClick={() => setEditingAddress(true)}
+                              className="text-sm text-blue-600 hover:text-blue-800"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              value={addressValue}
+                              onChange={(e) => setAddressValue(e.target.value)}
+                              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                            />
+                            <button
+                              onClick={async () => {
+                                if (!selectedEmp) return;
+                                await updateEmployee(selectedEmp.id, { registrationAddress: addressValue });
+                                setSelectedEmp({ ...selectedEmp, registrationAddress: addressValue });
+                                setEditingAddress(false);
+                                toast.success('Address updated');
+                              }}
+                              className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => { setEditingAddress(false); setAddressValue(selectedEmp.registrationAddress || '') }}
+                              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Stats */}

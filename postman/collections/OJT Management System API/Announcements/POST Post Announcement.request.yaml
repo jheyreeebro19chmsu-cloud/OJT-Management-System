@@ -1,0 +1,35 @@
+$kind: http-request
+name: POST Post Announcement
+method: POST
+url: '{{base_url}}/api/announcement/post/'
+order: 1000
+description: |-
+  Post a new announcement from an instructor to their students.
+  
+  Accepts either JSON (with optional base64 image) or multipart form-data
+  (with an image file upload). The announcement will be visible to all students
+  linked to the instructor.
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Announcement posted successfully",
+    "announcement_id": 1,
+    "image_url": null
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "user_id": 1,
+      "title": "Weekly Report Due",
+      "content": "Please submit your weekly DTR report by Friday.",
+      "image_b64": null
+    }

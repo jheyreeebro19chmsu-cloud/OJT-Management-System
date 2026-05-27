@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 
 import { isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
+import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import {
   Employee,
   TimeRecord,
@@ -669,20 +670,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (password) {
       setPasswordForEmail(employeeData.email, password);
     }
-    const newEmp: Employee = {
+
+    // Set robust default values for non-trainee roles to avoid violating NOT NULL database constraints
+    const cleanData = {
       ...employeeData,
+      companyName: employeeData.companyName || (employeeData.position === 'HTE Representative' ? 'HTE Partner' : 'N/A'),
+      supervisorName: employeeData.supervisorName || 'N/A',
+      schoolName: employeeData.schoolName || 'N/A',
+      course: employeeData.course || 'N/A',
+      startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
+      endDate: employeeData.endDate || new Date().toISOString().split('T')[0],
+      requiredHours: employeeData.requiredHours ?? 0,
+    };
+
+    const newEmp: Employee = {
+      ...cleanData,
       id: `emp-${Date.now()}`,
       createdAt: new Date().toISOString().split('T')[0],
     };
 
     if (useSupabase) {
-      supabaseService.createEmployee(employeeData).then((created) => {
+      supabaseService.createEmployee(cleanData).then(async (created) => {
         if (created) {
           setEmployees((prev) => [created, ...prev]);
+
+          // Handle face registration after successful database creation to use the real database UUID
+          if (cleanData.photo && isSecurityApiConfigured()) {
+            try {
+              const response = await registerFace({
+                employee_id: created.id,
+                image: cleanData.photo,
+              });
+              if (response.success && response.image_url) {
+                // Update both local state and Supabase with the enrolled public image URL
+                updateEmployee(created.id, { photo: response.image_url, faceRegistered: true });
+              }
+            } catch (err) {
+              console.error('Face registration failed inside AppContext:', err);
+            }
+          }
         }
+      }).catch((err) => {
+        console.error('Supabase employee creation failed:', err);
       });
     } else {
       setEmployees((prev) => [...prev, newEmp]);
+
+      // Local storage face enrollment fallback
+      if (cleanData.photo && isSecurityApiConfigured()) {
+        registerFace({
+          employee_id: newEmp.id,
+          image: cleanData.photo,
+        }).then((response) => {
+          if (response.success && response.image_url) {
+            updateEmployee(newEmp.id, { photo: response.image_url, faceRegistered: true });
+          }
+        }).catch((err) => {
+          console.error('Local face registration failed:', err);
+        });
+      }
     }
 
     return newEmp;
@@ -730,7 +776,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getTodayRecord = (employeeId: string): TimeRecord | null => {
     const today = new Date().toISOString().split('T')[0];
-    return timeRecords.find((r) => r.employeeId === employeeId && r.date === today) || null;
+    const todayRecords = timeRecords.filter((r) => r.employeeId === employeeId && r.date === today);
+    if (todayRecords.length === 0) return null;
+    
+    // Sort today's records reverse-chronologically (newest first) by their id
+    return todayRecords.sort((a, b) => b.id.localeCompare(a.id))[0];
   };
 
   const getEmployeeRecords = (employeeId: string): TimeRecord[] => {

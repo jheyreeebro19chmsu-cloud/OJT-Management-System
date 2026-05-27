@@ -1,0 +1,32 @@
+$kind: http-request
+name: POST Verify QR
+method: POST
+url: '{{base_url}}/api/auth/verify-qr/'
+order: 1000
+description: |-
+  Verify an instructor's QR code scanned by a student during attendance.
+  
+  The QR data is typically in the format `instructor_<id>_<email>`.
+  Returns the instructor's profile information if the QR code is valid.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "instructor": {
+      "id": 1,
+      "email": "instructor@example.com",
+      "name": "Maria Santos",
+      "qr_code_url": "/media/instructor_qrcodes/qr_1.png"
+    }
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "qr_data": "instructor_1_instructor@example.com"
+    }

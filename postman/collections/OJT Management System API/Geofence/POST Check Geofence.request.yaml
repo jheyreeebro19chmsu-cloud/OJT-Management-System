@@ -1,0 +1,50 @@
+$kind: http-request
+name: POST Check Geofence
+method: POST
+url: '{{base_url}}/api/geofence/check/'
+order: 1000
+description: |-
+  Check whether a given GPS coordinate is inside any of the provided geofence zones.
+  
+  Used during attendance time-in/time-out to verify the student is physically
+  present at the OJT company location.
+  
+  **Requires:** `Authorization: Bearer {{api_key}}`
+  
+  **Example Response:**
+  ```json
+  {
+    "inside": true,
+    "distance_m": 5.2,
+    "zone": {
+      "name": "Office",
+      "lat": 14.5995,
+      "lng": 120.9842,
+      "radius": 100
+    },
+    "accuracy_m": 10.0,
+    "geofence_advisory": true
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "lat": 14.5995,
+      "lng": 120.9842,
+      "accuracy": 10.0,
+      "zones": [
+        {
+          "name": "Office",
+          "lat": 14.5995,
+          "lng": 120.9842,
+          "radius": 100,
+          "active": true
+        }
+      ]
+    }

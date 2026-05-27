@@ -1,0 +1,37 @@
+$kind: http-request
+name: POST Save Attendance Photo
+method: POST
+url: '{{base_url}}/api/attendance/photo/'
+order: 4000
+description: |-
+  Save a photo captured during attendance time-in or time-out.
+  
+  Accepts either multipart form-data (with a file upload) or JSON with a base64-encoded image.
+  The `action` field must be either `"in"` or `"out"`.
+  
+  **Requires:** `Authorization: Bearer {{api_key}}`
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "photo_id": 1,
+    "image_url": "http://localhost:8000/media/attendance_photos/EMP001_in_20260527.jpg"
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "employee_id": "EMP001",
+      "action": "in",
+      "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgAB...",
+      "application_id": 1
+    }

@@ -1,0 +1,28 @@
+$kind: http-request
+name: POST Reject OJT Application
+method: POST
+url: '{{base_url}}/api/application/reject/'
+order: 3000
+description: |-
+  Reject a pending OJT application with a reason.
+  
+  Changes the application status from `pending` to `rejected` and records
+  the rejection reason for the student's reference.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Application rejected successfully"
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "application_id": 1,
+      "rejection_reason": "Incomplete documents"
+    }

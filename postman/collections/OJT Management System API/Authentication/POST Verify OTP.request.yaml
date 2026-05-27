@@ -1,0 +1,28 @@
+$kind: http-request
+name: POST Verify OTP
+method: POST
+url: '{{base_url}}/api/auth/verify-otp/'
+order: 2000
+description: |-
+  Verify the OTP code sent to the user's email address.
+  
+  Submit the email and the OTP code received via email to confirm ownership
+  of the email address before completing registration.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "OTP verified successfully"
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "student@example.com",
+      "otp_code": "123456"
+    }

@@ -1,0 +1,10 @@
+$kind: http-request
+name: GET Geonames Countries
+method: GET
+url: '{{base_url}}/api/geonames/countries/'
+order: 3000
+description: |-
+  Retrieve a list of countries from the Geonames service.
+  
+  Returns country data including country codes and names.
+  Used to populate country selection dropdowns in the mobile app registration forms.

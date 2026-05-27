@@ -1,0 +1,36 @@
+$kind: http-request
+name: GET HTE Applications
+method: GET
+url: '{{base_url}}/api/hte/applications/'
+order: 4000
+description: |-
+  Retrieve all OJT applications accessible to the authenticated HTE user.
+  
+  Returns a list of student applications with their current status, hours rendered,
+  and remaining hours for the HTE's monitoring.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "applications": [
+      {
+        "id": 1,
+        "student_name": "Juan Dela Cruz",
+        "student_email": "student@example.com",
+        "status": "approved",
+        "required_hours": 486,
+        "rendered_hours": 120.5,
+        "remaining_hours": 365.5,
+        "start_date": "2026-06-01",
+        "end_date": "2026-08-31",
+        "company_name": "Tech Corp"
+      }
+    ]
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'

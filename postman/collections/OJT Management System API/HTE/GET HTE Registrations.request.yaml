@@ -1,0 +1,30 @@
+$kind: http-request
+name: GET HTE Registrations
+method: GET
+url: '{{base_url}}/api/hte/registrations/'
+order: 7000
+description: |-
+  Retrieve all face registrations associated with the authenticated HTE.
+  
+  Returns a list of employee/student face registration records including
+  the employee ID, image URL, and registration timestamp.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "registrations": [
+      {
+        "id": 1,
+        "employee_id": "EMP001",
+        "image_url": "http://localhost:8000/media/faces/EMP001.jpg",
+        "created_at": "2026-05-27T08:00:00+08:00"
+      }
+    ]
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'

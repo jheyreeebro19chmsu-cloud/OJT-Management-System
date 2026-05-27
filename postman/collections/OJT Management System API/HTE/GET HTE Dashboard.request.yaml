@@ -1,0 +1,38 @@
+$kind: http-request
+name: GET HTE Dashboard
+method: GET
+url: '{{base_url}}/api/hte/dashboard/'
+order: 8000
+description: |-
+  Retrieve the HTE dashboard metrics and recent activity summary.
+  
+  Returns aggregated statistics including total applications, status breakdown,
+  total hours (required, rendered, remaining), unique student count, and
+  recent time records for the HTE's monitoring overview.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "metrics": {
+      "total_applications": 10,
+      "status_counts": {
+        "pending": 2,
+        "approved": 5,
+        "rejected": 1,
+        "completed": 2,
+        "cancelled": 0
+      },
+      "total_required_hours": 4860,
+      "total_rendered_hours": 1200.5,
+      "total_remaining_hours": 3659.5,
+      "unique_students": 10
+    },
+    "recent_time_records": []
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'

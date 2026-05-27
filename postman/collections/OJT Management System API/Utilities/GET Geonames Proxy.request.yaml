@@ -1,0 +1,17 @@
+$kind: http-request
+name: GET Geonames Proxy
+method: GET
+url: '{{base_url}}/api/geonames/proxy/'
+order: 2000
+description: |-
+  Proxy endpoint for Geonames geographic search queries.
+  
+  Forwards search queries to the Geonames API and returns location data.
+  Used for address autocomplete and location search in the mobile app.
+  
+  **Query Parameters:**
+  - `q` (required): Search query string (e.g., city name, address)
+queryParams:
+  - key: q
+    value: Manila
+    description: 'Search query string for geographic location lookup.'

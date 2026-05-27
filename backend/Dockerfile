@@ -14,4 +14,4 @@ COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 COPY . .
-CMD ["sh", "-c", "python manage.py migrate && python manage.py check && python -m gunicorn ojt_backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --log-level debug"]
+CMD ["sh", "-c", "python manage.py migrate && python manage.py check && python manage.py collectstatic --noinput && python -m gunicorn ojt_backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --log-level debug"]

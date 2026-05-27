@@ -1,0 +1,37 @@
+$kind: http-request
+name: POST Send Email
+method: POST
+url: '{{base_url}}/api/email/send/'
+order: 1000
+description: |-
+  Send a transactional email via the OJT system's email service.
+  
+  Used internally for sending OTP codes, notifications, and other system emails.
+  Requires the security API key for authorization.
+  
+  **Requires:** `Authorization: Bearer {{api_key}}`
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "msg_123",
+      "from": "noreply@ojtsystem.com",
+      "to": "recipient@example.com"
+    }
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "to": "recipient@example.com",
+      "subject": "Test Email",
+      "html": "<p>Hello World</p>"
+    }

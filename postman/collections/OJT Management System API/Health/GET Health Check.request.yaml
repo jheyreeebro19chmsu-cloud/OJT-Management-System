@@ -1,0 +1,21 @@
+$kind: http-request
+name: GET Health Check
+method: GET
+url: '{{base_url}}/api/health/'
+order: 1000
+description: |-
+  Check the health status of the OJT Management System API.
+  
+  Returns the overall status of the server along with feature availability flags
+  for face recognition and geofence advisory modules.
+  
+  No authentication required.
+  
+  **Example Response:**
+  ```json
+  {
+    "status": "ok",
+    "face_recognition_installed": true,
+    "geofence_advisory": true
+  }
+  ```

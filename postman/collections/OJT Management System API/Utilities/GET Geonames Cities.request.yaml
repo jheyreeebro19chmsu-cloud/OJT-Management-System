@@ -1,0 +1,17 @@
+$kind: http-request
+name: GET Geonames Cities
+method: GET
+url: '{{base_url}}/api/geonames/cities/'
+order: 4000
+description: |-
+  Retrieve a list of cities for a given country from the Geonames service.
+  
+  Returns city data for the specified country code.
+  Used to populate city selection dropdowns in the mobile app registration forms.
+  
+  **Query Parameters:**
+  - `country` (required): ISO 3166-1 alpha-2 country code (e.g., `PH` for Philippines)
+queryParams:
+  - key: country
+    value: PH
+    description: 'ISO 3166-1 alpha-2 country code (e.g., PH for Philippines).'

@@ -1,0 +1,27 @@
+$kind: http-request
+name: POST Approve OJT Application
+method: POST
+url: '{{base_url}}/api/application/approve/'
+order: 2000
+description: |-
+  Approve a pending OJT application.
+  
+  Changes the application status from `pending` to `approved`, allowing the student
+  to begin recording attendance for their OJT.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Application approved successfully"
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "application_id": 1
+    }

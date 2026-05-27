@@ -1,0 +1,33 @@
+$kind: http-request
+name: GET HTE Access Requests
+method: GET
+url: '{{base_url}}/api/hte/access-requests/'
+order: 6000
+description: |-
+  Retrieve all HTE access requests associated with the authenticated HTE user.
+  
+  Returns a list of access requests with their current status (pending, approved, rejected),
+  timestamps, and rejection reasons where applicable.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "access_requests": [
+      {
+        "id": 1,
+        "application_id": 1,
+        "student_name": "Juan Dela Cruz",
+        "status": "pending",
+        "requested_at": "2026-05-27T08:00:00+08:00",
+        "approved_at": null,
+        "rejection_reason": ""
+      }
+    ]
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'

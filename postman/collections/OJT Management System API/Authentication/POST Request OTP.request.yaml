@@ -1,0 +1,29 @@
+$kind: http-request
+name: POST Request OTP
+method: POST
+url: '{{base_url}}/api/auth/request-otp/'
+order: 1000
+description: |-
+  Request a One-Time Password (OTP) to be sent to the provided email address.
+  
+  Used during student registration or email verification flow. The OTP expires
+  after 10 minutes.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "OTP sent to email",
+    "expires_in_minutes": 10
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "student@example.com",
+      "full_name": "Juan Dela Cruz"
+    }

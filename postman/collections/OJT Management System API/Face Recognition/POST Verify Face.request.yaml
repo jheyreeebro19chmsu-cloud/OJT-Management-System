@@ -1,0 +1,39 @@
+$kind: http-request
+name: POST Verify Face
+method: POST
+url: '{{base_url}}/api/face/verify/'
+order: 2000
+description: |-
+  Verify a captured face image against a registered face for an employee/student.
+  
+  Accepts either multipart form-data (with a file upload) or JSON with a base64-encoded image.
+  Returns match result with distance and confidence scores.
+  
+  **Requires:** `Authorization: Bearer {{api_key}}`
+  
+  **Tolerance:** Lower values are stricter (default: 0.6). Range: 0.0-1.0.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "matched": true,
+    "distance": 0.35,
+    "tolerance": 0.6,
+    "confidence": 0.65,
+    "message": "Face matched."
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "employee_id": "EMP001",
+      "captured_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgAB...",
+      "tolerance": 0.6
+    }

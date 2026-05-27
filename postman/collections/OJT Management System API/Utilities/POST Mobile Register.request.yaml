@@ -1,0 +1,27 @@
+$kind: http-request
+name: POST Mobile Register
+method: POST
+url: '{{base_url}}/api/mobile/register/'
+order: 6000
+description: |-
+  Register a mobile device for push notifications or device tracking.
+  
+  Associates a device ID with a user account to enable push notifications
+  and device-specific features in the OJT mobile application.
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "device_id": "device123",
+      "user_id": 1
+    }

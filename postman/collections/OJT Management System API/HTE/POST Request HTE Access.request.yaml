@@ -1,0 +1,35 @@
+$kind: http-request
+name: POST Request HTE Access
+method: POST
+url: '{{base_url}}/api/hte/request-access/'
+order: 1000
+description: |-
+  Submit a request for an HTE (Host Training Establishment) to access a student's OJT application data.
+  
+  Allows an HTE to request visibility into a student's attendance records and progress
+  for a specific OJT application.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "HTE access request submitted successfully",
+    "request_id": 1
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "application_id": 1,
+      "hte_id": 1
+    }

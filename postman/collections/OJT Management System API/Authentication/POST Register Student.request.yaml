@@ -1,0 +1,42 @@
+$kind: http-request
+name: POST Register Student
+method: POST
+url: '{{base_url}}/api/auth/register-student/'
+order: 4000
+description: |-
+  Register a new student account in the OJT Management System.
+  
+  Creates a student user and returns JWT tokens for immediate authentication.
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "tokens": {
+      "refresh": "<refresh_token>",
+      "access": "<access_token>"
+    },
+    "user": {
+      "id": 1,
+      "email": "student@example.com",
+      "name": "Juan Dela Cruz",
+      "role": "student"
+    }
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "student@example.com",
+      "password": "password123",
+      "first_name": "Juan",
+      "last_name": "Dela Cruz",
+      "age": 20,
+      "address": "Manila, Philippines"
+    }

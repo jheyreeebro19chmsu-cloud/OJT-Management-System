@@ -1,0 +1,32 @@
+$kind: http-request
+name: POST Reject HTE Access
+method: POST
+url: '{{base_url}}/api/hte/reject-access/'
+order: 3000
+description: |-
+  Reject a pending HTE access request with a reason.
+  
+  Denies the HTE access to the student's OJT application data and records
+  the rejection reason.
+  
+  **Requires:** `Authorization: Bearer {{access_token}}` (role: hte)
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "HTE access rejected successfully"
+  }
+  ```
+headers:
+  - key: Authorization
+    value: 'Bearer {{access_token}}'
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "request_id": 1,
+      "rejection_reason": "Not eligible"
+    }

@@ -1,0 +1,31 @@
+$kind: http-request
+name: POST Time In
+method: POST
+url: '{{base_url}}/api/attendance/time-in/'
+order: 2000
+description: |-
+  Record a student's time-in for their OJT attendance.
+  
+  Creates a new attendance record with the current timestamp as time-in.
+  The student must have an approved OJT application to record attendance.
+  
+  **Response Status:** 201 Created
+  
+  **Example Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Time in recorded successfully",
+    "time_in": "2026-05-27T08:00:00+08:00"
+  }
+  ```
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "user_id": 1,
+      "application_id": 1
+    }
