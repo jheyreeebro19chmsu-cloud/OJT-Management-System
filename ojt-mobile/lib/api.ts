@@ -11,6 +11,10 @@ export function setAuthToken(token: string | null) {
   AUTH_TOKEN = token;
 }
 
+export function getApiBaseUrl() {
+  return API_BASE_URL.replace(/\/api$/, '');
+}
+
 export async function post(endpoint: string, data: any) {
   try {
     const headers: any = {
@@ -27,6 +31,14 @@ export async function post(endpoint: string, data: any) {
     const result = await response.json();
     if (!response.ok) {
       throw new Error(result.error || 'Request failed');
+    }
+    // keep tokens up-to-date when server returns new tokens
+    if (result && result.tokens && result.tokens.access) {
+      try {
+        // dynamic import to avoid circulars
+        const auth = await import('./auth');
+        await auth.saveTokens(result.tokens.access, result.tokens.refresh);
+      } catch (e) {}
     }
     return result;
   } catch (error) {
@@ -48,6 +60,12 @@ export async function get(endpoint: string) {
     const result = await response.json();
     if (!response.ok) {
       throw new Error(result.error || 'Request failed');
+    }
+    if (result && result.tokens && result.tokens.access) {
+      try {
+        const auth = await import('./auth');
+        await auth.saveTokens(result.tokens.access, result.tokens.refresh);
+      } catch (e) {}
     }
     return result;
   } catch (error) {

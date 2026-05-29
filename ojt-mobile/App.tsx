@@ -16,7 +16,8 @@ import {
 import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
-import { setAuthToken } from './lib/api';
+import { setAuthToken, getApiBaseUrl } from './lib/api';
+import authStore from './lib/auth';
 import RegisterScreen from './screens/RegisterScreen';
 import QRCode from 'react-native-qrcode-svg';
 import ApplicationScreen from './screens/ApplicationScreen';
@@ -52,30 +53,44 @@ export default function App() {
       setLoading(false);
       // If supabase session exists, exchange for Django JWT
       if (session && session.access_token) {
-        fetch('http://127.0.0.1:8000/api/auth/supabase-exchange/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: session.access_token }),
-        }).then(r => r.json()).then(res => {
-          if (res && res.tokens && res.tokens.access) {
-            setAuthToken(res.tokens.access);
+        (async () => {
+          try {
+            const r = await fetch(`${getApiBaseUrl()}/api/auth/supabase-exchange/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ access_token: session.access_token }),
+            });
+            const res = await r.json();
+            if (res && res.tokens) {
+              const access = res.tokens.access;
+              const refresh = res.tokens.refresh;
+              await authStore.saveTokens(access, refresh);
+            }
+          } catch (err) {
+            console.warn('Token exchange failed', err);
           }
-        }).catch(err => console.warn('Token exchange failed', err));
+        })();
       }
     });
 
     supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session && session.access_token) {
-        fetch('http://127.0.0.1:8000/api/auth/supabase-exchange/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: session.access_token }),
-        }).then(r => r.json()).then(res => {
-          if (res && res.tokens && res.tokens.access) {
-            setAuthToken(res.tokens.access);
+        (async () => {
+          try {
+            const r = await fetch(`${getApiBaseUrl()}/api/auth/supabase-exchange/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ access_token: session.access_token }),
+            });
+            const res = await r.json();
+            if (res && res.tokens) {
+              await authStore.saveTokens(res.tokens.access, res.tokens.refresh);
+            }
+          } catch (err) {
+            console.warn('Token exchange failed', err);
           }
-        }).catch(err => console.warn('Token exchange failed', err));
+        })();
       } else {
         setAuthToken(null);
       }
