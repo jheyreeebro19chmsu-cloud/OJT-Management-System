@@ -19,6 +19,7 @@ urlpatterns = [
     path("auth/request-otp/", auth_views.request_otp, name="request_otp"),
     path("auth/verify-otp/", auth_views.verify_otp, name="verify_otp"),
     path("auth/login/", auth_views.login, name="login"),
+    path("auth/supabase-exchange/", auth_views.supabase_exchange, name="supabase_exchange"),
     path("auth/register-student/", auth_views.register_student, name="register_student"),
     path("auth/register-instructor/", auth_views.register_instructor, name="register_instructor"),
     path("auth/register-hte/", auth_views.register_hte, name="register_hte"),

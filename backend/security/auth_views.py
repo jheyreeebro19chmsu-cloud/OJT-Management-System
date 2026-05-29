@@ -177,3 +177,61 @@ def login(request: HttpRequest) -> JsonResponse:
         return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': role, **profile_data}})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def supabase_exchange(request: HttpRequest) -> JsonResponse:
+    """Exchange a Supabase access token for a Django JWT access/refresh pair.
+
+    Expects JSON body: {"access_token": "..."}
+    This endpoint calls the Supabase `/auth/v1/user` endpoint with the provided
+    access token to validate and fetch the user's email. If email found, it will
+    get-or-create a Django User and return Refresh/Access tokens.
+    """
+    try:
+        data = json.loads(request.body or b"{}")
+        sup_token = data.get('access_token') or data.get('accessToken')
+        if not sup_token:
+            return JsonResponse({'error': 'access_token required'}, status=400)
+
+        # Determine Supabase URL from settings or env
+        supabase_url = getattr(settings, 'SUPABASE_URL', None) or getattr(settings, 'VITE_SUPABASE_URL', None) or None
+        if not supabase_url:
+            return JsonResponse({'error': 'Supabase URL not configured on server'}, status=500)
+
+        userinfo_url = supabase_url.rstrip('/') + '/auth/v1/user'
+        req = urllib.request.Request(userinfo_url, headers={'Authorization': f'Bearer {sup_token}'})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            body = resp.read()
+            info = json.loads(body.decode('utf-8'))
+
+        email = info.get('email')
+        if not email:
+            return JsonResponse({'error': 'Could not determine email from Supabase token'}, status=400)
+
+        # Ensure user exists in Django
+        user, created = User.objects.get_or_create(username=email, defaults={'email': email, 'first_name': info.get('user_metadata', {}).get('first_name', ''), 'last_name': info.get('user_metadata', {}).get('last_name', '')})
+
+        # Create default role/student profile if missing
+        from .models import UserRole, Student, OJTInstructor, HTE
+        role_row = UserRole.objects.filter(user=user).first()
+        role = role_row.role if role_row else 'student'
+
+        # If no role row, create a student record by default for sync
+        if not role_row:
+            UserRole.objects.create(user=user, role='student', is_verified=True)
+            if not Student.objects.filter(user=user).exists():
+                Student.objects.create(user=user)
+
+        refresh = RefreshToken.for_user(user)
+        profile_data = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': role}
+        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': profile_data})
+    except urllib.error.HTTPError as he:
+        try:
+            body = he.read().decode('utf-8')
+        except Exception:
+            body = str(he)
+        return JsonResponse({'error': 'supabase_token_invalid', 'detail': body}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
