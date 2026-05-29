@@ -56,7 +56,8 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     photo: '',
   });
 
-  const steps = role === 'admin' ? ['Basic Info', 'Photo'] : 
+  // Do NOT include face enrollment (Photo) for OJT Instructor (admin) or HTE
+  const steps = role === 'admin' ? ['Basic Info'] : 
                 role === 'hte' ? ['Company Info', 'Contact Info'] : 
                 ['Personal', 'Company', 'School', 'Photo'];
 
@@ -80,6 +81,16 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       
       return newForm;
     });
+  };
+
+  const passwordChecks = (pw: string) => {
+    return {
+      length: pw.length >= 8,
+      uppercase: /[A-Z]/.test(pw),
+      lowercase: /[a-z]/.test(pw),
+      number: /[0-9]/.test(pw),
+      special: /[^A-Za-z0-9]/.test(pw),
+    };
   };
 
   const handleNext = () => {
@@ -402,6 +413,20 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             </View>
 
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
+            <View style={{ marginTop: 8, marginLeft: 4 }}>
+              {(() => {
+                const checks = passwordChecks(form.password);
+                return (
+                  <View>
+                    <Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text>
+                    <Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text>
+                    <Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text>
+                    <Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text>
+                    <Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text>
+                  </View>
+                );
+              })()}
+            </View>
           </>
         )}
 
@@ -468,6 +493,20 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             </View>
 
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
+            <View style={{ marginTop: 8, marginLeft: 4 }}>
+              {(() => {
+                const checks = passwordChecks(form.password);
+                return (
+                  <View>
+                    <Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text>
+                    <Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text>
+                    <Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text>
+                    <Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text>
+                    <Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text>
+                  </View>
+                );
+              })()}
+            </View>
           </>
         )}
 
@@ -482,6 +521,20 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
           <>
             <Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="contact@techcorp.com" />
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
+            <View style={{ marginTop: 8, marginLeft: 4 }}>
+              {(() => {
+                const checks = passwordChecks(form.password);
+                return (
+                  <View>
+                    <Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text>
+                    <Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text>
+                    <Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text>
+                    <Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text>
+                    <Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text>
+                  </View>
+                );
+              })()}
+            </View>
           </>
         )}
 

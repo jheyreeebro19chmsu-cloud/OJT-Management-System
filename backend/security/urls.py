@@ -32,6 +32,8 @@ urlpatterns = [
     path("application/submit/", application_views.submit_ojt_application, name="submit_application"),
     path("application/approve/", application_views.approve_ojt_application, name="approve_application"),
     path("application/reject/", application_views.reject_ojt_application, name="reject_application"),
+    path("instructor/applications/", application_views.get_instructor_applications, name="get_instructor_applications"),
+    path("instructor/time-records/", application_views.get_application_time_records, name="get_application_time_records"),
     
     # Announcement endpoints
     path("announcement/post/", announcement_views.post_announcement, name="post_announcement"),

@@ -10,6 +10,7 @@ from .api_auth import require_jwt
 from .models import (
     Student, OJTInstructor, HTE, StudentOJTApplication, TimeRecord, HTEAccessRequest
 )
+from django.db import models
 
 def send_application_status_email(email: str, student_name: str, status: str, company_name: str = "") -> bool:
     """Send application status update email."""
@@ -97,63 +98,77 @@ def submit_ojt_application(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_jwt(required_role='instructor')
 def approve_ojt_application(request: HttpRequest) -> JsonResponse:
-    """Approve OJT application."""
+    """Approve OJT application (instructor only)."""
     try:
         data = json.loads(request.body)
         application_id = data.get('application_id')
-        
+
         if not application_id:
             return JsonResponse({'error': 'Application ID required'}, status=400)
-        
+
         try:
             application = StudentOJTApplication.objects.get(id=application_id)
         except StudentOJTApplication.DoesNotExist:
             return JsonResponse({'error': 'Application not found'}, status=404)
-        
+
+        # Only the assigned instructor may approve
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        if not instructor or application.instructor_id != instructor.id:
+            return JsonResponse({'error': 'Not authorized to approve this application'}, status=403)
+
         application.status = 'approved'
         application.approved_at = timezone.now()
         application.save()
-        
+
         send_application_status_email(
             application.student.user.email,
             application.student.user.get_full_name(),
             'approved',
             application.company_name
         )
-        
+
         return JsonResponse({'success': True, 'message': 'Application approved successfully'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_jwt(required_role='instructor')
 def reject_ojt_application(request: HttpRequest) -> JsonResponse:
-    """Reject OJT application."""
+    """Reject OJT application (instructor only)."""
     try:
         data = json.loads(request.body)
         application_id = data.get('application_id')
         rejection_reason = data.get('rejection_reason', '')
-        
+
         if not application_id:
             return JsonResponse({'error': 'Application ID required'}, status=400)
-        
+
         try:
             application = StudentOJTApplication.objects.get(id=application_id)
         except StudentOJTApplication.DoesNotExist:
             return JsonResponse({'error': 'Application not found'}, status=404)
-        
+
+        # Only the assigned instructor may reject
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        if not instructor or application.instructor_id != instructor.id:
+            return JsonResponse({'error': 'Not authorized to reject this application'}, status=403)
+
         application.status = 'rejected'
         application.rejection_reason = rejection_reason
         application.save()
-        
+
         send_application_status_email(
             application.student.user.email,
             application.student.user.get_full_name(),
             'rejected',
             application.company_name
         )
-        
+
         return JsonResponse({'success': True, 'message': 'Application rejected successfully'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -187,6 +202,105 @@ def get_hte_applications(request: HttpRequest) -> JsonResponse:
         ]
 
         return JsonResponse({'success': True, 'applications': data})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@require_jwt(required_role='instructor')
+def get_instructor_applications(request: HttpRequest) -> JsonResponse:
+    """Return OJT applications associated with the authenticated instructor."""
+    try:
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        if not instructor:
+            return JsonResponse({'error': 'Instructor profile not found'}, status=404)
+        # Support pagination and simple search
+        q = request.GET.get('q', '').strip()
+        try:
+            page = int(request.GET.get('page', '1'))
+        except Exception:
+            page = 1
+        try:
+            page_size = int(request.GET.get('page_size', '20'))
+        except Exception:
+            page_size = 20
+
+        qs = StudentOJTApplication.objects.filter(instructor=instructor)
+        if q:
+            qs = qs.filter(
+                models.Q(student__user__first_name__icontains=q) |
+                models.Q(student__user__last_name__icontains=q) |
+                models.Q(student__user__email__icontains=q) |
+                models.Q(company_name__icontains=q)
+            )
+
+        total = qs.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        applications = qs.order_by('-created_at')[start:end]
+
+        data = [
+            {
+                'id': a.id,
+                'student_id': a.student.user.id,
+                'student_name': a.student.user.get_full_name(),
+                'student_email': a.student.user.email,
+                'status': a.status,
+                'required_hours': a.required_hours,
+                'rendered_hours': a.rendered_hours,
+                'remaining_hours': a.remaining_hours,
+                'start_date': a.start_date.isoformat(),
+                'end_date': a.end_date.isoformat(),
+                'company_name': a.company_name,
+                'company_address': a.company_address,
+            }
+            for a in applications
+        ]
+
+        return JsonResponse({'success': True, 'applications': data, 'total': total, 'page': page, 'page_size': page_size})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@require_jwt(required_role='instructor')
+def get_application_time_records(request: HttpRequest) -> JsonResponse:
+    """Return time records for a specific application (instructor access only)."""
+    try:
+        application_id = request.GET.get('application_id')
+        if not application_id:
+            return JsonResponse({'error': 'application_id is required'}, status=400)
+
+        try:
+            application = StudentOJTApplication.objects.get(id=application_id)
+        except StudentOJTApplication.DoesNotExist:
+            return JsonResponse({'error': 'Application not found'}, status=404)
+
+        # Ensure the requesting instructor owns this application
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        if not instructor or application.instructor.id != instructor.id:
+            return JsonResponse({'error': 'Not authorized to view this application'}, status=403)
+
+        records = TimeRecord.objects.filter(application=application).order_by('-date')
+        data = [
+            {
+                'id': r.id,
+                'date': r.date.isoformat(),
+                'time_in': r.time_in.isoformat() if r.time_in else None,
+                'time_out': r.time_out.isoformat() if r.time_out else None,
+                'hours_rendered': r.hours_rendered,
+                'session': r.session,
+                'is_approved': r.is_approved,
+                'notes': r.notes,
+            }
+            for r in records
+        ]
+
+        return JsonResponse({'success': True, 'time_records': data})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

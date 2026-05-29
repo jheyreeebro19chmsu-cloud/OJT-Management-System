@@ -42,8 +42,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png',
 });
 
-const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
-const stepsAdmin = ['Personal Info', 'Face Registration'];
+const stepsTrainee = ['Personal Info'];
+// Do NOT include face registration for OJT Instructor or HTE
+const stepsAdmin = ['Personal Info'];
 const stepsHTE = ['Company Info', 'Contact Info'];
 
 type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
@@ -346,7 +347,7 @@ export function Register() {
 
     const computedAddress = registrationAddress || buildAddrFromForm() || undefined;
 
-    const newEmp = registerEmployee({
+    const result = await registerEmployee({
       ...form,
       employeeId: empId,
       position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
@@ -358,6 +359,13 @@ export function Register() {
       registrationAddress: computedAddress,
       password: form.password,
     });
+
+    if (!result.success) {
+      toast.error(result.message || 'Registration failed. Please check your inputs.');
+      return;
+    }
+
+    const newEmp = result.employee!;
 
     if (role === 'admin') {
       setRegisteredInstructorId(newEmp.id);
@@ -1026,6 +1034,48 @@ export function Register() {
                         </label>
                       </div>
 
+                      {form.password && (
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-200">
+                          <p className="font-semibold text-slate-700 mb-0.5">Password Strength Checklist:</p>
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className={/[A-Z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                {/[A-Z]/.test(form.password) ? "✓" : "○"}
+                              </span>
+                              <span className={/[A-Z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Uppercase letter</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={/[a-z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                {/[a-z]/.test(form.password) ? "✓" : "○"}
+                              </span>
+                              <span className={/[a-z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Lowercase letter</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                {/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "✓" : "○"}
+                              </span>
+                              <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Special character</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={form.password.length >= 8 ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                {form.password.length >= 8 ? "✓" : "○"}
+                              </span>
+                              <span className={form.password.length >= 8 ? "text-green-700 font-medium" : "text-gray-500"}>At least 8 chars</span>
+                            </div>
+                            {form.confirmPassword && (
+                              <div className="flex items-center gap-1 col-span-2 border-t border-slate-200/50 pt-1 mt-1">
+                                <span className={form.password === form.confirmPassword ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
+                                  {form.password === form.confirmPassword ? "✓" : "✗"}
+                                </span>
+                                <span className={form.password === form.confirmPassword ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                                  {form.password === form.confirmPassword ? "Passwords match" : "Passwords do not match"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {role === 'admin' && (
                         <div className="grid grid-cols-2 gap-2">
                           <div>
@@ -1285,7 +1335,7 @@ export function Register() {
                         <label className="text-xs font-semibold text-gray-600 block mb-1">
                           {form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}
                         </label>
-                        {form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] ? (
+                        {form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] && role !== 'hte' ? (
                           <div className="space-y-2">
                             <select
                               value={form.barangay}

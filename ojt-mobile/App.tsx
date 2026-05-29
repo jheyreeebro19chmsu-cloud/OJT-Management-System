@@ -17,10 +17,13 @@ import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check }
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
 import RegisterScreen from './screens/RegisterScreen';
+import QRCode from 'react-native-qrcode-svg';
 import ApplicationScreen from './screens/ApplicationScreen';
 import TasksScreen from './screens/TasksScreen';
 import DTRScreen from './screens/DTRScreen';
 import HTELinkScreen from './screens/HTELinkScreen';
+import InstructorTraineesScreen from './screens/InstructorTraineesScreen';
+import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -35,6 +38,10 @@ export default function App() {
   const [showTasks, setShowTasks] = useState(false);
   const [showDTR, setShowDTR] = useState(false);
   const [showHTELink, setShowHTELink] = useState(false);
+  const [showTrainees, setShowTrainees] = useState(false);
+  const [showRecords, setShowRecords] = useState(false);
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
+  const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -172,6 +179,21 @@ export default function App() {
                   });
                 }}
               />
+            ) : showTrainees ? (
+              <InstructorTraineesScreen
+                onBack={() => setShowTrainees(false)}
+                onOpenRecords={(appId, studentName) => {
+                  setSelectedApplicationId(appId);
+                  setSelectedStudentName(studentName);
+                  setShowRecords(true);
+                }}
+              />
+            ) : showRecords && selectedApplicationId && selectedStudentName ? (
+              <TraineeRecordsScreen
+                applicationId={selectedApplicationId}
+                studentName={selectedStudentName}
+                onBack={() => setShowRecords(false)}
+              />
             ) : showTasks ? (
                 <TasksScreen 
                   profile={profile}
@@ -264,7 +286,7 @@ export default function App() {
                         <StatBox label="New Requests" value="5" color="#fef3c7" textColor="#92400e" />
                       </View>
                       
-                      <TouchableOpacity style={styles.premiumActionCard}>
+                      <TouchableOpacity style={styles.premiumActionCard} onPress={() => setShowTrainees(true)}>
                         <View style={[styles.actionIconContainer, { backgroundColor: '#eff6ff' }]}>
                           <Plus color="#2563eb" size={20} />
                         </View>
@@ -273,6 +295,14 @@ export default function App() {
                           <Text style={styles.actionCardDesc}>Broadcast updates to all students</Text>
                         </View>
                       </TouchableOpacity>
+                      {/* Instructor QR Card - visible and easy to scan by trainees */}
+                      <View style={styles.instructorQrCard}>
+                        <Text style={styles.instructorQrTitle}>Your Enrollment QR</Text>
+                        <View style={styles.instructorQrWrap}>
+                          <QRCode value={`enroll:${profile.id}`} size={160} />
+                        </View>
+                        <Text style={styles.instructorQrHint}>Place your device here for trainees to scan</Text>
+                      </View>
 
                       <TouchableOpacity style={styles.premiumActionCard}>
                         <View style={[styles.actionIconContainer, { backgroundColor: '#f5f3ff' }]}>
@@ -574,6 +604,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     marginBottom: 32,
+  },
+  instructorQrCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#e6f0ff',
+  },
+  instructorQrWrap: {
+    padding: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    marginVertical: 12,
+  },
+  instructorQrTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a'
+  },
+  instructorQrHint: {
+    fontSize: 12,
+    color: '#64748b'
   },
   statBox: {
     flex: 1,

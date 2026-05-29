@@ -18,9 +18,8 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  const effectiveAccuracy = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? accuracyMeters : 0;
-  // Conservative check: user's reported position may be off by `accuracy`; require distance + accuracy <= radius
-  return distance + effectiveAccuracy <= radiusMeters;
+  // Accurate geofence calculation: check if distance <= radius (with a standard 10-meter drift buffer)
+  return distance <= radiusMeters + 10;
 }
 
 export function formatDistance(meters: number): string {

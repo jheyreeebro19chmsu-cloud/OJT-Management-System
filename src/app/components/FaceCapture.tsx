@@ -442,11 +442,14 @@ export function FaceCapture({
   }, [state, mode, employeeId, registeredImage, stopCamera, onSuccess]);
 
   useEffect(() => {
-    if (autoStart) startScan();
+    if (autoStart) {
+      startScan();
+    }
     return () => {
       stopCamera();
     };
-  }, [autoStart, startScan, stopCamera]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRetry = () => {
     setRetryCount((p) => p + 1);

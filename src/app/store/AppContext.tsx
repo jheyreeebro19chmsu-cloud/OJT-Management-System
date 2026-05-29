@@ -256,7 +256,7 @@ interface AppContextType {
   login: (email: string, password: string) => Promise<User | null>;
   logout: () => void;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
-  registerEmployee: (data: RegisterEmployeeInput) => Employee;
+  registerEmployee: (data: RegisterEmployeeInput) => Promise<{ success: boolean; message?: string; employee?: Employee }>;
   updateEmployee: (id: string, data: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
   addTimeRecord: (record: Omit<TimeRecord, 'id'>) => TimeRecord;
@@ -765,10 +765,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { success: true, message: 'Password updated successfully.' };
   };
 
-  const registerEmployee = (data: RegisterEmployeeInput): Employee => {
+  const registerEmployee = async (data: RegisterEmployeeInput): Promise<{ success: boolean; message?: string; employee?: Employee }> => {
     const { password, ...employeeData } = data;
-    if (password && !useSupabase) {
-      setPasswordForEmail(employeeData.email, password);
+    
+    // Check if email already exists locally (in memory state)
+    const emailExistsLocally =
+      employees.some((e) => e.email.toLowerCase() === employeeData.email.toLowerCase()) ||
+      hostSupervisors.some((h) => h.email.toLowerCase() === employeeData.email.toLowerCase());
+      
+    if (emailExistsLocally) {
+      return { success: false, message: 'Email address already registered.' };
     }
 
     // Set robust default values for non-trainee roles to avoid violating NOT NULL database constraints
@@ -790,33 +796,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     if (useSupabase) {
-      const signUpAndCreate = async () => {
+      try {
+        // Query Supabase directly to double check email uniqueness on the server
+        const { data: existingEmp } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', cleanData.email)
+          .maybeSingle();
+
+        if (existingEmp) {
+          return { success: false, message: 'Email address already registered in Supabase.' };
+        }
+
         let authId: string | undefined;
-        try {
-          if (password) {
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-              email: cleanData.email,
-              password: password,
-              options: {
-                data: {
-                  full_name: cleanData.name,
-                  role: cleanData.position === 'OJT Instructor' ? 'admin' : cleanData.position === 'HTE Representative' ? 'host' : 'employee',
-                }
+        if (password) {
+          const { data: authData, error: authError } = await supabase.auth.signUp({
+            email: cleanData.email,
+            password: password,
+            options: {
+              data: {
+                full_name: cleanData.name,
+                role: cleanData.position === 'OJT Instructor' ? 'admin' : cleanData.position === 'HTE Representative' ? 'host' : 'employee',
               }
-            });
-            if (!authError && authData.user) {
-              authId = authData.user.id;
-            } else if (authError) {
-              console.error('Supabase Auth SignUp Error:', authError.message);
             }
+          });
+          
+          if (authError) {
+            return { success: false, message: authError.message };
           }
-        } catch (e) {
-          console.error('Auth signup failed:', e);
+          if (authData.user) {
+            authId = authData.user.id;
+          }
         }
 
         const employeePayload = {
           ...cleanData,
-          id: authId
+          id: authId || newEmp.id,
         };
 
         const created = await supabaseService.createEmployee(employeePayload);
@@ -831,38 +846,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 image: cleanData.photo,
               });
               if (response.success && response.image_url) {
-                // Update both local state and Supabase with the enrolled public image URL
                 updateEmployee(created.id, { photo: response.image_url, faceRegistered: true });
+                created.photo = response.image_url;
+                created.faceRegistered = true;
               }
             } catch (err) {
               console.error('Face registration failed inside AppContext:', err);
             }
           }
+          return { success: true, employee: created };
+        } else {
+          return { success: false, message: 'Failed to create database record in Supabase.' };
         }
-      };
-
-      signUpAndCreate().catch((err) => {
-        console.error('Supabase registration flow failed:', err);
-      });
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Supabase signup failed.' };
+      }
     } else {
+      if (password) {
+        setPasswordForEmail(employeeData.email, password);
+      }
       setEmployees((prev) => [...prev, newEmp]);
 
       // Local storage face enrollment fallback
       if (cleanData.photo && isSecurityApiConfigured()) {
-        registerFace({
-          employee_id: newEmp.id,
-          image: cleanData.photo,
-        }).then((response) => {
+        try {
+          const response = await registerFace({
+            employee_id: newEmp.id,
+            image: cleanData.photo,
+          });
           if (response.success && response.image_url) {
             updateEmployee(newEmp.id, { photo: response.image_url, faceRegistered: true });
+            newEmp.photo = response.image_url;
+            newEmp.faceRegistered = true;
           }
-        }).catch((err) => {
+        } catch (err) {
           console.error('Local face registration failed:', err);
-        });
+        }
       }
+      return { success: true, employee: newEmp };
     }
-
-    return newEmp;
   };
 
   const updateEmployee = (id: string, data: Partial<Employee>) => {

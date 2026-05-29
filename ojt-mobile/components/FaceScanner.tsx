@@ -67,6 +67,15 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
         if (photo.base64) {
           onCapture(`data:image/jpeg;base64,${photo.base64}`);
+          // Pause camera preview to effectively 'turn off' camera after successful capture
+          try {
+            if (cameraRef.current && typeof cameraRef.current.pausePreview === 'function') {
+              cameraRef.current.pausePreview();
+            }
+          } catch (err) {
+            // ignore if method not available for this platform
+            console.debug('pausePreview not available:', err);
+          }
         }
       } catch (error) {
         console.error('Capture error:', error);
@@ -131,15 +140,20 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   }, []);
 
   const handleFacesDetected = ({ faces }: any) => {
-    if (faces.length > 0) {
-      const face = faces[0];
-      // Basic check if face is roughly centered and large enough
-      if (face.bounds.size.width > 100) {
-        setFaceDetected(true);
-        // Auto-capture after a tiny delay to ensure focus
-        setTimeout(() => takePicture(), 100);
+    try {
+      if (faces && faces.length > 0) {
+        const face = faces[0];
+        const size = face && face.bounds && face.bounds.size && face.bounds.size.width ? face.bounds.size.width : 0;
+        if (size > 100) {
+          setFaceDetected(true);
+          // Auto-capture after a tiny delay to ensure focus
+          setTimeout(() => takePicture(), 120);
+        }
+      } else {
+        setFaceDetected(false);
       }
-    } else {
+    } catch (err) {
+      console.debug('Error in face detection handler:', err);
       setFaceDetected(false);
     }
   };
