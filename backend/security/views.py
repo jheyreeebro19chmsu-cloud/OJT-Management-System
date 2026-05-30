@@ -17,12 +17,13 @@ except Exception:
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from django.core.files.base import ContentFile
 import os
 import urllib.request
 import urllib.parse
 
-from .api_auth import require_security_api_key
+from .api_auth import require_security_api_key, require_jwt
 from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness
 from .models import FaceRegistration, AttendancePhoto
 
@@ -285,6 +286,55 @@ def register_face(request: HttpRequest) -> JsonResponse:
         "brightness": brightness_check['brightness'],
         "status": brightness_check['status']
     })
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@require_jwt()
+def enroll_face(request: HttpRequest) -> JsonResponse:
+    """Enroll face for authenticated user (mobile-friendly).
+
+    Accepts JSON body: { "captured_image": "data:image/jpeg;base64,..." }
+    Saves FaceRegistration linked to Django user.
+    """
+    try:
+        data = _json_body(request)
+        user = getattr(request, 'user', None)
+        if not user:
+            return JsonResponse({'error': 'authorization_required'}, status=401)
+
+        captured = data.get('captured_image')
+        if not captured:
+            return JsonResponse({'error': 'captured_image required'}, status=400)
+
+        # create or update FaceRegistration for this user
+        emp_id = f"user-{user.id}"
+        reg, _ = FaceRegistration.objects.get_or_create(user=user, defaults={'employee_id': emp_id})
+        # delete previous image if exists
+        if reg.image:
+            reg.image.delete(save=False)
+
+        content = _content_file_from_base64(captured, emp_id)
+        reg.image.save(content.name, content, save=False)
+        reg.image_data = base64.b64decode(captured.split(',')[1]) if ',' in captured else base64.b64decode(captured)
+        reg.image_format = 'jpeg'
+        reg.save()
+
+        # Attempt to precompute encoding if face_recognition available
+        try:
+            import face_recognition  # type: ignore
+            img = face_recognition.load_image_file(reg.image.path)
+            encodings = face_recognition.face_encodings(img)
+            if encodings:
+                reg.face_encoding = list(encodings[0])
+                reg.save()
+        except BaseException:
+            # face_recognition or its models may not be installed in test env; ignore safely
+            pass
+
+        return JsonResponse({'success': True, 'message': 'Face enrolled', 'image_url': request.build_absolute_uri(reg.image.url) if reg.image else None})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt

@@ -101,6 +101,11 @@ export const instructorApi = {
 
 export const mobileApi = {
   mobileRegister: (payload: any) => post('/mobile/register/', payload),
+  getMyApplicationStatus: () => get('/application/my-status/'),
+};
+
+export const faceApi = {
+  enrollFace: (capturedImageBase64: string) => post('/face/enroll/', { captured_image: capturedImageBase64 }),
 };
 
 export const announcementApi = {

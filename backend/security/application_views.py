@@ -11,6 +11,7 @@ from .models import (
     Student, OJTInstructor, HTE, StudentOJTApplication, TimeRecord, HTEAccessRequest
 )
 from django.db import models
+from .api_auth import require_jwt
 
 def send_application_status_email(email: str, student_name: str, status: str, company_name: str = "") -> bool:
     """Send application status update email."""
@@ -129,6 +130,32 @@ def approve_ojt_application(request: HttpRequest) -> JsonResponse:
             'approved',
             application.company_name
         )
+
+        # Optional: sync status to Supabase employees table if configured
+        try:
+            supabase_url = getattr(settings, 'SUPABASE_URL', None) or getattr(settings, 'VITE_SUPABASE_URL', None)
+            supabase_key = getattr(settings, 'SUPABASE_SERVICE_KEY', None) or getattr(settings, 'VITE_SUPABASE_SERVICE_KEY', None)
+            if supabase_url and supabase_key:
+                import urllib.request
+                import urllib.parse
+                sup_rest = supabase_url.rstrip('/') + '/rest/v1/employees'
+                # Patch by email
+                email_q = urllib.parse.quote_plus(f"email=eq.{application.student.user.email}")
+                url = f"{sup_rest}?{email_q}"
+                payload = json.dumps({"application_status": "approved"}).encode('utf-8')
+                req = urllib.request.Request(url, data=payload, method='PATCH')
+                req.add_header('Content-Type', 'application/json')
+                req.add_header('Prefer', 'return=representation')
+                req.add_header('apikey', supabase_key)
+                req.add_header('Authorization', f'Bearer {supabase_key}')
+                try:
+                    with urllib.request.urlopen(req, timeout=6) as resp:
+                        _ = resp.read()
+                except Exception as exc:
+                    # log and continue
+                    print('Supabase sync failed:', exc)
+        except Exception:
+            pass
 
         return JsonResponse({'success': True, 'message': 'Application approved successfully'})
     except Exception as e:
@@ -384,6 +411,38 @@ def get_hte_dashboard(request: HttpRequest) -> JsonResponse:
             },
             'recent_time_records': recent,
         })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@require_jwt()
+def get_my_application_status(request: HttpRequest) -> JsonResponse:
+    """Return the authenticated student's latest application status."""
+    try:
+        user = getattr(request, 'user', None)
+        if not user:
+            return JsonResponse({'error': 'authorization_required'}, status=401)
+
+        student = Student.objects.filter(user=user).first()
+        if not student:
+            return JsonResponse({'error': 'Student profile not found'}, status=404)
+
+        app = StudentOJTApplication.objects.filter(student=student).order_by('-created_at').first()
+        if not app:
+            return JsonResponse({'success': True, 'application': None})
+
+        data = {
+            'id': app.id,
+            'status': app.status,
+            'company_name': app.company_name,
+            'start_date': app.start_date.isoformat(),
+            'end_date': app.end_date.isoformat(),
+            'required_hours': app.required_hours,
+            'rendered_hours': app.rendered_hours,
+        }
+        return JsonResponse({'success': True, 'application': data})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

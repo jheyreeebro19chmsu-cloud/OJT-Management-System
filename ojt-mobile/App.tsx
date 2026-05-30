@@ -16,7 +16,7 @@ import {
 import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
-import { setAuthToken, getApiBaseUrl } from './lib/api';
+import { setAuthToken, getApiBaseUrl, faceApi } from './lib/api';
 import authStore from './lib/auth';
 import RegisterScreen from './screens/RegisterScreen';
 import QRCode from 'react-native-qrcode-svg';
@@ -26,6 +26,7 @@ import DTRScreen from './screens/DTRScreen';
 import HTELinkScreen from './screens/HTELinkScreen';
 import InstructorTraineesScreen from './screens/InstructorTraineesScreen';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
+import FaceScanner from './components/FaceScanner';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -44,6 +45,8 @@ export default function App() {
   const [showRecords, setShowRecords] = useState(false);
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
   const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
+  const [showFaceEnroll, setShowFaceEnroll] = useState(false);
+  const [faceEnrollInProgress, setFaceEnrollInProgress] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -123,6 +126,34 @@ export default function App() {
       setProfile(null);
     }
   }, [session]);
+
+  // Poll Supabase employee record for application_status changes (prompt post-approval enroll)
+  useEffect(() => {
+    if (!session || !profile || profile.role !== 'employee') return;
+    let alerted = false;
+    const check = async () => {
+      try {
+        const { data } = await supabase.from('employees').select('*').eq('id', session.user.id).single();
+        if (data) {
+          // update local profile
+          setProfile(prev => ({ ...(prev || {}), ...data }));
+          if (!alerted && data.application_status === 'approved' && !data.face_registered) {
+            alerted = true;
+            Alert.alert('Application Approved', 'Your application has been approved. Enroll your face now?', [
+              { text: 'Later', style: 'cancel' },
+              { text: 'Enroll Now', onPress: () => setShowFaceEnroll(true) }
+            ]);
+          }
+        }
+      } catch (e) {
+        console.debug('Status poll failed', e);
+      }
+    };
+    // initial check plus interval
+    check();
+    const id = setInterval(check, 8000);
+    return () => clearInterval(id);
+  }, [session, profile]);
 
   const handleBarCodeScanned = ({ data }: any) => {
     setScanning(false);
@@ -218,6 +249,36 @@ export default function App() {
                   supabase.from('employees').select('*').eq('id', session.user.id).single().then(({ data }) => {
                     if (data) setProfile({ ...data, role: data.position === 'OJT Instructor' ? 'admin' : 'employee' });
                   });
+                }}
+              />
+            ) : showFaceEnroll ? (
+              <FaceScanner
+                onCancel={() => setShowFaceEnroll(false)}
+                onCapture={async (base64Image: string) => {
+                  try {
+                    setFaceEnrollInProgress(true);
+                    const res = await faceApi.enrollFace(base64Image);
+                    if (res && res.success) {
+                      // mark face_registered in supabase employees
+                      try {
+                        await supabase.from('employees').update({ face_registered: true }).eq('id', session.user.id);
+                      } catch (e) {
+                        console.debug('Failed to update supabase face_registered', e);
+                      }
+                      Alert.alert('Success', 'Face enrolled successfully');
+                      // refresh profile
+                      const { data } = await supabase.from('employees').select('*').eq('id', session.user.id).single();
+                      if (data) setProfile({ ...data, role: data.position === 'OJT Instructor' ? 'admin' : 'employee' });
+                    } else {
+                      Alert.alert('Enroll Failed', res && res.error ? res.error : 'Unknown error');
+                    }
+                  } catch (err) {
+                    console.error('Enroll error', err);
+                    Alert.alert('Enroll Error', err.message || String(err));
+                  } finally {
+                    setFaceEnrollInProgress(false);
+                    setShowFaceEnroll(false);
+                  }
                 }}
               />
             ) : showTrainees ? (

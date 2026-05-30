@@ -10,6 +10,7 @@ urlpatterns = [
     path("geonames/cities/", views.geonames_cities, name="geonames_cities"),
     path("osm/streets/", views.osm_streets, name="osm_streets"),
     path("face/register/", views.register_face, name="register_face"),
+    path("face/enroll/", views.enroll_face, name="enroll_face"),
     path("face/verify/", views.verify_face, name="verify_face"),
     path("attendance/photo/", views.save_attendance_photo, name="save_attendance_photo"),
     path("mobile/register/", views.mobile_register, name="mobile_register"),
@@ -34,6 +35,7 @@ urlpatterns = [
     path("application/approve/", application_views.approve_ojt_application, name="approve_application"),
     path("application/reject/", application_views.reject_ojt_application, name="reject_application"),
     path("instructor/applications/", application_views.get_instructor_applications, name="get_instructor_applications"),
+    path("application/my-status/", application_views.get_my_application_status, name="get_my_application_status"),
     path("instructor/time-records/", application_views.get_application_time_records, name="get_application_time_records"),
     
     # Announcement endpoints
