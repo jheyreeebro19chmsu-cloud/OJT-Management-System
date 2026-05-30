@@ -839,7 +839,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setEmployees((prev) => [created, ...prev]);
 
           // Handle face registration after successful database creation to use the real database UUID
-          if (cleanData.photo && isSecurityApiConfigured()) {
+          // Skip face registration for OJT Instructors and HTE Representatives
+          if (
+            cleanData.photo &&
+            isSecurityApiConfigured() &&
+            cleanData.position !== 'OJT Instructor' &&
+            cleanData.position !== 'HTE Representative'
+          ) {
             try {
               const response = await registerFace({
                 employee_id: created.id,
@@ -868,7 +874,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setEmployees((prev) => [...prev, newEmp]);
 
       // Local storage face enrollment fallback
-      if (cleanData.photo && isSecurityApiConfigured()) {
+      // Skip face registration for OJT Instructors and HTE Representatives
+      if (
+        cleanData.photo &&
+        isSecurityApiConfigured() &&
+        cleanData.position !== 'OJT Instructor' &&
+        cleanData.position !== 'HTE Representative'
+      ) {
         try {
           const response = await registerFace({
             employee_id: newEmp.id,
