@@ -121,6 +121,9 @@ export const authAPI = {
   // Reset password (Django + Supabase service role)
   resetPassword: (email: string, newPassword: string) => api.post<{ success: boolean; supabase?: any }>('/auth/reset-password/', { email, new_password: newPassword }),
 
+  // Server-side email existence check
+  checkEmail: (email: string) => api.post<{ exists: boolean }>('/auth/check-email/', { email }),
+
   // OAuth-backed server registration
   registerOauthStudent: (data: { email: string; first_name?: string; last_name?: string }) =>
     api.post<AuthResponse>('/auth/register-oauth-student/', data),

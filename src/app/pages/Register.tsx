@@ -228,19 +228,20 @@ export function Register() {
     setEmailTaken(null);
     setEmailMsg('');
     try {
-      const existsLocal = employees.some((e) => e.email.toLowerCase() === email.toLowerCase()) || hostSupervisors.some((h) => h.email.toLowerCase() === email.toLowerCase());
-      if (existsLocal) {
-        setEmailTaken(true);
-        setEmailMsg('Email already in use');
+      // Prefer server-side check
+      const res = await authAPI.checkEmail(email).catch(() => null);
+      if (res && typeof res.data?.exists === 'boolean') {
+        if (res.data.exists) { setEmailTaken(true); setEmailMsg('Email already in use'); }
+        else setEmailTaken(false);
       } else {
-        setEmailTaken(false);
+        // Fallback to local caches
+        const existsLocal = employees.some((e) => e.email.toLowerCase() === email.toLowerCase()) || hostSupervisors.some((h) => h.email.toLowerCase() === email.toLowerCase());
+        if (existsLocal) { setEmailTaken(true); setEmailMsg('Email already in use'); } else setEmailTaken(false);
       }
     } catch (e) {
       console.debug('Email check failed', e);
       setEmailMsg('Could not validate email');
-    } finally {
-      setEmailChecking(false);
-    }
+    } finally { setEmailChecking(false); }
   };
 
   const verifyOtp = () => {

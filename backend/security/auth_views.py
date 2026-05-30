@@ -1,5 +1,7 @@
 """Authentication and registration views for OJT system."""
 import json
+import os
+import urllib.request
 import qrcode
 import io
 from django.conf import settings
@@ -287,5 +289,28 @@ def reset_password(request: HttpRequest) -> JsonResponse:
                 sup_response = {'error': str(e)}
 
         return JsonResponse({'success': True, 'supabase': sup_response})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def check_email(request: HttpRequest) -> JsonResponse:
+    """Check whether an email address is already registered in Django users or role profiles."""
+    try:
+        data = json.loads(request.body or b"{}")
+        email = data.get('email', '').strip()
+        if not email:
+            return JsonResponse({'error': 'email required'}, status=400)
+        exists = User.objects.filter(email__iexact=email).exists()
+        # Also check related profile tables for safety
+        try:
+            from .models import Student, OJTInstructor, HTE
+            if not exists:
+                # check if any profile references a user with this email
+                exists = Student.objects.filter(user__email__iexact=email).exists() or OJTInstructor.objects.filter(user__email__iexact=email).exists() or HTE.objects.filter(user__email__iexact=email).exists()
+        except Exception:
+            pass
+        return JsonResponse({'exists': bool(exists)})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
