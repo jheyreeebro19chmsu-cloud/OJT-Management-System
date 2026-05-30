@@ -11,7 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
-  SafeAreaView
+  SafeAreaView,
+  Image,
 } from 'react-native';
 import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -259,11 +260,13 @@ export default function App() {
                     setFaceEnrollInProgress(true);
                     const res = await faceApi.enrollFace(base64Image);
                     if (res && res.success) {
-                      // mark face_registered in supabase employees
+                      // mark face_registered in supabase employees and attach photo if returned
                       try {
-                        await supabase.from('employees').update({ face_registered: true }).eq('id', session.user.id);
+                        const updates: any = { face_registered: true };
+                        if (res.image_url) updates.photo = res.image_url;
+                        await supabase.from('employees').update(updates).eq('id', session.user.id);
                       } catch (e) {
-                        console.debug('Failed to update supabase face_registered', e);
+                        console.debug('Failed to update supabase face_registered/photo', e);
                       }
                       Alert.alert('Success', 'Face enrolled successfully');
                       // refresh profile
@@ -318,9 +321,14 @@ export default function App() {
                     <Text style={styles.welcomeLabel}>Welcome back,</Text>
                     <Text style={styles.userName}>{profile.name || 'User'}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => supabase.auth.signOut()} style={styles.logoutBtn}>
-                    <LogOut color="#ef4444" size={20} />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {profile?.photo ? (
+                      <Image source={{ uri: profile.photo }} style={{ width: 48, height: 48, borderRadius: 24, marginRight: 12 }} />
+                    ) : null}
+                    <TouchableOpacity onPress={() => supabase.auth.signOut()} style={styles.logoutBtn}>
+                      <LogOut color="#ef4444" size={20} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <ScrollView contentContainerStyle={styles.dashContent}>

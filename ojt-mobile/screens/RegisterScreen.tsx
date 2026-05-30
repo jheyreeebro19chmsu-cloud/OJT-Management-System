@@ -57,6 +57,9 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     course: '',
     photo: '',
   });
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
+  const [emailMsg, setEmailMsg] = useState('');
 
   const [location, setLocation] = useState<{ lat?: number; lng?: number; error?: string }>({});
   const [locLoading, setLocLoading] = useState(false);
@@ -98,6 +101,23 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     });
   };
 
+  async function checkEmailExists(email: string) {
+    if (!email) return;
+    setEmailChecking(true);
+    setEmailTaken(null);
+    setEmailMsg('');
+    try {
+      const { data: emp } = await supabase.from('employees').select('id').eq('email', email).maybeSingle();
+      if (emp) { setEmailTaken(true); setEmailMsg('Email already in use'); return; }
+      const { data: host } = await supabase.from('host_supervisors').select('id').eq('email', email).maybeSingle();
+      if (host) { setEmailTaken(true); setEmailMsg('Email already in use'); return; }
+      setEmailTaken(false);
+    } catch (e: any) {
+      console.debug('Email check failed', e);
+      setEmailMsg('Could not validate email');
+    } finally { setEmailChecking(false); }
+  }
+
   const passwordChecks = (pw: string) => ({
     length: pw.length >= 8, uppercase: /[A-Z]/.test(pw), lowercase: /[a-z]/.test(pw), number: /[0-9]/.test(pw), special: /[^A-Za-z0-9]/.test(pw),
   });
@@ -119,6 +139,19 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   const handleBack = () => { if (step > 0) setStep(step - 1); else setRole(null); };
 
   async function handleRegister() {
+    // basic validation
+    if (emailTaken) { Alert.alert('Validation', 'Please use a different email.'); return; }
+    if (!form.email || !form.password) { Alert.alert('Validation', 'Email and password are required.'); return; }
+    if (role === 'trainee') {
+      if (!form.firstName || !form.lastName || !form.birthdate || !form.address || !form.companyName || !form.supervisorName || !form.schoolName || !form.course) {
+        Alert.alert('Validation', 'Please complete all required trainee fields before continuing.');
+        return;
+      }
+    } else if (role === 'admin') {
+      if (!form.name || !form.department) { Alert.alert('Validation', 'Please complete the instructor information.'); return; }
+    } else if (role === 'hte') {
+      if (!form.companyName || !form.name) { Alert.alert('Validation', 'Please complete the HTE representative information.'); return; }
+    }
     setLoading(true);
     try {
       const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { data: { full_name: form.name, role: role === 'admin' ? 'admin' : role === 'hte' ? 'host' : 'employee' } } });
@@ -127,7 +160,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       const tableName = role === 'hte' ? 'host_supervisors' : 'employees';
       const profileData: any = { id: userId, name: form.name, email: form.email, active: true, location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined };
       if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.supervisor_name = form.supervisorName; profileData.school_name = form.schoolName; profileData.course = form.course; }
-      else if (role === 'admin') { profileData.department = form.department; profileData.position = 'OJT Instructor'; profileData.photo = form.photo; }
+      else if (role === 'admin') { profileData.department = form.department; profileData.position = 'OJT Instructor'; }
       else if (role === 'hte') { profileData.company_name = form.companyName; profileData.position = 'Training Supervisor'; }
       const { error: profileError } = await supabase.from(tableName).upsert(profileData);
       if (profileError) throw profileError;
@@ -199,7 +232,8 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             <View style={styles.row}><View style={{ flex: 2 }}><Input label="Last Name" value={form.lastName} onChange={v => updateForm('lastName', v)} placeholder="Dela Cruz" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="M.I." value={form.middleInitial} onChange={v => updateForm('middleInitial', v)} placeholder="D" /></View></View>
             <Input label="First Name" value={form.firstName} onChange={v => updateForm('firstName', v)} placeholder="Juan" />
             <View style={styles.row}><View style={{ flex: 1 }}><Input label="Birthdate" value={form.birthdate} onChange={v => updateForm('birthdate', v)} placeholder="YYYY-MM-DD" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="Age" value={form.age} onChange={v => updateForm('age', v)} placeholder="20" keyboardType="numeric" editable={false} /></View></View>
-            <Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="juan@example.com" />
+            <Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="juan@example.com" />
+            {emailChecking ? (<Text style={{ color: '#64748b', fontSize: 12, marginLeft: 6 }}>Checking email...</Text>) : emailTaken ? (<Text style={{ color: '#ef4444', fontSize: 12, marginLeft: 6 }}>{emailMsg}</Text>) : null}
             <Input label="Address" value={form.address} onChange={v => updateForm('address', v)} placeholder="123 Street, City, Province" />
             <Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure />
             <PasswordChecklist pw={form.password} />
@@ -209,10 +243,10 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         {role === 'trainee' && step === 1 && (<><Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." /><Input label="Supervisor Name" value={form.supervisorName} onChange={v => updateForm('supervisorName', v)} placeholder="Mr. Smith" /></>)}
         {role === 'trainee' && step === 2 && (<><Input label="School Name" value={form.schoolName} onChange={v => updateForm('schoolName', v)} placeholder="State University" /><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BS Information Technology" /></>)}
 
-        {(role === 'admin') && step === 0 && (<><Input label="Full Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="Instructor Name" /><Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="admin@example.com" /><View style={styles.row}><View style={{ flex: 1 }}><Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="IT Dept" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BSIT" /></View></View><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text></View>); })()}</View></>)}
+        {(role === 'admin') && step === 0 && (<><Input label="Full Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="Instructor Name" /><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="admin@example.com" /><View style={styles.row}><View style={{ flex: 1 }}><Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="IT Dept" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BSIT" /></View></View><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text></View>); })()}</View></>)}
 
         {role === 'hte' && step === 0 && (<><Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." /><Input label="Representative Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="John Representative" /></>)}
-        {role === 'hte' && step === 1 && (<><Input label="Email" value={form.email} onChange={v => updateForm('email', v)} placeholder="contact@techcorp.com" /><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }>• Special character</Text></View>); })()}</View></>)}
+        {role === 'hte' && step === 1 && (<><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="contact@techcorp.com" /><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }>• Special character</Text></View>); })()}</View></>)}
 
         {steps[step] === 'Photo' && (<View style={styles.photoContainer}>{form.photo ? (<View style={styles.photoPreview}><Check color="#22c55e" size={48} /><Text style={styles.photoStatus}>Face Enrolled Successfully</Text><TouchableOpacity onPress={() => setShowScanner(true)}><Text style={styles.retakeText}>Retake Photo</Text></TouchableOpacity></View>) : (<TouchableOpacity style={styles.photoButton} onPress={() => setShowScanner(true)}><Camera color="#64748b" size={48} /><Text style={styles.photoButtonText}>Scan Face</Text><Text style={styles.photoSubtext}>Required for Daily Time Records</Text></TouchableOpacity>)}</View>)}
 
@@ -222,11 +256,11 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   );
 }
 
-function Input({ label, value, onChange, placeholder, secure = false, keyboardType = 'default', editable = true }: any) {
+function Input({ label, value, onChange, placeholder, secure = false, keyboardType = 'default', editable = true, onBlur }: any) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput style={[styles.input, !editable && { backgroundColor: '#f1f5f9', color: '#64748b' }]} value={value} onChangeText={onChange} placeholder={placeholder} secureTextEntry={secure} keyboardType={keyboardType} editable={editable} autoCapitalize={secure ? 'none' : 'words'} />
+      <TextInput style={[styles.input, !editable && { backgroundColor: '#f1f5f9', color: '#64748b' }]} value={value} onChangeText={onChange} placeholder={placeholder} secureTextEntry={secure} keyboardType={keyboardType} editable={editable} autoCapitalize={secure ? 'none' : 'words'} onBlur={onBlur} />
     </View>
   );
 }
