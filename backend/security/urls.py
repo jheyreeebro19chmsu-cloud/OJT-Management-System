@@ -24,6 +24,7 @@ urlpatterns = [
     path("auth/register-student/", auth_views.register_student, name="register_student"),
     path("auth/register-instructor/", auth_views.register_instructor, name="register_instructor"),
     path("auth/register-hte/", auth_views.register_hte, name="register_hte"),
+    path("auth/reset-password/", auth_views.reset_password, name="reset_password"),
     
     # Attendance endpoints
     path("auth/verify-qr/", attendance_views.verify_qr, name="verify_qr"),

@@ -39,6 +39,28 @@ export function Login() {
     setLoading(false);
   };
 
+  const handleResetPassword = async (newPassword: string) => {
+    setLoading(true);
+    setError('');
+    try {
+      const resp = await (await import('../services/authApi')).authAPI.resetPassword(email, newPassword);
+      if (resp && resp.data && resp.data.success) {
+        // Optionally store password locally for local mode convenience
+        const stored = localStorage.getItem('ojt_passwords');
+        const map = stored ? JSON.parse(stored) : {};
+        map[email.toLowerCase()] = newPassword;
+        localStorage.setItem('ojt_passwords', JSON.stringify(map));
+        setError('Password updated successfully. Please sign in with your new password.');
+      } else {
+        setError('Failed to reset password.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Reset failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
       {/* Decorative circles */}
@@ -173,10 +195,23 @@ export function Login() {
                       <span className="text-gray-800 font-medium">{matchedEmployee.registrationAddress || 'No address registered.'}</span>
                     </div>
                     <div className="text-xs pt-1.5 border-t border-blue-100/50">
-                      <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">RECOVERED PASSWORD</span>
-                      <span className="text-blue-700 font-bold tracking-wide select-all text-sm bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                        {localStorage.getItem('ojt_passwords') ? JSON.parse(localStorage.getItem('ojt_passwords')!)[matchedEmployee.email.toLowerCase()] || 'ojt2024' : 'ojt2024'}
-                      </span>
+                      <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">RESET PASSWORD</span>
+                      <div className="mt-2 flex gap-2">
+                        <input id="newpass" type="password" placeholder="New password" className="flex-1 px-3 py-2 rounded-lg border" />
+                        <button
+                          onClick={() => {
+                            const el = document.getElementById('newpass') as HTMLInputElement | null;
+                            if (el && el.value.length >= 6) {
+                              handleResetPassword(el.value);
+                            } else {
+                              setError('Please enter a new password (min 6 chars)');
+                            }
+                          }}
+                          className="px-3 py-2 bg-blue-600 text-white rounded-lg"
+                        >
+                          Reset
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (

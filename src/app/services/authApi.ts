@@ -118,6 +118,9 @@ export const authAPI = {
     contact_phone?: string;
   }) => api.post<AuthResponse>('/auth/register-hte/', data),
 
+  // Reset password (Django + Supabase service role)
+  resetPassword: (email: string, newPassword: string) => api.post<{ success: boolean; supabase?: any }>('/auth/reset-password/', { email, new_password: newPassword }),
+
   // OAuth-backed server registration
   registerOauthStudent: (data: { email: string; first_name?: string; last_name?: string }) =>
     api.post<AuthResponse>('/auth/register-oauth-student/', data),

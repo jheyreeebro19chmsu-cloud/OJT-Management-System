@@ -15,6 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     UserRole, Student, OJTInstructor, HTE, OTPVerification
 )
+import requests
 
 def send_verification_email(email: str, otp_code: str, full_name: str = "User") -> bool:
     """Send OTP verification email."""
@@ -233,5 +234,58 @@ def supabase_exchange(request: HttpRequest) -> JsonResponse:
         except Exception:
             body = str(he)
         return JsonResponse({'error': 'supabase_token_invalid', 'detail': body}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_password(request: HttpRequest) -> JsonResponse:
+    """Reset a user's password in Django and Supabase (if configured).
+
+    Expects JSON: {"email": "...", "new_password": "..."}
+    """
+    try:
+        data = json.loads(request.body or b"{}")
+        email = data.get('email', '').strip()
+        new_password = data.get('new_password', '').strip()
+        if not email or not new_password:
+            return JsonResponse({'error': 'email and new_password required'}, status=400)
+
+        user = User.objects.filter(email=email).first()
+        if not user:
+            return JsonResponse({'error': 'User not found'}, status=404)
+
+        # Update Django password
+        user.set_password(new_password)
+        user.save()
+
+        # Optionally update Supabase via service role key
+        supabase_url = getattr(settings, 'SUPABASE_URL', None) or getattr(settings, 'VITE_SUPABASE_URL', None) or None
+        supabase_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or os.environ.get('VITE_SUPABASE_SERVICE_ROLE_KEY')
+        sup_response = None
+        if supabase_url and supabase_key:
+            try:
+                # Find Supabase user by email
+                users_url = supabase_url.rstrip('/') + '/auth/v1/admin/users'
+                headers = {'Authorization': f'Bearer {supabase_key}', 'apikey': supabase_key, 'Content-Type': 'application/json'}
+                params = {'email': email}
+                r = requests.get(users_url, headers=headers, params=params, timeout=6)
+                if r.status_code == 200:
+                    users = r.json()
+                    # Supabase returns a list; pick first match
+                    if isinstance(users, list) and users:
+                        sup_user = users[0]
+                        sup_id = sup_user.get('id')
+                        if sup_id:
+                            patch_url = f"{users_url}/{sup_id}"
+                            pr = requests.patch(patch_url, headers=headers, json={'password': new_password}, timeout=6)
+                            sup_response = {'status': pr.status_code, 'body': pr.text}
+                else:
+                    sup_response = {'status': r.status_code, 'body': r.text}
+            except Exception as e:
+                sup_response = {'error': str(e)}
+
+        return JsonResponse({'success': True, 'supabase': sup_response})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
