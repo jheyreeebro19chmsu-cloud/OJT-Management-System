@@ -126,7 +126,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       const userId = authData.user?.id; if (!userId) throw new Error('User creation failed');
       const tableName = role === 'hte' ? 'host_supervisors' : 'employees';
       const profileData: any = { id: userId, name: form.name, email: form.email, active: true, location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined };
-      if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.supervisor_name = form.supervisorName; profileData.school_name = form.schoolName; profileData.course = form.course; profileData.photo = form.photo; profileData.face_registered = !!form.photo; }
+      if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.supervisor_name = form.supervisorName; profileData.school_name = form.schoolName; profileData.course = form.course; }
       else if (role === 'admin') { profileData.department = form.department; profileData.position = 'OJT Instructor'; profileData.photo = form.photo; }
       else if (role === 'hte') { profileData.company_name = form.companyName; profileData.position = 'Training Supervisor'; }
       const { error: profileError } = await supabase.from(tableName).upsert(profileData);
