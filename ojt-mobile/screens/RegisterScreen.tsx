@@ -248,7 +248,26 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         {role === 'hte' && step === 0 && (<><Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." /><Input label="Representative Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="John Representative" /></>)}
         {role === 'hte' && step === 1 && (<><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="contact@techcorp.com" /><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }>• Special character</Text></View>); })()}</View></>)}
 
-        {steps[step] === 'Photo' && (<View style={styles.photoContainer}>{form.photo ? (<View style={styles.photoPreview}><Check color="#22c55e" size={48} /><Text style={styles.photoStatus}>Face Enrolled Successfully</Text><TouchableOpacity onPress={() => setShowScanner(true)}><Text style={styles.retakeText}>Retake Photo</Text></TouchableOpacity></View>) : (<TouchableOpacity style={styles.photoButton} onPress={() => setShowScanner(true)}><Camera color="#64748b" size={48} /><Text style={styles.photoButtonText}>Scan Face</Text><Text style={styles.photoSubtext}>Required for Daily Time Records</Text></TouchableOpacity>)}</View>)}
+        {steps[step] === 'Photo' && (
+          <View style={styles.photoContainer}>
+            {form.photo ? (
+              <View style={styles.photoPreview}>
+                <Check color="#22c55e" size={48} />
+                <Text style={styles.photoStatus}>Face Enrolled Successfully</Text>
+                <TouchableOpacity onPress={() => setShowScanner(true)}>
+                  <Text style={styles.retakeText}>Retake Photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.photoButton} onPress={() => setShowScanner(true)}>
+                <Camera color="#64748b" size={48} />
+                <Text style={styles.photoButtonText}>Scan Face</Text>
+                <Text style={styles.photoSubtext}>Optional — you can enroll your face later</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 8, textAlign: 'center' }}>You can enroll your face later from your Profile after logging in.</Text>
+          </View>
+        )}
 
         <TouchableOpacity style={styles.nextButton} onPress={handleNext} disabled={loading}>{loading ? (<ActivityIndicator color="#fff" />) : (<><Text style={styles.nextButtonText}>{step === steps.length - 1 ? 'Complete Registration' : 'Continue'}</Text><ArrowRight color="#fff" size={20} /></>)}</TouchableOpacity>
       </View>

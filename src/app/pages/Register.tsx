@@ -1642,6 +1642,7 @@ export function Register() {
                 </div>
                 <p className="text-sm text-gray-500 mb-4">
                   Register your face for biometric time recording. The captured image will be stored in the system for
+                  <p className="text-sm text-gray-500 mt-2">Optional: you can skip this and enroll your face later from your Profile after logging in.</p>
                   identity verification during clock-in/out.
                 </p>
 
@@ -1732,7 +1733,7 @@ export function Register() {
                 ) : (
                   <button
                     onClick={handleSubmit}
-                    disabled={(role === 'trainee' || role === 'admin') && !faceRegistered}
+                    disabled={!isStepValid()}
                     className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
                   >
                     <Check size={14} />
@@ -1743,9 +1744,6 @@ export function Register() {
             </div>
           )}
 
-          {role !== null && step === steps.length - 1 && !faceRegistered && (
-            <p className="text-center text-xs text-gray-400 mt-2">Face registration required to complete</p>
-          )}
         </div>
       </motion.div>
     </div>
