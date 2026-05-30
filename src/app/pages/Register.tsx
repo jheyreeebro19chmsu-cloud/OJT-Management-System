@@ -108,6 +108,9 @@ export function Register() {
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
+  const [emailMsg, setEmailMsg] = useState('');
 
   // Registration location state
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
@@ -216,6 +219,27 @@ export function Register() {
       alert('Failed to send code: ' + (err.message || 'Unknown error'));
     } finally {
       setOtpVerifying(false);
+    }
+  };
+
+  const checkEmailExists = async (email: string) => {
+    if (!email) return;
+    setEmailChecking(true);
+    setEmailTaken(null);
+    setEmailMsg('');
+    try {
+      const existsLocal = employees.some((e) => e.email.toLowerCase() === email.toLowerCase()) || hostSupervisors.some((h) => h.email.toLowerCase() === email.toLowerCase());
+      if (existsLocal) {
+        setEmailTaken(true);
+        setEmailMsg('Email already in use');
+      } else {
+        setEmailTaken(false);
+      }
+    } catch (e) {
+      console.debug('Email check failed', e);
+      setEmailMsg('Could not validate email');
+    } finally {
+      setEmailChecking(false);
     }
   };
 
@@ -990,10 +1014,16 @@ export function Register() {
                         <input
                           type="email"
                           value={form.email}
-                          onChange={(e) => update('email', e.target.value)}
+                          onChange={(e) => { update('email', e.target.value); setEmailTaken(null); }}
+                          onBlur={() => checkEmailExists(form.email)}
                           placeholder="your@email.com"
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
+                        {emailChecking ? (
+                          <p className="text-xs text-gray-500 mt-1">Checking email…</p>
+                        ) : emailTaken ? (
+                          <p className="text-xs text-red-600 mt-1">{emailMsg}</p>
+                        ) : null}
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
