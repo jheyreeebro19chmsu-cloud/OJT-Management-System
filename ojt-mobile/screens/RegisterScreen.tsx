@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { User, Building, GraduationCap, ArrowLeft, ArrowRight, Camera, Check } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
+import * as Location from 'expo-location';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 import QRCode from 'react-native-qrcode-svg';
@@ -56,10 +57,39 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     photo: '',
   });
 
-  // Do NOT include face enrollment (Photo) for OJT Instructor (admin) or HTE
+  const [location, setLocation] = useState<{ lat?: number; lng?: number; error?: string }>({});
+  const [locLoading, setLocLoading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      await requestLocation();
+    })();
+  }, []);
+
+  async function requestLocation() {
+    setLocLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocation({ error: 'Permission denied' });
+        setLocLoading(false);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest, maximumAge: 10000 });
+      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    } catch (e: any) {
+      setLocation({ error: e.message || 'Failed to get location' });
+    } finally {
+      setLocLoading(false);
+    }
+  }
+
+  // Do NOT include face enrollment (Photo) for OJT Instructor (admin) or HTE.
+  // For trainees, we capture Personal -> Company -> School. Face enrollment
+  // will be required later after instructor approval.
   const steps = role === 'admin' ? ['Basic Info'] : 
                 role === 'hte' ? ['Company Info', 'Contact Info'] : 
-                ['Personal', 'Company', 'School', 'Photo'];
+                ['Personal', 'Company', 'School'];
 
   const updateForm = (key: string, value: string) => {
     setForm(prev => {
@@ -144,6 +174,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         name: form.name,
         email: form.email,
         active: true,
+        location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined,
       };
 
       if (role === 'trainee') {
@@ -325,6 +356,23 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer}>
+      {/* Location status banner */}
+      <View style={{ marginBottom: 12 }}>
+        {locLoading ? (
+          <View style={{ backgroundColor: '#fff7ed', padding: 12, borderRadius: 8 }}>
+            <Text style={{ color: '#92400e' }}>Detecting location...</Text>
+          </View>
+        ) : location.error ? (
+          <View style={{ backgroundColor: '#fff7ed', padding: 12, borderRadius: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: '#92400e' }}>Could not capture location. Continuing without it.</Text>
+            <TouchableOpacity onPress={requestLocation}><Text style={{ color: '#2563eb', fontWeight: '700' }}>Retry</Text></TouchableOpacity>
+          </View>
+        ) : location.lat && location.lng ? (
+          <View style={{ backgroundColor: '#ecfeff', padding: 12, borderRadius: 8 }}>
+            <Text style={{ color: '#064e3b' }}>Location detected: {location.lat?.toFixed(5)}, {location.lng?.toFixed(5)}</Text>
+          </View>
+        ) : null}
+      </View>
       <View style={styles.stepHeader}>
         <TouchableOpacity onPress={handleBack}>
           <ArrowLeft color="#64748b" size={24} />
