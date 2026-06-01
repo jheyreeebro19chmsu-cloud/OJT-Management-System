@@ -48,6 +48,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     birthdate: '',
     age: '',
     address: '',
+    barangayType: '',
     email: '',
     password: '',
     department: '',
@@ -161,10 +162,10 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       const profileData: any = { id: userId, name: form.name, email: form.email, active: true, location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined };
       if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.supervisor_name = form.supervisorName; profileData.school_name = form.schoolName; profileData.course = form.course; }
       else if (role === 'admin') { profileData.department = form.department; profileData.position = 'OJT Instructor'; }
-      else if (role === 'hte') { profileData.company_name = form.companyName; profileData.position = 'Training Supervisor'; }
+      else if (role === 'hte') { profileData.company_name = form.companyName; profileData.position = 'Training Supervisor'; profileData.type = form.barangayType || undefined; }
       const { error: profileError } = await supabase.from(tableName).upsert(profileData);
       if (profileError) throw profileError;
-      try { await mobileApi.mobileRegister({ user_id: userId, email: form.email, full_name: form.name, role: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'student', location: location.lat && location.lng ? { latitude: location.lat, longitude: location.lng } : null, extra: { school_name: form.schoolName, company_name: form.companyName } }); } catch (e) { console.debug('mobile_register sync failed', e); }
+      try { await mobileApi.mobileRegister({ user_id: userId, email: form.email, full_name: form.name, role: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'student', location: location.lat && location.lng ? { latitude: location.lat, longitude: location.lng } : null, extra: { school_name: form.schoolName, company_name: form.companyName, barangay_type: form.barangayType } }); } catch (e) { console.debug('mobile_register sync failed', e); }
       try { await sendWelcomeEmailMobile(form.email, form.name || `${form.firstName} ${form.lastName}`); } catch (emailErr) { console.error('Email failed:', emailErr); }
       if (role === 'admin') setRegistrationComplete(true); else { Alert.alert('Success', 'Registration complete! You can now log in.'); onSuccess(); }
     } catch (error: any) { Alert.alert('Registration Error', error.message); } finally { setLoading(false); }
@@ -245,7 +246,13 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
 
         {(role === 'admin') && step === 0 && (<><Input label="Full Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="Instructor Name" /><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="admin@example.com" /><View style={styles.row}><View style={{ flex: 1 }}><Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="IT Dept" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BSIT" /></View></View><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text></View>); })()}</View></>)}
 
-        {role === 'hte' && step === 0 && (<><Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." /><Input label="Representative Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="John Representative" /></>)}
+        {role === 'hte' && step === 0 && (
+          <>
+            <Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." />
+            <Input label="Representative Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="John Representative" />
+            <Input label="Type" value={form.barangayType} onChange={v => updateForm('barangayType', v)} placeholder="e.g., Barangay" />
+          </>
+        )}
         {role === 'hte' && step === 1 && (<><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="contact@techcorp.com" /><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }>• Special character</Text></View>); })()}</View></>)}
 
         {steps[step] === 'Photo' && (
