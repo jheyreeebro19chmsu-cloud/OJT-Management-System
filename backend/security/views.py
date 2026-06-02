@@ -28,6 +28,7 @@ from .api_auth import require_security_api_key, require_jwt
 from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness
 from .models import FaceRegistration, AttendancePhoto
 from .models import OTPVerification
+from .models import OTPAuditLog
 
 logger = logging.getLogger(__name__)
 
@@ -661,6 +662,13 @@ def geonames_proxy(request: HttpRequest) -> JsonResponse:
                 # Create OTP tied to instructor email
                 otp = OTPVerification.create_otp(user.email)
 
+                # Audit log
+                try:
+                    ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
+                    OTPAuditLog.objects.create(action='create', email=user.email, otp_code=otp.otp_code, actor=user, ip_address=str(ip))
+                except Exception:
+                    logger.debug('Failed to write OTP audit log for create')
+
                 # Optionally send email using server-side email if configured
                 try:
                     api_key = getattr(settings, 'RESEND_API_KEY', os.environ.get('VITE_RESEND_API_KEY'))
@@ -706,6 +714,13 @@ def geonames_proxy(request: HttpRequest) -> JsonResponse:
 
                 otp_obj.is_verified = True
                 otp_obj.save()
+
+                # Audit log
+                try:
+                    ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
+                    OTPAuditLog.objects.create(action='validate', email=instructor_email, otp_code=otp_code, actor=getattr(request, 'user', None), ip_address=str(ip))
+                except Exception:
+                    logger.debug('Failed to write OTP audit log for validate')
 
                 return JsonResponse({'success': True, 'message': 'OTP validated'})
             except Exception as e:

@@ -95,6 +95,22 @@ class OTPVerification(models.Model):
         return f"OTP for {self.email}"
 
 
+class OTPAuditLog(models.Model):
+    ACTION_CHOICES = [
+        ('create', 'Created'),
+        ('validate', 'Validated'),
+    ]
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    email = models.EmailField()
+    otp_code = models.CharField(max_length=6, blank=True)
+    actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    ip_address = models.CharField(max_length=45, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"OTPAudit({self.action} {self.email} at {self.created_at.isoformat()})"
+
+
 class StudentOJTApplication(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),

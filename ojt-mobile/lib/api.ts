@@ -97,11 +97,16 @@ export const instructorApi = {
   getTimeRecords: (applicationId: string) => get(`/instructor/time-records/?application_id=${applicationId}`),
   approveApplication: (applicationId: string) => post('/application/approve/', { application_id: applicationId }),
   rejectApplication: (applicationId: string, reason?: string) => post('/application/reject/', { application_id: applicationId, rejection_reason: reason || '' }),
+  createOtp: () => post('/otp/instructor/create/', {}),
 };
 
 export const mobileApi = {
   mobileRegister: (payload: any) => post('/mobile/register/', payload),
   getMyApplicationStatus: () => get('/application/my-status/'),
+};
+
+export const otpApi = {
+  validateInstructorOtp: (instructor_email: string, otp_code: string) => post('/otp/instructor/validate/', { instructor_email, otp_code }),
 };
 
 export const faceApi = {
