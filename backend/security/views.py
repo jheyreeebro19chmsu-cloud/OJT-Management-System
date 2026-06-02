@@ -22,6 +22,7 @@ from django.core.files.base import ContentFile
 import os
 import urllib.request
 import urllib.parse
+import requests
 
 from .api_auth import require_security_api_key, require_jwt
 from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness
@@ -260,6 +261,32 @@ def register_face(request: HttpRequest) -> JsonResponse:
 
     image_url = request.build_absolute_uri(registration.image.url) if registration.image else None
 
+    # Optional: if Supabase storage is configured, upload the saved image to the 'face-photos' bucket
+    try:
+        supabase_url = os.environ.get('SUPABASE_URL') or getattr(settings, 'SUPABASE_URL', None)
+        supabase_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', None)
+        if supabase_url and supabase_key and registration.image:
+            bucket = 'face-photos'
+            # Use a deterministic path so later lookups are simple
+            dest_path = f"{registration.employee_id}_{uuid.uuid4().hex}.{registration.image_format or 'jpg'}"
+            upload_url = f"{supabase_url.rstrip('/')}/storage/v1/object/{bucket}/{dest_path}"
+            with open(registration.image.path, 'rb') as f:
+                img_bytes = f.read()
+            # Use PUT to upload the object
+            req = urllib.request.Request(upload_url, data=img_bytes, method='PUT')
+            req.add_header('Authorization', f'Bearer {supabase_key}')
+            req.add_header('Content-Type', f'image/{registration.image_format or "jpeg"}')
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    if resp.status in (200, 201, 204):
+                        # Public URL (requires bucket to be public) - client will handle absolute URLs
+                        image_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{urllib.parse.quote(dest_path)}"
+            except Exception as e:
+                logger.debug('Supabase upload failed for register_face: %s', e)
+    except Exception:
+        # Non-fatal: ignore Supabase upload failures
+        pass
+
     # Pre-compute and save face encoding for faster future verification
     try:
         import face_recognition # type: ignore
@@ -332,7 +359,30 @@ def enroll_face(request: HttpRequest) -> JsonResponse:
             # face_recognition or its models may not be installed in test env; ignore safely
             pass
 
-        return JsonResponse({'success': True, 'message': 'Face enrolled', 'image_url': request.build_absolute_uri(reg.image.url) if reg.image else None})
+        image_url = request.build_absolute_uri(reg.image.url) if reg.image else None
+        # Optionally upload to Supabase storage for stable public URL
+        try:
+            supabase_url = os.environ.get('SUPABASE_URL') or getattr(settings, 'SUPABASE_URL', None)
+            supabase_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', None)
+            if supabase_url and supabase_key and reg.image:
+                bucket = 'face-photos'
+                dest_path = f"user-{user.id}_{uuid.uuid4().hex}.{reg.image_format or 'jpg'}"
+                upload_url = f"{supabase_url.rstrip('/')}/storage/v1/object/{bucket}/{dest_path}"
+                with open(reg.image.path, 'rb') as f:
+                    img_bytes = f.read()
+                req = urllib.request.Request(upload_url, data=img_bytes, method='PUT')
+                req.add_header('Authorization', f'Bearer {supabase_key}')
+                req.add_header('Content-Type', f'image/{reg.image_format or "jpeg"}')
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        if resp.status in (200, 201, 204):
+                            image_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{urllib.parse.quote(dest_path)}"
+                except Exception as e:
+                    logger.debug('Supabase upload failed for enroll_face: %s', e)
+        except Exception:
+            pass
+
+        return JsonResponse({'success': True, 'message': 'Face enrolled', 'image_url': image_url})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
