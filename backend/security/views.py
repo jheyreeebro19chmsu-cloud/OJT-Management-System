@@ -29,6 +29,7 @@ from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_
 from .models import FaceRegistration, AttendancePhoto
 from .models import OTPVerification
 from .models import OTPAuditLog
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -659,6 +660,18 @@ def geonames_proxy(request: HttpRequest) -> JsonResponse:
                 if not instructor:
                     return JsonResponse({'error': 'forbidden', 'message': 'Only instructors may create OTPs'}, status=403)
 
+                # Rate limit: allow a small number per hour per instructor
+                max_per_hour = int(getattr(settings, 'OTP_CREATE_MAX_PER_HOUR', 5))
+                cache_key = f"otp_create_count_{user.id}"
+                try:
+                    cur = cache.get(cache_key, 0) or 0
+                    if int(cur) >= max_per_hour:
+                        return JsonResponse({'error': 'rate_limited', 'message': 'OTP creation rate limit exceeded'}, status=429)
+                    cache.set(cache_key, int(cur) + 1, timeout=3600)
+                except Exception:
+                    # If cache unavailable, continue (best-effort)
+                    pass
+
                 # Create OTP tied to instructor email
                 otp = OTPVerification.create_otp(user.email)
 
@@ -685,6 +698,34 @@ def geonames_proxy(request: HttpRequest) -> JsonResponse:
                     logger.debug('Failed to send OTP email for instructor %s', user.email)
 
                 return JsonResponse({'success': True, 'otp_code': otp.otp_code, 'expires_at': otp.expires_at.isoformat()})
+            except Exception as e:
+                return JsonResponse({'error': str(e)}, status=500)
+
+
+        @csrf_exempt
+        @require_http_methods(["GET"])
+        @require_jwt()
+        def get_otp_audit(request: HttpRequest) -> JsonResponse:
+            """Admin-only: return recent OTP audit log entries."""
+            user = getattr(request, 'user', None)
+            if not user or not (user.is_staff or user.is_superuser):
+                return JsonResponse({'error': 'forbidden'}, status=403)
+            try:
+                limit = int(request.GET.get('limit', '200'))
+                entries = OTPAuditLog.objects.order_by('-created_at')[:limit]
+                data = [
+                    {
+                        'id': e.id,
+                        'action': e.action,
+                        'email': e.email,
+                        'otp_code': e.otp_code,
+                        'actor_id': e.actor.id if e.actor else None,
+                        'ip_address': e.ip_address,
+                        'created_at': e.created_at.isoformat(),
+                    }
+                    for e in entries
+                ]
+                return JsonResponse({'success': True, 'entries': data})
             except Exception as e:
                 return JsonResponse({'error': str(e)}, status=500)
 

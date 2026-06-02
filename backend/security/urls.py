@@ -58,4 +58,5 @@ urlpatterns = [
     # Instructor OTP endpoints
     path("otp/instructor/create/", views.create_instructor_otp, name="create_instructor_otp"),
     path("otp/instructor/validate/", views.validate_instructor_otp, name="validate_instructor_otp"),
+    path("otp/audit/", views.get_otp_audit, name="get_otp_audit"),
 ]
