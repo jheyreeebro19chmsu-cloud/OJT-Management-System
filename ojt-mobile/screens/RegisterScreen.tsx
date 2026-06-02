@@ -15,9 +15,7 @@ import { mobileApi } from '../lib/api';
 import * as Location from 'expo-location';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
-import QRCode from 'react-native-qrcode-svg';
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import { Share } from 'react-native';
 
 type Role = 'trainee' | 'admin' | 'hte' | null;
 
@@ -158,6 +156,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { data: { full_name: form.name, role: role === 'admin' ? 'admin' : role === 'hte' ? 'host' : 'employee' } } });
       if (authError) throw authError;
       const userId = authData.user?.id; if (!userId) throw new Error('User creation failed');
+      setRegisteredInstructorId(userId);
       const tableName = role === 'hte' ? 'host_supervisors' : 'employees';
       const profileData: any = { id: userId, name: form.name, email: form.email, active: true, location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined };
       if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.supervisor_name = form.supervisorName; profileData.school_name = form.schoolName; profileData.course = form.course; }
@@ -174,18 +173,11 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   async function handleRequestOtp() { if (!form.email) { Alert.alert('Error', 'Please enter your email first'); return; } setLoading(true); const code = Math.floor(100000 + Math.random() * 900000).toString(); setGeneratedOtp(code); try { await sendOtpEmailMobile(form.email, code); setOtpSent(true); Alert.alert('Sent', 'Confirmation code has been sent to your email.'); } catch (err) { Alert.alert('Error', 'Failed to send code'); } finally { setLoading(false); } }
   function handleVerifyOtp() { if (otpCode === generatedOtp) { setIsOtpVerified(true); Alert.alert('Success', 'Email verified!'); } else { Alert.alert('Error', 'Invalid code'); } }
 
-  async function handleShareQr() {
+  async function handleShareOtp() {
+    if (!generatedOtp) { Alert.alert('No code', 'Generate the OTP first'); return; }
     try {
-      if (qrRef.current) {
-        qrRef.current.toDataURL(async (data: string) => {
-          const filename = `${FileSystem.documentDirectory}instructor_qr.png`;
-          await FileSystem.writeAsStringAsync(filename, data, { encoding: FileSystem.EncodingType.Base64 });
-          await Sharing.shareAsync(filename);
-        });
-      } else {
-        Alert.alert('QR Ready', 'You can take a screenshot of your QR code to share it with your students!');
-      }
-    } catch (error) { console.error('Sharing error:', error); Alert.alert('Error', 'Failed to share QR code image'); }
+      await Share.share({ message: `Enrollment OTP: ${generatedOtp}` });
+    } catch (error) { console.error('Share error:', error); Alert.alert('Error', 'Failed to share OTP'); }
   }
 
   if (registrationComplete && role === 'admin') return (
@@ -193,10 +185,16 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       <View style={styles.successCard}>
         <View style={styles.successIcon}><Check color="#fff" size={40} /></View>
         <Text style={styles.successTitle}>Registration Successful!</Text>
-        <Text style={styles.successDesc}>Share this QR code with your students for enrollment:</Text>
-        <View style={styles.qrWrapper}><QRCode value={`enroll:${registeredInstructorId}`} size={200} getRef={(c) => (qrRef.current = c)} /></View>
-        <TouchableOpacity style={styles.shareBtn} onPress={handleShareQr}><Text style={styles.shareBtnText}>Share QR Code</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.loginBtn} onPress={onSuccess}><Text style={styles.loginBtnText}>Go to Login</Text></TouchableOpacity>
+        <Text style={styles.successDesc}>Generate an OTP to share with your students for enrollment:</Text>
+        <View style={{ marginTop: 18, alignItems: 'center' }}>
+          {generatedOtp ? (<Text style={{ fontSize: 36, fontWeight: '900', letterSpacing: 6, color: '#0f172a' }}>{generatedOtp}</Text>) : (<Text style={{ color: '#64748b' }}>No code generated yet</Text>)}
+        </View>
+        <View style={{ width: '100%', marginTop: 18 }}>
+          <TouchableOpacity style={styles.shareBtn} onPress={() => { if (!generatedOtp) { const code = Math.floor(100000 + Math.random() * 900000).toString(); setGeneratedOtp(code); setOtpSent(false); Alert.alert('Generated', `OTP: ${code}`); } else { handleShareOtp(); } }}>
+            <Text style={styles.shareBtnText}>{generatedOtp ? 'Share OTP' : 'Generate OTP'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.loginBtn, { marginTop: 12 }]} onPress={onSuccess}><Text style={styles.loginBtnText}>Go to Login</Text></TouchableOpacity>
+        </View>
       </View>
     </View>
   );
