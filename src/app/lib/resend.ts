@@ -38,7 +38,7 @@ export const sendWelcomeEmail = async (toEmail: string, name: string) => {
     to: toEmail,
     subject: 'Welcome to OJT Management System',
     html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <div style="font-family: 'Times New Roman', Times, serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #2563eb;">Welcome, ${name}!</h1>
         <p>Your registration for the OJT Management System was successful.</p>
         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
@@ -52,7 +52,7 @@ export const sendOtpEmail = async (toEmail: string, otpCode: string) => {
     to: toEmail,
     subject: 'Your OJT Confirmation Code',
     html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; text-align: center; padding: 40px; border: 1px solid #e2e8f0; border-radius: 20px;">
+      <div style="font-family: 'Times New Roman', Times, serif; max-width: 600px; margin: 0 auto; text-align: center; padding: 40px; border: 1px solid #e2e8f0; border-radius: 20px;">
         <h2 style="color: #1e293b;">Verification Code</h2>
         <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 30px 0;">
           <span style="font-size: 32px; font-weight: 800; letter-spacing: 10px; color: #2563eb;">${otpCode}</span>

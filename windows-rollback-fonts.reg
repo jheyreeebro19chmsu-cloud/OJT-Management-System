@@ -1,0 +1,11 @@
+Windows Registry Editor Version 5.00
+
+; Rollback: remove the font substitution values added by windows-set-times.reg
+; Importing this will delete the substituted entries and restore default behavior.
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes]
+"Segoe UI"=-
+"Segoe UI (TrueType)"=-
+"Arial"=-
+"Tahoma"=-
+"Helvetica"=-
+"Microsoft Sans Serif"=-

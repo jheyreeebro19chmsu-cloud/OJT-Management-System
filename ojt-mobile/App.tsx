@@ -29,6 +29,25 @@ import InstructorTraineesScreen from './screens/InstructorTraineesScreen';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
 
+// Try to set a global default font for React Native Text and TextInput
+try {
+  const anyText = (Text as any);
+  if (!anyText.defaultProps) anyText.defaultProps = {};
+  const prevTextStyle = anyText.defaultProps.style;
+  anyText.defaultProps.style = prevTextStyle
+    ? [{ fontFamily: 'Times New Roman' }, ...(Array.isArray(prevTextStyle) ? prevTextStyle : [prevTextStyle])]
+    : { fontFamily: 'Times New Roman' };
+
+  const anyTextInput = (TextInput as any);
+  if (!anyTextInput.defaultProps) anyTextInput.defaultProps = {};
+  const prevInputStyle = anyTextInput.defaultProps.style;
+  anyTextInput.defaultProps.style = prevInputStyle
+    ? [{ fontFamily: 'Times New Roman' }, ...(Array.isArray(prevInputStyle) ? prevInputStyle : [prevInputStyle])]
+    : { fontFamily: 'Times New Roman' };
+} catch (e) {
+  console.debug('Could not set default font for Text/TextInput', e);
+}
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any>(null);

@@ -21,7 +21,7 @@ export async function sendWelcomeEmailMobile(toEmail: string, name: string) {
         to: [toEmail],
         subject: 'Welcome to OJT Management System (Mobile)',
         html: `
-          <div style="font-family: sans-serif; padding: 20px;">
+          <div style="font-family: 'Times New Roman', Times, serif; padding: 20px;">
             <h1 style="color: #2563eb;">Welcome, ${name}!</h1>
             <p>You have successfully registered through our mobile app.</p>
             <p>You can now start recording your OJT hours directly from your phone.</p>
@@ -58,7 +58,7 @@ export async function sendOtpEmailMobile(toEmail: string, otpCode: string) {
         to: [toEmail],
         subject: 'Your OJT Confirmation Code',
         html: `
-          <div style="font-family: sans-serif; text-align: center; padding: 20px;">
+          <div style="font-family: 'Times New Roman', Times, serif; text-align: center; padding: 20px;">
             <h2 style="color: #1e293b;">Verification Code</h2>
             <p>Please use the following code to complete your OJT registration:</p>
             <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; margin: 20px 0;">

@@ -1,0 +1,10 @@
+Windows Registry Editor Version 5.00
+
+; Map common UI and Sans fonts to Times New Roman (use with caution)
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes]
+"Segoe UI"="Times New Roman"
+"Segoe UI (TrueType)"="Times New Roman"
+"Arial"="Times New Roman"
+"Tahoma"="Times New Roman"
+"Helvetica"="Times New Roman"
+"Microsoft Sans Serif"="Times New Roman"

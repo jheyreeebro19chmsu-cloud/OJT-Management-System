@@ -88,7 +88,7 @@ const server = http.createServer((req, res) => {
 <html>
 <head><title>OJT Management System</title></head>
 <body>
-  <div style="font-family: sans-serif; padding: 40px; text-align: center;">
+  <div style="font-family: 'Times New Roman', Times, serif; padding: 40px; text-align: center;">
     <h2>OJT Management System</h2>
     <p>The static assets directory was not found or is still building.</p>
     <p style="color: gray; font-size: 12px;">Path: ${filePath}</p>
