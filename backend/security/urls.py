@@ -55,4 +55,7 @@ urlpatterns = [
     path("hte/access-requests/", application_views.get_hte_access_requests, name="get_hte_access_requests"),
     path("hte/registrations/", attendance_views.get_hte_registrations, name="get_hte_registrations"),
     path("hte/dashboard/", application_views.get_hte_dashboard, name="get_hte_dashboard"),
+    # Instructor OTP endpoints
+    path("otp/instructor/create/", views.create_instructor_otp, name="create_instructor_otp"),
+    path("otp/instructor/validate/", views.validate_instructor_otp, name="validate_instructor_otp"),
 ]

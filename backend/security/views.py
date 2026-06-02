@@ -27,6 +27,7 @@ import requests
 from .api_auth import require_security_api_key, require_jwt
 from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness
 from .models import FaceRegistration, AttendancePhoto
+from .models import OTPVerification
 
 logger = logging.getLogger(__name__)
 
@@ -633,6 +634,82 @@ def geonames_proxy(request: HttpRequest) -> JsonResponse:
             body = resp.read()
             data = json.loads(body.decode("utf-8"))
             return JsonResponse(data)
+
+
+        @csrf_exempt
+        @require_http_methods(["POST"])
+        @require_jwt()
+        def create_instructor_otp(request: HttpRequest) -> JsonResponse:
+            """Instructor-only: create a short-lived OTP tied to the instructor account.
+
+            Returns: { success: True, otp_code, expires_at }
+            """
+            try:
+                user = getattr(request, 'user', None)
+                if not user:
+                    return JsonResponse({'error': 'authorization_required'}, status=401)
+
+                # Ensure user is an instructor (has an OJTInstructor profile)
+                try:
+                    instructor = user.instructor_profile
+                except Exception:
+                    instructor = None
+
+                if not instructor:
+                    return JsonResponse({'error': 'forbidden', 'message': 'Only instructors may create OTPs'}, status=403)
+
+                # Create OTP tied to instructor email
+                otp = OTPVerification.create_otp(user.email)
+
+                # Optionally send email using server-side email if configured
+                try:
+                    api_key = getattr(settings, 'RESEND_API_KEY', os.environ.get('VITE_RESEND_API_KEY'))
+                    if api_key and RESEND_AVAILABLE:
+                        resend.api_key = api_key
+                        resend.Emails.send({
+                            'from': 'OJT System <onboarding@resend.dev>',
+                            'to': [user.email],
+                            'subject': 'Enrollment OTP',
+                            'html': f'<p>Your enrollment OTP is <strong>{otp.otp_code}</strong>. It expires at {otp.expires_at}.</p>'
+                        })
+                except Exception:
+                    # Non-fatal if email sending fails
+                    logger.debug('Failed to send OTP email for instructor %s', user.email)
+
+                return JsonResponse({'success': True, 'otp_code': otp.otp_code, 'expires_at': otp.expires_at.isoformat()})
+            except Exception as e:
+                return JsonResponse({'error': str(e)}, status=500)
+
+
+        @csrf_exempt
+        @require_http_methods(["POST"])
+        @require_jwt()
+        def validate_instructor_otp(request: HttpRequest) -> JsonResponse:
+            """Validate an OTP provided by an instructor.
+
+            Body: { "instructor_email": "instructor@example.com", "otp_code": "123456" }
+            Returns { success: True } when valid.
+            Marks OTPVerification.is_verified = True to prevent reuse.
+            """
+            try:
+                data = _json_body(request)
+                instructor_email = data.get('instructor_email')
+                otp_code = data.get('otp_code')
+                if not instructor_email or not otp_code:
+                    return JsonResponse({'error': 'instructor_email and otp_code required'}, status=400)
+
+                otp_obj = OTPVerification.objects.filter(email__iexact=instructor_email, otp_code=otp_code).order_by('-created_at').first()
+                if not otp_obj:
+                    return JsonResponse({'success': False, 'message': 'Invalid code'}, status=400)
+                if not otp_obj.is_valid():
+                    return JsonResponse({'success': False, 'message': 'Code expired or already used'}, status=400)
+
+                otp_obj.is_verified = True
+                otp_obj.save()
+
+                return JsonResponse({'success': True, 'message': 'OTP validated'})
+            except Exception as e:
+                return JsonResponse({'error': str(e)}, status=500)
     except Exception as exc:
         return JsonResponse({"error": "geonames_proxy_failed", "detail": str(exc)}, status=502)
 
