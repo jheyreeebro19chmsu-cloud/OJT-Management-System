@@ -222,6 +222,12 @@ CORS_ALLOW_HEADERS = [
 if os.environ.get('DJANGO_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true'):
     CORS_ALLOW_ALL_ORIGINS = True
 
+# Additional explicit override for deployed environments where setting
+# `DJANGO_ALLOW_ALL_ORIGINS` may not be convenient. Set this to '1' or 'true'
+# on the host to force-enable CORS for all origins (temporary/debug only).
+if os.environ.get('DJANGO_FORCE_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true', 'yes'):
+    CORS_ALLOW_ALL_ORIGINS = True
+
 DEFAULT_GEOFENCE_ZONES = [
     {
         "name": "Main Training Center",

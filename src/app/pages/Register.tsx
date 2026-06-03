@@ -113,6 +113,7 @@ export function Register() {
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
   const [emailMsg, setEmailMsg] = useState('');
+  const [emailValidationUnavailable, setEmailValidationUnavailable] = useState(false);
 
   // Registration location state
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
@@ -291,6 +292,7 @@ export function Register() {
     setEmailChecking(true);
     setEmailTaken(null);
     setEmailMsg('');
+    setEmailValidationUnavailable(false);
     try {
       // Prefer server-side check
       const res = await authAPI.checkEmail(email).catch(() => null);
@@ -298,13 +300,24 @@ export function Register() {
         if (res.data.exists) { setEmailTaken(true); setEmailMsg('Email already in use'); }
         else setEmailTaken(false);
       } else {
-        // Fallback to local caches
+        // Fallback to local caches when server couldn't be reached
         const existsLocal = employees.some((e) => e.email.toLowerCase() === email.toLowerCase()) || hostSupervisors.some((h) => h.email.toLowerCase() === email.toLowerCase());
-        if (existsLocal) { setEmailTaken(true); setEmailMsg('Email already in use'); } else setEmailTaken(false);
+        if (existsLocal) {
+          setEmailTaken(true);
+          setEmailMsg('Email already in use');
+        } else {
+          // If neither server nor local could confirm, mark validation unavailable but allow registration to continue
+          setEmailTaken(false);
+          setEmailValidationUnavailable(true);
+          setEmailMsg('Could not validate email with server — proceeding with caution');
+        }
       }
     } catch (e) {
       console.debug('Email check failed', e);
-      setEmailMsg('Could not validate email');
+      // On unexpected errors, allow proceed but show warning
+      setEmailTaken(false);
+      setEmailValidationUnavailable(true);
+      setEmailMsg('Could not validate email (network/server error) — proceeding with caution');
     } finally { setEmailChecking(false); }
   };
 
@@ -489,9 +502,11 @@ export function Register() {
 
     // Check for email duplication
     const emailToCheck = (form.email || form.username || '').toString().toLowerCase();
-    const emailExists =
-      employees.some((e) => e.email.toLowerCase() === emailToCheck) ||
-      hostSupervisors.some((h) => h.email.toLowerCase() === emailToCheck);
+    // Use server-validated state when available; otherwise fall back to local caches.
+    let emailExists = false;
+    if (emailTaken === true) emailExists = true;
+    else if (emailTaken === false) emailExists = false;
+    else emailExists = employees.some((e) => e.email.toLowerCase() === emailToCheck) || hostSupervisors.some((h) => h.email.toLowerCase() === emailToCheck);
 
     const hasUpper = /[A-Z]/.test(form.password);
     const hasLower = /[a-z]/.test(form.password);
