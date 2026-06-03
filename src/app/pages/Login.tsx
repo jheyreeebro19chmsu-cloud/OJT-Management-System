@@ -63,7 +63,7 @@ export function Login() {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-4 py-8"
+      className="relative min-h-screen flex flex-col items-center justify-center px-4 py-8"
       style={{
         backgroundImage: `url('/university-bg.jpg'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)`,
         backgroundSize: 'cover, cover',
@@ -71,6 +71,8 @@ export function Login() {
         backgroundRepeat: 'no-repeat, no-repeat',
       }}
     >
+      {/* Dark overlay for contrast over the background image */}
+      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
       {/* Decorative circles */}
       <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400/10 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl" />
