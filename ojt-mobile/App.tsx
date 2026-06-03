@@ -229,7 +229,7 @@ export default function App() {
     if (uniBg) {
       return (
         <ImageBackground source={uniBg} style={{ flex: 1 }} imageStyle={{ resizeMode: 'cover' }}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: 'rgba(4,44,84,0.6)' }}>{children}</SafeAreaView>
+          <SafeAreaView style={{ flex: 1, backgroundColor: 'rgba(4,44,84,0.35)' }}>{children}</SafeAreaView>
         </ImageBackground>
       );
     }

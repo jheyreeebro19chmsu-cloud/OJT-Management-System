@@ -72,7 +72,7 @@ export function Login() {
       }}
     >
       {/* Dark overlay for contrast over the background image */}
-      <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+        <div className="absolute inset-0 bg-black/20 pointer-events-none" />
       {/* Decorative circles */}
       <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400/10 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl" />
