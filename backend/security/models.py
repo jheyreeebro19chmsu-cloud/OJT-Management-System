@@ -290,6 +290,67 @@ class AttendancePhoto(models.Model):
         return f"AttendancePhoto({self.employee_id}, {self.action})"
 
 
+class RegistrationOTPRequest(models.Model):
+    """Tracks trainee/HTE registration requests with OTP verification before full registration."""
+    ROLE_CHOICES = [
+        ('trainee', 'Trainee'),
+        ('hte', 'Host Training Establishment'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending OTP Approval'),
+        ('approved', 'Approved - Proceed to Registration'),
+        ('rejected', 'Rejected'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    # Request details
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20, blank=True)
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    
+    # For HTE
+    company_name = models.CharField(max_length=255, blank=True)
+    company_address = models.TextField(blank=True)
+    contact_person = models.CharField(max_length=255, blank=True)
+    barangay = models.CharField(max_length=255, blank=True)
+    
+    # For Trainee
+    student_id = models.CharField(max_length=100, blank=True)
+    school_name = models.CharField(max_length=255, blank=True)
+    course = models.CharField(max_length=255, blank=True)
+    year_level = models.CharField(max_length=50, blank=True)
+    
+    # OTP & Verification
+    otp_code = models.CharField(max_length=6, unique=True)
+    instructor = models.ForeignKey(OJTInstructor, on_delete=models.CASCADE, related_name='registration_requests')
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    rejection_reason = models.TextField(blank=True)
+    
+    # Timeline
+    requested_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_registrations')
+    
+    # After approval, these store the registered user
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='registration_request')
+    face_photo = models.ImageField(upload_to='registration_face_photos/', null=True, blank=True)
+    face_photo_url = models.URLField(blank=True, help_text="Supabase URL or other cloud storage URL")
+    
+    def __str__(self):
+        return f"RegistrationOTPRequest({self.email} - {self.get_role_display()} - {self.status})"
+    
+    class Meta:
+        ordering = ['-requested_at']
+        indexes = [
+            models.Index(fields=['instructor', 'status']),
+            models.Index(fields=['email']),
+            models.Index(fields=['otp_code']),
+        ]
+
+
 class HTEAccessRequest(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -306,3 +367,79 @@ class HTEAccessRequest(models.Model):
     
     def __str__(self):
         return f"HTE Access Request: {self.hte.company_name} - {self.status}"
+
+
+class TraineeOTPRequest(models.Model):
+    """Track OTP registration requests from trainees and HTEs"""
+    ROLE_CHOICES = [
+        ('trainee', 'Trainee'),
+        ('hte', 'HTE'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('completed', 'Completed'),
+    ]
+    
+    # Request details
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    email = models.EmailField()
+    first_name = models.CharField(max_length=255)
+    last_name = models.CharField(max_length=255)
+    full_name = models.CharField(max_length=255)
+    age = models.IntegerField(null=True, blank=True)
+    address = models.TextField(blank=True)
+    
+    # Company/School info
+    company_name = models.CharField(max_length=255, blank=True)
+    company_address = models.TextField(blank=True)
+    barangay = models.CharField(max_length=255, blank=True)
+    
+    # Geofencing
+    gps_latitude = models.FloatField(null=True, blank=True)
+    gps_longitude = models.FloatField(null=True, blank=True)
+    geofence_radius = models.FloatField(default=100.0)
+    
+    # School info (for trainee)
+    school_name = models.CharField(max_length=255, blank=True)
+    course = models.CharField(max_length=255, blank=True)
+    year_level = models.CharField(max_length=50, blank=True)
+    
+    # Contact info (for HTE)
+    contact_person = models.CharField(max_length=255, blank=True)
+    contact_phone = models.CharField(max_length=20, blank=True)
+    
+    # OTP details
+    otp_code = models.CharField(max_length=6, null=True, blank=True)
+    otp_sent_at = models.DateTimeField(null=True, blank=True)
+    
+    # Face recognition
+    face_photo = models.ImageField(upload_to='face_registrations/', null=True, blank=True)
+    face_data = models.TextField(blank=True, help_text="Facial recognition data/embedding")
+    
+    # Avatar/Picture
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    instructor = models.ForeignKey(OJTInstructor, on_delete=models.SET_NULL, null=True, blank=True, related_name='otp_requests')
+    
+    # Timestamps
+    requested_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    face_registered_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
+    
+    class Meta:
+        ordering = ['-requested_at']
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['status']),
+            models.Index(fields=['instructor', 'status']),
+        ]
+    
+    def __str__(self):
+        return f"{self.get_role_display()} OTP Request: {self.email} ({self.status})"

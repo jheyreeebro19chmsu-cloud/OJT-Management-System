@@ -27,6 +27,16 @@ urlpatterns = [
     path("auth/reset-password/", auth_views.reset_password, name="reset_password"),
     path("auth/check-email/", auth_views.check_email, name="check_email"),
     
+    # OTP Registration endpoints (new flow)
+    path("auth/request-trainee-otp-registration/", auth_views.request_trainee_otp_registration, name="request_trainee_otp_registration"),
+    path("auth/get-pending-trainee-requests/", auth_views.get_pending_trainee_requests, name="get_pending_trainee_requests"),
+    path("auth/approve-trainee-registration/", auth_views.approve_trainee_registration, name="approve_trainee_registration"),
+    path("auth/reject-trainee-registration/", auth_views.reject_trainee_registration, name="reject_trainee_registration"),
+    path("auth/submit-face-recognition/", auth_views.submit_face_recognition, name="submit_face_recognition"),
+    path("auth/complete-trainee-registration/", auth_views.complete_trainee_registration, name="complete_trainee_registration"),
+    path("auth/get-instructor-by-email/", auth_views.get_instructor_by_email, name="get_instructor_by_email"),
+    path("auth/check-registration-status/", auth_views.check_registration_status, name="check_registration_status"),
+    
     # Attendance endpoints
     path("auth/verify-qr/", attendance_views.verify_qr, name="verify_qr"),
     path("attendance/time-in/", attendance_views.time_in, name="time_in"),
@@ -48,6 +58,16 @@ urlpatterns = [
     # HTE Access endpoints
     path("hte/request-access/", application_views.request_hte_access, name="request_hte_access"),
     path("hte/approve-access/", application_views.approve_hte_access, name="approve_hte_access"),
+    path("hte/reject-access/", application_views.reject_hte_access, name="reject_hte_access"),
+    path("hte/requests/", application_views.get_hte_access_requests, name="get_hte_access_requests"),
+    path("hte/dashboard/", application_views.get_hte_dashboard, name="get_hte_dashboard"),
+    path("hte/applications/", application_views.get_hte_applications, name="get_hte_applications"),
+    
+    # Registration OTP Request Flow (Two-stage registration)
+    path("registration/request-otp/", application_views.request_registration_otp, name="request_registration_otp"),
+    path("registration/pending-requests/", application_views.get_pending_registration_requests, name="get_pending_registration_requests"),
+    path("registration/approve/", application_views.approve_registration_request, name="approve_registration_request"),
+    path("registration/reject/", application_views.reject_registration_request, name="reject_registration_request"),
     path("hte/reject-access/", application_views.reject_hte_access, name="reject_hte_access"),
     # HTE monitoring endpoints
     path("hte/applications/", application_views.get_hte_applications, name="get_hte_applications"),

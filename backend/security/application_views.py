@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 
 from .api_auth import require_jwt
 from .models import (
-    Student, OJTInstructor, HTE, StudentOJTApplication, TimeRecord, HTEAccessRequest
+    Student, OJTInstructor, HTE, StudentOJTApplication, TimeRecord, HTEAccessRequest, RegistrationOTPRequest
 )
 from .models import OTPVerification, OTPAuditLog
 from django.db import models
@@ -557,5 +557,329 @@ def reject_hte_access(request: HttpRequest) -> JsonResponse:
         access_request.save()
         
         return JsonResponse({'success': True, 'message': 'HTE access rejected successfully'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ========== REGISTRATION OTP REQUEST FLOW ==========
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def request_registration_otp(request: HttpRequest) -> JsonResponse:
+    """
+    Trainee or HTE requests OTP before completing registration.
+    Generates OTP and sends it to the instructor's email.
+    """
+    from .models import RegistrationOTPRequest
+    import random
+    import string
+    
+    try:
+        data = json.loads(request.body)
+        
+        role = data.get('role', '').strip()  # 'trainee' or 'hte'
+        email = data.get('email', '').strip()
+        phone = data.get('phone', '').strip()
+        first_name = data.get('first_name', '').strip()
+        last_name = data.get('last_name', '').strip()
+        instructor_id = data.get('instructor_id')
+        
+        # Validation
+        if not all([role, email, first_name, last_name, instructor_id]):
+            return JsonResponse({'error': 'Missing required fields'}, status=400)
+        
+        if role not in ['trainee', 'hte']:
+            return JsonResponse({'error': 'Invalid role'}, status=400)
+        
+        # Check email not already registered
+        if models.User.objects.filter(email=email).exists():
+            return JsonResponse({'error': 'Email already registered'}, status=400)
+        
+        # Check instructor exists
+        try:
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+        
+        # Generate OTP
+        otp_code = ''.join(random.choices(string.digits, k=6))
+        
+        # Create RegistrationOTPRequest
+        reg_request = RegistrationOTPRequest.objects.create(
+            role=role,
+            email=email,
+            phone=phone,
+            first_name=first_name,
+            last_name=last_name,
+            instructor=instructor,
+            otp_code=otp_code,
+            status='pending'
+        )
+        
+        # If HTE, capture company info
+        if role == 'hte':
+            reg_request.company_name = data.get('company_name', '').strip()
+            reg_request.company_address = data.get('company_address', '').strip()
+            reg_request.contact_person = data.get('contact_person', '').strip()
+            reg_request.barangay = data.get('barangay', '').strip()
+            reg_request.save()
+        
+        # If trainee, capture student info
+        if role == 'trainee':
+            reg_request.student_id = data.get('student_id', '').strip()
+            reg_request.school_name = data.get('school_name', '').strip()
+            reg_request.course = data.get('course', '').strip()
+            reg_request.year_level = data.get('year_level', '').strip()
+            reg_request.save()
+        
+        # Send OTP to instructor email
+        subject = f"New Registration Request - {first_name} {last_name} ({role.upper()})"
+        message = f"""
+Hello {instructor.user.get_full_name()},
+
+A new {role} has requested to register with the OJT system.
+
+Name: {first_name} {last_name}
+Email: {email}
+Role: {role.upper()}
+
+OTP Code: {otp_code}
+
+Please review and approve/reject this registration request in your dashboard.
+
+Best regards,
+OJT Management System
+        """
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [instructor.user.email],
+                fail_silently=False
+            )
+        except Exception as e:
+            print(f"Error sending OTP email: {e}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'OTP request submitted. Instructor will receive OTP code for verification.',
+            'request_id': reg_request.id,
+            'otp_code': otp_code  # For development/testing; remove in production
+        }, status=201)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@require_jwt(required_role='instructor')
+def get_pending_registration_requests(request: HttpRequest) -> JsonResponse:
+    """
+    Get pending registration OTP requests for the authenticated instructor.
+    """
+    from .models import RegistrationOTPRequest
+    
+    try:
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        
+        if not instructor:
+            return JsonResponse({'error': 'Instructor profile not found'}, status=404)
+        
+        # Get pending requests
+        pending_requests = RegistrationOTPRequest.objects.filter(
+            instructor=instructor,
+            status='pending'
+        ).order_by('-requested_at')
+        
+        data = [
+            {
+                'id': req.id,
+                'role': req.role,
+                'first_name': req.first_name,
+                'last_name': req.last_name,
+                'email': req.email,
+                'phone': req.phone,
+                'otp_code': req.otp_code,
+                # HTE fields
+                'company_name': req.company_name,
+                'company_address': req.company_address,
+                'contact_person': req.contact_person,
+                'barangay': req.barangay,
+                # Trainee fields
+                'student_id': req.student_id,
+                'school_name': req.school_name,
+                'course': req.course,
+                'year_level': req.year_level,
+                # Status
+                'requested_at': req.requested_at.isoformat(),
+                'status': req.status,
+            }
+            for req in pending_requests
+        ]
+        
+        return JsonResponse({
+            'success': True,
+            'pending_requests': data,
+            'count': len(data)
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@require_jwt(required_role='instructor')
+def approve_registration_request(request: HttpRequest) -> JsonResponse:
+    """
+    Instructor approves a pending registration OTP request.
+    """
+    from .models import RegistrationOTPRequest, UserRole
+    
+    try:
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        
+        if not instructor:
+            return JsonResponse({'error': 'Instructor profile not found'}, status=404)
+        
+        data = json.loads(request.body)
+        request_id = data.get('request_id')
+        
+        if not request_id:
+            return JsonResponse({'error': 'request_id is required'}, status=400)
+        
+        try:
+            reg_request = RegistrationOTPRequest.objects.get(id=request_id)
+        except RegistrationOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found'}, status=404)
+        
+        # Check instructor is the one this request is for
+        if reg_request.instructor_id != instructor.id:
+            return JsonResponse({'error': 'Not authorized'}, status=403)
+        
+        if reg_request.status != 'pending':
+            return JsonResponse({'error': f'Request status is {reg_request.status}, cannot approve'}, status=400)
+        
+        # Mark as approved
+        reg_request.status = 'approved'
+        reg_request.approved_at = timezone.now()
+        reg_request.approved_by = user
+        reg_request.save()
+        
+        # Send approval email to trainee/HTE
+        subject = "Registration Approved - OJT System"
+        message = f"""
+Hello {reg_request.first_name} {reg_request.last_name},
+
+Your registration request has been approved!
+
+You can now proceed with the following steps:
+1. Complete facial recognition
+2. Set up your company/workplace information
+3. Configure geofencing details
+
+Your approval code: {reg_request.otp_code}
+
+Please log in to your dashboard and complete the remaining steps.
+
+Best regards,
+OJT Management System
+        """
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [reg_request.email],
+                fail_silently=False
+            )
+        except Exception as e:
+            print(f"Error sending approval email: {e}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Registration request approved. Trainee/HTE will receive approval email.',
+            'request_id': reg_request.id
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@require_jwt(required_role='instructor')
+def reject_registration_request(request: HttpRequest) -> JsonResponse:
+    """
+    Instructor rejects a pending registration OTP request.
+    """
+    from .models import RegistrationOTPRequest
+    
+    try:
+        user = getattr(request, 'user', None)
+        instructor = OJTInstructor.objects.filter(user=user).first()
+        
+        if not instructor:
+            return JsonResponse({'error': 'Instructor profile not found'}, status=404)
+        
+        data = json.loads(request.body)
+        request_id = data.get('request_id')
+        rejection_reason = data.get('rejection_reason', '')
+        
+        if not request_id:
+            return JsonResponse({'error': 'request_id is required'}, status=400)
+        
+        try:
+            reg_request = RegistrationOTPRequest.objects.get(id=request_id)
+        except RegistrationOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found'}, status=404)
+        
+        # Check instructor is the one this request is for
+        if reg_request.instructor_id != instructor.id:
+            return JsonResponse({'error': 'Not authorized'}, status=403)
+        
+        if reg_request.status != 'pending':
+            return JsonResponse({'error': f'Request status is {reg_request.status}, cannot reject'}, status=400)
+        
+        # Mark as rejected
+        reg_request.status = 'rejected'
+        reg_request.rejection_reason = rejection_reason
+        reg_request.save()
+        
+        # Send rejection email
+        subject = "Registration Request Rejected - OJT System"
+        message = f"""
+Hello {reg_request.first_name} {reg_request.last_name},
+
+Unfortunately, your registration request has been rejected.
+
+Reason: {rejection_reason or 'No reason provided'}
+
+Please contact the OJT Instructor for more information.
+
+Best regards,
+OJT Management System
+        """
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [reg_request.email],
+                fail_silently=False
+            )
+        except Exception as e:
+            print(f"Error sending rejection email: {e}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Registration request rejected.',
+            'request_id': reg_request.id
+        })
+    
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

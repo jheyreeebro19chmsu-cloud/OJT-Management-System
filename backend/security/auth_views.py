@@ -15,7 +15,7 @@ from django.db import transaction
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
-    UserRole, Student, OJTInstructor, HTE, OTPVerification
+    UserRole, Student, OJTInstructor, HTE, OTPVerification, TraineeOTPRequest
 )
 import requests
 
@@ -189,16 +189,461 @@ def login(request: HttpRequest) -> JsonResponse:
         return JsonResponse({'error': str(e)}, status=500)
 
 
+# ======================= NEW OTP REGISTRATION ENDPOINTS =======================
+
+def send_otp_to_instructor(instructor_email: str, trainee_email: str, otp_code: str, trainee_name: str, company_name: str) -> bool:
+    """Send OTP notification to OJT Instructor."""
+    try:
+        subject = "OJT System - New Trainee Registration Request"
+        message = f"""Hello Instructor,
+
+A new trainee has requested to register in the OJT system.
+
+Trainee Details:
+- Name: {trainee_name}
+- Email: {trainee_email}
+- Company: {company_name}
+- OTP Code: {otp_code}
+
+Please review this request in your pending requests dashboard. Once approved, the trainee will receive this OTP code to proceed with facial recognition and complete registration.
+
+Best regards,
+OJT Management System"""
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [instructor_email], fail_silently=False)
+        return True
+    except Exception as e:
+        print(f"Error sending instructor notification: {e}")
+        return False
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def request_trainee_otp_registration(request: HttpRequest) -> JsonResponse:
+    """Request OTP registration for trainee or HTE. Sends OTP to instructor."""
+    from .models import TraineeOTPRequest
+    from django.utils import timezone
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Validate required fields
+        required_fields = ['email', 'first_name', 'last_name', 'role', 'instructor_id']
+        if not all(field in data for field in required_fields):
+            return JsonResponse({'error': 'Missing required fields'}, status=400)
+        
+        email = data.get('email', '').strip()
+        role = data.get('role', '').strip()
+        instructor_id = data.get('instructor_id')
+        
+        # Check if email already registered
+        if User.objects.filter(email=email).exists():
+            return JsonResponse({'error': 'Email already registered'}, status=400)
+        
+        # Check if already has pending request
+        if TraineeOTPRequest.objects.filter(email=email, status='pending').exists():
+            return JsonResponse({'error': 'Registration request already pending'}, status=400)
+        
+        # Get instructor
+        try:
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+        
+        # Generate OTP
+        otp_code = OTPVerification.generate_otp()
+        
+        # Create TraineeOTPRequest
+        request_data = {
+            'role': role,
+            'email': email,
+            'first_name': data.get('first_name', '').strip(),
+            'last_name': data.get('last_name', '').strip(),
+            'full_name': f"{data.get('first_name', '')} {data.get('last_name', '')}".strip(),
+            'age': data.get('age'),
+            'address': data.get('address', '').strip(),
+            'otp_code': otp_code,
+            'otp_sent_at': timezone.now(),
+            'instructor': instructor,
+            'gps_latitude': data.get('gps_latitude'),
+            'gps_longitude': data.get('gps_longitude'),
+        }
+        
+        # Add role-specific fields
+        if role == 'trainee':
+            request_data.update({
+                'school_name': data.get('school_name', '').strip(),
+                'course': data.get('course', '').strip(),
+                'year_level': data.get('year_level', '').strip(),
+                'company_name': data.get('company_name', '').strip(),
+                'company_address': data.get('company_address', '').strip(),
+                'barangay': data.get('barangay', '').strip(),
+            })
+        elif role == 'hte':
+            request_data.update({
+                'company_name': data.get('company_name', '').strip(),
+                'company_address': data.get('company_address', '').strip(),
+                'barangay': data.get('barangay', '').strip(),
+                'contact_person': data.get('contact_person', '').strip(),
+                'contact_phone': data.get('contact_phone', '').strip(),
+            })
+        
+        otp_request = TraineeOTPRequest.objects.create(**request_data)
+        
+        # Send OTP to instructor
+        send_otp_to_instructor(
+            instructor.user.email,
+            email,
+            otp_code,
+            otp_request.full_name,
+            otp_request.company_name
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Registration request sent to instructor. Waiting for approval.',
+            'request_id': otp_request.id,
+            'expires_in_minutes': 30
+        }, status=201)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_pending_trainee_requests(request: HttpRequest) -> JsonResponse:
+    """Get pending trainee registration requests for an instructor."""
+    from .models import TraineeOTPRequest
+    
+    try:
+        # Get instructor from query params or auth header
+        instructor_id = request.GET.get('instructor_id')
+        if not instructor_id:
+            return JsonResponse({'error': 'instructor_id required'}, status=400)
+        
+        try:
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+        
+        # Get pending requests
+        pending = TraineeOTPRequest.objects.filter(
+            instructor=instructor,
+            status='pending'
+        ).values(
+            'id', 'role', 'email', 'full_name', 'company_name',
+            'otp_code', 'requested_at', 'course', 'school_name'
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'requests': list(pending)
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def approve_trainee_registration(request: HttpRequest) -> JsonResponse:
+    """Instructor approves trainee registration and sends OTP to trainee."""
+    from .models import TraineeOTPRequest
+    from django.utils import timezone
+    
+    try:
+        data = json.loads(request.body)
+        request_id = data.get('request_id')
+        
+        if not request_id:
+            return JsonResponse({'error': 'request_id required'}, status=400)
+        
+        try:
+            otp_request = TraineeOTPRequest.objects.get(id=request_id, status='pending')
+        except TraineeOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found or already processed'}, status=404)
+        
+        # Mark as approved
+        otp_request.status = 'approved'
+        otp_request.approved_at = timezone.now()
+        otp_request.save()
+        
+        # Send OTP to trainee email
+        subject = "OJT System - Registration OTP Code"
+        message = f"""Hello {otp_request.full_name},
+
+Your registration request has been approved!
+
+Your OTP code is: {otp_request.otp_code}
+
+Steps to complete registration:
+1. Enter this OTP code in the mobile app
+2. Complete facial recognition
+3. Finish registration
+
+This OTP will expire in 30 minutes.
+
+Best regards,
+OJT Management System"""
+        
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [otp_request.email], fail_silently=False)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Registration approved. OTP sent to trainee.',
+            'otp_code': otp_request.otp_code
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reject_trainee_registration(request: HttpRequest) -> JsonResponse:
+    """Instructor rejects trainee registration."""
+    from .models import TraineeOTPRequest
+    from django.utils import timezone
+    
+    try:
+        data = json.loads(request.body)
+        request_id = data.get('request_id')
+        reason = data.get('reason', '').strip()
+        
+        if not request_id:
+            return JsonResponse({'error': 'request_id required'}, status=400)
+        
+        try:
+            otp_request = TraineeOTPRequest.objects.get(id=request_id, status='pending')
+        except TraineeOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found or already processed'}, status=404)
+        
+        # Mark as rejected
+        otp_request.status = 'rejected'
+        otp_request.rejection_reason = reason
+        otp_request.save()
+        
+        # Send rejection email to trainee
+        subject = "OJT System - Registration Request Rejected"
+        message = f"""Hello {otp_request.full_name},
+
+Unfortunately, your registration request has been rejected.
+
+Reason: {reason or 'No reason provided'}
+
+Please contact your instructor for more information.
+
+Best regards,
+OJT Management System"""
+        
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [otp_request.email], fail_silently=False)
+        
+        return JsonResponse({'success': True, 'message': 'Registration rejected.'})
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def submit_face_recognition(request: HttpRequest) -> JsonResponse:
+    """Submit face photo and recognition data."""
+    from .models import TraineeOTPRequest
+    from django.utils import timezone
+    
+    try:
+        request_id = request.POST.get('request_id')
+        otp_code = request.POST.get('otp_code', '').strip()
+        face_data = request.POST.get('face_data', '')
+        avatar = request.FILES.get('avatar')
+        
+        if not all([request_id, otp_code]):
+            return JsonResponse({'error': 'Missing required fields'}, status=400)
+        
+        try:
+            otp_request = TraineeOTPRequest.objects.get(id=request_id)
+        except TraineeOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found'}, status=404)
+        
+        # Verify OTP
+        if otp_request.otp_code != otp_code:
+            return JsonResponse({'error': 'Invalid OTP code'}, status=400)
+        
+        if otp_request.status != 'approved':
+            return JsonResponse({'error': 'Request not approved'}, status=400)
+        
+        # Save face data
+        if avatar:
+            otp_request.avatar = avatar
+        otp_request.face_data = face_data
+        otp_request.face_registered_at = timezone.now()
+        otp_request.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Face recognition data received. Ready for registration completion.',
+            'request_id': otp_request.id
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
+    """Complete trainee registration after OTP approval and face recognition."""
+    from .models import TraineeOTPRequest
+    from django.utils import timezone
+    
+    try:
+        data = json.loads(request.body)
+        request_id = data.get('request_id')
+        password = data.get('password', '').strip()
+        
+        if not all([request_id, password]):
+            return JsonResponse({'error': 'Missing required fields'}, status=400)
+        
+        try:
+            otp_request = TraineeOTPRequest.objects.get(id=request_id)
+        except TraineeOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found'}, status=404)
+        
+        # Verify status
+        if otp_request.status != 'approved':
+            return JsonResponse({'error': 'Request must be approved first'}, status=400)
+        
+        if not otp_request.face_registered_at:
+            return JsonResponse({'error': 'Face recognition required'}, status=400)
+        
+        # Check email not already registered
+        if User.objects.filter(email=otp_request.email).exists():
+            return JsonResponse({'error': 'Email already registered'}, status=400)
+        
+        # Create user account
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=otp_request.email,
+                email=otp_request.email,
+                password=password,
+                first_name=otp_request.first_name,
+                last_name=otp_request.last_name
+            )
+            
+            UserRole.objects.create(user=user, role=otp_request.role, is_verified=True)
+            
+            if otp_request.role == 'trainee':
+                Student.objects.create(
+                    user=user,
+                    age=otp_request.age,
+                    address=otp_request.address,
+                    school=otp_request.school_name,
+                    year_level=otp_request.year_level
+                )
+            elif otp_request.role == 'hte':
+                HTE.objects.create(
+                    user=user,
+                    company_name=otp_request.company_name,
+                    company_address=otp_request.company_address,
+                    barangay=otp_request.barangay,
+                    contact_person=otp_request.contact_person,
+                    contact_phone=otp_request.contact_phone
+                )
+            
+            # Mark OTP request as completed
+            otp_request.status = 'completed'
+            otp_request.completed_at = timezone.now()
+            otp_request.save()
+        
+        # Send confirmation email
+        send_confirmation_email(otp_request.email, otp_request.full_name)
+        
+        # Return login credentials
+        refresh = RefreshToken.for_user(user)
+        return JsonResponse({
+            'success': True,
+            'message': 'Registration completed successfully!',
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token)
+            },
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'name': user.get_full_name(),
+                'role': otp_request.role,
+                'avatar': otp_request.avatar.url if otp_request.avatar else None,
+                'company': otp_request.company_name
+            }
+        }, status=201)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_instructor_by_email(request: HttpRequest) -> JsonResponse:
+    """Get instructor details by email."""
+    try:
+        email = request.GET.get('email', '').strip()
+        if not email:
+            return JsonResponse({'error': 'email required'}, status=400)
+        
+        try:
+            user = User.objects.get(email=email)
+            instructor = OJTInstructor.objects.get(user=user)
+            return JsonResponse({
+                'success': True,
+                'instructor': {
+                    'id': instructor.id,
+                    'email': user.email,
+                    'name': user.get_full_name(),
+                    'course': instructor.course,
+                    'department': instructor.department,
+                }
+            })
+        except (User.DoesNotExist, OJTInstructor.DoesNotExist):
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def check_registration_status(request: HttpRequest) -> JsonResponse:
+    """Check status of a registration request."""
+    from .models import TraineeOTPRequest
+    
+    try:
+        request_id = request.GET.get('request_id')
+        if not request_id:
+            return JsonResponse({'error': 'request_id required'}, status=400)
+        
+        try:
+            otp_req = TraineeOTPRequest.objects.get(id=request_id)
+            return JsonResponse({
+                'success': True,
+                'status': otp_req.status,
+                'request': {
+                    'id': otp_req.id,
+                    'status': otp_req.status,
+                    'email': otp_req.email,
+                    'full_name': otp_req.full_name,
+                    'approved_at': otp_req.approved_at.isoformat() if otp_req.approved_at else None,
+                }
+            })
+        except TraineeOTPRequest.DoesNotExist:
+            return JsonResponse({'error': 'Request not found'}, status=404)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def supabase_exchange(request: HttpRequest) -> JsonResponse:
-    """Exchange a Supabase access token for a Django JWT access/refresh pair.
-
-    Expects JSON body: {"access_token": "..."}
-    This endpoint calls the Supabase `/auth/v1/user` endpoint with the provided
-    access token to validate and fetch the user's email. If email found, it will
-    get-or-create a Django User and return Refresh/Access tokens.
-    """
     try:
         data = json.loads(request.body or b"{}")
         sup_token = data.get('access_token') or data.get('accessToken')

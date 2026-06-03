@@ -4,7 +4,7 @@ from .models import (
     UserRole, Student, OJTInstructor, HTE, OTPVerification,
     StudentOJTApplication, TimeRecord, Announcement, Task,
     StudentTask, FaceRegistration, AttendancePhoto,
-    HTEAccessRequest
+    HTEAccessRequest, TraineeOTPRequest
 )
 from .models import OTPAuditLog
 
@@ -185,3 +185,34 @@ class HTEAccessRequestAdmin(admin.ModelAdmin):
     def get_student_name(self, obj):
         return obj.application.student.user.get_full_name()
     get_student_name.short_description = "Student"
+
+
+@admin.register(TraineeOTPRequest)
+class TraineeOTPRequestAdmin(admin.ModelAdmin):
+    list_display = ("full_name", "email", "role", "company_name", "status", "requested_at")
+    search_fields = ("email", "full_name", "company_name", "instructor__user__email")
+    list_filter = ("role", "status", "requested_at")
+    readonly_fields = ("otp_code", "otp_sent_at", "requested_at", "approved_at", "face_registered_at", "completed_at")
+    
+    fieldsets = (
+        ("Personal Information", {
+            'fields': ('full_name', 'first_name', 'last_name', 'email', 'age', 'address')
+        }),
+        ("Role-Specific", {
+            'fields': ('role', 'school_name', 'course', 'year_level', 'company_name', 'company_address', 'barangay', 'contact_person', 'contact_phone')
+        }),
+        ("Geofencing", {
+            'fields': ('gps_latitude', 'gps_longitude', 'geofence_radius')
+        }),
+        ("OTP & Face Registration", {
+            'fields': ('otp_code', 'otp_sent_at', 'avatar', 'face_photo', 'face_data', 'face_registered_at')
+        }),
+        ("Status & Approval", {
+            'fields': ('status', 'instructor', 'approved_at', 'rejection_reason', 'completed_at', 'requested_at')
+        })
+    )
+    
+    def get_readonly_fields(self, request, obj=None):
+        if obj:  # Editing existing object
+            return self.readonly_fields + ('email', 'role')
+        return self.readonly_fields
