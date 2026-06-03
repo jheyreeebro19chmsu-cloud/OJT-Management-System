@@ -66,11 +66,21 @@ export function Login() {
   return (
     <div
       className="relative min-h-screen flex flex-col items-center justify-center px-4 py-8"
-      style={{
-        backgroundImage: `url('/chmsu.jpg'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)`,
-        backgroundSize: 'cover, cover',
-        backgroundPosition: 'center center, center center',
-        backgroundRepeat: 'no-repeat, no-repeat',
+      style={() => {
+        // Allow overriding the login background at runtime by setting localStorage.loginBg
+        let bg = '/chmsu.jpg';
+        try {
+          const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
+          if (override) bg = override;
+        } catch {
+          // ignore
+        }
+        return {
+          backgroundImage: bg ? `url('${bg}'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)` : 'linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)',
+          backgroundSize: 'cover, cover',
+          backgroundPosition: 'center center, center center',
+          backgroundRepeat: 'no-repeat, no-repeat',
+        };
       }}
     >
       {/* Dark overlay for contrast over the background image */}
