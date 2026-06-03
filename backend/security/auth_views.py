@@ -7,6 +7,7 @@ import io
 import logging
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
+from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.models import User
@@ -19,6 +20,7 @@ from .models import (
     UserRole, Student, OJTInstructor, HTE, OTPVerification, TraineeOTPRequest
 )
 import requests
+import time
 
 def send_verification_email(email: str, otp_code: str, full_name: str = "User") -> bool:
     """Send OTP verification email."""
@@ -238,6 +240,49 @@ OJT Management System"""
     except Exception as e:
         print(f"Error sending instructor notification: {e}")
         return False
+
+
+@require_http_methods(["GET"])
+def pending_requests_stream(request: HttpRequest) -> StreamingHttpResponse:
+    """SSE stream that emits JSON messages with pending requests count for an instructor.
+
+    Clients should connect with `?instructor_id=<id>`.
+    The endpoint yields `data: {"count": N}` whenever the count changes and sends keepalive comments.
+    """
+    from .models import TraineeOTPRequest, OJTInstructor
+
+    instructor_id = request.GET.get('instructor_id')
+    if not instructor_id:
+        return JsonResponse({'error': 'instructor_id required'}, status=400)
+
+    try:
+        instructor = OJTInstructor.objects.get(id=instructor_id)
+    except OJTInstructor.DoesNotExist:
+        return JsonResponse({'error': 'Instructor not found'}, status=404)
+
+    def event_stream():
+        last_count = None
+        while True:
+            try:
+                count = TraineeOTPRequest.objects.filter(instructor=instructor, status='pending').count()
+                if last_count is None or count != last_count:
+                    payload = json.dumps({'count': count})
+                    yield f"data: {payload}\n\n"
+                    last_count = count
+                # heartbeat comment to keep connection alive for proxies
+                yield ": ping\n\n"
+                time.sleep(5)
+            except GeneratorExit:
+                break
+            except Exception:
+                # on error, wait and continue
+                time.sleep(5)
+                continue
+
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 
 @csrf_exempt

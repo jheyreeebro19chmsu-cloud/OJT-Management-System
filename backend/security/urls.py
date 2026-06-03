@@ -30,6 +30,7 @@ urlpatterns = [
     # OTP Registration endpoints (new flow)
     path("auth/request-trainee-otp-registration/", auth_views.request_trainee_otp_registration, name="request_trainee_otp_registration"),
     path("auth/get-pending-trainee-requests/", auth_views.get_pending_trainee_requests, name="get_pending_trainee_requests"),
+    path("auth/pending-requests/stream/", auth_views.pending_requests_stream, name="pending_requests_stream"),
     path("auth/approve-trainee-registration/", auth_views.approve_trainee_registration, name="approve_trainee_registration"),
     path("auth/reject-trainee-registration/", auth_views.reject_trainee_registration, name="reject_trainee_registration"),
     path("auth/submit-face-recognition/", auth_views.submit_face_recognition, name="submit_face_recognition"),
