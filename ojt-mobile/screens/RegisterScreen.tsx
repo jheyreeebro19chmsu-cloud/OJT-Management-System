@@ -168,7 +168,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       if (profileError) throw profileError;
       try { await mobileApi.mobileRegister({ user_id: userId, email: form.email, full_name: form.name, role: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'student', location: location.lat && location.lng ? { latitude: location.lat, longitude: location.lng } : null, extra: { school_name: form.schoolName, company_name: form.companyName, barangay_type: form.barangayType, barangay: form.barangay } }); } catch (e) { console.debug('mobile_register sync failed', e); }
       try { await sendWelcomeEmailMobile(form.email, form.name || `${form.firstName} ${form.lastName}`); } catch (emailErr) { console.error('Email failed:', emailErr); }
-      if (role === 'admin') setRegistrationComplete(true); else { Alert.alert('Success', 'Registration complete! You can now log in.'); onSuccess(); }
+      if (role === 'admin') setRegistrationComplete(true); else { Alert.alert('Success', 'Request OTP'); onSuccess(); }
     } catch (error: any) { Alert.alert('Registration Error', error.message); } finally { setLoading(false); }
   }
 
@@ -277,7 +277,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
           </View>
         )}
 
-        <TouchableOpacity style={styles.nextButton} onPress={handleNext} disabled={loading}>{loading ? (<ActivityIndicator color="#fff" />) : (<><Text style={styles.nextButtonText}>{step === steps.length - 1 ? 'Complete Registration' : 'Continue'}</Text><ArrowRight color="#fff" size={20} /></>)}</TouchableOpacity>
+        <TouchableOpacity style={styles.nextButton} onPress={handleNext} disabled={loading}>{loading ? (<ActivityIndicator color="#fff" />) : (<><Text style={styles.nextButtonText}>{step === steps.length - 1 ? 'Request OTP' : 'Continue'}</Text><ArrowRight color="#fff" size={20} /></>)}</TouchableOpacity>
       </View>
     </ScrollView>
   );
