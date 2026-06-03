@@ -62,7 +62,8 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
 
   if (error) {
     console.error('Error creating employee:', error);
-    return null;
+    // Surface Supabase error to caller
+    throw new Error(error.message || JSON.stringify(error));
   }
 
   return transformSupabaseEmployee(data);
@@ -160,7 +161,7 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
 
   if (error) {
     console.error('Error creating time record:', error);
-    return null;
+    throw new Error(error.message || JSON.stringify(error));
   }
 
   return transformSupabaseTimeRecord(data);
