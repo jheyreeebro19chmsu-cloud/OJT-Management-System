@@ -863,7 +863,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: authId || newEmp.id,
         };
 
-        const created = await supabaseService.createEmployee(employeePayload);
+        let created = null as any;
+        try {
+          created = await supabaseService.createEmployee(employeePayload);
+        } catch (createErr: any) {
+          console.error('Supabase createEmployee failed, falling back to local save:', createErr);
+          // Fallback: create locally so the user can sign up immediately
+          if (password) {
+            setPasswordForEmail(cleanData.email, password);
+          }
+          setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
+          return { success: true, message: 'Created locally; Supabase sync failed: ' + (createErr?.message || String(createErr)), employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false } } as any;
+        }
+
         if (created) {
           setEmployees((prev) => [created, ...prev]);
 
