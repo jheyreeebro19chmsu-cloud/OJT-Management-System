@@ -5,7 +5,7 @@ IF "%1"=="" (
   exit /b 1
 )
 set SOURCE=%~1
-set TARGET=%~dp0..\public\chmsu.jpg
+set TARGET=%~dp0..\public\CHMSU.JPEG
 if not exist "%SOURCE%" (
   echo Source file not found: %SOURCE%
   exit /b 1

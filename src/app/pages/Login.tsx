@@ -75,7 +75,7 @@ export function Login() {
   // Compute background style object once per render (avoid passing a function to `style`)
   let bgStyle: React.CSSProperties = {};
   try {
-    let bg = '/chmsu.jpg';
+    let bg = '/CHMSU.JPEG';
     const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
     if (override) bg = override;
     bgStyle = {

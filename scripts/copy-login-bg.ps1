@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory=$true)]
   [string]$SourcePath,
-  [string]$TargetPath = "$PSScriptRoot\..\public\chmsu.jpg"
+  [string]$TargetPath = "$PSScriptRoot\..\public\CHMSU.JPEG"
 )
 
 if (-not (Test-Path $SourcePath)) {
