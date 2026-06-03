@@ -8,6 +8,9 @@ from django.views.decorators.http import require_http_methods
 from .models import (
     Student, OJTInstructor, Announcement, AnnouncementSubmission
 )
+import logging
+
+logger = logging.getLogger('announcements')
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -73,6 +76,20 @@ def get_announcements(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Instructor not found'}, status=404)
         
         announcements = Announcement.objects.filter(instructor=instructor).order_by('-created_at')
+        # Log image details for debugging missing files
+        for a in announcements:
+            try:
+                img_url = a.image.url if a.image else None
+            except Exception:
+                img_url = None
+            img_name = getattr(a.image, 'name', None) if getattr(a, 'image', None) else None
+            img_path = None
+            try:
+                img_path = getattr(a.image, 'path', None) if getattr(a, 'image', None) else None
+            except Exception:
+                img_path = None
+            logger.info('Announcement image debug id=%s url=%s name=%s path=%s', a.id, img_url, img_name, img_path)
+
         data = [
             {
                 'id': a.id,
