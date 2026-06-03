@@ -26,6 +26,9 @@ export function AdminSettings() {
   const supabaseConnected = isSupabaseConfigured();
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [securityHealthLoading, setSecurityHealthLoading] = useState(false);
+  // OTP management state
+  const [otps, setOtps] = useState<Array<any>>([]);
+  const [loadingOtps, setLoadingOtps] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -229,6 +232,57 @@ export function AdminSettings() {
      
   }, []);
 
+  const fetchOtps = async () => {
+    if (!settings || !settings.currentInstructorId) return;
+    setLoadingOtps(true);
+    try {
+      const res = await fetch(`/api/security/auth/list-instructor-otps/?instructor_id=${settings.currentInstructorId}`);
+      if (!res.ok) throw new Error('Failed to load OTPs');
+      const d = await res.json();
+      setOtps(d.otps || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingOtps(false);
+    }
+  };
+
+  const handleGenerateOtp = async () => {
+    if (!settings || !settings.currentInstructorId) return toast.error('Instructor context not available');
+    try {
+      const res = await fetch('/api/security/auth/generate-instructor-otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructor_id: settings.currentInstructorId }),
+      });
+      if (!res.ok) throw new Error('Failed to generate OTP');
+      const d = await res.json();
+      toast.success('OTP generated and copied to clipboard');
+      if (d.otp_code) await navigator.clipboard.writeText(d.otp_code);
+      fetchOtps();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Could not generate OTP');
+    }
+  };
+
+  const handleRevokeOtp = async (code: string) => {
+    if (!settings || !settings.currentInstructorId) return;
+    try {
+      const res = await fetch('/api/security/auth/revoke-instructor-otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructor_id: settings.currentInstructorId, otp_code: code }),
+      });
+      if (!res.ok) throw new Error('Revoke failed');
+      toast.success('OTP revoked');
+      fetchOtps();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Could not revoke OTP');
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
@@ -399,6 +453,43 @@ export function AdminSettings() {
           <div>
             <h3 className="font-bold text-gray-800">Facial Recognition</h3>
             <p className="text-xs text-gray-500">Biometric identity verification for attendance</p>
+          </div>
+        </div>
+
+        {/* Instructor OTP Management */}
+        <div className="mt-6 border-t pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h4 className="font-bold text-gray-800">Instructor Enrollment OTPs</h4>
+              <p className="text-xs text-gray-500">Generate and revoke short OTP codes for trainee enrollment.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={fetchOtps} className="px-3 py-2 bg-gray-100 rounded-md text-sm">Refresh</button>
+              <button onClick={handleGenerateOtp} className="px-3 py-2 bg-emerald-600 text-white rounded-md text-sm">Generate OTP</button>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-3">
+            {loadingOtps ? (
+              <p className="text-sm text-gray-500">Loading...</p>
+            ) : otps.length === 0 ? (
+              <p className="text-sm text-gray-500">No recent OTPs found.</p>
+            ) : (
+              <div className="space-y-2">
+                {otps.map((o) => (
+                  <div key={o.otp_code} className="flex items-center justify-between bg-white rounded-lg p-2 border">
+                    <div>
+                      <div className="text-sm font-mono text-gray-700">{o.otp_code}</div>
+                      <div className="text-xs text-gray-400">Created: {new Date(o.created_at).toLocaleString()}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { navigator.clipboard.writeText(o.otp_code); toast.success('Copied'); }} className="px-2 py-1 bg-blue-50 text-blue-600 rounded">Copy</button>
+                      <button onClick={() => handleRevokeOtp(o.otp_code)} className="px-2 py-1 bg-red-50 text-red-600 rounded">Revoke</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">

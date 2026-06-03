@@ -834,6 +834,57 @@ def generate_instructor_otp(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 @require_http_methods(["GET"])
+def list_instructor_otps(request: HttpRequest) -> JsonResponse:
+    """List recent OTPs generated for an instructor (by instructor_id query param)."""
+    try:
+        instructor_id = request.GET.get('instructor_id')
+        if not instructor_id:
+            return JsonResponse({'error': 'instructor_id required'}, status=400)
+        try:
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+
+        otps = OTPVerification.objects.filter(email=instructor.user.email).order_by('-created_at')[:20]
+        data = [
+            {
+                'otp_code': o.otp_code,
+                'created_at': o.created_at.isoformat(),
+                'expires_at': o.expires_at.isoformat(),
+                'is_verified': o.is_verified,
+            }
+            for o in otps
+        ]
+        return JsonResponse({'success': True, 'otps': data})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def revoke_instructor_otp(request: HttpRequest) -> JsonResponse:
+    """Revoke (delete) an OTP by code for an instructor."""
+    try:
+        data = json.loads(request.body or b"{}")
+        instructor_id = data.get('instructor_id')
+        otp_code = data.get('otp_code')
+        if not instructor_id or not otp_code:
+            return JsonResponse({'error': 'instructor_id and otp_code required'}, status=400)
+        try:
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+
+        deleted, _ = OTPVerification.objects.filter(email=instructor.user.email, otp_code=otp_code).delete()
+        if deleted:
+            return JsonResponse({'success': True, 'message': 'OTP revoked'})
+        return JsonResponse({'error': 'OTP not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
 def check_registration_status(request: HttpRequest) -> JsonResponse:
     """Check status of a registration request."""
     from .models import TraineeOTPRequest
