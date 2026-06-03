@@ -125,3 +125,10 @@ export const applicationApi = {
   submit: (formData: any) => 
     post('/application/submit/', formData),
 };
+
+export const registrationApi = {
+  requestTraineeOtpRegistration: (payload: any) => post('/auth/request-trainee-otp-registration/', payload),
+  getPendingRequests: (instructorId: string) => get(`/auth/get-pending-trainee-requests/?instructor_id=${instructorId}`),
+  getInstructorByEmail: (email: string) => get(`/auth/get-instructor-by-email/?email=${encodeURIComponent(email)}`),
+  checkRegistrationStatus: (email: string) => get(`/auth/check-registration-status/?email=${encodeURIComponent(email)}`),
+};

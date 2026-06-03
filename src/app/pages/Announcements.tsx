@@ -203,7 +203,40 @@ export function Announcements() {
                   </div>
                   <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{announcement.content}</p>
                 </div>
-                <StatusBadge status={status} />
+                    <div className="flex flex-col items-end gap-2">
+                      <StatusBadge status={status} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Print only this announcement
+                          const html = `
+                            <html>
+                              <head>
+                                <title>${announcement.title}</title>
+                                <style>body{font-family:sans-serif;padding:20px;} .title{font-size:20px;font-weight:700;} .meta{color:#666;font-size:12px;margin-bottom:8px;} img{max-width:100%;height:auto;margin-top:12px;border:1px solid #ddd;padding:4px;border-radius:6px;}</style>
+                              </head>
+                              <body>
+                                <div class="title">${announcement.title}</div>
+                                <div class="meta">By ${announcement.createdBy || 'N/A'} • ${new Date(announcement.createdAt).toLocaleString()}</div>
+                                <div class="content">${announcement.content.replace(/\n/g, '<br/>')}</div>
+                                ${announcement.photo ? `<img src="${announcement.photo}" alt="announcement photo"/>` : ''}
+                              </body>
+                            </html>`;
+                          const w = window.open('', '_blank', 'noopener');
+                          if (!w) return;
+                          w.document.open();
+                          w.document.write(html);
+                          w.document.close();
+                          w.focus();
+                          setTimeout(() => {
+                            w.print();
+                          }, 300);
+                        }}
+                        className="text-xs px-2 py-1 rounded-md bg-slate-50 border border-gray-100 text-slate-700 hover:bg-slate-100"
+                      >
+                        Print
+                      </button>
+                    </div>
               </div>
               {announcement.photo && (
                 <img
@@ -316,7 +349,7 @@ function StatusBadge({ status }: { status: 'passed' | 'missed' | 'pending' }) {
   );
 }
 
-function readAsDataUrl(file: File): Promise<string> {
+export function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));

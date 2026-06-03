@@ -185,6 +185,29 @@ def login(request: HttpRequest) -> JsonResponse:
         elif role == 'hte':
             p = HTE.objects.filter(user=user).first()
             if p: profile_data = {'company_name': p.company_name}
+        # Attempt to include avatar URL in profile data (prefer FaceRegistration.image)
+        avatar_url = None
+        try:
+            from .models import FaceRegistration
+            fr = FaceRegistration.objects.filter(user=user).first()
+            if fr and fr.image:
+                avatar_url = fr.image.url
+        except Exception:
+            avatar_url = None
+
+        # Fallback: try to find avatar_url from TraineeOTPRequest (legacy) or related fields
+        if not avatar_url:
+            try:
+                from .models import TraineeOTPRequest
+                otp_req = TraineeOTPRequest.objects.filter(email=user.email).order_by('-requested_at').first()
+                if otp_req and getattr(otp_req, 'avatar_url', None):
+                    avatar_url = otp_req.avatar_url
+            except Exception:
+                pass
+
+        if avatar_url:
+            profile_data['avatar'] = avatar_url
+
         return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': role, **profile_data}})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -338,67 +361,68 @@ def request_trainee_otp_registration(request: HttpRequest) -> JsonResponse:
 def get_pending_trainee_requests(request: HttpRequest) -> JsonResponse:
     """Get pending trainee registration requests for an instructor."""
     from .models import TraineeOTPRequest
-    
+    try:
+        # Get instructor from query params or auth header
+        instructor_id = request.GET.get('instructor_id')
+        if not instructor_id:
+            return JsonResponse({'error': 'instructor_id required'}, status=400)
+
         try:
-            # Get instructor from query params or auth header
-            instructor_id = request.GET.get('instructor_id')
-            if not instructor_id:
-                return JsonResponse({'error': 'instructor_id required'}, status=400)
-        
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+
+        # Load configured geofence zones
+        from .utils import find_nearest_zone, safe_float
+        zones = getattr(settings, 'DEFAULT_GEOFENCE_ZONES', []) or []
+        active_zones = [z for z in zones if z.get('active', True)]
+
+        # Get pending requests and attach nearest zone info when GPS provided
+        pending_qs = TraineeOTPRequest.objects.filter(instructor=instructor, status='pending')
+        results = []
+        for p in pending_qs:
+            item = {
+                'id': p.id,
+                'role': p.role,
+                'email': p.email,
+                'full_name': p.full_name,
+                'company_name': p.company_name,
+                'otp_code': p.otp_code,
+                'requested_at': p.requested_at.isoformat() if p.requested_at else None,
+                'course': p.course,
+                'school_name': p.school_name,
+                'gps_latitude': p.gps_latitude,
+                'gps_longitude': p.gps_longitude,
+                'company_address': p.company_address,
+                'avatar_url': p.avatar.url if getattr(p, 'avatar', None) else None,
+                'face_registered': bool(p.face_registered_at),
+                'face_registered_at': p.face_registered_at.isoformat() if p.face_registered_at else None,
+            }
+
+            # If GPS present, compute nearest geofence zone and attach its metadata
             try:
-                instructor = OJTInstructor.objects.get(id=instructor_id)
-            except OJTInstructor.DoesNotExist:
-                return JsonResponse({'error': 'Instructor not found'}, status=404)
-
-            # Load configured geofence zones
-            from .utils import find_nearest_zone, safe_float
-            zones = getattr(settings, 'DEFAULT_GEOFENCE_ZONES', []) or []
-            active_zones = [z for z in zones if z.get('active', True)]
-        
-            # Get pending requests and attach nearest zone info when GPS provided
-            pending_qs = TraineeOTPRequest.objects.filter(instructor=instructor, status='pending')
-            results = []
-            for p in pending_qs:
-                item = {
-                    'id': p.id,
-                    'role': p.role,
-                    'email': p.email,
-                    'full_name': p.full_name,
-                    'company_name': p.company_name,
-                    'otp_code': p.otp_code,
-                    'requested_at': p.requested_at.isoformat() if p.requested_at else None,
-                    'course': p.course,
-                    'school_name': p.school_name,
-                    'gps_latitude': p.gps_latitude,
-                    'gps_longitude': p.gps_longitude,
-                    'company_address': p.company_address,
-                }
-
-                # If GPS present, compute nearest geofence zone and attach its metadata
-                try:
-                    if p.gps_latitude is not None and p.gps_longitude is not None and active_zones:
-                        lat_f = float(p.gps_latitude)
-                        lng_f = float(p.gps_longitude)
-                        nearest_zone, nearest_distance = find_nearest_zone(lat_f, lng_f, active_zones)
-                        if nearest_zone:
-                            zone_info = {
-                                'name': nearest_zone.get('name'),
-                                'lat': safe_float(nearest_zone.get('lat')),
-                                'lng': safe_float(nearest_zone.get('lng')),
-                                'radius': safe_float(nearest_zone.get('radius')),
-                            }
-                            item['zone'] = zone_info
-                        else:
-                            item['zone'] = None
+                if p.gps_latitude is not None and p.gps_longitude is not None and active_zones:
+                    lat_f = float(p.gps_latitude)
+                    lng_f = float(p.gps_longitude)
+                    nearest_zone, nearest_distance = find_nearest_zone(lat_f, lng_f, active_zones)
+                    if nearest_zone:
+                        zone_info = {
+                            'name': nearest_zone.get('name'),
+                            'lat': safe_float(nearest_zone.get('lat')),
+                            'lng': safe_float(nearest_zone.get('lng')),
+                            'radius': safe_float(nearest_zone.get('radius')),
+                        }
+                        item['zone'] = zone_info
                     else:
                         item['zone'] = None
-                except Exception:
+                else:
                     item['zone'] = None
+            except Exception:
+                item['zone'] = None
 
-                results.append(item)
+            results.append(item)
 
-            return JsonResponse({'success': True, 'requests': results})
-    
+        return JsonResponse({'success': True, 'requests': results})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -531,17 +555,88 @@ def submit_face_recognition(request: HttpRequest) -> JsonResponse:
         if otp_request.status != 'approved':
             return JsonResponse({'error': 'Request not approved'}, status=400)
         
-        # Save face data
+        # Save face data and avatar
         if avatar:
             otp_request.avatar = avatar
         otp_request.face_data = face_data
         otp_request.face_registered_at = timezone.now()
         otp_request.save()
-        
+
+        # Try to synchronously generate a thumbnail and ensure avatar/thumbnail URLs are available
+        avatar_url = None
+        thumbnail_url = None
+        try:
+            from django.core.files.storage import default_storage
+            from django.core.files.base import ContentFile
+            try:
+                # Avatar URL (prefer explicit field if set)
+                if getattr(otp_request, 'avatar_url', None):
+                    avatar_url = otp_request.avatar_url
+                else:
+                    try:
+                        avatar_url = otp_request.avatar.url if otp_request.avatar else None
+                    except Exception:
+                        avatar_url = None
+
+                # Generate thumbnail immediately if avatar present and thumbnail not already set
+                thumb_key = getattr(otp_request, 'thumbnail_key', None)
+                if not thumb_key and otp_request.avatar and getattr(otp_request.avatar, 'name', None):
+                    try:
+                        # Create thumbnail using Pillow
+                        from PIL import Image
+                        base_name = os.path.basename(otp_request.avatar.name)
+                        base, _ = os.path.splitext(base_name)
+                        thumb_name = f"avatars/thumbnails/{base}_thumb.jpg"
+
+                        # Open avatar from storage
+                        with default_storage.open(otp_request.avatar.name, 'rb') as f:
+                            img = Image.open(f)
+                            img = img.convert('RGB')
+                            img.thumbnail((256, 256))
+                            buf = io.BytesIO()
+                            img.save(buf, format='JPEG', quality=85)
+                            buf.seek(0)
+                            # Save thumbnail to storage
+                            if default_storage.exists(thumb_name):
+                                default_storage.delete(thumb_name)
+                            saved_key = default_storage.save(thumb_name, ContentFile(buf.read()))
+                            otp_request.thumbnail_key = saved_key
+                            otp_request.avatar_url = avatar_url or (default_storage.url(otp_request.avatar.name) if otp_request.avatar else '')
+                            otp_request.save()
+                            thumbnail_url = default_storage.url(saved_key)
+                    except Exception:
+                        # thumbnail generation failed; proceed without thumbnail
+                        thumbnail_url = None
+                else:
+                    # If thumbnail_key already present, try to build URL
+                    if thumb_key:
+                        try:
+                            thumbnail_url = default_storage.url(thumb_key)
+                        except Exception:
+                            thumbnail_url = None
+
+                # Ensure avatar_url is filled from storage if still None
+                if not avatar_url and otp_request.avatar and getattr(otp_request.avatar, 'name', None):
+                    try:
+                        avatar_url = default_storage.url(otp_request.avatar.name)
+                        otp_request.avatar_url = avatar_url
+                        otp_request.save()
+                    except Exception:
+                        avatar_url = None
+            except Exception:
+                avatar_url = getattr(otp_request, 'avatar_url', None) or None
+                thumbnail_url = None
+        except Exception:
+            avatar_url = getattr(otp_request, 'avatar_url', None) or None
+            thumbnail_url = None
+
         return JsonResponse({
             'success': True,
             'message': 'Face recognition data received. Ready for registration completion.',
-            'request_id': otp_request.id
+            'request_id': otp_request.id,
+            'avatar_url': avatar_url,
+            'thumbnail_url': thumbnail_url,
+            'face_registered': True,
         })
     
     except Exception as e:
@@ -613,12 +708,53 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
             otp_request.status = 'completed'
             otp_request.completed_at = timezone.now()
             otp_request.save()
+
+            # Promote avatar to FaceRegistration (if avatar present)
+            try:
+                from .models import FaceRegistration
+                from django.core.files.storage import default_storage
+                import os
+
+                if getattr(otp_request, 'avatar', None) and getattr(otp_request.avatar, 'name', None):
+                    avatar_path = otp_request.avatar.name
+                    # Read avatar content from storage and save to FaceRegistration.image
+                    try:
+                        with default_storage.open(avatar_path, 'rb') as af:
+                            content = ContentFile(af.read())
+                            emp_id = f"emp_{user.id}"
+                            fr, created = FaceRegistration.objects.get_or_create(user=user, defaults={'employee_id': emp_id})
+                            # Save image using the same filename
+                            fr.image.save(os.path.basename(avatar_path), content, save=True)
+                            fr.face_registered = True
+                            fr.save()
+                            # Mark otp_request face_registered flag
+                            TraineeOTPRequest.objects.filter(pk=otp_request.pk).update(face_registered=True)
+                    except Exception as e:
+                        logging.exception('Failed to copy avatar to FaceRegistration: %s', e)
+            except Exception:
+                # If FaceRegistration model not present or error occurs, continue without failing registration
+                logging.exception('Error while promoting avatar to face registration')
         
         # Send confirmation email
         send_confirmation_email(otp_request.email, otp_request.full_name)
         
         # Return login credentials
         refresh = RefreshToken.for_user(user)
+        # Determine avatar URL to return (prefer FaceRegistration.image if available)
+        avatar_url = None
+        try:
+            from .models import FaceRegistration
+            fr = FaceRegistration.objects.filter(user=user).first()
+            if fr and fr.image:
+                avatar_url = fr.image.url
+        except Exception:
+            pass
+        if not avatar_url:
+            try:
+                avatar_url = otp_request.avatar_url or (otp_request.avatar.url if otp_request.avatar else None)
+            except Exception:
+                avatar_url = None
+
         return JsonResponse({
             'success': True,
             'message': 'Registration completed successfully!',
@@ -631,7 +767,7 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
                 'email': user.email,
                 'name': user.get_full_name(),
                 'role': otp_request.role,
-                'avatar': otp_request.avatar.url if otp_request.avatar else None,
+                'avatar': avatar_url,
                 'company': otp_request.company_name
             }
         }, status=201)

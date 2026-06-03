@@ -1,0 +1,25 @@
+FROM condaforge/mambaforge:latest
+
+WORKDIR /app
+
+# Create a small conda env with prebuilt dlib and face_recognition from conda-forge
+RUN mamba create -y -n appenv python=3.10 dlib face_recognition -c conda-forge \
+    && mamba clean -afy
+
+SHELL ["/bin/bash", "-lc"]
+ENV PATH=/opt/conda/envs/appenv/bin:$PATH
+
+# Install pip requirements if present
+COPY backend/requirements.txt backend/requirements.txt
+RUN if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+
+# Copy application code
+COPY backend/ /app/
+
+COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+EXPOSE 8000
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

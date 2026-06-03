@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -15,8 +15,9 @@ import {
   Image,
   ImageBackground,
 } from 'react-native';
-import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key } from 'lucide-react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { User, LogOut, Camera as CameraIcon, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key } from 'lucide-react-native';
+import { Camera, useCameraPermissions } from 'expo-camera';
+import { BarCodeScanner } from 'expo-barcode-scanner';
 import { supabase } from './lib/supabase';
 import { setAuthToken, getApiBaseUrl, faceApi } from './lib/api';
 import authStore from './lib/auth';
@@ -74,6 +75,25 @@ export default function App() {
   const [faceEnrollInProgress, setFaceEnrollInProgress] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const [scannerPermission, setScannerPermission] = useState<boolean | null>(null);
+  const [scanned, setScanned] = useState(false);
+
+  useEffect(() => {
+    if (!scanning) {
+      setScanned(false);
+      return;
+    }
+    (async () => {
+      try {
+        const { status } = await BarCodeScanner.requestPermissionsAsync();
+        setScannerPermission(status === 'granted');
+      } catch (e) {
+        console.debug('Barcode permission request failed', e);
+        setScannerPermission(false);
+      }
+    })();
+  }, [scanning]);
+  
 
   // Watch for email changes and fetch school logo
   useEffect(() => {
@@ -295,20 +315,38 @@ export default function App() {
                   </View>
                 ) : (
                   <>
-                    <CameraView
-                      style={StyleSheet.absoluteFillObject}
-                      facing="back"
-                      onBarcodeScanned={handleBarCodeScanned}
-                      barcodeScannerSettings={{
-                        barcodeTypes: ['qr'],
-                      }}
-                    />
-                    <View style={styles.scannerOverlay}>
-                      <Text style={styles.scannerText}>Scan Instructor's QR Code</Text>
-                      <TouchableOpacity style={styles.cancelScanBtn} onPress={() => setScanning(false)}>
-                        <Text style={styles.cancelScanBtnText}>Cancel</Text>
-                      </TouchableOpacity>
-                    </View>
+                    {scannerPermission === null ? (
+                      <View style={styles.centered}><ActivityIndicator size="large" /></View>
+                    ) : scannerPermission === false ? (
+                      <View style={styles.centered}>
+                        <Text style={{ color: '#fff', textAlign: 'center', marginBottom: 12 }}>Barcode permission denied.</Text>
+                        <TouchableOpacity style={[styles.loginButton, { paddingHorizontal: 20 }]} onPress={async () => {
+                          const { status } = await BarCodeScanner.requestPermissionsAsync();
+                          setScannerPermission(status === 'granted');
+                        }}>
+                          <Text style={styles.loginButtonText}>Request Permission</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{ marginTop: 12 }} onPress={() => setScanning(false)}>
+                          <Text style={{ color: '#94a3b8' }}>Close</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <>
+                        <BarCodeScanner
+                          onBarCodeScanned={scanned ? undefined : ({ data }) => {
+                            setScanned(true);
+                            handleBarCodeScanned({ data });
+                          }}
+                          style={StyleSheet.absoluteFillObject}
+                        />
+                        <View style={styles.scannerOverlay}>
+                          <Text style={styles.scannerText}>Scan Instructor's QR Code</Text>
+                          <TouchableOpacity style={styles.cancelScanBtn} onPress={() => { setScanning(false); setScanned(false); }}>
+                            <Text style={styles.cancelScanBtnText}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
                   </>
                 )}
               </View>

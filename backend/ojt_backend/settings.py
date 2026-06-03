@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
+    "storages",
     "security",
 ]
 
@@ -113,6 +114,32 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# S3 / MinIO storage (S3-compatible) - enabled by setting USE_MINIO=1
+USE_MINIO = os.environ.get("USE_MINIO", "0") in ("1", "true", "yes")
+if USE_MINIO:
+    DEFAULT_FILE_STORAGE = os.environ.get(
+        "DJANGO_DEFAULT_FILE_STORAGE",
+        "storages.backends.s3boto3.S3Boto3Storage",
+    )
+
+    AWS_ACCESS_KEY_ID = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
+    AWS_SECRET_ACCESS_KEY = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
+    AWS_STORAGE_BUCKET_NAME = os.environ.get("MINIO_BUCKET", "ojt-media")
+    AWS_S3_ENDPOINT_URL = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
+    AWS_S3_REGION_NAME = os.environ.get("MINIO_REGION", "us-east-1")
+    AWS_S3_SIGNATURE_VERSION = os.environ.get("AWS_S3_SIGNATURE_VERSION", "s3v4")
+    AWS_S3_ALLOW_HTTP = os.environ.get("MINIO_ALLOW_HTTP", "1") in ("1", "true", "yes")
+
+    # Optional: custom domain for serving media
+    AWS_S3_CUSTOM_DOMAIN = os.environ.get("MINIO_CUSTOM_DOMAIN")
+
+    # Ensure media URL uses MinIO endpoint if custom domain is not set
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+    else:
+        # Use the endpoint + bucket as base URL
+        MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/"
 
 # Caching: prefer Redis in production. Set REDIS_URL env var to enable Redis cache.
 REDIS_URL = os.environ.get('REDIS_URL') or os.environ.get('REDIS_TLS_URL')

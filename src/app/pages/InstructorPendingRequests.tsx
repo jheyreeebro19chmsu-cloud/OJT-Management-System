@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
 // Fix default marker icons for many bundlers
 try {
   delete (L.Icon.Default as any).prototype._getIconUrl;
   L.Icon.Default.mergeOptions({
-    iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-    iconUrl: require('leaflet/dist/images/marker-icon.png'),
-    shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+    iconRetinaUrl,
+    iconUrl,
+    shadowUrl,
   });
-} catch (e) {
-  // ignore in environments where require isn't available at runtime
+} catch {
+  // ignore in environments where static asset imports aren't available
 }
 import { CheckCircle, XCircle, Clock, Mail, Building, User, MapPin, Book, Loader, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,6 +31,8 @@ interface PendingRequest {
   requested_at: string;
   course?: string;
   school_name?: string;
+  avatar_url?: string | null;
+  face_registered?: boolean;
 }
 
 interface InstructorPendingRequestsProps {
@@ -42,6 +47,8 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
   const [showOTP, setShowOTP] = useState<{ [key: string]: boolean }>({});
   const [selectedRequest, setSelectedRequest] = useState<PendingRequest | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
   // zone info is now provided by backend within each pending request (request.zone)
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -65,14 +72,7 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
     }
   }
 
-  useEffect(() => {
-    fetchPendingRequests();
-    // Refresh every 10 seconds
-    const interval = setInterval(fetchPendingRequests, 10000);
-    return () => clearInterval(interval);
-  }, [instructorId]);
-
-  const fetchPendingRequests = async () => {
+  const fetchPendingRequests = useCallback(async () => {
     try {
       const res = await fetch(
         `/api/security/auth/get-pending-trainee-requests/?instructor_id=${instructorId}`
@@ -81,13 +81,24 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
 
       const data = await res.json();
       setRequests(data.requests || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Fetch error:', error);
       toast.error('Failed to load pending requests');
     } finally {
       setLoading(false);
     }
-  };
+  }, [instructorId]);
+
+  useEffect(() => {
+    // defer initial fetch to avoid synchronous setState inside effect
+    const t = setTimeout(() => void fetchPendingRequests(), 0);
+    // Refresh every 10 seconds
+    const interval = setInterval(() => void fetchPendingRequests(), 10000);
+    return () => {
+      clearTimeout(t);
+      clearInterval(interval);
+    };
+  }, [fetchPendingRequests]);
 
   const handleApprove = async (requestId: string) => {
     setApproving(requestId);
@@ -193,7 +204,19 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
                       <div>
                         <label className="text-xs font-semibold text-gray-500 uppercase">Name</label>
                         <div className="flex items-center gap-2 mt-1">
-                          <User className="w-4 h-4 text-blue-500" />
+                          {request.avatar_url ? (
+                            <button
+                              onClick={() => {
+                                setPhotoModalUrl(request.avatar_url || null);
+                                setShowPhotoModal(true);
+                              }}
+                              className="w-10 h-10 rounded-full overflow-hidden border"
+                            >
+                              <img src={request.avatar_url || ''} alt={`${request.full_name} avatar`} className="w-full h-full object-cover" />
+                            </button>
+                          ) : (
+                            <User className="w-6 h-6 text-blue-500" />
+                          )}
                           <p className="font-semibold text-gray-900">{request.full_name}</p>
                         </div>
                       </div>
@@ -372,7 +395,7 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
             >
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Reject Request</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Are you sure you want to reject {selectedRequest?.full_name}'s registration request?
+                Are you sure you want to reject {selectedRequest?.full_name}&apos;s registration request?
               </p>
 
               <textarea
@@ -407,7 +430,7 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
         )}
       </AnimatePresence>
 
-  // Map Modal (zone metadata is included in each request as `zone` by the server)
+  {/* Map Modal (zone metadata is included in each request as `zone` by the server) */}
       <AnimatePresence>
         {showMapModal && selectedRequest && selectedRequest.gps_latitude && selectedRequest.gps_longitude && (
           <motion.div
@@ -466,6 +489,35 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
                     pathOptions={{ color: '#16a34a', fillOpacity: 0.1 }}
                   />
                 </MapContainer>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Photo Modal */}
+      <AnimatePresence>
+        {showPhotoModal && photoModalUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50"
+            onClick={() => setShowPhotoModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="text-lg font-semibold">Trainee Photo</h3>
+                <button className="text-sm text-blue-600" onClick={() => setShowPhotoModal(false)}>Close</button>
+              </div>
+              <div className="w-full h-[60vh] flex items-center justify-center">
+                <img src={photoModalUrl} alt="Trainee photo" className="max-h-full max-w-full object-contain" />
               </div>
             </motion.div>
           </motion.div>

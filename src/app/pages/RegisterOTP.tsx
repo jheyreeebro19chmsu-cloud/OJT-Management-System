@@ -1,42 +1,39 @@
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
-  User,
-  Building,
   GraduationCap,
+  Building,
   Camera,
   MapPin,
-  ShieldCheck,
   Loader,
-  UserCircle,
-  X,
   Mail,
   Clock,
   CheckCircle,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 
 import { FaceCapture } from '../components/FaceCapture';
-import { PH_ADDRESS_DATA } from '../data/ph_address_data';
 import { Country, State, City } from 'country-state-city';
+import { getCurrentLocation } from '../utils/geo';
 
-import { authAPI } from '../services/authApi';
-import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
-import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
-
-// Fix Leaflet marker icon
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png',
-});
+// Fix Leaflet marker icon for many bundlers
+try {
+  // @ts-expect-error - delete private internals for bundlers that embed icons
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png',
+  });
+} catch (e) {
+  // ignore
+}
 
 type UserRole = 'trainee' | 'hte' | null;
 type RegistrationStep = 'role' | 'info' | 'location' | 'request' | 'waiting' | 'face' | 'complete';
@@ -49,7 +46,6 @@ export function RegisterOTP() {
   const [requestId, setRequestId] = useState<string | null>(null);
   const [instructorEmail, setInstructorEmail] = useState('');
 
-  // Form state
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -57,44 +53,31 @@ export function RegisterOTP() {
     password: '',
     confirmPassword: '',
     age: '',
-    address: '',
+    street: '',
     country: 'PH',
     region: '',
     province: '',
     city: '',
     barangay: '',
-    street: '',
-    // School info (trainee)
     school_name: '',
     course: '',
     year_level: '',
-    // Company info
     company_name: '',
     company_address: '',
     contact_person: '',
     contact_phone: '',
   });
 
-  // Location state
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'captured' | 'error'>('idle');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Face recognition state
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [facePhoto, setFacePhoto] = useState<string | undefined>();
   const [faceData, setFaceData] = useState('');
 
-  // Location lists
   const allCountries = Country.getAllCountries();
   const statesList = form.country ? State.getStatesOfCountry(form.country) : [];
   const citiesList = form.country && form.region ? City.getCitiesOfState(form.country, form.region) : [];
-
-  // Capture location on mount
-  useEffect(() => {
-    if (step === 'location') {
-      captureLocation();
-    }
-  }, [step]);
 
   const captureLocation = async () => {
     setLocationStatus('loading');
@@ -104,52 +87,48 @@ export function RegisterOTP() {
         setLocation({ lat: pos.latitude, lng: pos.longitude });
         setLocationStatus('captured');
       }
-    } catch (error) {
-      console.error('Location error:', error);
+    } catch (err) {
+      console.error('Location error', err);
       setLocationStatus('error');
     }
   };
 
-  const selectRole = (selectedRole: UserRole) => {
-    setRole(selectedRole);
+  // Capture location when user enters the location step; defer to next tick
+  useEffect(() => {
+    if (step !== 'location') return;
+    const t = setTimeout(() => {
+      captureLocation();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  const selectRole = (r: UserRole) => {
+    setRole(r);
     setStep('info');
   };
 
   const handleFormChange = (key: string, value: string) => {
-    setForm((prev) => {
-      const newForm = { ...prev, [key]: value } as any;
-      // Auto-calculate age if birthdate is provided
-      if (key === 'birthdate') {
-        const birthDate = new Date(value);
-        if (!isNaN(birthDate.getTime())) {
-          const today = new Date();
-          let age = today.getFullYear() - birthDate.getFullYear();
-          const m = today.getMonth() - birthDate.getMonth();
-          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-          newForm.age = age.toString();
-        }
-      }
-      return newForm;
-    });
+    setForm((p) => ({ ...p, [key]: value } as any));
   };
 
-  const validateInfo = (): boolean => {
+  const validateInfo = () => {
     if (!form.first_name || !form.last_name || !form.email) {
-      toast.error('Please fill in all required fields');
+      toast.error('Please fill required fields');
       return false;
     }
     if (!form.email.includes('@')) {
-      toast.error('Please enter a valid email');
+      toast.error('Enter a valid email');
       return false;
     }
     if (role === 'trainee') {
       if (!form.school_name || !form.course) {
-        toast.error('Please fill in school information');
+        toast.error('Please fill school info');
         return false;
       }
-    } else if (role === 'hte') {
+    }
+    if (role === 'hte') {
       if (!form.company_name || !form.company_address) {
-        toast.error('Please fill in company information');
+        toast.error('Please fill company info');
         return false;
       }
     }
@@ -159,7 +138,7 @@ export function RegisterOTP() {
   const handleNext = () => {
     if (step === 'info' && !validateInfo()) return;
     if (step === 'location' && !location) {
-      toast.error('Please capture your location');
+      toast.error('Please capture location');
       return;
     }
     if (step === 'info') setStep('location');
@@ -176,84 +155,61 @@ export function RegisterOTP() {
   };
 
   const handleRequestOTP = async () => {
-    if (!instructorEmail) {
-      toast.error('Please enter your instructor email');
-      return;
-    }
-
+    if (!instructorEmail) return toast.error('Enter instructor email');
     setLoading(true);
     try {
-      // First, get the instructor's ID from email (this would need a lookup endpoint)
-      // For now, we'll assume instructorEmail is passed as ID or we need to fetch it
-      // You may need to create an endpoint to get instructor by email
-      
-      const payload = {
+      const payload: any = {
         email: form.email,
         first_name: form.first_name,
         last_name: form.last_name,
         role: role,
         instructor_email: instructorEmail,
-        age: form.age ? parseInt(form.age) : undefined,
-        address: form.street,
-        gps_latitude: location?.lat,
-        gps_longitude: location?.lng,
-        school_name: form.school_name,
-        course: form.course,
-        year_level: form.year_level,
-        company_name: form.company_name,
-        company_address: form.company_address,
-        barangay: form.barangay,
-        contact_person: form.contact_person,
-        contact_phone: form.contact_phone,
       };
+      if (location) {
+        payload.gps_latitude = location.lat;
+        payload.gps_longitude = location.lng;
+      }
+      if (form.company_name) payload.company_name = form.company_name;
+      if (form.school_name) payload.school_name = form.school_name;
 
-      // This endpoint will be created in the backend
       const res = await fetch('/api/security/auth/request-trainee-otp-registration/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to request OTP');
+        const err = await res.text().catch(() => 'Request failed');
+        throw new Error(err);
       }
-
       const data = await res.json();
-      setRequestId(data.request_id);
+      setRequestId(data.request_id || null);
       setStep('waiting');
-      toast.success('Registration request sent to instructor!');
-
-      // Poll for approval every 5 seconds
-      pollForApproval(data.request_id);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to request OTP');
+      toast.success('Request sent to instructor');
+      startPollingApproval(data.request_id);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to request OTP');
     } finally {
       setLoading(false);
     }
   };
 
-  const pollForApproval = async (reqId: string) => {
-    // This is a simple polling mechanism
-    // In production, you'd use WebSockets or SSE
-    const pollInterval = setInterval(async () => {
+  const startPollingApproval = (reqId: string) => {
+    const id = setInterval(async () => {
       try {
-        const res = await fetch(`/api/security/auth/check-registration-status/?request_id=${reqId}`);
-        if (!res.ok) return;
-
-        const data = await res.json();
-        if (data.status === 'approved') {
-          clearInterval(pollInterval);
-          toast.success('Request approved! Proceed to face recognition.');
+        const r = await fetch(`/api/security/auth/check-registration-status/?request_id=${reqId}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.status === 'approved') {
+          clearInterval(id);
+          toast.success('Approved — proceed to face recognition');
           setStep('face');
         }
-      } catch (error) {
-        console.error('Poll error:', error);
+      } catch (e) {
+        console.error('poll', e);
       }
     }, 5000);
-
-    // Stop polling after 30 minutes
-    setTimeout(() => clearInterval(pollInterval), 30 * 60 * 1000);
+    // stop after 30 minutes
+    setTimeout(() => clearInterval(id), 30 * 60 * 1000);
   };
 
   const handleFaceSuccess = (img?: string) => {
@@ -262,82 +218,102 @@ export function RegisterOTP() {
   };
 
   const handleCompleteFaceRecognition = async () => {
-    if (!facePhoto) {
-      toast.error('Please capture a face photo');
-      return;
-    }
-
+    if (!facePhoto) return toast.error('Capture face photo');
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('request_id', requestId || '');
-      formData.append('face_data', faceData);
-
-      // Convert base64 photo to blob
+      const fd = new FormData();
+      fd.append('request_id', requestId || '');
+      fd.append('face_data', faceData || '');
       if (facePhoto.startsWith('data:')) {
-        const [header, data] = facePhoto.split(',');
-        const bstr = atob(data);
-        const n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
-        const blob = new Blob([u8arr], { type: 'image/jpeg' });
-        formData.append('avatar', blob, 'face.jpg');
+        const [, b64] = facePhoto.split(',');
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        const blob = new Blob([arr], { type: 'image/jpeg' });
+        fd.append('avatar', blob, 'face.jpg');
       }
-
-      // This would submit face recognition
       const res = await fetch('/api/security/auth/submit-face-recognition/', {
         method: 'POST',
-        body: formData,
+        body: fd,
       });
-
-      if (!res.ok) throw new Error('Face recognition failed');
-      
+      if (!res.ok) throw new Error('Face submission failed');
+      toast.success('Face recognition successful');
       setStep('complete');
-      toast.success('Face recognition successful!');
-    } catch (error: any) {
-      toast.error(error.message || 'Face recognition failed');
+    } catch (err: any) {
+      toast.error(err?.message || 'Face recognition failed');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCompleteRegistration = async () => {
-    if (!form.password || form.password !== form.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
+    if (!form.password || form.password !== form.confirmPassword) return toast.error('Passwords do not match');
     setLoading(true);
     try {
-      const payload = {
-        request_id: requestId,
-        password: form.password,
-      };
-
+      const payload = { request_id: requestId, password: form.password };
       const res = await fetch('/api/security/auth/complete-trainee-registration/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Registration failed');
+        const err = await res.text().catch(() => 'Registration failed');
+        throw new Error(err);
+      }
+      const data = await res.json();
+      toast.success('Registration completed');
+      if (data.tokens) {
+        localStorage.setItem('access_token', data.tokens.access);
+        localStorage.setItem('refresh_token', data.tokens.refresh);
+      }
+      if (data.user) {
+        localStorage.setItem('user', JSON.stringify(data.user));
+
+        try {
+          // Persist a minimal Employee record so the SPA can show profile + photo immediately
+          const existing = localStorage.getItem('ojt_employees');
+          const employees = existing ? JSON.parse(existing) : [];
+          const newEmp = {
+            id: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
+            name: data.user.name || data.user.email || 'New User',
+            employeeId: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
+            email: data.user.email || '',
+            department: data.user.department || '',
+            position: data.user.role === 'trainee' ? 'OJT Trainee' : data.user.role,
+            companyName: data.user.company || '',
+            supervisorName: '',
+            schoolName: data.user.school || '',
+            course: data.user.course || '',
+            startDate: new Date().toISOString().split('T')[0],
+            endDate: new Date().toISOString().split('T')[0],
+            requiredHours: 0,
+            photo: data.user.avatar || '',
+            faceRegistered: true,
+            createdAt: new Date().toISOString().split('T')[0],
+            active: true,
+          };
+          employees.push(newEmp);
+          localStorage.setItem('ojt_employees', JSON.stringify(employees));
+
+          // Also set the app's current user key so the provider can pick it up on reload
+          const currentUser = {
+            id: newEmp.id,
+            name: newEmp.name,
+            role: newEmp.position === 'OJT Trainee' ? 'employee' : 'employee',
+            employeeId: newEmp.id,
+          };
+          localStorage.setItem('ojt_current_user', JSON.stringify(currentUser));
+        } catch (e) {
+          // ignore storage errors
+        }
       }
 
-      const data = await res.json();
-      toast.success('Registration completed successfully!');
-      
-      // Store tokens and redirect to dashboard
-      localStorage.setItem('access_token', data.tokens.access);
-      localStorage.setItem('refresh_token', data.tokens.refresh);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      
+      // Give UI a moment then reload so AppProvider picks up the new current user and employee
       setTimeout(() => {
-        navigate(role === 'trainee' ? '/dashboard' : '/hte-dashboard');
-      }, 1500);
-    } catch (error: any) {
-      toast.error(error.message || 'Registration failed');
+        window.location.reload();
+      }, 900);
+    } catch (err: any) {
+      toast.error(err?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -346,7 +322,6 @@ export function RegisterOTP() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">OJT Registration</h1>
           <p className="text-gray-600">
@@ -360,30 +335,17 @@ export function RegisterOTP() {
           </p>
         </div>
 
-        {/* Content */}
         <AnimatePresence mode="wait">
           {step === 'role' && (
-            <motion.div
-              key="role"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
-            >
+            <motion.div key="role" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  onClick={() => selectRole('trainee')}
-                  className="p-6 rounded-lg border-2 border-transparent hover:border-blue-500 bg-white hover:shadow-lg transition-all"
-                >
+                <button onClick={() => selectRole('trainee')} className="p-6 rounded-lg border-2 border-transparent hover:border-blue-500 bg-white hover:shadow-lg transition-all">
                   <GraduationCap className="w-12 h-12 text-blue-500 mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-1">OJT Trainee</h3>
                   <p className="text-sm text-gray-600">Student undergoing on-the-job training</p>
                 </button>
 
-                <button
-                  onClick={() => selectRole('hte')}
-                  className="p-6 rounded-lg border-2 border-transparent hover:border-green-500 bg-white hover:shadow-lg transition-all"
-                >
+                <button onClick={() => selectRole('hte')} className="p-6 rounded-lg border-2 border-transparent hover:border-green-500 bg-white hover:shadow-lg transition-all">
                   <Building className="w-12 h-12 text-green-500 mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-1">HTE</h3>
                   <p className="text-sm text-gray-600">Host Training Establishment representative</p>
@@ -393,169 +355,39 @@ export function RegisterOTP() {
           )}
 
           {step === 'info' && (
-            <motion.div
-              key="info"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-lg shadow-lg p-6 space-y-4"
-            >
-              {/* Personal Info */}
+            <motion.div key="info" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="First Name *"
-                  value={form.first_name}
-                  onChange={(e) => handleFormChange('first_name', e.target.value)}
-                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Last Name *"
-                  value={form.last_name}
-                  onChange={(e) => handleFormChange('last_name', e.target.value)}
-                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" placeholder="First Name *" value={form.first_name} onChange={(e) => handleFormChange('first_name', e.target.value)} className="px-4 py-2 border rounded-lg" />
+                <input type="text" placeholder="Last Name *" value={form.last_name} onChange={(e) => handleFormChange('last_name', e.target.value)} className="px-4 py-2 border rounded-lg" />
               </div>
-
-              <input
-                type="email"
-                placeholder="Email *"
-                value={form.email}
-                onChange={(e) => handleFormChange('email', e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-
-              <input
-                type="number"
-                placeholder="Age"
-                value={form.age}
-                onChange={(e) => handleFormChange('age', e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-
-              <input
-                type="text"
-                placeholder="Street Address"
-                value={form.street}
-                onChange={(e) => handleFormChange('street', e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-
-              {/* Role-specific fields */}
+              <input type="email" placeholder="Email *" value={form.email} onChange={(e) => handleFormChange('email', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+              <input type="number" placeholder="Age" value={form.age} onChange={(e) => handleFormChange('age', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+              <input type="text" placeholder="Street Address" value={form.street} onChange={(e) => handleFormChange('street', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               {role === 'trainee' && (
                 <>
-                  <input
-                    type="text"
-                    placeholder="School Name *"
-                    value={form.school_name}
-                    onChange={(e) => handleFormChange('school_name', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Course *"
-                    value={form.course}
-                    onChange={(e) => handleFormChange('course', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Year Level"
-                    value={form.year_level}
-                    onChange={(e) => handleFormChange('year_level', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Company Name"
-                    value={form.company_name}
-                    onChange={(e) => handleFormChange('company_name', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Company Address"
-                    value={form.company_address}
-                    onChange={(e) => handleFormChange('company_address', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="text" placeholder="School Name *" value={form.school_name} onChange={(e) => handleFormChange('school_name', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                  <input type="text" placeholder="Course *" value={form.course} onChange={(e) => handleFormChange('course', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
                 </>
               )}
-
               {role === 'hte' && (
                 <>
-                  <input
-                    type="text"
-                    placeholder="Company Name *"
-                    value={form.company_name}
-                    onChange={(e) => handleFormChange('company_name', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Company Address *"
-                    value={form.company_address}
-                    onChange={(e) => handleFormChange('company_address', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Barangay"
-                    value={form.barangay}
-                    onChange={(e) => handleFormChange('barangay', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Contact Person"
-                    value={form.contact_person}
-                    onChange={(e) => handleFormChange('contact_person', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Contact Phone"
-                    value={form.contact_phone}
-                    onChange={(e) => handleFormChange('contact_phone', e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="text" placeholder="Company Name *" value={form.company_name} onChange={(e) => handleFormChange('company_name', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                  <input type="text" placeholder="Company Address *" value={form.company_address} onChange={(e) => handleFormChange('company_address', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
                 </>
               )}
-
-              {/* Navigation */}
               <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleBack}
-                  className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-                <button
-                  onClick={handleNext}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Next
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                <button onClick={handleBack} className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg"> <ArrowLeft className="w-4 h-4" /> Back</button>
+                <button onClick={handleNext} className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg">Next <ArrowRight className="w-4 h-4" /></button>
               </div>
             </motion.div>
           )}
 
           {step === 'location' && (
-            <motion.div
-              key="location"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-lg shadow-lg p-6 space-y-4"
-            >
+            <motion.div key="location" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Capture Location</h3>
                 {locationStatus === 'captured' && <CheckCircle className="w-5 h-5 text-green-500" />}
               </div>
-
               {location ? (
                 <div className="space-y-4">
                   <div className="h-64 rounded-lg overflow-hidden border">
@@ -564,241 +396,76 @@ export function RegisterOTP() {
                       <Marker position={[location.lat, location.lng]} />
                     </MapContainer>
                   </div>
-                  <p className="text-sm text-gray-600">
-                    Location: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                  </p>
+                  <p className="text-sm text-gray-600">Location: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}</p>
                 </div>
               ) : locationStatus === 'loading' ? (
-                <div className="flex items-center justify-center h-64">
-                  <Loader className="w-8 h-8 text-blue-600 animate-spin" />
-                </div>
+                <div className="flex items-center justify-center h-64"><Loader className="w-8 h-8 text-blue-600 animate-spin" /></div>
               ) : (
                 <div className="h-64 rounded-lg bg-gray-100 flex items-center justify-center">
-                  <button
-                    onClick={captureLocation}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    Capture Location
-                  </button>
+                  <button onClick={captureLocation} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg"><MapPin className="w-4 h-4" /> Capture Location</button>
                 </div>
               )}
-
-              {/* Navigation */}
               <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleBack}
-                  className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-                <button
-                  onClick={handleNext}
-                  disabled={!location}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-                >
-                  Next
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                <button onClick={handleBack} className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg"> <ArrowLeft className="w-4 h-4" /> Back</button>
+                <button onClick={handleNext} disabled={!location} className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-400">Next <ArrowRight className="w-4 h-4" /></button>
               </div>
             </motion.div>
           )}
 
           {step === 'request' && (
-            <motion.div
-              key="request"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-lg shadow-lg p-6 space-y-4"
-            >
+            <motion.div key="request" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <h3 className="text-lg font-semibold mb-4">Request OTP Approval</h3>
-
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-blue-900">
-                  An OTP code will be sent to your instructor for approval. Once approved, you'll receive the code via email to proceed with face recognition.
-                </p>
+                <p className="text-sm text-blue-900">An OTP will be sent to your instructor for approval. Once approved you will receive it by email.</p>
               </div>
-
-              <input
-                type="email"
-                placeholder="Your Instructor's Email *"
-                value={instructorEmail}
-                onChange={(e) => setInstructorEmail(e.target.value)}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-
-              {/* Navigation */}
+              <input type="email" placeholder="Instructor Email *" value={instructorEmail} onChange={(e) => setInstructorEmail(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleBack}
-                  className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-                <button
-                  onClick={handleRequestOTP}
-                  disabled={loading || !instructorEmail}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
-                >
-                  {loading ? (
-                    <>
-                      <Loader className="w-4 h-4 animate-spin" />
-                      Requesting...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="w-4 h-4" />
-                      Request OTP
-                    </>
-                  )}
-                </button>
+                <button onClick={handleBack} className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg"> <ArrowLeft className="w-4 h-4" /> Back</button>
+                <button onClick={handleRequestOTP} disabled={loading || !instructorEmail} className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg disabled:bg-gray-400">{loading ? <><Loader className="w-4 h-4 animate-spin" /> Requesting...</> : <><Mail className="w-4 h-4" /> Request OTP</>}</button>
               </div>
             </motion.div>
           )}
 
           {step === 'waiting' && (
-            <motion.div
-              key="waiting"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-lg shadow-lg p-6 space-y-4"
-            >
+            <motion.div key="waiting" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <div className="flex flex-col items-center justify-center py-12 space-y-4">
                 <Clock className="w-16 h-16 text-blue-500 animate-pulse" />
                 <h3 className="text-2xl font-semibold text-center">Waiting for Approval</h3>
-                <p className="text-center text-gray-600 max-w-md">
-                  Your registration request has been sent to your instructor. You'll receive an email with your OTP code once approved.
-                </p>
-                <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 animate-pulse" style={{ width: '50%' }}></div>
-                </div>
+                <p className="text-center text-gray-600 max-w-md">Your registration request has been sent to your instructor. You will receive an email with your OTP code once approved.</p>
+                <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 animate-pulse" style={{ width: '50%' }} /></div>
                 <p className="text-sm text-gray-500">Check your email periodically for the OTP code</p>
               </div>
             </motion.div>
           )}
 
           {step === 'face' && (
-            <motion.div
-              key="face"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-lg shadow-lg p-6 space-y-4"
-            >
+            <motion.div key="face" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <h3 className="text-lg font-semibold mb-4">Face Recognition</h3>
-
-              {showFaceCapture ? (
-                <FaceCapture
-                  onSuccess={handleFaceSuccess}
-                  onCancel={() => setShowFaceCapture(false)}
-                />
-              ) : facePhoto ? (
+              {showFaceCapture ? <FaceCapture onSuccess={handleFaceSuccess} onCancel={() => setShowFaceCapture(false)} /> : facePhoto ? (
                 <div className="space-y-4">
                   <img src={facePhoto} alt="Face" className="w-full h-64 object-cover rounded-lg" />
-                  <button
-                    onClick={() => setShowFaceCapture(true)}
-                    className="w-full px-4 py-2 text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50"
-                  >
-                    Retake Photo
-                  </button>
+                  <button onClick={() => setShowFaceCapture(true)} className="w-full px-4 py-2 text-blue-600 border border-blue-600 rounded-lg">Retake Photo</button>
                 </div>
               ) : (
-                <button
-                  onClick={() => setShowFaceCapture(true)}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50"
-                >
-                  <Camera className="w-6 h-6" />
-                  <span>Capture Face Photo</span>
-                </button>
+                <button onClick={() => setShowFaceCapture(true)} className="w-full flex items-center justify-center gap-2 px-6 py-4 border-2 border-dashed border-gray-300 rounded-lg"> <Camera className="w-6 h-6" /> <span>Capture Face Photo</span></button>
               )}
-
-              {/* Navigation */}
               <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleBack}
-                  className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-                <button
-                  onClick={handleCompleteFaceRecognition}
-                  disabled={loading || !facePhoto}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-                >
-                  {loading ? (
-                    <>
-                      <Loader className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Next
-                    </>
-                  )}
-                </button>
+                <button onClick={handleBack} className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg"> <ArrowLeft className="w-4 h-4" /> Back</button>
+                <button onClick={handleCompleteFaceRecognition} disabled={loading || !facePhoto} className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-400">{loading ? <><Loader className="w-4 h-4 animate-spin" /> Processing...</> : <><Check className="w-4 h-4" /> Next</>}</button>
               </div>
             </motion.div>
           )}
 
           {step === 'complete' && (
-            <motion.div
-              key="complete"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-lg shadow-lg p-6 space-y-4"
-            >
+            <motion.div key="complete" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <h3 className="text-lg font-semibold mb-4">Complete Registration</h3>
-
               <div className="space-y-4">
-                <input
-                  type="password"
-                  placeholder="Password *"
-                  value={form.password}
-                  onChange={(e) => handleFormChange('password', e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="password"
-                  placeholder="Confirm Password *"
-                  value={form.confirmPassword}
-                  onChange={(e) => handleFormChange('confirmPassword', e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="password" placeholder="Password *" value={form.password} onChange={(e) => handleFormChange('password', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                <input type="password" placeholder="Confirm Password *" value={form.confirmPassword} onChange={(e) => handleFormChange('confirmPassword', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               </div>
-
-              {/* Navigation */}
               <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleBack}
-                  className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-                <button
-                  onClick={handleCompleteRegistration}
-                  disabled={loading}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
-                >
-                  {loading ? (
-                    <>
-                      <Loader className="w-4 h-4 animate-spin" />
-                      Completing...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4" />
-                      Complete Registration
-                    </>
-                  )}
-                </button>
+                <button onClick={handleBack} className="flex items-center gap-2 px-6 py-2 text-gray-700 border border-gray-300 rounded-lg"> <ArrowLeft className="w-4 h-4" /> Back</button>
+                <button onClick={handleCompleteRegistration} disabled={loading} className="flex-1 flex items-center justify-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg">{loading ? <><Loader className="w-4 h-4 animate-spin" /> Completing...</> : <><CheckCircle className="w-4 h-4" /> Complete Registration</>}</button>
               </div>
             </motion.div>
           )}

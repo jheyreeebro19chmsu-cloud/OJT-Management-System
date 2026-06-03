@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { User, Building, GraduationCap, ArrowLeft, ArrowRight, Camera, Check } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
-import { mobileApi } from '../lib/api';
+import { mobileApi, registrationApi } from '../lib/api';
 import * as Location from 'expo-location';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
@@ -52,7 +52,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     password: '',
     department: '',
     companyName: '',
-    supervisorName: '',
+    instructorEmail: '',
     schoolName: '',
     course: '',
     photo: '',
@@ -143,7 +143,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     if (emailTaken) { Alert.alert('Validation', 'Please use a different email.'); return; }
     if (!form.email || !form.password) { Alert.alert('Validation', 'Email and password are required.'); return; }
     if (role === 'trainee') {
-      if (!form.firstName || !form.lastName || !form.birthdate || !form.address || !form.companyName || !form.supervisorName || !form.schoolName || !form.course) {
+      if (!form.firstName || !form.lastName || !form.birthdate || !form.address || !form.companyName || !form.instructorEmail || !form.schoolName || !form.course) {
         Alert.alert('Validation', 'Please complete all required trainee fields before continuing.');
         return;
       }
@@ -160,7 +160,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       setRegisteredInstructorId(userId);
       const tableName = role === 'hte' ? 'host_supervisors' : 'employees';
       const profileData: any = { id: userId, name: form.name, email: form.email, active: true, location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined };
-      if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.supervisor_name = form.supervisorName; profileData.school_name = form.schoolName; profileData.course = form.course; }
+      if (role === 'trainee') { profileData.department = form.department; profileData.company_name = form.companyName; profileData.instructor_email = form.instructorEmail; profileData.school_name = form.schoolName; profileData.course = form.course; }
       else if (role === 'admin') { profileData.department = form.department; profileData.position = 'OJT Instructor'; }
       else if (role === 'hte') { profileData.company_name = form.companyName; profileData.position = 'Training Supervisor'; profileData.type = form.barangayType || undefined; }
       if (role === 'hte') profileData.barangay = form.barangay || undefined;
@@ -168,7 +168,46 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
       if (profileError) throw profileError;
       try { await mobileApi.mobileRegister({ user_id: userId, email: form.email, full_name: form.name, role: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'student', location: location.lat && location.lng ? { latitude: location.lat, longitude: location.lng } : null, extra: { school_name: form.schoolName, company_name: form.companyName, barangay_type: form.barangayType, barangay: form.barangay } }); } catch (e) { console.debug('mobile_register sync failed', e); }
       try { await sendWelcomeEmailMobile(form.email, form.name || `${form.firstName} ${form.lastName}`); } catch (emailErr) { console.error('Email failed:', emailErr); }
-      if (role === 'admin') setRegistrationComplete(true); else { Alert.alert('Success', 'Request OTP'); onSuccess(); }
+      if (role === 'admin') {
+        setRegistrationComplete(true);
+      } else if (role === 'trainee') {
+        // If supervisorName looks like an email, try to notify instructor (Option B).
+        if (form.instructorEmail && form.instructorEmail.includes('@')) {
+          try {
+            const inst = await registrationApi.getInstructorByEmail(form.instructorEmail);
+            const instructorId = inst && (inst.instructor?.id || inst.id || inst.data?.id || inst.user_id || inst.user?.id);
+            if (!instructorId) {
+              // Fallback to sending OTP to trainee if instructor not found
+              await handleRequestOtp();
+            } else {
+              await registrationApi.requestTraineeOtpRegistration({
+                instructor_id: instructorId,
+                email: form.email,
+                first_name: form.firstName,
+                last_name: form.lastName,
+                role: 'trainee',
+                gps_latitude: location.lat || null,
+                gps_longitude: location.lng || null,
+                company_name: form.companyName,
+                school_name: form.schoolName,
+                course: form.course,
+              });
+              Alert.alert('Success', 'Registration request sent to instructor. Waiting for approval.');
+              onSuccess();
+            }
+          } catch (e) {
+            console.error('Notify instructor failed', e);
+            Alert.alert('Error', 'Failed to notify instructor. Sending OTP to you instead.');
+            await handleRequestOtp();
+          }
+        } else {
+          // Supervisor not provided as email — fallback to direct OTP to trainee
+          await handleRequestOtp();
+        }
+      } else {
+        Alert.alert('Success', 'Request OTP');
+        onSuccess();
+      }
     } catch (error: any) { Alert.alert('Registration Error', error.message); } finally { setLoading(false); }
   }
 
@@ -241,7 +280,10 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
           </>
         )}
 
-        {role === 'trainee' && step === 1 && (<><Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." /><Input label="Supervisor Name" value={form.supervisorName} onChange={v => updateForm('supervisorName', v)} placeholder="Mr. Smith" /></>)}
+        {role === 'trainee' && step === 1 && (<>
+          <Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." />
+          <Input label="Instructor Email" value={form.instructorEmail} onChange={v => updateForm('instructorEmail', v)} placeholder="instructor@example.com" />
+        </>)}
         {role === 'trainee' && step === 2 && (<><Input label="School Name" value={form.schoolName} onChange={v => updateForm('schoolName', v)} placeholder="State University" /><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BS Information Technology" /></>)}
 
         {(role === 'admin') && step === 0 && (<><Input label="Full Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="Instructor Name" /><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="admin@example.com" /><View style={styles.row}><View style={{ flex: 1 }}><Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="IT Dept" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BSIT" /></View></View><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text></View>); })()}</View></>)}

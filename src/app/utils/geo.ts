@@ -15,7 +15,7 @@ export function isWithinGeofence(
   zoneLat: number,
   zoneLng: number,
   radiusMeters: number,
-  accuracyMeters?: number
+  _accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
   // Accurate geofence calculation: check if distance <= radius (with a standard 10-meter drift buffer)
@@ -27,7 +27,8 @@ export function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)}km`;
 }
 
-export function getCurrentLocation(): Promise<GeolocationPosition> {
+// Using `any` here to avoid depending on DOM lib types in environments
+export function getCurrentLocation(): Promise<any> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation is not supported by this browser.'));
@@ -41,7 +42,7 @@ export function getCurrentLocation(): Promise<GeolocationPosition> {
   });
 }
 
-export function isGeolocationPositionError(err: unknown): err is GeolocationPositionError {
+export function isGeolocationPositionError(err: unknown): err is any {
   return (
     typeof err === 'object' && err !== null && 'code' in err && typeof (err as { code?: unknown }).code === 'number'
   );

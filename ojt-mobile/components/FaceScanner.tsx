@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Camera, CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Camera as CameraIcon, RefreshCw, X } from 'lucide-react-native';
 
@@ -99,6 +99,12 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
       if (photo.base64) {
         // Convert base64 to number array and calculate average brightness
+        if (photo.base64) {
+        // atob is not available in some React Native environments (Expo Go). Guard it.
+        if (typeof atob === 'undefined') {
+          // Can't decode base64 here; bail out and let the brightness check silently fail
+          throw new Error('atob not available in this environment');
+        }
         const binaryString = atob(photo.base64);
         let brightness = 0;
         let pixelCount = 0;
@@ -160,12 +166,11 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
   return (
     <View style={styles.container}>
-      <CameraView 
-        style={styles.camera} 
-        facing="user" 
+      <Camera
+        style={styles.camera}
+        type={Camera.Constants.Type.front}
         ref={cameraRef}
         onFacesDetected={handleFacesDetected}
-        barcodeScannerSettings={{}} // Needed to trigger some internal optimizations
       >
         <View style={styles.overlay}>
           {/* Lighting Status Indicator */}
@@ -240,7 +245,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
             <View style={{ width: 48 }} /> 
           </View>
         </View>
-      </CameraView>
+      </Camera>
       <View style={styles.footer}>
         <Text style={styles.hint}>Position your face inside the frame</Text>
         <Text style={styles.brightnessText}>Brightness: {brightness}/255</Text>

@@ -421,6 +421,11 @@ class TraineeOTPRequest(models.Model):
     
     # Avatar/Picture
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    # S3/MinIO keys and URLs (if using object storage)
+    avatar_key = models.CharField(max_length=512, blank=True, help_text="Object storage key for avatar")
+    avatar_url = models.URLField(blank=True, help_text="Direct URL to avatar in object storage")
+    thumbnail_key = models.CharField(max_length=512, blank=True, help_text="Object storage key for avatar thumbnail")
+    face_registered = models.BooleanField(default=False, help_text="True when face is registered/enrolled")
     
     # Status tracking
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')

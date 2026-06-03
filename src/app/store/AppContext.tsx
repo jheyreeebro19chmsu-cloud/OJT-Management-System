@@ -134,6 +134,11 @@ const MOCK_EMPLOYEES: Employee[] = [
   },
 ];
 
+// Utility to generate stable-ish ids without calling impure APIs in render
+function generateId(prefix = 'id') {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+}
+
 const DEFAULT_PASSWORDS: Record<string, string> = {
   'admin@ojt.com': 'admin123',
   'juan.delacruz@email.com': 'ojt2024',
@@ -791,7 +796,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const newEmp: Employee = {
       ...cleanData,
-      id: `emp-${Date.now()}`,
+      id: generateId('emp'),
       createdAt: new Date().toISOString().split('T')[0],
     };
 
@@ -852,9 +857,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 image: cleanData.photo,
               });
               if (response.success && response.image_url) {
+                // Update shared state and return an updated copy instead of mutating
                 updateEmployee(created.id, { photo: response.image_url, faceRegistered: true });
-                created.photo = response.image_url;
-                created.faceRegistered = true;
+                // create a non-mutated copy to return
+                const updatedCreated = { ...created, photo: response.image_url, faceRegistered: true };
+                return { success: true, employee: updatedCreated } as any;
               }
             } catch (err) {
               console.error('Face registration failed inside AppContext:', err);
@@ -888,8 +895,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
           if (response.success && response.image_url) {
             updateEmployee(newEmp.id, { photo: response.image_url, faceRegistered: true });
-            newEmp.photo = response.image_url;
-            newEmp.faceRegistered = true;
+            const updatedNewEmp = { ...newEmp, photo: response.image_url, faceRegistered: true };
+            return { success: true, employee: updatedNewEmp } as any;
           }
         } catch (err) {
           console.error('Local face registration failed:', err);

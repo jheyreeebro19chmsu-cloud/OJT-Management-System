@@ -110,6 +110,8 @@ The app will be available at `http://localhost:5173`
 
 Or register a new employee account from the registration page.
 
+Note for mobile onboarding: the mobile registration flow now asks trainees for their instructor's email (`Instructor Email`). The app will use this to notify the instructor and request OTP approval for two-stage registration.
+
 ## 🗄️ Database Setup
 
 ### Option 1: Local Storage (Default)

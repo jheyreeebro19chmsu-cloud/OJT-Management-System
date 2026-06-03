@@ -18,6 +18,8 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
+import { readAsDataUrl } from './Announcements';
 
 
 const GRADE_CONFIG = {
@@ -36,6 +38,28 @@ const CRITERIA_LABELS: Record<string, string> = {
   communicationScore: 'Communication',
 };
 
+// Small presentational components must be declared at module scope
+function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">{icon}</div>
+        <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between py-2 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500 shrink-0 w-28">{label}</span>
+      <span className="text-xs font-medium text-gray-800 text-right flex-1 ml-2">{value || '—'}</span>
+    </div>
+  );
+}
+
 export function Profile() {
   const {
     getCurrentEmployee,
@@ -50,6 +74,8 @@ export function Profile() {
   const evaluation = employee ? getEmployeeEvaluation(employee.id) : null;
   const hostFeedback = employee ? getLatestHostFeedback(employee.id) : null;
   const [editing, setEditing] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: employee?.name || '',
     email: employee?.email || '',
@@ -78,22 +104,7 @@ export function Profile() {
     }
   };
 
-  const Section = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">{icon}</div>
-        <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
-      </div>
-      {children}
-    </div>
-  );
-
-  const InfoRow = ({ label, value }: { label: string; value: string }) => (
-    <div className="flex items-start justify-between py-2 border-b border-gray-50 last:border-0">
-      <span className="text-xs text-gray-500 shrink-0 w-28">{label}</span>
-      <span className="text-xs font-medium text-gray-800 text-right flex-1 ml-2">{value || '—'}</span>
-    </div>
-  );
+  
 
   return (
     <div className="space-y-4">
@@ -106,12 +117,13 @@ export function Profile() {
         <div className="flex items-start gap-4">
           <div className="relative">
             <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center overflow-hidden">
-              {employee.photo ? (
+              {avatarPreview ? (
+                <img src={avatarPreview} alt="avatar preview" className="w-full h-full object-cover" />
+              ) : employee.photo ? (
                 <img
                   src={getPhotoUrl(employee.photo)}
                   alt={employee.name}
                   className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}
                 />
               ) : (
                 <User size={28} className="text-blue-300" />
@@ -122,6 +134,45 @@ export function Profile() {
                 <Camera size={9} className="text-white" />
               </div>
             )}
+            <label className="absolute -top-1 -right-1 bg-white rounded-full p-1 border border-gray-200 cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f || !employee) return;
+                  const dataUrl = await readAsDataUrl(f);
+                  setAvatarPreview(dataUrl);
+                  setAvatarUploading(true);
+                  try {
+                    if (isSecurityApiConfigured()) {
+                      const resp = await registerFace({ employee_id: String(employee.id), image: dataUrl });
+                      if (resp.success && resp.image_url) {
+                        updateEmployee(employee.id, { photo: resp.image_url, faceRegistered: true });
+                        toast.success('Avatar uploaded');
+                        setAvatarPreview(null);
+                      } else {
+                        // fallback to data URL
+                        updateEmployee(employee.id, { photo: dataUrl, faceRegistered: true });
+                        toast.success('Avatar saved locally');
+                        setAvatarPreview(null);
+                      }
+                    } else {
+                      updateEmployee(employee.id, { photo: dataUrl, faceRegistered: true });
+                      toast.success('Avatar saved locally');
+                      setAvatarPreview(null);
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    toast.error('Failed to upload avatar');
+                  } finally {
+                    setAvatarUploading(false);
+                  }
+                }}
+              />
+              <Edit2 size={12} className="text-slate-600" />
+            </label>
           </div>
           <div className="flex-1">
             <h2 className="font-bold text-lg leading-tight">{employee.name}</h2>
