@@ -1,4 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Circle, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix default marker icons for many bundlers
+try {
+  delete (L.Icon.Default as any).prototype._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+    iconUrl: require('leaflet/dist/images/marker-icon.png'),
+    shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+  });
+} catch (e) {
+  // ignore in environments where require isn't available at runtime
+}
 import { CheckCircle, XCircle, Clock, Mail, Building, User, MapPin, Book, Loader, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,8 +41,29 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [showOTP, setShowOTP] = useState<{ [key: string]: boolean }>({});
   const [selectedRequest, setSelectedRequest] = useState<PendingRequest | null>(null);
+  const [showMapModal, setShowMapModal] = useState(false);
+  // zone info is now provided by backend within each pending request (request.zone)
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
+
+  // Helper: Haversine distance (meters)
+  function haversineDistance(lat1: number | string | undefined, lon1: number | string | undefined, lat2: number | string | undefined, lon2: number | string | undefined) {
+    try {
+      const toNum = (v: any) => (v === null || v === undefined ? NaN : Number(v));
+      const R = 6371000; // meters
+      const phi1 = (toNum(lat1) * Math.PI) / 180;
+      const phi2 = (toNum(lat2) * Math.PI) / 180;
+      const dPhi = ((toNum(lat2) - toNum(lat1)) * Math.PI) / 180;
+      const dLambda = ((toNum(lon2) - toNum(lon1)) * Math.PI) / 180;
+      const a = Math.sin(dPhi / 2) * Math.sin(dPhi / 2) + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) * Math.sin(dLambda / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const d = R * c;
+      if (!isFinite(d)) return NaN;
+      return d;
+    } catch (e) {
+      return NaN;
+    }
+  }
 
   useEffect(() => {
     fetchPendingRequests();
@@ -216,6 +252,23 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
                           <div className="flex items-center gap-2 mt-1">
                             <Building className="w-4 h-4 text-green-500" />
                             <p className="text-sm text-gray-700">{request.company_name}</p>
+                            {request.gps_latitude && request.gps_longitude && (
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs text-gray-500">{request.gps_latitude.toFixed ? `${request.gps_latitude.toFixed(5)}, ${request.gps_longitude.toFixed(5)}` : `${request.gps_latitude}, ${request.gps_longitude}`}</p>
+                                <button
+                                  onClick={() => {
+                                    setSelectedRequest(request);
+                                    setShowMapModal(true);
+                                  }}
+                                  className="text-xs text-blue-600 underline ml-2"
+                                >
+                                  View on map
+                                </button>
+                              </div>
+                            )}
+                            {request.company_address && (
+                              <p className="text-xs text-gray-500 ml-3">{request.company_address}</p>
+                            )}
                           </div>
                         </div>
                       )}
@@ -348,6 +401,71 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
                 >
                   {rejecting === selectedRequest?.id ? 'Rejecting...' : 'Reject'}
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+  // Map Modal (zone metadata is included in each request as `zone` by the server)
+      <AnimatePresence>
+        {showMapModal && selectedRequest && selectedRequest.gps_latitude && selectedRequest.gps_longitude && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-4"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h3 className="text-lg font-semibold">Trainee Location</h3>
+                  {selectedRequest?.zone?.name ? (
+                    <div className="text-sm text-gray-600">
+                      {selectedRequest.zone.name} · {
+                        (() => {
+                          const d = haversineDistance(selectedRequest.gps_latitude, selectedRequest.gps_longitude, selectedRequest.zone.lat, selectedRequest.zone.lng);
+                          if (isNaN(d)) return 'distance unknown';
+                          if (d >= 1000) return `${(d / 1000).toFixed(2)} km from zone center`;
+                          return `${Math.round(d)} m from zone center`;
+                        })()
+                      }
+                    </div>
+                  ) : null}
+                </div>
+                <button className="text-sm text-blue-600" onClick={() => setShowMapModal(false)}>Close</button>
+              </div>
+              <div style={{ height: 480, width: '100%' }}>
+                <MapContainer
+                  center={[Number(selectedRequest.gps_latitude), Number(selectedRequest.gps_longitude)]}
+                  zoom={16}
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <Marker position={[Number(selectedRequest.gps_latitude), Number(selectedRequest.gps_longitude)]}>
+                    <Popup>
+                      {selectedRequest.full_name}<br />{selectedRequest.company_name}
+                    </Popup>
+                  </Marker>
+                  {/* geofence circle: use server-provided zone radius when available */}
+                  {/* Use zone provided by backend when available, otherwise fallback to 100m at reported coords */}
+                  <Circle
+                    center={[
+                      Number(selectedRequest.zone?.lat ?? selectedRequest.gps_latitude),
+                      Number(selectedRequest.zone?.lng ?? selectedRequest.gps_longitude),
+                    ]}
+                    radius={Number(selectedRequest.zone?.radius ?? 100)}
+                    pathOptions={{ color: '#16a34a', fillOpacity: 0.1 }}
+                  />
+                </MapContainer>
               </div>
             </motion.div>
           </motion.div>

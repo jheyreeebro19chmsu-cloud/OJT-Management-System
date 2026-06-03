@@ -4,6 +4,7 @@ import os
 import urllib.request
 import qrcode
 import io
+import logging
 from django.conf import settings
 from django.http import JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
@@ -249,6 +250,29 @@ def request_trainee_otp_registration(request: HttpRequest) -> JsonResponse:
         except OJTInstructor.DoesNotExist:
             return JsonResponse({'error': 'Instructor not found'}, status=404)
         
+        # Validate GPS coordinates if provided
+        gps_lat = data.get('gps_latitude')
+        gps_lng = data.get('gps_longitude')
+        logger = logging.getLogger(__name__)
+        if gps_lat is not None:
+            try:
+                latv = float(gps_lat)
+            except Exception:
+                logger.warning('Invalid gps_latitude format for request: %s', gps_lat)
+                return JsonResponse({'error': 'Invalid gps_latitude'}, status=400)
+            if not (-90.0 <= latv <= 90.0):
+                logger.warning('gps_latitude out of bounds: %s', latv)
+                return JsonResponse({'error': 'gps_latitude out of bounds'}, status=400)
+        if gps_lng is not None:
+            try:
+                lngv = float(gps_lng)
+            except Exception:
+                logger.warning('Invalid gps_longitude format for request: %s', gps_lng)
+                return JsonResponse({'error': 'Invalid gps_longitude'}, status=400)
+            if not (-180.0 <= lngv <= 180.0):
+                logger.warning('gps_longitude out of bounds: %s', lngv)
+                return JsonResponse({'error': 'gps_longitude out of bounds'}, status=400)
+
         # Generate OTP
         otp_code = OTPVerification.generate_otp()
         
@@ -315,30 +339,65 @@ def get_pending_trainee_requests(request: HttpRequest) -> JsonResponse:
     """Get pending trainee registration requests for an instructor."""
     from .models import TraineeOTPRequest
     
-    try:
-        # Get instructor from query params or auth header
-        instructor_id = request.GET.get('instructor_id')
-        if not instructor_id:
-            return JsonResponse({'error': 'instructor_id required'}, status=400)
-        
         try:
-            instructor = OJTInstructor.objects.get(id=instructor_id)
-        except OJTInstructor.DoesNotExist:
-            return JsonResponse({'error': 'Instructor not found'}, status=404)
+            # Get instructor from query params or auth header
+            instructor_id = request.GET.get('instructor_id')
+            if not instructor_id:
+                return JsonResponse({'error': 'instructor_id required'}, status=400)
         
-        # Get pending requests
-        pending = TraineeOTPRequest.objects.filter(
-            instructor=instructor,
-            status='pending'
-        ).values(
-            'id', 'role', 'email', 'full_name', 'company_name',
-            'otp_code', 'requested_at', 'course', 'school_name'
-        )
+            try:
+                instructor = OJTInstructor.objects.get(id=instructor_id)
+            except OJTInstructor.DoesNotExist:
+                return JsonResponse({'error': 'Instructor not found'}, status=404)
+
+            # Load configured geofence zones
+            from .utils import find_nearest_zone, safe_float
+            zones = getattr(settings, 'DEFAULT_GEOFENCE_ZONES', []) or []
+            active_zones = [z for z in zones if z.get('active', True)]
         
-        return JsonResponse({
-            'success': True,
-            'requests': list(pending)
-        })
+            # Get pending requests and attach nearest zone info when GPS provided
+            pending_qs = TraineeOTPRequest.objects.filter(instructor=instructor, status='pending')
+            results = []
+            for p in pending_qs:
+                item = {
+                    'id': p.id,
+                    'role': p.role,
+                    'email': p.email,
+                    'full_name': p.full_name,
+                    'company_name': p.company_name,
+                    'otp_code': p.otp_code,
+                    'requested_at': p.requested_at.isoformat() if p.requested_at else None,
+                    'course': p.course,
+                    'school_name': p.school_name,
+                    'gps_latitude': p.gps_latitude,
+                    'gps_longitude': p.gps_longitude,
+                    'company_address': p.company_address,
+                }
+
+                # If GPS present, compute nearest geofence zone and attach its metadata
+                try:
+                    if p.gps_latitude is not None and p.gps_longitude is not None and active_zones:
+                        lat_f = float(p.gps_latitude)
+                        lng_f = float(p.gps_longitude)
+                        nearest_zone, nearest_distance = find_nearest_zone(lat_f, lng_f, active_zones)
+                        if nearest_zone:
+                            zone_info = {
+                                'name': nearest_zone.get('name'),
+                                'lat': safe_float(nearest_zone.get('lat')),
+                                'lng': safe_float(nearest_zone.get('lng')),
+                                'radius': safe_float(nearest_zone.get('radius')),
+                            }
+                            item['zone'] = zone_info
+                        else:
+                            item['zone'] = None
+                    else:
+                        item['zone'] = None
+                except Exception:
+                    item['zone'] = None
+
+                results.append(item)
+
+            return JsonResponse({'success': True, 'requests': results})
     
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
