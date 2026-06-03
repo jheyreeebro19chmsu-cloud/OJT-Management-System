@@ -9,6 +9,7 @@ import {
   Menu,
   X,
   Star,
+  Bell,
   Megaphone,
   MessageSquare,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ const navItems = [
   { to: '/admin/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/admin/host-feedback', label: 'Host Feedback', icon: MessageSquare, end: false },
   { to: '/admin/announcements', label: 'Announcements', icon: Megaphone, end: false },
+  { to: '/admin/pending-requests', label: 'Pending Requests', icon: Bell, end: false },
   { to: '/admin/settings', label: 'Settings', icon: Settings, end: false },
 ];
 
