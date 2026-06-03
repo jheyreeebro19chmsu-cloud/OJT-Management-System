@@ -9,6 +9,14 @@ export async function loadFaceModels(modelsPath = '/models') {
   if (_modelsLoading) return false;
   _modelsLoading = true;
 
+  // If face-api script failed to load (tracking prevention or missing file), bail out gracefully
+  if (typeof window === 'undefined' || !(window as any).faceapi || (window as any).__faceApiUnavailable) {
+    console.warn('face-api unavailable in window; skipping model load');
+    _modelsLoaded = false;
+    _modelsLoading = false;
+    return false;
+  }
+
   // Use local models first for instant loading without internet
   const candidates = [modelsPath, 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model'];
 

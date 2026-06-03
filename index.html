@@ -5,7 +5,22 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>On the Job Training System</title>
-      <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+      <!-- Load a locally-hosted face-api.js if available to avoid Tracking Prevention; fallback to CDN if not. -->
+      <script>
+        (function () {
+          var localPath = './vendor/face-api.js';
+          var head = document.getElementsByTagName('head')[0];
+          var s = document.createElement('script');
+          s.src = localPath;
+          s.onload = function () { console.info('Loaded local face-api.js from', localPath); };
+          s.onerror = function () {
+            console.warn('Local face-api.js not found; not loading CDN to avoid Tracking Prevention issues. Face features will be disabled.');
+            // Mark a flag so frontend knows face-api is unavailable
+            try { window.__faceApiUnavailable = true; } catch (e) { /* ignore */ }
+          };
+          head.appendChild(s);
+        })();
+      </script>
     </head>
 
     <body>
