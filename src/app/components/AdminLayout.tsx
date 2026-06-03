@@ -40,7 +40,24 @@ export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState<number>(0);
 
+  // Determine whether the current user is an instructor
+  const isInstructor = Boolean(
+    (employee && (employee as any).role === 'instructor') ||
+      (currentUser && (currentUser as any).role === 'instructor') ||
+      (() => {
+        try {
+          const u = localStorage.getItem('user');
+          if (!u) return false;
+          const parsed = JSON.parse(u);
+          return parsed && parsed.role === 'instructor';
+        } catch {
+          return false;
+        }
+      })()
+  );
+
   const fetchPendingCount = useCallback(async () => {
+    if (!isInstructor) return setPendingCount(0);
     try {
       const instrId = employee?.id || (() => {
         try {
@@ -58,14 +75,50 @@ export function AdminLayout() {
     } catch (e) {
       // silent
     }
-  }, [employee]);
+  }, [employee, isInstructor]);
 
   useEffect(() => {
-    // initial fetch and poll
+    if (!isInstructor) return;
+
+    let es: EventSource | null = null;
+    // try SSE real-time stream first; if unavailable, polling will still update
+    try {
+      const instrId = employee?.id || (() => {
+        try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null;
+      })();
+      if (instrId && typeof window !== 'undefined' && 'EventSource' in window) {
+        const url = `/api/security/auth/pending-requests/stream/?instructor_id=${instrId}`;
+        es = new EventSource(url);
+        es.onmessage = (ev) => {
+          try {
+            const payload = JSON.parse(ev.data);
+            if (typeof payload.count === 'number') setPendingCount(payload.count);
+            // optionally handle payload.action / payload.request for notifications
+          } catch {
+            // ignore parse errors
+          }
+        };
+        es.onerror = () => {
+          // SSE failed; we'll fall back to polling already present below
+          if (es) {
+            try { es.close(); } catch {}
+            es = null;
+          }
+        };
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // fallback polling to ensure updates even without SSE
     void fetchPendingCount();
     const id = setInterval(() => void fetchPendingCount(), 10000);
-    return () => clearInterval(id);
-  }, [fetchPendingCount]);
+
+    return () => {
+      clearInterval(id);
+      if (es) try { es.close(); } catch {}
+    };
+  }, [fetchPendingCount, isInstructor, employee]);
 
   const handleLogout = () => {
     logout();
