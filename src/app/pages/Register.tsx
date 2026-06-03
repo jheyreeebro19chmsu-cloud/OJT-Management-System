@@ -24,7 +24,7 @@ import { FaceCapture } from '../components/FaceCapture';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 
 
-import { PH_ADDRESS_DATA, BARANGAY_SAMPLES } from '../data/ph_address_data';
+import { PH_ADDRESS_DATA } from '../data/ph_address_data';
 import { Country, State, City } from 'country-state-city';
 
 
@@ -929,7 +929,7 @@ export function Register() {
                         {form.country === 'PH' && (
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay *</label>
-                            <select
+                            <input
                               value={form.barangay}
                               onChange={(e) => {
                                 update('barangay', e.target.value);
@@ -938,15 +938,9 @@ export function Register() {
                                 const fullAddr = `${e.target.value}, ${cityName}, ${provName}, ${form.region}, Philippines`;
                                 setRegistrationAddress(fullAddr);
                               }}
+                              placeholder="Enter barangay"
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                            >
-                              <option value="">Select Barangay</option>
-                              {((form.city && BARANGAY_SAMPLES[form.city]) || []).map((b) => (
-                                <option key={b} value={b}>
-                                  {b}
-                                </option>
-                              ))}
-                            </select>
+                            />
                           </div>
                         )}
 
@@ -1366,53 +1360,19 @@ export function Register() {
                         <label className="text-xs font-semibold text-gray-600 block mb-1">
                           {form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}
                         </label>
-                        {/* For HTE registrations, always allow manual entry of barangay */}
-                        {role === 'hte' ? (
-                          <input
-                            value={form.barangay}
-                            onChange={(e) => {
-                              update('barangay', e.target.value);
-                              const countryObj = Country.getCountryByCode(form.country);
-                              const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
-                              const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
-                              setRegistrationAddress(fullAddr);
-                            }}
-                            placeholder="Enter barangay"
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                          />
-                        ) : form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] ? (
-                          <div className="space-y-2">
-                            <select
-                              value={form.barangay}
-                              onChange={(e) => {
-                                update('barangay', e.target.value);
-                                const fullAddr = `${e.target.value}, ${form.city}, ${form.province}, ${form.region}, Philippines`;
-                                setRegistrationAddress(fullAddr);
-                              }}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                            >
-                              <option value="">Select Barangay</option>
-                              {BARANGAY_SAMPLES[form.city].map((b) => (
-                                <option key={b} value={b}>
-                                  {b}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <input
-                            value={form.barangay}
-                            onChange={(e) => {
-                              update('barangay', e.target.value);
-                              const countryObj = Country.getCountryByCode(form.country);
-                              const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
-                              const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
-                              setRegistrationAddress(fullAddr);
-                            }}
-                            placeholder="e.g. Area name"
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                          />
-                        )}
+                        {/* Always use manual input for Barangay to avoid select fallback */}
+                        <input
+                          value={form.barangay}
+                          onChange={(e) => {
+                            update('barangay', e.target.value);
+                            const countryObj = Country.getCountryByCode(form.country);
+                            const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                            const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                            setRegistrationAddress(fullAddr);
+                          }}
+                          placeholder="Enter barangay"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
