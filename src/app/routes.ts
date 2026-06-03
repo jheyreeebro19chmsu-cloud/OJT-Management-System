@@ -8,6 +8,7 @@ const AdminEmployees = React.lazy(() => import('./pages/admin/AdminEmployees').t
 const AdminGeofence = React.lazy(() => import('./pages/admin/AdminGeofence').then(m => ({ default: m.AdminGeofence })));
 const AdminReports = React.lazy(() => import('./pages/admin/AdminReports').then(m => ({ default: m.AdminReports })));
 const AdminSettings = React.lazy(() => import('./pages/admin/AdminSettings').then(m => ({ default: m.AdminSettings })));
+const InstructorPendingRequests = React.lazy(() => import('./pages/InstructorPendingRequests').then(m => ({ default: m.default })));
 const AdminEvaluations = React.lazy(() => import('./pages/admin/AdminEvaluations').then(m => ({ default: m.AdminEvaluations })));
 const AdminAnnouncements = React.lazy(() => import('./pages/admin/AdminAnnouncements').then(m => ({ default: m.AdminAnnouncements })));
 const HostFeedback = React.lazy(() => import('./pages/HostFeedback').then(m => ({ default: m.HostFeedback })));
@@ -128,6 +129,7 @@ export const router = createBrowserRouter([
       { path: 'host-feedback', element: withSuspense(AdminHostFeedback) },
       { path: 'announcements', element: withSuspense(AdminAnnouncements) },
       { path: 'settings', element: withSuspense(AdminSettings) },
+      { path: 'pending-requests', element: withSuspense(InstructorPendingRequests) },
     ],
   },
   {

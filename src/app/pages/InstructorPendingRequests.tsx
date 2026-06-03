@@ -36,10 +36,24 @@ interface PendingRequest {
 }
 
 interface InstructorPendingRequestsProps {
-  instructorId: string;
+  instructorId?: string | null;
 }
 
-export default function InstructorPendingRequests({ instructorId }: InstructorPendingRequestsProps) {
+export default function InstructorPendingRequests({ instructorId: propInstructorId }: InstructorPendingRequestsProps) {
+  // Resolve instructor id from prop or from local storage/app context
+  let resolvedInstructorId = propInstructorId || null;
+  if (!resolvedInstructorId) {
+    try {
+      const u = localStorage.getItem('user');
+      if (u) {
+        const parsed = JSON.parse(u as string);
+        // If the logged-in user is an instructor, their id should be here
+        if (parsed && parsed.id) resolvedInstructorId = String(parsed.id);
+      }
+    } catch {
+      resolvedInstructorId = null;
+    }
+  }
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState<string | null>(null);
@@ -73,9 +87,10 @@ export default function InstructorPendingRequests({ instructorId }: InstructorPe
   }
 
   const fetchPendingRequests = useCallback(async () => {
+    if (!resolvedInstructorId) return setLoading(false);
     try {
       const res = await fetch(
-        `/api/security/auth/get-pending-trainee-requests/?instructor_id=${instructorId}`
+        `/api/security/auth/get-pending-trainee-requests/?instructor_id=${resolvedInstructorId}`
       );
       if (!res.ok) throw new Error('Failed to fetch requests');
 
