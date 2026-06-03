@@ -20,6 +20,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { readAsDataUrl } from './Announcements';
+import AvatarEditor from '../components/AvatarEditor';
 
 
 const GRADE_CONFIG = {
@@ -76,6 +77,7 @@ export function Profile() {
   const [editing, setEditing] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const [form, setForm] = useState({
     name: employee?.name || '',
     email: employee?.email || '',
@@ -134,46 +136,14 @@ export function Profile() {
                 <Camera size={9} className="text-white" />
               </div>
             )}
-            <label className="absolute -top-1 -right-1 bg-white rounded-full p-1 border border-gray-200 cursor-pointer">
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  if (!f || !employee) return;
-                  const dataUrl = await readAsDataUrl(f);
-                  setAvatarPreview(dataUrl);
-                  setAvatarUploading(true);
-                  try {
-                    if (isSecurityApiConfigured()) {
-                      const resp = await registerFace({ employee_id: String(employee.id), image: dataUrl });
-                      if (resp.success && resp.image_url) {
-                        updateEmployee(employee.id, { photo: resp.image_url, faceRegistered: true });
-                        toast.success('Avatar uploaded');
-                        setAvatarPreview(null);
-                      } else {
-                        // fallback to data URL
-                        updateEmployee(employee.id, { photo: dataUrl, faceRegistered: true });
-                        toast.success('Avatar saved locally');
-                        setAvatarPreview(null);
-                      }
-                    } else {
-                      updateEmployee(employee.id, { photo: dataUrl, faceRegistered: true });
-                      toast.success('Avatar saved locally');
-                      setAvatarPreview(null);
-                    }
-                  } catch (err) {
-                    console.error(err);
-                    toast.error('Failed to upload avatar');
-                  } finally {
-                    setAvatarUploading(false);
-                  }
-                }}
-              />
+            <button onClick={() => setShowAvatarEditor(true)} className="absolute -top-1 -right-1 bg-white rounded-full p-1 border border-gray-200">
               <Edit2 size={12} className="text-slate-600" />
-            </label>
+            </button>
           </div>
+
+          {showAvatarEditor && employee && (
+            <AvatarEditor employeeId={String(employee.id)} onClose={() => setShowAvatarEditor(false)} />
+          )}
           <div className="flex-1">
             <h2 className="font-bold text-lg leading-tight">{employee.name}</h2>
             <p className="text-blue-200 text-sm">{employee.employeeId}</p>
