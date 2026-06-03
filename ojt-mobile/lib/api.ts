@@ -1,9 +1,36 @@
 /**
  * Django API client for mobile app.
+ *
+ * Expo Go and Expo Web need the same backend flow as the web app, so we resolve
+ * the API URL dynamically instead of hard-coding localhost.
  */
 
-// Replace with your actual development machine IP or production URL
-const API_BASE_URL = 'http://127.0.0.1:8000/api'; 
+import { Platform } from 'react-native';
+
+const DEFAULT_PROD_API_URL = 'https://ojt-management-system-capstone-f35i.onrender.com/api';
+
+function resolveApiBaseUrl(): string {
+  const envUrl =
+    process.env.EXPO_PUBLIC_DJANGO_API_URL ||
+    process.env.EXPO_PUBLIC_API_URL ||
+    process.env.EXPO_PUBLIC_BACKEND_URL ||
+    '';
+
+  if (envUrl.startsWith('http')) {
+    return envUrl.replace(/\/+$/, '');
+  }
+
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:8000/api';
+    }
+  }
+
+  return Platform.OS === 'web' ? 'http://localhost:8000/api' : DEFAULT_PROD_API_URL;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 let AUTH_TOKEN: string | null = null;
 

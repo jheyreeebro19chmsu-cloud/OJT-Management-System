@@ -10,13 +10,13 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  StatusBar,
   SafeAreaView,
   Image,
   ImageBackground,
 } from 'react-native';
-import { User, LogOut, Camera as CameraIcon, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key } from 'lucide-react-native';
-import { Camera, useCameraPermissions } from 'expo-camera';
+import { StatusBar } from 'expo-status-bar';
+import { User, LogOut, Camera as CameraIcon, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key, Building } from 'lucide-react-native';
+import { useCameraPermissions } from 'expo-camera';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import { supabase } from './lib/supabase';
 import { setAuthToken, getApiBaseUrl, faceApi } from './lib/api';
@@ -32,6 +32,26 @@ import InstructorDashboard from './screens/InstructorDashboard';
 import { getSchoolLogo } from '../src/app/utils/schoolLogos';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
+
+function normalizeRole(position?: string | null) {
+  const value = String(position || '').trim();
+  if (value === 'OJT Instructor' || value === 'Administrator' || value === 'admin') return 'admin';
+  if (value === 'Training Supervisor' || value === 'HTE Representative' || value === 'hte') return 'hte';
+  return 'employee';
+}
+
+function normalizeProfile(data: any) {
+  if (!data) return null;
+  return {
+    ...data,
+    role: normalizeRole(data.position || data.role),
+    instructor_id: data.instructor_id || data.instructorId || data.application_id || data.id,
+    registration_location: data.registration_location || data.registrationLocation,
+    schoolName: data.school_name || data.schoolName,
+    companyName: data.company_name || data.companyName,
+    application_status: data.application_status || data.status || null,
+  };
+}
 
 // Try to set a global default font for React Native Text and TextInput
 try {
@@ -178,22 +198,18 @@ export default function App() {
   useEffect(() => {
     if (session) {
       async function fetchProfile() {
-        const { data } = await supabase
-          .from('employees') 
+      const { data } = await supabase
+          .from('employees')
           .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
+          .or(`id.eq.${session.user.id},email.eq.${session.user.email}`)
+          .maybeSingle();
+
         if (data) {
-          setProfile({ 
-            ...data, 
-            role: data.position === 'OJT Instructor' ? 'admin' : 'employee',
-            instructor_id: data.instructor_id 
-          });
+          setProfile(normalizeProfile(data));
         } else {
           // Check host supervisors if not in employees
-          const { data: hostData } = await supabase.from('host_supervisors').select('*').eq('id', session.user.id).single();
-          if (hostData) setProfile({ ...hostData, role: 'hte' });
+          const { data: hostData } = await supabase.from('host_supervisors').select('*').or(`id.eq.${session.user.id},email.eq.${session.user.email}`).maybeSingle();
+          if (hostData) setProfile(normalizeProfile({ ...hostData, role: 'hte' }));
         }
       }
       fetchProfile();
@@ -208,10 +224,10 @@ export default function App() {
     let alerted = false;
     const check = async () => {
       try {
-        const { data } = await supabase.from('employees').select('*').eq('id', session.user.id).single();
+        const { data } = await supabase.from('employees').select('*').or(`id.eq.${session.user.id},email.eq.${session.user.email}`).maybeSingle();
         if (data) {
           // update local profile
-          setProfile(prev => ({ ...(prev || {}), ...data }));
+          setProfile((prev: any) => normalizeProfile({ ...(prev || {}), ...data }));
           if (!alerted && data.application_status === 'approved' && !data.face_registered) {
             alerted = true;
             Alert.alert('Application Approved', 'Your application has been approved. Enroll your face now?', [
@@ -247,8 +263,12 @@ export default function App() {
       return;
     }
     setAuthLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) Alert.alert('Login Failed', error.message);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      Alert.alert('Login Failed', error.message);
+    } else if (data.session?.access_token) {
+      await authStore.saveTokens(data.session.access_token, data.session.refresh_token);
+    }
     setAuthLoading(false);
   }
 
@@ -362,8 +382,8 @@ export default function App() {
                   setShowApplication(false);
                   setScannedInstructorId(null);
                   // Refresh profile
-                  supabase.from('employees').select('*').eq('id', session.user.id).single().then(({ data }) => {
-                    if (data) setProfile({ ...data, role: data.position === 'OJT Instructor' ? 'admin' : 'employee' });
+                      supabase.from('employees').select('*').or(`id.eq.${session.user.id},email.eq.${session.user.email}`).maybeSingle().then(({ data }) => {
+                    if (data) setProfile(normalizeProfile(data));
                   });
                 }}
               />
@@ -385,12 +405,12 @@ export default function App() {
                       }
                       Alert.alert('Success', 'Face enrolled successfully');
                       // refresh profile
-                      const { data } = await supabase.from('employees').select('*').eq('id', session.user.id).single();
-                      if (data) setProfile({ ...data, role: data.position === 'OJT Instructor' ? 'admin' : 'employee' });
+                      const { data } = await supabase.from('employees').select('*').or(`id.eq.${session.user.id},email.eq.${session.user.email}`).maybeSingle();
+                      if (data) setProfile(normalizeProfile(data));
                     } else {
                       Alert.alert('Enroll Failed', res && res.error ? res.error : 'Unknown error');
                     }
-                  } catch (err) {
+                  } catch (err: any) {
                     console.error('Enroll error', err);
                     Alert.alert('Enroll Error', err.message || String(err));
                   } finally {
@@ -442,7 +462,10 @@ export default function App() {
                     {profile?.photo ? (
                       <Image source={{ uri: profile.photo }} style={{ width: 48, height: 48, borderRadius: 24, marginRight: 12 }} />
                     ) : null}
-                    <TouchableOpacity onPress={() => supabase.auth.signOut()} style={styles.logoutBtn}>
+                    <TouchableOpacity onPress={async () => {
+                      await supabase.auth.signOut();
+                      await authStore.clearTokens();
+                    }} style={styles.logoutBtn}>
                       <LogOut color="#ef4444" size={20} />
                     </TouchableOpacity>
                   </View>

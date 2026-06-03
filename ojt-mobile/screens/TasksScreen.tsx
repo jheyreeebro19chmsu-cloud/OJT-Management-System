@@ -16,14 +16,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '../lib/supabase';
 import { announcementApi } from '../lib/api';
 import { decode } from 'base64-arraybuffer';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface TasksScreenProps {
   onBack: () => void;
   profile: any;
 }
 
-export default function TasksScreen({ onBack }: TasksScreenProps) {
+export default function TasksScreen({ onBack, profile }: TasksScreenProps) {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState<string | null>(null);

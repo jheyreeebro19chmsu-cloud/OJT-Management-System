@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -61,7 +61,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
   const [emailMsg, setEmailMsg] = useState('');
 
-  const [location, setLocation] = useState<{ lat?: number; lng?: number; error?: string }>({});
+  const [location, setLocation] = useState<{ lat?: number; lng?: number; accuracy?: number; error?: string }>({});
   const [locLoading, setLocLoading] = useState(false);
 
   useEffect(() => { (async () => { await requestLocation(); })(); }, []);
@@ -75,8 +75,8 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         setLocLoading(false);
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest, maximumAge: 10000 });
-      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy ?? undefined });
     } catch (e: any) {
       setLocation({ error: e.message || 'Failed to get location' });
     } finally { setLocLoading(false); }
@@ -188,6 +188,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
                 role: 'trainee',
                 gps_latitude: location.lat || null,
                 gps_longitude: location.lng || null,
+                gps_accuracy: location.accuracy || null,
                 company_name: form.companyName,
                 school_name: form.schoolName,
                 course: form.course,
@@ -201,7 +202,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             await handleRequestOtp();
           }
         } else {
-          // Supervisor not provided as email — fallback to direct OTP to trainee
+          // Supervisor not provided as email â€” fallback to direct OTP to trainee
           await handleRequestOtp();
         }
       } else {
@@ -286,7 +287,31 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
         </>)}
         {role === 'trainee' && step === 2 && (<><Input label="School Name" value={form.schoolName} onChange={v => updateForm('schoolName', v)} placeholder="State University" /><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BS Information Technology" /></>)}
 
-        {(role === 'admin') && step === 0 && (<><Input label="Full Name" value={form.name} onChange={v => updateForm('name', v)} placeholder="Instructor Name" /><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="admin@example.com" /><View style={styles.row}><View style={{ flex: 1 }}><Input label="Department" value={form.department} onChange={v => updateForm('department', v)} placeholder="IT Dept" /></View><View style={{ flex: 1, marginLeft: 10 }}><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BSIT" /></View></View><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }}>• Special character</Text></View>); })()}</View></>)}
+        {role === 'admin' && step === 0 && (
+          <>
+            <Input label="Full Name" value={form.name} onChange={(v) => updateForm("name", v)} placeholder="Instructor Name" />
+            <Input
+              label="Email"
+              value={form.email}
+              onChange={(v) => {
+                updateForm("email", v);
+                setEmailTaken(null);
+              }}
+              onBlur={() => checkEmailExists(form.email)}
+              placeholder="admin@example.com"
+            />
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Input label="Department" value={form.department} onChange={(v) => updateForm("department", v)} placeholder="IT Dept" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Input label="Course" value={form.course} onChange={(v) => updateForm("course", v)} placeholder="BSIT" />
+              </View>
+            </View>
+            <Input label="Password" value={form.password} onChange={(v) => updateForm("password", v)} secure />
+            <PasswordChecklist pw={form.password} />
+          </>
+        )}
 
         {role === 'hte' && step === 0 && (
           <>
@@ -296,7 +321,22 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
             <Input label="Barangay" value={form.barangay} onChange={v => updateForm('barangay', v)} placeholder="Enter barangay name" />
           </>
         )}
-        {role === 'hte' && step === 1 && (<><Input label="Email" value={form.email} onChange={v => { updateForm('email', v); setEmailTaken(null); }} onBlur={() => checkEmailExists(form.email)} placeholder="contact@techcorp.com" /><Input label="Password" value={form.password} onChange={v => updateForm('password', v)} secure /><View style={{ marginTop: 8, marginLeft: 4 }}>{(() => { const checks = passwordChecks(form.password); return (<View><Text style={{ color: checks.length ? '#16a34a' : '#64748b', fontSize: 12 }}>• Minimum 8 characters</Text><Text style={{ color: checks.uppercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Uppercase letter</Text><Text style={{ color: checks.lowercase ? '#16a34a' : '#64748b', fontSize: 12 }}>• Lowercase letter</Text><Text style={{ color: checks.number ? '#16a34a' : '#64748b', fontSize: 12 }}>• Number</Text><Text style={{ color: checks.special ? '#16a34a' : '#64748b', fontSize: 12 }>• Special character</Text></View>); })()}</View></>)}
+        {role === 'hte' && step === 1 && (
+          <>
+            <Input
+              label="Email"
+              value={form.email}
+              onChange={(v) => {
+                updateForm("email", v);
+                setEmailTaken(null);
+              }}
+              onBlur={() => checkEmailExists(form.email)}
+              placeholder="contact@techcorp.com"
+            />
+            <Input label="Password" value={form.password} onChange={(v) => updateForm("password", v)} secure />
+            <PasswordChecklist pw={form.password} />
+          </>
+        )}
 
         {steps[step] === 'Photo' && (
           <View style={styles.photoContainer}>
@@ -312,7 +352,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
               <TouchableOpacity style={styles.photoButton} onPress={() => setShowScanner(true)}>
                 <Camera color="#64748b" size={48} />
                 <Text style={styles.photoButtonText}>Scan Face</Text>
-                <Text style={styles.photoSubtext}>Optional — you can enroll your face later</Text>
+                <Text style={styles.photoSubtext}>Optional â€” you can enroll your face later</Text>
               </TouchableOpacity>
             )}
             <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 8, textAlign: 'center' }}>You can enroll your face later from your Profile after logging in.</Text>
@@ -325,7 +365,18 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
   );
 }
 
-function Input({ label, value, onChange, placeholder, secure = false, keyboardType = 'default', editable = true, onBlur }: any) {
+type InputProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  secure?: boolean;
+  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
+  editable?: boolean;
+  onBlur?: () => void;
+};
+
+function Input({ label, value, onChange, placeholder, secure = false, keyboardType = 'default', editable = true, onBlur }: InputProps) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
@@ -383,5 +434,4 @@ const styles = StyleSheet.create({
   shareBtnText: { color: '#fff', fontWeight: '800' },
   loginBtn: { marginTop: 12, backgroundColor: '#fff', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   loginBtnText: { color: '#2563eb', fontWeight: '800' },
-  inputGroup: { marginBottom: 20 },
 });

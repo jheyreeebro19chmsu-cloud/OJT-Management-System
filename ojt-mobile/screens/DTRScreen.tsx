@@ -19,6 +19,10 @@ interface DTRScreenProps {
   profile: any;
 }
 
+function isPrivilegedRole(role?: string) {
+  return role === 'admin' || role === 'instructor' || role === 'hte';
+}
+
 export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -91,7 +95,7 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     }
     setScanType(type);
     // Skip face scanner for instructors and HTE accounts
-    if (profile?.role === 'instructor' || profile?.role === 'hte') {
+    if (isPrivilegedRole(profile?.role)) {
       // Directly submit attendance without photo/face verification
       await submitAttendance('');
       return;
@@ -124,7 +128,7 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       const today = now.toISOString().split('T')[0];
       const timeStr = now.toTimeString().split(' ')[0];
 
-        const isPrivileged = profile?.role === 'instructor' || profile?.role === 'hte';
+        const isPrivileged = isPrivilegedRole(profile?.role);
         const faceVerifiedFlag = isPrivileged ? false : true;
 
         if (scanType === 'in') {

@@ -5,12 +5,11 @@ import {
   View, 
   TouchableOpacity, 
   Alert,
-  ScrollView
+  ScrollView,
+  Share
 } from 'react-native';
 import { Share2, ArrowLeft, Building } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
 
 interface HTELinkScreenProps {
   onBack: () => void;
@@ -22,22 +21,9 @@ export default function HTELinkScreen({ onBack, profile }: HTELinkScreenProps) {
 
   async function handleShare() {
     try {
-      if (qrRef.current) {
-        // Use the getRef callback from react-native-qrcode-svg to get base64
-        qrRef.current.toDataURL(async (data: string) => {
-          const filename = `${FileSystem.documentDirectory}hte_link_qr.png`;
-          await FileSystem.writeAsStringAsync(filename, data, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          await Sharing.shareAsync(filename, {
-            mimeType: 'image/png',
-            dialogTitle: 'Share Access QR Code',
-            UTI: 'public.png',
-          });
-        });
-      } else {
-        Alert.alert('Ready to Link', 'Share this QR code with your HTE Supervisor. They need to scan it to request access to your records.');
-      }
+      await Share.share({
+        message: `Scan this access code to connect: student_access:${profile.id}`,
+      });
     } catch (error) {
       console.error('Sharing error:', error);
       Alert.alert('Error', 'Failed to share QR code image');
