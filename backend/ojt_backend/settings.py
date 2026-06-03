@@ -198,6 +198,11 @@ CORS_ALLOW_HEADERS = [
     "x-api-key",
 ]
 
+# Emergency: allow all origins temporarily to unblock uploads during debugging/deploy.
+# WARNING: set to False or remove for production after verifying CORS behavior.
+if os.environ.get('DJANGO_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true'):
+    CORS_ALLOW_ALL_ORIGINS = True
+
 DEFAULT_GEOFENCE_ZONES = [
     {
         "name": "Main Training Center",
