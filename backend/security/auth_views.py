@@ -148,7 +148,14 @@ def register_hte(request: HttpRequest) -> JsonResponse:
         with transaction.atomic():
             user = User.objects.create_user(username=email, email=email, password=User.objects.make_random_password(), first_name=data.get('first_name', ''), last_name=data.get('last_name', ''))
             UserRole.objects.create(user=user, role='hte', is_verified=True)
-            HTE.objects.create(user=user, company_name=data.get('company_name', ''), company_address=data.get('company_address', ''), contact_person=data.get('contact_person', ''), contact_phone=data.get('contact_phone', ''))
+            HTE.objects.create(
+                user=user,
+                company_name=data.get('company_name', ''),
+                company_address=data.get('company_address', ''),
+                barangay=data.get('barangay', '').strip(),
+                contact_person=data.get('contact_person', ''),
+                contact_phone=data.get('contact_phone', ''),
+            )
         refresh = RefreshToken.for_user(user)
         return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'hte'}}, status=201)
     except Exception as e:

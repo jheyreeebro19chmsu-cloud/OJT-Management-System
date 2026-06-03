@@ -1366,7 +1366,21 @@ export function Register() {
                         <label className="text-xs font-semibold text-gray-600 block mb-1">
                           {form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}
                         </label>
-                        {form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] && role !== 'hte' ? (
+                        {/* For HTE registrations, always allow manual entry of barangay */}
+                        {role === 'hte' ? (
+                          <input
+                            value={form.barangay}
+                            onChange={(e) => {
+                              update('barangay', e.target.value);
+                              const countryObj = Country.getCountryByCode(form.country);
+                              const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                              const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                              setRegistrationAddress(fullAddr);
+                            }}
+                            placeholder="Enter barangay"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                        ) : form.country === 'PH' && form.city && BARANGAY_SAMPLES[form.city] ? (
                           <div className="space-y-2">
                             <select
                               value={form.barangay}

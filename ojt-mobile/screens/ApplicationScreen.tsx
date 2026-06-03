@@ -36,6 +36,7 @@ export default function ApplicationScreen({ instructorId, onCancel, onSuccess }:
     requiredHours: '',
     photo: '',
   });
+  const [otpCode, setOtpCode] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -72,25 +73,30 @@ export default function ApplicationScreen({ instructorId, onCancel, onSuccess }:
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not found');
-
-      // 1. Primary: Use Django API for enrollment tracking
-      try {
-        const djangoForm = {
-          user_id: user.id,
-          instructor_id: instructorId,
-          company_name: form.companyName,
-          company_address: form.companyAddress,
-          gps_latitude: location?.coords.latitude,
-          gps_longitude: location?.coords.longitude,
-          geofence_radius: 300,
-          start_date: form.startDate,
-          end_date: form.endDate,
-          required_hours: Number(form.requiredHours),
-        };
-        await applicationApi.submit(djangoForm);
-      } catch (apiErr) {
-        console.warn('Django Enrollment API failed, falling back to Supabase:', apiErr);
+      // OTP is required for submission
+      if (!otpCode) {
+        Alert.alert('OTP required', 'You must enter the instructor-provided OTP code to submit your application.');
+        setLoading(false);
+        return;
       }
+
+      // 1. Primary: Use Django API for enrollment tracking — include otp_code
+      const djangoForm = {
+        user_id: user.id,
+        instructor_id: instructorId,
+        company_name: form.companyName,
+        company_address: form.companyAddress,
+        gps_latitude: location?.coords.latitude,
+        gps_longitude: location?.coords.longitude,
+        geofence_radius: 300,
+        start_date: form.startDate,
+        end_date: form.endDate,
+        required_hours: Number(form.requiredHours),
+        otp_code: otpCode,
+      };
+
+      // Call Django API and abort if it fails (prevents Supabase-only bypass)
+      await applicationApi.submit(djangoForm);
 
       // 2. Secondary: Update Supabase profile for mobile UI
       const { error } = await supabase
@@ -209,6 +215,18 @@ export default function ApplicationScreen({ instructorId, onCancel, onSuccess }:
             onChangeText={v => updateForm('requiredHours', v)}
             placeholder="e.g. 486"
             keyboardType="numeric"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Instructor OTP</Text>
+          <TextInput
+            style={styles.input}
+            value={otpCode}
+            onChangeText={setOtpCode}
+            placeholder="Enter 6-digit code provided by your instructor"
+            keyboardType="numeric"
+            maxLength={6}
           />
         </View>
 

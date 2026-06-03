@@ -636,138 +636,138 @@ def geonames_proxy(request: HttpRequest) -> JsonResponse:
             body = resp.read()
             data = json.loads(body.decode("utf-8"))
             return JsonResponse(data)
-
-
-        @csrf_exempt
-        @require_http_methods(["POST"])
-        @require_jwt()
-        def create_instructor_otp(request: HttpRequest) -> JsonResponse:
-            """Instructor-only: create a short-lived OTP tied to the instructor account.
-
-            Returns: { success: True, otp_code, expires_at }
-            """
-            try:
-                user = getattr(request, 'user', None)
-                if not user:
-                    return JsonResponse({'error': 'authorization_required'}, status=401)
-
-                # Ensure user is an instructor (has an OJTInstructor profile)
-                try:
-                    instructor = user.instructor_profile
-                except Exception:
-                    instructor = None
-
-                if not instructor:
-                    return JsonResponse({'error': 'forbidden', 'message': 'Only instructors may create OTPs'}, status=403)
-
-                # Rate limit: allow a small number per hour per instructor
-                max_per_hour = int(getattr(settings, 'OTP_CREATE_MAX_PER_HOUR', 5))
-                cache_key = f"otp_create_count_{user.id}"
-                try:
-                    cur = cache.get(cache_key, 0) or 0
-                    if int(cur) >= max_per_hour:
-                        return JsonResponse({'error': 'rate_limited', 'message': 'OTP creation rate limit exceeded'}, status=429)
-                    cache.set(cache_key, int(cur) + 1, timeout=3600)
-                except Exception:
-                    # If cache unavailable, continue (best-effort)
-                    pass
-
-                # Create OTP tied to instructor email
-                otp = OTPVerification.create_otp(user.email)
-
-                # Audit log
-                try:
-                    ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
-                    OTPAuditLog.objects.create(action='create', email=user.email, otp_code=otp.otp_code, actor=user, ip_address=str(ip))
-                except Exception:
-                    logger.debug('Failed to write OTP audit log for create')
-
-                # Optionally send email using server-side email if configured
-                try:
-                    api_key = getattr(settings, 'RESEND_API_KEY', os.environ.get('VITE_RESEND_API_KEY'))
-                    if api_key and RESEND_AVAILABLE:
-                        resend.api_key = api_key
-                        resend.Emails.send({
-                            'from': 'OJT System <onboarding@resend.dev>',
-                            'to': [user.email],
-                            'subject': 'Enrollment OTP',
-                            'html': f'<p>Your enrollment OTP is <strong>{otp.otp_code}</strong>. It expires at {otp.expires_at}.</p>'
-                        })
-                except Exception:
-                    # Non-fatal if email sending fails
-                    logger.debug('Failed to send OTP email for instructor %s', user.email)
-
-                return JsonResponse({'success': True, 'otp_code': otp.otp_code, 'expires_at': otp.expires_at.isoformat()})
-            except Exception as e:
-                return JsonResponse({'error': str(e)}, status=500)
-
-
-        @csrf_exempt
-        @require_http_methods(["GET"])
-        @require_jwt()
-        def get_otp_audit(request: HttpRequest) -> JsonResponse:
-            """Admin-only: return recent OTP audit log entries."""
-            user = getattr(request, 'user', None)
-            if not user or not (user.is_staff or user.is_superuser):
-                return JsonResponse({'error': 'forbidden'}, status=403)
-            try:
-                limit = int(request.GET.get('limit', '200'))
-                entries = OTPAuditLog.objects.order_by('-created_at')[:limit]
-                data = [
-                    {
-                        'id': e.id,
-                        'action': e.action,
-                        'email': e.email,
-                        'otp_code': e.otp_code,
-                        'actor_id': e.actor.id if e.actor else None,
-                        'ip_address': e.ip_address,
-                        'created_at': e.created_at.isoformat(),
-                    }
-                    for e in entries
-                ]
-                return JsonResponse({'success': True, 'entries': data})
-            except Exception as e:
-                return JsonResponse({'error': str(e)}, status=500)
-
-
-        @csrf_exempt
-        @require_http_methods(["POST"])
-        @require_jwt()
-        def validate_instructor_otp(request: HttpRequest) -> JsonResponse:
-            """Validate an OTP provided by an instructor.
-
-            Body: { "instructor_email": "instructor@example.com", "otp_code": "123456" }
-            Returns { success: True } when valid.
-            Marks OTPVerification.is_verified = True to prevent reuse.
-            """
-            try:
-                data = _json_body(request)
-                instructor_email = data.get('instructor_email')
-                otp_code = data.get('otp_code')
-                if not instructor_email or not otp_code:
-                    return JsonResponse({'error': 'instructor_email and otp_code required'}, status=400)
-
-                otp_obj = OTPVerification.objects.filter(email__iexact=instructor_email, otp_code=otp_code).order_by('-created_at').first()
-                if not otp_obj:
-                    return JsonResponse({'success': False, 'message': 'Invalid code'}, status=400)
-                if not otp_obj.is_valid():
-                    return JsonResponse({'success': False, 'message': 'Code expired or already used'}, status=400)
-
-                otp_obj.is_verified = True
-                otp_obj.save()
-
-                # Audit log
-                try:
-                    ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
-                    OTPAuditLog.objects.create(action='validate', email=instructor_email, otp_code=otp_code, actor=getattr(request, 'user', None), ip_address=str(ip))
-                except Exception:
-                    logger.debug('Failed to write OTP audit log for validate')
-
-                return JsonResponse({'success': True, 'message': 'OTP validated'})
-            except Exception as e:
-                return JsonResponse({'error': str(e)}, status=500)
     except Exception as exc:
         return JsonResponse({"error": "geonames_proxy_failed", "detail": str(exc)}, status=502)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@require_jwt()
+def create_instructor_otp(request: HttpRequest) -> JsonResponse:
+    """Instructor-only: create a short-lived OTP tied to the instructor account.
+
+    Returns: { success: True, otp_code, expires_at }
+    """
+    try:
+        user = getattr(request, 'user', None)
+        if not user:
+            return JsonResponse({'error': 'authorization_required'}, status=401)
+
+        # Ensure user is an instructor (has an OJTInstructor profile)
+        try:
+            instructor = user.instructor_profile
+        except Exception:
+            instructor = None
+
+        if not instructor:
+            return JsonResponse({'error': 'forbidden', 'message': 'Only instructors may create OTPs'}, status=403)
+
+        # Rate limit: allow a small number per hour per instructor
+        max_per_hour = int(getattr(settings, 'OTP_CREATE_MAX_PER_HOUR', 5))
+        cache_key = f"otp_create_count_{user.id}"
+        try:
+            cur = cache.get(cache_key, 0) or 0
+            if int(cur) >= max_per_hour:
+                return JsonResponse({'error': 'rate_limited', 'message': 'OTP creation rate limit exceeded'}, status=429)
+            cache.set(cache_key, int(cur) + 1, timeout=3600)
+        except Exception:
+            # If cache unavailable, continue (best-effort)
+            pass
+
+        # Create OTP tied to instructor email
+        otp = OTPVerification.create_otp(user.email)
+
+        # Audit log
+        try:
+            ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
+            OTPAuditLog.objects.create(action='create', email=user.email, otp_code=otp.otp_code, actor=user, ip_address=str(ip))
+        except Exception:
+            logger.debug('Failed to write OTP audit log for create')
+
+        # Optionally send email using server-side email if configured
+        try:
+            api_key = getattr(settings, 'RESEND_API_KEY', os.environ.get('VITE_RESEND_API_KEY'))
+            if api_key and RESEND_AVAILABLE:
+                resend.api_key = api_key
+                resend.Emails.send({
+                    'from': 'OJT System <onboarding@resend.dev>',
+                    'to': [user.email],
+                    'subject': 'Enrollment OTP',
+                    'html': f'<p>Your enrollment OTP is <strong>{otp.otp_code}</strong>. It expires at {otp.expires_at}.</p>'
+                })
+        except Exception:
+            # Non-fatal if email sending fails
+            logger.debug('Failed to send OTP email for instructor %s', user.email)
+
+        return JsonResponse({'success': True, 'otp_code': otp.otp_code, 'expires_at': otp.expires_at.isoformat()})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@require_jwt()
+def get_otp_audit(request: HttpRequest) -> JsonResponse:
+    """Admin-only: return recent OTP audit log entries."""
+    user = getattr(request, 'user', None)
+    if not user or not (user.is_staff or user.is_superuser):
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    try:
+        limit = int(request.GET.get('limit', '200'))
+        entries = OTPAuditLog.objects.order_by('-created_at')[:limit]
+        data = [
+            {
+                'id': e.id,
+                'action': e.action,
+                'email': e.email,
+                'otp_code': e.otp_code,
+                'actor_id': e.actor.id if e.actor else None,
+                'ip_address': e.ip_address,
+                'created_at': e.created_at.isoformat(),
+            }
+            for e in entries
+        ]
+        return JsonResponse({'success': True, 'entries': data})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@require_jwt()
+def validate_instructor_otp(request: HttpRequest) -> JsonResponse:
+    """Validate an OTP provided by an instructor.
+
+    Body: { "instructor_email": "instructor@example.com", "otp_code": "123456" }
+    Returns { success: True } when valid.
+    Marks OTPVerification.is_verified = True to prevent reuse.
+    """
+    try:
+        data = _json_body(request)
+        instructor_email = data.get('instructor_email')
+        otp_code = data.get('otp_code')
+        if not instructor_email or not otp_code:
+            return JsonResponse({'error': 'instructor_email and otp_code required'}, status=400)
+
+        otp_obj = OTPVerification.objects.filter(email__iexact=instructor_email, otp_code=otp_code).order_by('-created_at').first()
+        if not otp_obj:
+            return JsonResponse({'success': False, 'message': 'Invalid code'}, status=400)
+        if not otp_obj.is_valid():
+            return JsonResponse({'success': False, 'message': 'Code expired or already used'}, status=400)
+
+        otp_obj.is_verified = True
+        otp_obj.save()
+
+        # Audit log
+        try:
+            ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
+            OTPAuditLog.objects.create(action='validate', email=instructor_email, otp_code=otp_code, actor=getattr(request, 'user', None), ip_address=str(ip))
+        except Exception:
+            logger.debug('Failed to write OTP audit log for validate')
+
+        return JsonResponse({'success': True, 'message': 'OTP validated'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt

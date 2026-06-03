@@ -62,7 +62,15 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4 py-8"
+      style={{
+        backgroundImage: `url('/university-bg.jpg'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)`,
+        backgroundSize: 'cover, cover',
+        backgroundPosition: 'center center, center center',
+        backgroundRepeat: 'no-repeat, no-repeat',
+      }}
+    >
       {/* Decorative circles */}
       <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400/10 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl" />

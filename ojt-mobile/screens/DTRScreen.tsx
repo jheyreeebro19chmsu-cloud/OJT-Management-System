@@ -90,6 +90,13 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       return;
     }
     setScanType(type);
+    // Skip face scanner for instructors and HTE accounts
+    if (profile?.role === 'instructor' || profile?.role === 'hte') {
+      // Directly submit attendance without photo/face verification
+      await submitAttendance('');
+      return;
+    }
+
     setShowScanner(true);
   }
 
@@ -117,7 +124,10 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       const today = now.toISOString().split('T')[0];
       const timeStr = now.toTimeString().split(' ')[0];
 
-      if (scanType === 'in') {
+        const isPrivileged = profile?.role === 'instructor' || profile?.role === 'hte';
+        const faceVerifiedFlag = isPrivileged ? false : true;
+
+        if (scanType === 'in') {
         const { error } = await supabase
           .from('time_records')
           .insert({
@@ -127,7 +137,7 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
             time_in_lat: currentLocation?.coords.latitude,
             time_in_lng: currentLocation?.coords.longitude,
             time_in_geofenced: isWithinGeofence,
-            time_in_face_verified: true,
+              time_in_face_verified: faceVerifiedFlag,
             time_in_photo: photo,
             status: 'present'
           });
@@ -138,14 +148,14 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
         timeInDate.setHours(parseInt(timeInParts[0]), parseInt(timeInParts[1]), parseInt(timeInParts[2]));
         const totalHours = (now.getTime() - timeInDate.getTime()) / (1000 * 60 * 60);
 
-        const { error } = await supabase
+          const { error } = await supabase
           .from('time_records')
           .update({
             time_out: timeStr,
             time_out_lat: currentLocation?.coords.latitude,
             time_out_lng: currentLocation?.coords.longitude,
             time_out_geofenced: isWithinGeofence,
-            time_out_face_verified: true,
+              time_out_face_verified: faceVerifiedFlag,
             time_out_photo: photo,
             total_hours: totalHours
           })

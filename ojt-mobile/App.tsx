@@ -13,8 +13,9 @@ import {
   StatusBar,
   SafeAreaView,
   Image,
+  ImageBackground,
 } from 'react-native';
-import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check } from 'lucide-react-native';
+import { User, LogOut, Camera, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
 import { setAuthToken, getApiBaseUrl, faceApi } from './lib/api';
@@ -26,6 +27,7 @@ import TasksScreen from './screens/TasksScreen';
 import DTRScreen from './screens/DTRScreen';
 import HTELinkScreen from './screens/HTELinkScreen';
 import InstructorTraineesScreen from './screens/InstructorTraineesScreen';
+import InstructorDashboard from './screens/InstructorDashboard';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
 
@@ -62,6 +64,7 @@ export default function App() {
   const [showDTR, setShowDTR] = useState(false);
   const [showHTELink, setShowHTELink] = useState(false);
   const [showTrainees, setShowTrainees] = useState(false);
+  const [showInstructorDashboard, setShowInstructorDashboard] = useState(false);
   const [showRecords, setShowRecords] = useState(false);
   const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null);
   const [selectedStudentName, setSelectedStudentName] = useState<string | null>(null);
@@ -214,8 +217,27 @@ export default function App() {
     );
   }
 
+  // Attempt to load local university background image; fall back to solid color if missing
+  let uniBg: any = null;
+  try {
+    uniBg = require('./assets/university-bg.jpg');
+  } catch (e) {
+    uniBg = null;
+  }
+
+  const AppWrapper = ({ children }: any) => {
+    if (uniBg) {
+      return (
+        <ImageBackground source={uniBg} style={{ flex: 1 }} imageStyle={{ resizeMode: 'cover' }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: 'rgba(4,44,84,0.6)' }}>{children}</SafeAreaView>
+        </ImageBackground>
+      );
+    }
+    return <SafeAreaView style={{ flex: 1, backgroundColor: '#042c54' }}>{children}</SafeAreaView>;
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+    <AppWrapper>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -312,6 +334,8 @@ export default function App() {
                   setShowRecords(true);
                 }}
               />
+            ) : showInstructorDashboard ? (
+              <InstructorDashboard onBack={() => setShowInstructorDashboard(false)} />
             ) : showRecords && selectedApplicationId && selectedStudentName ? (
               <TraineeRecordsScreen
                 applicationId={selectedApplicationId}
@@ -442,6 +466,15 @@ export default function App() {
                           <Text style={styles.actionCardDesc}>Create individual assignments</Text>
                         </View>
                       </TouchableOpacity>
+                      <TouchableOpacity style={[styles.premiumActionCard, { marginTop: 12 }]} onPress={() => setShowInstructorDashboard(true)}>
+                        <View style={[styles.actionIconContainer, { backgroundColor: '#ecfeff' }]}>
+                          <Key color="#0891b2" size={18} />
+                        </View>
+                        <View style={styles.actionTextContainer}>
+                          <Text style={styles.actionCardTitle}>OTP Management</Text>
+                          <Text style={styles.actionCardDesc}>Generate and share enrollment codes</Text>
+                        </View>
+                      </TouchableOpacity>
                     </>
                   )}
                 </ScrollView>
@@ -477,8 +510,8 @@ export default function App() {
           )}
         </View>
         <StatusBar style="auto" />
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+    </AppWrapper>
   );
 }
 

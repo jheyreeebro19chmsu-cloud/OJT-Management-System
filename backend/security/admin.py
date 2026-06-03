@@ -6,6 +6,7 @@ from .models import (
     StudentTask, FaceRegistration, AttendancePhoto,
     HTEAccessRequest
 )
+from .models import OTPAuditLog
 
 
 @admin.register(UserRole)
@@ -58,6 +59,8 @@ class OJTInstructorAdmin(admin.ModelAdmin):
 class HTEAdmin(admin.ModelAdmin):
     list_display = ("get_user_email", "company_name", "company_address", "contact_person")
     search_fields = ("user__email", "company_name", "contact_person")
+    list_filter = ("company_name",)
+    fields = ("user", "company_name", "barangay", "company_address", "contact_person", "contact_phone")
     readonly_fields = ("created_at", "updated_at")
     
     def get_user_email(self, obj):
@@ -70,6 +73,14 @@ class OTPVerificationAdmin(admin.ModelAdmin):
     list_display = ("email", "is_verified", "created_at", "expires_at")
     search_fields = ("email",)
     list_filter = ("is_verified", "created_at")
+    readonly_fields = ("created_at",)
+
+
+@admin.register(OTPAuditLog)
+class OTPAuditLogAdmin(admin.ModelAdmin):
+    list_display = ("action", "email", "otp_code", "actor", "ip_address", "created_at")
+    search_fields = ("email", "otp_code", "actor__email")
+    list_filter = ("action", "created_at")
     readonly_fields = ("created_at",)
 
 

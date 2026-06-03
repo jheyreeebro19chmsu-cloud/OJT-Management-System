@@ -105,11 +105,35 @@ TIME_ZONE = "Asia/Manila"
 USE_I18N = True
 USE_TZ = True
 
+# OTP rate limiting default (can be overridden via env)
+OTP_CREATE_MAX_PER_HOUR = int(os.environ.get('OTP_CREATE_MAX_PER_HOUR', '5'))
+
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Caching: prefer Redis in production. Set REDIS_URL env var to enable Redis cache.
+REDIS_URL = os.environ.get('REDIS_URL') or os.environ.get('REDIS_TLS_URL')
+if REDIS_URL:
+    # Uses django-redis if available; falls back to django's RedisCache if configured
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            }
+        }
+    }
+else:
+    # Local memory cache for development
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

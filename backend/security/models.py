@@ -57,6 +57,7 @@ class HTE(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='hte_profile')
     company_name = models.CharField(max_length=255)
     company_address = models.TextField()
+    barangay = models.CharField(max_length=255, blank=True, help_text="Barangay / Barangay name")
     contact_person = models.CharField(max_length=255, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
