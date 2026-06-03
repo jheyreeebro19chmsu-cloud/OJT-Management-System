@@ -1,6 +1,6 @@
 import { Clock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
@@ -16,6 +16,7 @@ export function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [faceDisabled, setFaceDisabled] = useState(false);
   const { employees } = useApp();
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
@@ -63,25 +64,34 @@ export function Login() {
     }
   };
 
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && (window as any).__faceApiUnavailable) setFaceDisabled(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Compute background style object once per render (avoid passing a function to `style`)
+  let bgStyle: React.CSSProperties = {};
+  try {
+    let bg = '/chmsu.jpg';
+    const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
+    if (override) bg = override;
+    bgStyle = {
+      backgroundImage: bg ? `url('${bg}'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)` : 'linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)',
+      backgroundSize: 'cover, cover',
+      backgroundPosition: 'center center, center center',
+      backgroundRepeat: 'no-repeat, no-repeat',
+    } as React.CSSProperties;
+  } catch {
+    bgStyle = {};
+  }
+
   return (
     <div
       className="relative min-h-screen flex flex-col items-center justify-center px-4 py-8"
-      style={() => {
-        // Allow overriding the login background at runtime by setting localStorage.loginBg
-        let bg = '/chmsu.jpg';
-        try {
-          const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
-          if (override) bg = override;
-        } catch {
-          // ignore
-        }
-        return {
-          backgroundImage: bg ? `url('${bg}'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)` : 'linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)',
-          backgroundSize: 'cover, cover',
-          backgroundPosition: 'center center, center center',
-          backgroundRepeat: 'no-repeat, no-repeat',
-        };
-      }}
+      style={bgStyle}
     >
       {/* Dark overlay for contrast over the background image */}
         <div className="absolute inset-0 bg-black/20 pointer-events-none" />
@@ -123,6 +133,11 @@ export function Login() {
         </div>
 
         {/* Card */}
+        {faceDisabled && (
+          <div className="mb-4 p-3 rounded-xl bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
+            Face-recognition features are currently disabled because the local face-api bundle is missing or blocked by the browser. Copy a local face-api.js to <span className="font-mono">public/vendor/face-api.js</span> or run the downloader in <span className="font-mono">scripts/</span> to enable biometric features.
+          </div>
+        )}
         <div className="bg-white rounded-3xl shadow-2xl p-6">
           <h2 className="text-gray-800 font-bold text-lg mb-1">Welcome back</h2>
           <p className="text-gray-500 text-sm mb-5">Sign in to your account</p>
