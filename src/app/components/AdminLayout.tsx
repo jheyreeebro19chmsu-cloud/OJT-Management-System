@@ -199,18 +199,29 @@ export function AdminLayout() {
               <h1 className="text-gray-800 font-semibold text-base">OJT Daily Time Record — Admin</h1>
             </div>
             <div className="hidden lg:flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
-                {employee?.photo ? (
-                  <img
-                    src={getPhotoUrl(employee.photo)}
-                    alt={employee.name}
-                    className="w-full h-full object-cover"
-                    style={{ transform: 'scaleX(-1)' }}
-                  />
-                ) : (
-                  <span className="text-blue-700 text-xs font-bold">AD</span>
-                )}
-              </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => navigate('/admin/pending-requests')}
+                    className="relative inline-flex items-center justify-center w-8 h-8 rounded-full bg-transparent text-gray-600 hover:text-gray-800"
+                    title="Pending Requests"
+                  >
+                    <Bell size={18} />
+                    {/* Optionally render a badge for pending requests count in future */}
+                  </button>
+
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
+                    {employee?.photo ? (
+                      <img
+                        src={getPhotoUrl(employee.photo)}
+                        alt={employee.name}
+                        className="w-full h-full object-cover"
+                        style={{ transform: 'scaleX(-1)' }}
+                      />
+                    ) : (
+                      <span className="text-blue-700 text-xs font-bold">AD</span>
+                    )}
+                  </div>
+                </div>
             </div>
           </div>
         </header>
