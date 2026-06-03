@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "storages",
+    "channels",
     "security",
 ]
 
@@ -80,6 +81,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "ojt_backend.wsgi.application"
+ASGI_APPLICATION = "ojt_backend.asgi.application"
 
 # Database
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -161,6 +163,23 @@ else:
         'default': {
             'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         }
+    }
+
+# Channels channel layers configuration. Prefer Redis in production, otherwise use in-memory layer for development.
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
     }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

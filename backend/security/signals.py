@@ -8,6 +8,8 @@ import io
 import os
 
 from .models import TraineeOTPRequest
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 
 def _make_thumbnail(image_file, size=(256, 256)):
@@ -60,4 +62,31 @@ def populate_avatar_metadata(sender, instance: TraineeOTPRequest, **kwargs):
         )
     except Exception:
         # Silently ignore failures to avoid blocking saves; logging can be added
+        return
+
+
+@receiver(post_save, sender=TraineeOTPRequest)
+def notify_pending_count_change(sender, instance: TraineeOTPRequest, **kwargs):
+    """Notify instructor websocket group about pending requests count changes."""
+    try:
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+        instructor = getattr(instance, 'instructor', None)
+        if not instructor:
+            return
+        # Compute current pending count
+        from .models import TraineeOTPRequest as TR
+        count = TR.objects.filter(instructor=instructor, status='pending').count()
+        group_name = f"instructor_{instructor.id}"
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                'type': 'pending_requests_update',
+                'count': count,
+                'action': getattr(instance, 'status', None),
+            }
+        )
+    except Exception:
+        # don't raise from signal
         return
