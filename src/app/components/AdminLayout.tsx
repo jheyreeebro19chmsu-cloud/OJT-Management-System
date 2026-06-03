@@ -80,43 +80,115 @@ export function AdminLayout() {
   useEffect(() => {
     if (!isInstructor) return;
 
+    let ws: WebSocket | null = null;
     let es: EventSource | null = null;
-    // try SSE real-time stream first; if unavailable, polling will still update
-    try {
-      const instrId = employee?.id || (() => {
-        try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null;
-      })();
-      if (instrId && typeof window !== 'undefined' && 'EventSource' in window) {
+    let pollId: any = null;
+    let reconnectTimer: any = null;
+    let retries = 0;
+
+    const startPolling = () => {
+      void fetchPendingCount();
+      pollId = setInterval(() => void fetchPendingCount(), 10000);
+    };
+    const stopPolling = () => {
+      if (pollId) {
+        clearInterval(pollId);
+        pollId = null;
+      }
+    };
+
+    const setupEventSource = () => {
+      try {
+        const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null; })();
+        if (!instrId || typeof window === 'undefined' || !('EventSource' in window)) return;
         const url = `/api/security/auth/pending-requests/stream/?instructor_id=${instrId}`;
         es = new EventSource(url);
         es.onmessage = (ev) => {
           try {
             const payload = JSON.parse(ev.data);
             if (typeof payload.count === 'number') setPendingCount(payload.count);
-            // optionally handle payload.action / payload.request for notifications
+          } catch {
+            // ignore
+          }
+        };
+        es.onerror = () => {
+          if (es) { try { es.close(); } catch {} es = null; }
+          // fallback to polling
+          if (!pollId) startPolling();
+        };
+      } catch (e) {
+        // fallback to polling
+        if (!pollId) startPolling();
+      }
+    };
+
+    const setupWebSocket = () => {
+      try {
+        const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null; })();
+        if (!instrId || typeof window === 'undefined' || !('WebSocket' in window)) {
+          // no websocket support; try SSE
+          setupEventSource();
+          return;
+        }
+
+        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const host = window.location.host;
+        const url = `${proto}://${host}/ws/pending-requests/?instructor_id=${instrId}`;
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+          // connected; stop other fallbacks
+          retries = 0;
+          if (es) { try { es.close(); } catch {} es = null; }
+          stopPolling();
+        };
+
+        ws.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data);
+            if (typeof data.count === 'number') setPendingCount(data.count);
           } catch {
             // ignore parse errors
           }
         };
-        es.onerror = () => {
-          // SSE failed; we'll fall back to polling already present below
-          if (es) {
-            try { es.close(); } catch {}
-            es = null;
+
+        ws.onclose = () => {
+          ws = null;
+          // try reconnect with exponential backoff
+          if (retries < 5) {
+            const delay = Math.min(30000, 1000 * 2 ** retries);
+            reconnectTimer = setTimeout(() => { retries += 1; setupWebSocket(); }, delay);
+            return;
           }
+          // after retries exhausted, attempt SSE, then polling
+          setupEventSource();
+          if (!pollId) startPolling();
         };
+
+        ws.onerror = () => {
+          try { ws?.close(); } catch {}
+        };
+      } catch (e) {
+        // fallback to SSE/polling
+        setupEventSource();
+        if (!pollId) startPolling();
       }
-    } catch (e) {
-      // ignore
+    };
+
+    // Start with WebSocket if available, otherwise SSE, otherwise polling
+    if (typeof window !== 'undefined' && 'WebSocket' in window) {
+      setupWebSocket();
+    } else if (typeof window !== 'undefined' && 'EventSource' in window) {
+      setupEventSource();
+    } else {
+      startPolling();
     }
 
-    // fallback polling to ensure updates even without SSE
-    void fetchPendingCount();
-    const id = setInterval(() => void fetchPendingCount(), 10000);
-
     return () => {
-      clearInterval(id);
+      if (ws) try { ws.close(); } catch {}
       if (es) try { es.close(); } catch {}
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (pollId) clearInterval(pollId);
     };
   }, [fetchPendingCount, isInstructor, employee]);
 
