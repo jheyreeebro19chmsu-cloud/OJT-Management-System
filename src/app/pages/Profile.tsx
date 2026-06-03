@@ -63,6 +63,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function Profile() {
   const {
+    currentUser,
     getCurrentEmployee,
     getEmployeeRecords,
     updateEmployee,
@@ -85,7 +86,42 @@ export function Profile() {
   });
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
-  if (!employee) return null;
+  if (!employee) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900 shadow-sm">
+          <p className="font-semibold">We couldn’t load your employee profile.</p>
+          <p className="mt-1">
+            Your session is active, but we can’t find the matching employee record yet. This usually means the account
+            needs to be re-synced.
+          </p>
+          {currentUser && (
+            <div className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-amber-950">
+              <div className="font-semibold mb-1">Signed in account</div>
+              <div>Name: {currentUser.name || 'Unknown'}</div>
+              <div>Role: {currentUser.role}</div>
+              <div>ID: {currentUser.employeeId || currentUser.id}</div>
+              {currentUser.email && <div>Email: {currentUser.email}</div>}
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              Reload profile
+            </button>
+            <button
+              onClick={() => window.location.assign('/login')}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              Go to login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const totalHours = records.reduce((s, r) => s + (r.totalHours || 0), 0);
   const presentDays = records.filter((r) => r.status === 'present' || r.status === 'overtime').length;
@@ -122,11 +158,7 @@ export function Profile() {
               {avatarPreview ? (
                 <img src={avatarPreview} alt="avatar preview" className="w-full h-full object-cover" />
               ) : employee.photo ? (
-                <img
-                  src={getPhotoUrl(employee.photo)}
-                  alt={employee.name}
-                  className="w-full h-full object-cover"
-                />
+                <img src={getPhotoUrl(employee.photo)} alt={employee.name} className="w-full h-full object-cover" />
               ) : (
                 <User size={28} className="text-blue-300" />
               )}

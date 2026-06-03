@@ -625,11 +625,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const userId = authData.user.id;
           
           // Try to match with loaded employees or host supervisors
-          const matchedEmp = employees.find((e) => e.id === userId && e.active);
+          const matchedEmp = employees.find(
+            (e) =>
+              e.active &&
+              (e.id === userId ||
+                normalizeEmail(e.email) === normalizeEmail(targetEmail) ||
+                (e.username && e.username.toLowerCase() === normalizedId))
+          );
           if (matchedEmp) {
             const role: User['role'] =
               matchedEmp.position === 'OJT Instructor' ? 'admin' : matchedEmp.position === 'HTE Representative' ? 'hte' : 'employee';
-            const user: User = { id: matchedEmp.id, name: matchedEmp.name, role, employeeId: matchedEmp.id };
+            const user: User = {
+              id: matchedEmp.id,
+              name: matchedEmp.name,
+              role,
+              employeeId: matchedEmp.id,
+              email: normalizeEmail(matchedEmp.email),
+            };
             setCurrentUser(user);
             setPasswordForEmail(matchedEmp.email, password);
             return user;
@@ -637,7 +649,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
           const matchedHost = hostSupervisors.find((h) => h.id === userId && h.active);
           if (matchedHost) {
-            const user: User = { id: matchedHost.id, name: matchedHost.name, role: 'host' };
+            const user: User = { id: matchedHost.id, name: matchedHost.name, role: 'host', email: normalizeEmail(matchedHost.email) };
             setCurrentUser(user);
             setPasswordForEmail(matchedHost.email, password);
             return user;
@@ -648,7 +660,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const nameFromMetadata = authData.user.user_metadata?.full_name || authData.user.email || 'User';
           
           const role: User['role'] = roleFromMetadata === 'admin' ? 'admin' : roleFromMetadata === 'host' ? 'host' : 'employee';
-          const user: User = { id: userId, name: nameFromMetadata, role, employeeId: role === 'employee' ? userId : undefined };
+          const user: User = {
+            id: userId,
+            name: nameFromMetadata,
+            role,
+            employeeId: role === 'employee' ? userId : undefined,
+            email: authData.user.email ? normalizeEmail(authData.user.email) : normalizeEmail(targetEmail),
+          };
           setCurrentUser(user);
           return user;
         }
@@ -669,7 +687,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (password === (storedPassword || fallbackPassword)) {
         const role: User['role'] =
           emp.position === 'OJT Instructor' ? 'admin' : emp.position === 'HTE Representative' ? 'hte' : 'employee';
-        const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id };
+        const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id, email: normalizeEmail(emp.email) };
         setCurrentUser(user);
         return user;
       }
@@ -680,7 +698,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (host) {
       const storedPassword = passwords[normalizedId];
       if (password === storedPassword) {
-        const user: User = { id: host.id, name: host.name, role: 'host' };
+        const user: User = { id: host.id, name: host.name, role: 'host', email: normalizeEmail(host.email) };
         setCurrentUser(user);
         return user;
       }
@@ -688,7 +706,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (normalizedId === 'admin@ojt.com' && password === 'admin123') {
-      const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin' };
+      const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin', email: 'admin@ojt.com' };
       setCurrentUser(user);
       return user;
     }
@@ -707,11 +725,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getCurrentUserEmail = (): string | null => {
     if (!currentUser) return null;
+    if (currentUser.email) return normalizeEmail(currentUser.email);
     if (currentUser.role === 'host') {
       const host = hostSupervisors.find((h) => h.id === currentUser.id);
       return host ? normalizeEmail(host.email) : null;
     }
-    const employee = employees.find((e) => e.id === currentUser.employeeId || e.id === currentUser.id);
+    const employee = employees.find(
+      (e) =>
+        e.id === currentUser.employeeId ||
+        e.id === currentUser.id ||
+        normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')
+    );
     return employee ? normalizeEmail(employee.email) : null;
   };
 
@@ -1012,8 +1036,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getCurrentEmployee = (): Employee | null => {
-    if (!currentUser?.employeeId) return null;
-    return employees.find((e) => e.id === currentUser.employeeId) || null;
+    if (!currentUser) return null;
+    const employee = employees.find(
+      (e) =>
+        e.id === currentUser.employeeId ||
+        e.id === currentUser.id ||
+        (currentUser.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
+    );
+    return employee || null;
   };
 
   // ─── Evaluations ─────────────────────────────────────────────────────────────

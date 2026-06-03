@@ -1,6 +1,6 @@
 import { Home, Clock, FileText, User, LogOut, Bell } from 'lucide-react';
 import { motion } from 'motion/react';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
@@ -16,9 +16,25 @@ const navItems = [
 ];
 
 export function EmployeeLayout() {
-  const { logout, getCurrentEmployee } = useApp();
+  const { currentUser, logout, getCurrentEmployee } = useApp();
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
+
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/login', { replace: true });
+    }
+  }, [currentUser, navigate]);
+
+  if (!currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
+          Redirecting to login...
+        </div>
+      </div>
+    );
+  }
 
   const handleLogout = () => {
     logout();

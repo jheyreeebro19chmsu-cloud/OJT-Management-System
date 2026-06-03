@@ -64,6 +64,7 @@ export interface User {
   name: string;
   role: 'employee' | 'admin' | 'host' | 'hte';
   employeeId?: string;
+  email?: string;
 }
 
 export interface Evaluation {
