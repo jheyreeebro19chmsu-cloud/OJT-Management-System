@@ -168,6 +168,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
     "https://ojt-management-system-capstone-f35i.onrender.com",
+    "https://ojt-management-system-capstone.onrender.com",
     "https://ojt-management-system-production.up.railway.app",
 ]
 
