@@ -252,7 +252,7 @@ export default function App() {
   // Attempt to load local university background image; fall back to solid color if missing
   let uniBg: any = null;
   try {
-    uniBg = require('./assets/university-bg.jpg');
+    uniBg = require('./assets/chmsu.jpg');
   } catch (e) {
     uniBg = null;
   }

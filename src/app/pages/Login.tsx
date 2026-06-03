@@ -67,7 +67,7 @@ export function Login() {
     <div
       className="relative min-h-screen flex flex-col items-center justify-center px-4 py-8"
       style={{
-        backgroundImage: `url('/university-bg.jpg'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)`,
+        backgroundImage: `url('/chmsu.jpg'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)`,
         backgroundSize: 'cover, cover',
         backgroundPosition: 'center center, center center',
         backgroundRepeat: 'no-repeat, no-repeat',
