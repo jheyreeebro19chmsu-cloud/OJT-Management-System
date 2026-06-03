@@ -806,6 +806,33 @@ def get_instructor_by_email(request: HttpRequest) -> JsonResponse:
 
 
 @csrf_exempt
+@require_http_methods(["POST"])
+def generate_instructor_otp(request: HttpRequest) -> JsonResponse:
+    """Generate a one-time enrollment OTP for an instructor to share with trainees."""
+    try:
+        data = json.loads(request.body or b"{}")
+        instructor_id = data.get('instructor_id')
+        if not instructor_id:
+            return JsonResponse({'error': 'instructor_id required'}, status=400)
+
+        try:
+            instructor = OJTInstructor.objects.get(id=instructor_id)
+        except OJTInstructor.DoesNotExist:
+            return JsonResponse({'error': 'Instructor not found'}, status=404)
+
+        # Use OTPVerification model to create a 6-digit code tied to instructor email
+        otp = OTPVerification.create_otp(instructor.user.email)
+        # Extend expiry for enrollment OTP (30 minutes)
+        from django.utils import timezone
+        otp.expires_at = timezone.now() + timezone.timedelta(minutes=30)
+        otp.save()
+
+        return JsonResponse({'success': True, 'otp_code': otp.otp_code, 'expires_in_minutes': 30})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
 @require_http_methods(["GET"])
 def check_registration_status(request: HttpRequest) -> JsonResponse:
     """Check status of a registration request."""

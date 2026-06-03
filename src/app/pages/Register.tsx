@@ -654,6 +654,32 @@ export function Register() {
               Share QR Code
             </button>
             <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/security/auth/generate-instructor-otp/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ instructor_id: registeredInstructorId }),
+                  });
+                  if (!res.ok) throw new Error('Failed to generate OTP');
+                  const d = await res.json();
+                  if (d && d.otp_code) {
+                    // show simple alert with OTP and copy to clipboard
+                    await navigator.clipboard.writeText(d.otp_code);
+                    alert('Enrollment OTP generated and copied to clipboard: ' + d.otp_code);
+                  } else {
+                    throw new Error(d.error || 'No OTP returned');
+                  }
+                } catch (e: any) {
+                  console.error(e);
+                  alert('Could not generate OTP: ' + (e?.message || e));
+                }
+              }}
+              className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+            >
+              Generate Enrollment OTP
+            </button>
+            <button
               onClick={() => navigate('/login')}
               className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors"
             >
