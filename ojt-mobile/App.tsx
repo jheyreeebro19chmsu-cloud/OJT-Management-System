@@ -28,6 +28,7 @@ import DTRScreen from './screens/DTRScreen';
 import HTELinkScreen from './screens/HTELinkScreen';
 import InstructorTraineesScreen from './screens/InstructorTraineesScreen';
 import InstructorDashboard from './screens/InstructorDashboard';
+import { getSchoolLogo } from '../src/app/utils/schoolLogos';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
 
@@ -56,6 +57,7 @@ export default function App() {
   const [profile, setProfile] = useState<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [schoolLogo, setSchoolLogo] = useState<string | null>(null);
   const [view, setView] = useState<'login' | 'register'>('login');
   const [scanning, setScanning] = useState(false);
   const [scannedInstructorId, setScannedInstructorId] = useState<string | null>(null);
@@ -72,6 +74,36 @@ export default function App() {
   const [faceEnrollInProgress, setFaceEnrollInProgress] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+
+  // Watch for email changes and fetch school logo
+  useEffect(() => {
+    const fetchSchoolLogo = async () => {
+      if (!email) {
+        setSchoolLogo(null);
+        return;
+      }
+
+      try {
+        const { data } = await supabase
+          .from('employees')
+          .select('schoolName')
+          .ilike('email', email)
+          .maybeSingle();
+
+        if (data?.schoolName) {
+          const logo = getSchoolLogo(data.schoolName);
+          setSchoolLogo(logo);
+        } else {
+          setSchoolLogo(null);
+        }
+      } catch (err) {
+        console.debug('Failed to fetch school logo', err);
+        setSchoolLogo(null);
+      }
+    };
+
+    fetchSchoolLogo();
+  }, [email]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -486,6 +518,18 @@ export default function App() {
                 <Text style={styles.title}>OJT System</Text>
                 <Text style={styles.subtitle}>Mobile Connect</Text>
               </View>
+
+              {/* University Logo Display */}
+              {schoolLogo && (
+                <View style={styles.logoContainer}>
+                  <Image
+                    source={{ uri: schoolLogo }}
+                    style={styles.schoolLogo}
+                    resizeMode="contain"
+                  />
+                </View>
+              )}
+
               <View style={styles.loginCard}>
                 <Text style={styles.loginTitle}>Sign In</Text>
                 <View style={styles.inputGroup}>
@@ -554,6 +598,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748b',
     marginTop: 4,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 16,
+  },
+  schoolLogo: {
+    width: 64,
+    height: 64,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 8,
   },
   loginCard: {
     backgroundColor: '#fff',

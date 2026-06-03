@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
+import { getSchoolLogo } from '../utils/schoolLogos';
 
 
 export function Login() {
@@ -17,6 +18,7 @@ export function Login() {
   const [showForgot, setShowForgot] = useState(false);
   const { employees } = useApp();
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
+  const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +85,24 @@ export function Login() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-sm relative"
       >
+        {/* University Logo - Displayed when user enters email */}
+        {schoolLogo && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="flex justify-center mb-6"
+          >
+            <div className="bg-white rounded-2xl shadow-lg p-4 border border-blue-100/50 backdrop-blur-sm">
+              <img
+                src={schoolLogo}
+                alt={matchedEmployee?.schoolName}
+                className="h-16 w-16 object-contain"
+              />
+            </div>
+          </motion.div>
+        )}
+
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-xl mb-4">

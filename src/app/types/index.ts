@@ -14,6 +14,7 @@ export interface Employee {
   endDate: string;
   requiredHours: number;
   photo?: string;
+  schoolLogo?: string;
   faceRegistered: boolean;
   createdAt: string;
   active: boolean;
