@@ -35,8 +35,24 @@ export function AvatarEditor({ employeeId, onClose }: { employeeId: string; onCl
       toast.success('Avatar saved locally');
       onClose();
     } catch (err) {
-      console.error(err);
-      toast.error('Failed to upload avatar');
+      console.error('Avatar upload error:', err);
+      // Try to parse backend error message if present
+      let message = 'Failed to upload avatar';
+      try {
+        const e = err as any;
+        if (e && e.message) {
+          // server may return JSON body as text
+          try {
+            const parsed = JSON.parse(e.message);
+            message = parsed.message || parsed.error || parsed.detail || JSON.stringify(parsed);
+          } catch {
+            message = e.message;
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
+      toast.error(message);
     } finally {
       setUploading(false);
     }
