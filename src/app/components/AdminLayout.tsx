@@ -14,7 +14,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
@@ -38,6 +38,34 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState<number>(0);
+
+  const fetchPendingCount = useCallback(async () => {
+    try {
+      const instrId = employee?.id || (() => {
+        try {
+          const u = localStorage.getItem('user');
+          if (u) return JSON.parse(u).id;
+        } catch {}
+        return null;
+      })();
+      if (!instrId) return setPendingCount(0);
+      const res = await fetch(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${instrId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const count = Array.isArray(data.requests) ? data.requests.length : 0;
+      setPendingCount(count);
+    } catch (e) {
+      // silent
+    }
+  }, [employee]);
+
+  useEffect(() => {
+    // initial fetch and poll
+    void fetchPendingCount();
+    const id = setInterval(() => void fetchPendingCount(), 10000);
+    return () => clearInterval(id);
+  }, [fetchPendingCount]);
 
   const handleLogout = () => {
     logout();
@@ -83,6 +111,11 @@ export function AdminLayout() {
               {label === 'Announcements' && unreadAnn > 0 && (
                 <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
                   {unreadAnn}
+                </span>
+              )}
+              {label === 'Pending Requests' && pendingCount > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                  {pendingCount}
                 </span>
               )}
             </NavLink>
@@ -206,7 +239,11 @@ export function AdminLayout() {
                     title="Pending Requests"
                   >
                     <Bell size={18} />
-                    {/* Optionally render a badge for pending requests count in future */}
+                    {pendingCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                        {pendingCount}
+                      </span>
+                    )}
                   </button>
 
                   <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
