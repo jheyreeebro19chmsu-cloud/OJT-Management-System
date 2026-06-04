@@ -550,7 +550,43 @@ export function Register() {
     });
 
     if (!result.success) {
-      toast.error(result.message || 'Registration failed. Please check your inputs.');
+      const msg = result.message || '';
+      // If email already exists locally, update the existing record instead of blocking the user.
+      if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already in use')) {
+        const emailToFind = (form.email || form.username || '').toLowerCase();
+        const existing = employees.find((e) => e.email.toLowerCase() === emailToFind);
+        if (existing) {
+          // Update the existing employee with latest submitted data
+          updateEmployee(existing.id, {
+            name: form.name || existing.name,
+            firstName: form.firstName || existing.firstName,
+            lastName: form.lastName || existing.lastName,
+            middleInitial: form.middleInitial || existing.middleInitial,
+            email: form.email || existing.email,
+            department: form.department || existing.department,
+            position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
+            companyName: form.companyName || existing.companyName,
+            companyAddress: form.companyAddress || existing.companyAddress,
+            contactPerson: form.contactPerson || existing.contactPerson,
+            contactPhone: form.contactPhone || existing.contactPhone,
+            schoolName: form.schoolName || existing.schoolName,
+            course: form.course || existing.course,
+            startDate: form.startDate || existing.startDate,
+            endDate: form.endDate || existing.endDate,
+            requiredHours: Number(form.requiredHours) || existing.requiredHours,
+            registrationLocation: registrationLocation || existing.registrationLocation,
+            registrationAddress: computedAddress || existing.registrationAddress,
+            photo: photo || existing.photo,
+            faceRegistered: faceRegistered || existing.faceRegistered,
+            active: true,
+          });
+          toast.success('Updated existing account and completed registration. Please log in.');
+          navigate('/login');
+          return;
+        }
+      }
+
+      toast.error(msg || 'Registration failed. Please check your inputs.');
       return;
     }
 
