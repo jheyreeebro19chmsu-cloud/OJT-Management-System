@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { GeofenceMap } from '../components/GeofenceMap';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -120,6 +121,7 @@ export function Register() {
   const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number } | undefined>();
   const [registrationAddress, setRegistrationAddress] = useState<string>('');
   const [showLocationMap, setShowLocationMap] = useState(false);
+  const [pickingLocation, setPickingLocation] = useState(false);
 
   // Load complete lists using country-state-city
   const allCountries = Country.getAllCountries();
@@ -177,9 +179,20 @@ export function Register() {
     }
   };
 
+  // Allow user to begin adjusting the captured location
+  const startPickLocation = () => {
+    setPickingLocation(true);
+    setShowLocationMap(true);
+  };
+
   const update = (field: string, value: string | number) => {
     setForm((p) => {
       const newForm = { ...p, [field]: value };
+
+      // If user entered email and username is empty, auto-fill username with email
+      if (field === 'email' && typeof value === 'string' && (!newForm.username || newForm.username.trim() === '')) {
+        newForm.username = value;
+      }
 
       // Auto-calculate age if birthdate changes
       if (field === 'birthdate' && typeof value === 'string' && value) {
@@ -377,10 +390,21 @@ export function Register() {
             middle_initial: form.middle_initial || undefined,
             age: form.age ? Number(form.age) : undefined,
             address: composedAddress || undefined,
+            captured_image: photo || undefined,
           };
           const res = await authAPI.registerStudent(payload);
           if (res.data && (res.data as any).tokens) {
-            // No auto-login: don't store tokens
+            // Server-side registration succeeded — surface face_registration if present
+            const user = (res.data as any).user || {};
+            if (user.face_registration) {
+              setFaceRegistered(Boolean(user.face_registration.has_encoding));
+              if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
+            } else if (user.avatar) {
+              setPhoto(user.avatar);
+            }
+            toast.success('Registration successful! Please log in.');
+            navigate('/login');
+            return;
           }
         } else if (role === 'hte') {
           const payload = {
@@ -389,14 +413,33 @@ export function Register() {
             last_name: last_name,
             company_name: form.companyName,
             company_address: form.companyAddress,
+            contact_person: form.contactPerson,
+            contact_phone: form.contactPhone,
+            captured_image: photo || undefined,
           };
-          const res = await authAPI.registerHTE(payload);
+          // Temporary debug: include `_diag: true` so server echoes parsed payload for troubleshooting.
+          const res = await authAPI.registerHTE({ ...payload, _diag: true });
           if (res.data && (res.data as any).tokens) {
-            // No auto-login: don't store tokens
+            const user = (res.data as any).user || {};
+            if (user.face_registration) {
+              setFaceRegistered(Boolean(user.face_registration.has_encoding));
+              if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
+            } else if (user.avatar) {
+              setPhoto(user.avatar);
+            }
+            toast.success('Registration successful! Please log in.');
+            navigate('/login');
+            return;
+          } else if (res.data && (res.data as any).error) {
+            console.error('HTE register error:', res.data.error);
+            toast.error('Registration failed: ' + (res.data.error || 'Unknown server error'));
           }
         }
       } catch (err) {
-        // If server registration fails, fall back to local registration below
+          console.error('HTE register exception:', err);
+          const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
+          toast.error('Registration failed: ' + msg);
+          // If server registration fails, fall back to local registration below
       }
     }
 
@@ -415,11 +458,28 @@ export function Register() {
           contact_person: form.contactPerson,
           contact_phone: form.contactPhone,
         };
-        const res = await authAPI.registerHTE(payload);
+        // Temporary debug: include `_diag: true` so server echoes parsed payload for troubleshooting.
+        const res = await authAPI.registerHTE({ ...payload, captured_image: photo || undefined, _diag: true });
         if (res.data && (res.data as any).tokens) {
-          // No auto-login: don't store tokens
+          const user = (res.data as any).user || {};
+          if (user.face_registration) {
+            setFaceRegistered(Boolean(user.face_registration.has_encoding));
+            if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
+          } else if (user.avatar) {
+            setPhoto(user.avatar);
+          }
+          toast.success('Registration successful! Please log in.');
+          setOauthPending(false);
+          navigate('/login');
+          return;
+        } else if (res.data && (res.data as any).error) {
+          console.error('HTE register (oauthPending) error:', res.data.error);
+          toast.error('Registration failed: ' + (res.data.error || 'Unknown server error'));
         }
       } catch (err) {
+        console.error('HTE register (oauthPending) exception:', err);
+        const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
+        toast.error('Registration failed: ' + msg);
         // fallback: continue to local registration
       }
       setOauthPending(false);
@@ -579,13 +639,14 @@ export function Register() {
         if (!hasValidProvince) errors.push('Province');
         if (!hasValidCity) errors.push('City/Municipality');
         if (!hasValidBarangay) errors.push('Barangay');
-        if (locationStatus !== 'captured') errors.push('Company Location');
+        // Allow proceeding without captured location (some devices/browsers block geolocation)
       }
       if (step === 1) {
         if (!hasName) errors.push('Contact Name');
         if (!hasEmail) errors.push('Contact Email');
         if (hasEmail && emailExists) errors.push('Email already in use');
-        if (!form.username?.trim()) errors.push('Username');
+        // Username is optional for HTE; auto-filled from email when possible
+        // if (!form.username?.trim()) errors.push('Username');
         if (!form.contactPerson?.trim()) errors.push('Contact Person');
         if (!form.contactPhone?.trim()) errors.push('Contact Phone');
       }
@@ -1523,25 +1584,21 @@ export function Register() {
                                 exit={{ height: 0, opacity: 0 }}
                                 className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
                               >
-                                <MapContainer
-                                  key={
-                                    registrationLocation
-                                      ? `${registrationLocation.lat}-${registrationLocation.lng}`
-                                      : 'map'
-                                  }
-                                  center={[registrationLocation.lat, registrationLocation.lng]}
-                                  zoom={16}
-                                  style={{ height: '100%', width: '100%' }}
-                                  dragging={false}
-                                  doubleClickZoom={false}
-                                  scrollWheelZoom={false}
-                                  touchZoom={false}
-                                  zoomControl={false}
-                                  boxZoom={false}
-                                >
-                                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                  <Marker position={[registrationLocation.lat, registrationLocation.lng]} />
-                                </MapContainer>
+                                <div className="h-52">
+                                  <GeofenceMap
+                                    zones={[]}
+                                    picking={pickingLocation}
+                                    pickedCoords={registrationLocation}
+                                    onPick={(lat, lng) => {
+                                      setRegistrationLocation({ lat, lng });
+                                      setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                                      setLocationStatus('captured');
+                                      setPickingLocation(false);
+                                    }}
+                                    liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng } : null}
+                                    className="h-52"
+                                  />
+                                </div>
                                 <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
                               </motion.div>
                             )}
