@@ -1870,7 +1870,17 @@ export function Register() {
 
           {/* Navigation - Only show when role is selected */}
           {role !== null && (
-            <div className="mt-6">
+              <div className="mt-6">
+                {validationErrors.length > 0 && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded text-sm text-red-700">
+                    <strong className="block mb-1">Please fix the following before continuing:</strong>
+                    <ul className="list-disc list-inside">
+                      {validationErrors.map((e) => (
+                        <li key={e}>{e}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
               <div className="flex gap-3">
                 {step > 0 && (
