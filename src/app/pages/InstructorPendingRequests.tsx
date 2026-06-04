@@ -171,26 +171,29 @@ export default function InstructorPendingRequests({
   };
 
   const handleReject = async () => {
-    if (!selectedRequest) return;
-    setRejecting(selectedRequest.id);
-    try {
-      const res = await fetch('/api/security/auth/reject-trainee-registration/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: selectedRequest.id, reason: rejectReason }),
-      });
-      if (!res.ok) throw new Error('Rejection failed');
-      toast.success('Request rejected. Notification sent to trainee.');
-      setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
-      setShowRejectModal(false);
-      setRejectReason('');
-      setSelectedRequest(null);
-    } catch (error: any) {
-      toast.error(error?.message || 'Failed to reject request');
-    } finally {
-      setRejecting(null);
-    }
-  };
+  if (!selectedRequest) return;
+  setRejecting(selectedRequest.id);
+  try {
+    const res = await fetch('/api/security/auth/reject-trainee-registration/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: selectedRequest.id, reason: rejectReason }),
+    });
+    if (!res.ok) throw new Error('Rejection failed');
+    const successMessage = rejectReason && rejectReason.trim()
+      ? `Request rejected. Reason: ${rejectReason}`
+      : 'Request rejected. Notification sent to trainee.';
+    toast.success(successMessage);
+    setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
+    setShowRejectModal(false);
+    setRejectReason('');
+    setSelectedRequest(null);
+  } catch (error: any) {
+    toast.error(error?.message || 'Failed to reject request');
+  } finally {
+    setRejecting(null);
+  }
+};
 
   // ── Render ─────────────────────────────────────────────────────────────────
 

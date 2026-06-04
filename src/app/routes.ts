@@ -104,7 +104,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/app',
-    Component: EmployeeLayout,
+    element: <EmployeeLayout />,
     errorElement: routeErrorElement,
     children: [
       { index: true, element: withSuspense(Dashboard) },

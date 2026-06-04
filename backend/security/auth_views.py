@@ -260,10 +260,17 @@ def register_hte(request: HttpRequest) -> JsonResponse:
         if not email or User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Invalid or duplicate email'}, status=400)
         with transaction.atomic():
-            # Use a secure random string generator for password instead of relying on UserManager
-            from django.utils.crypto import get_random_string
-            random_password = get_random_string(12)
-            user = User.objects.create_user(username=email, email=email, password=random_password, first_name=data.get('first_name', ''), last_name=data.get('last_name', ''))
+            # Use password from request if provided, otherwise generate a secure random password
+            password = data.get('password', '').strip()
+            if password:
+                if len(password) < 8:
+                    return JsonResponse({'error': 'Password must be at least 8 characters'}, status=400)
+                user_password = password
+            else:
+                # Fallback to random password generation
+                from django.utils.crypto import get_random_string
+                user_password = get_random_string(12)
+            user = User.objects.create_user(username=email, email=email, password=user_password, first_name=data.get('first_name', ''), last_name=data.get('last_name', ''))
             UserRole.objects.create(user=user, role='hte', is_verified=True)
             HTE.objects.create(
                 user=user,

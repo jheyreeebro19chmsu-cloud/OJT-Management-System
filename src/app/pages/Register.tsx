@@ -470,21 +470,31 @@ export function Register() {
     }
 
     // ── Standard Supabase registration path ──────────────────────────────────
-    // Validate required fields before calling registerEmployee
-    if (role === 'admin' || role === 'trainee') {
+    // Validate required fields before proceeding
+    if (role === 'admin' || role === 'trainee' || role === 'hte') {
       if (!form.email || !form.password) {
         setSubmitError('Email and password are required');
         setIsSubmitting(false);
         return;
       }
-    } else if (role === 'hte') {
+    }
+    // Trainee: send pending registration request to instructor
+    if (role === 'trainee') {
+      // Use existing helper to request OTP registration (creates pending request)
+      await handleRequestOtpInstructor();
+      // After request is sent, stop further processing; UI will indicate pending status via otpRequested state
+      setIsSubmitting(false);
+      return;
+    }
+    // HTE flow (existing logic remains unchanged)
+    if (role === 'hte') {
       if (!form.email && !form.username) {
         setSubmitError('Email or username is required');
         setIsSubmitting(false);
         return;
       }
     }
-
+    // Proceed with standard employee registration for admin and other roles
     const buildAddrFromForm = () => {
       const parts = [] as string[];
       if (form.barangay === 'other' && form.barangayManual) {

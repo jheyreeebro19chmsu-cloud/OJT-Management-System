@@ -73,11 +73,15 @@ export interface OTPResponse {
 export const authAPI = {
   // OTP
   requestOTP: (email: string, fullName: string) => {
-    // If API_BASE is disabled (external production host), do not perform the request.
     if (!API_BASE) {
       return Promise.resolve({ success: true, message: 'OTP disabled in frontend build' } as OTPResponse);
     }
     return api.post<OTPResponse>('/auth/request-otp/', { email, full_name: fullName });
+  },
+  // New: Trainee OTP registration request (pending workflow)
+  requestTraineeOTPRegistration: (payload: any) => {
+    // Payload includes instructor_id and trainee info
+    return api.post<any>('/auth/request-trainee-otp-registration/', payload);
   },
 
   verifyOTP: (email: string, otpCode: string) =>
@@ -111,6 +115,7 @@ export const authAPI = {
   // HTE Registration
   registerHTE: (data: {
     email: string;
+    password?: string;
     first_name: string;
     last_name: string;
     company_name: string;
