@@ -20,6 +20,12 @@ export interface Employee {
   active: boolean;
   registrationLocation?: { lat: number; lng: number };
   registrationAddress?: string;
+  firstName?: string;
+  lastName?: string;
+  middleInitial?: string;
+  companyAddress?: string;
+  contactPerson?: string;
+  contactPhone?: string;
 }
 
 export interface TimeRecord {

@@ -298,6 +298,7 @@ interface AppContextType {
   deleteHostFeedback: (id: string) => void;
   getEmployeeHostFeedback: (employeeId: string) => HostFeedback[];
   getLatestHostFeedback: (employeeId: string) => HostFeedback | null;
+  setPasswordForEmail: (email: string, password: string) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -849,11 +850,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
               }
             }
           });
-          
+
           if (authError) {
-            return { success: false, message: authError.message };
+            console.warn('Supabase signUp failed, falling back to local create:', authError);
+            // Local fallback: persist password and create the employee locally so the user can sign up immediately
+            setPasswordForEmail(cleanData.email, password);
+            setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
+            return {
+              success: true,
+              message: 'Created locally; Supabase signup failed: ' + (authError.message || String(authError)),
+              employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false },
+            } as any;
           }
-          if (authData.user) {
+
+          if (authData?.user) {
             authId = authData.user.id;
           }
         }
@@ -1306,6 +1316,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteHostFeedback,
         getEmployeeHostFeedback,
         getLatestHostFeedback,
+        // Expose password helper so UI can set passwords when updating existing accounts
+        setPasswordForEmail,
       }}
     >
       {children}

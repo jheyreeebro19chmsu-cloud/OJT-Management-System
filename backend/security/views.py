@@ -115,7 +115,8 @@ def send_email(request: HttpRequest) -> JsonResponse:
         r = resend.Emails.send(params)
         return JsonResponse({"success": True, "data": r})
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+        logger.exception("Email send failed: %s", e)
+        return JsonResponse({"error": "Failed to send email. Please try again later."}, status=500)
 
 
 @csrf_exempt
@@ -174,9 +175,39 @@ def check_geofence(request: HttpRequest) -> JsonResponse:
             "accuracy_m": accuracy,
             "geofence_advisory": True,
             "advisory_note": "Server recomputed distance from reported coordinates; GPS can be inaccurate or spoofed.",
-            def debug_list_face_registrations(request: HttpRequest) -> JsonResponse:
         }
     )
+
+
+@csrf_exempt
+@require_security_api_key
+def debug_list_face_registrations(request: HttpRequest) -> JsonResponse:
+    """DEBUG ONLY: return recent face registrations for troubleshooting.
+
+    This endpoint is protected by the security API key decorator but is intended
+    for administrators to inspect saved face registration records during
+    development and debugging. It accepts optional `limit` GET parameter.
+    """
+    try:
+        limit = int(request.GET.get("limit", "50"))
+    except Exception:
+        limit = 50
+
+    try:
+        regs = FaceRegistration.objects.order_by("-created_at")[:limit]
+        data = []
+        for r in regs:
+            data.append({
+                "id": r.id,
+                "employee_id": r.employee_id,
+                "has_image": bool(r.image),
+                "has_encoding": bool(r.face_encoding),
+                "created_at": getattr(r, "created_at", None).isoformat() if getattr(r, "created_at", None) else None,
+            })
+        return JsonResponse({"success": True, "registrations": data})
+    except Exception as e:
+        logger.exception("debug_list_face_registrations failed: %s", e)
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 @csrf_exempt

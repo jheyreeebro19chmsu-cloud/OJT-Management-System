@@ -1,25 +1,39 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
-import iconUrl from 'leaflet/dist/images/marker-icon.png';
-import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
-// Fix default marker icons for many bundlers
-try {
-  delete (L.Icon.Default as any).prototype._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl,
-    iconUrl,
-    shadowUrl,
-  });
-} catch {
-  // ignore in environments where static asset imports aren't available
-}
-import { CheckCircle, XCircle, Clock, Mail, Building, User, MapPin, Book, Loader, Eye, EyeOff } from 'lucide-react';
+// Fix default marker icons — use CDN to avoid bundler asset-import issues
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png',
+});
+
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
+  Mail,
+  Building,
+  User,
+  Book,
+  Loader,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Zone {
+  name?: string;
+  lat?: number | string;
+  lng?: number | string;
+  radius?: number | string;
+}
 
 interface PendingRequest {
   id: string;
@@ -33,87 +47,109 @@ interface PendingRequest {
   school_name?: string;
   avatar_url?: string | null;
   face_registered?: boolean;
+  // location fields returned by the backend
+  gps_latitude?: number | string | null;
+  gps_longitude?: number | string | null;
+  company_address?: string | null;
+  // zone metadata injected by the backend
+  zone?: Zone | null;
 }
 
 interface InstructorPendingRequestsProps {
   instructorId?: string | null;
 }
 
-export default function InstructorPendingRequests({ instructorId: propInstructorId }: InstructorPendingRequestsProps) {
-  // Resolve instructor id from prop or from local storage/app context
-  let resolvedInstructorId = propInstructorId || null;
-  if (!resolvedInstructorId) {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function haversineDistance(
+  lat1: number | string | undefined,
+  lon1: number | string | undefined,
+  lat2: number | string | undefined,
+  lon2: number | string | undefined,
+): number {
+  try {
+    const toNum = (v: unknown) => (v === null || v === undefined ? NaN : Number(v));
+    const R = 6371000;
+    const phi1 = (toNum(lat1) * Math.PI) / 180;
+    const phi2 = (toNum(lat2) * Math.PI) / 180;
+    const dPhi = ((toNum(lat2) - toNum(lat1)) * Math.PI) / 180;
+    const dLambda = ((toNum(lon2) - toNum(lon1)) * Math.PI) / 180;
+    const a =
+      Math.sin(dPhi / 2) * Math.sin(dPhi / 2) +
+      Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) * Math.sin(dLambda / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+    return isFinite(d) ? d : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function InstructorPendingRequests({
+  instructorId: propInstructorId,
+}: InstructorPendingRequestsProps) {
+  // Resolve instructor id once — prop takes priority, then localStorage
+  // useMemo keeps this stable across renders without re-reading storage every time
+  const resolvedInstructorId = useMemo<string | null>(() => {
+    if (propInstructorId) return propInstructorId;
     try {
-      const u = localStorage.getItem('user');
-      if (u) {
-        const parsed = JSON.parse(u as string);
-        // If the logged-in user is an instructor, their id should be here
-        if (parsed && parsed.id) resolvedInstructorId = String(parsed.id);
+      const raw = localStorage.getItem('user');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.id) return String(parsed.id);
       }
     } catch {
-      resolvedInstructorId = null;
+      // ignore parse errors
     }
-  }
+    return null;
+  }, [propInstructorId]);
+
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
-  const [showOTP, setShowOTP] = useState<{ [key: string]: boolean }>({});
+  const [showOTP, setShowOTP] = useState<Record<string, boolean>>({});
   const [selectedRequest, setSelectedRequest] = useState<PendingRequest | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoModalUrl, setPhotoModalUrl] = useState<string | null>(null);
-  // zone info is now provided by backend within each pending request (request.zone)
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
 
-  // Helper: Haversine distance (meters)
-  function haversineDistance(lat1: number | string | undefined, lon1: number | string | undefined, lat2: number | string | undefined, lon2: number | string | undefined) {
-    try {
-      const toNum = (v: any) => (v === null || v === undefined ? NaN : Number(v));
-      const R = 6371000; // meters
-      const phi1 = (toNum(lat1) * Math.PI) / 180;
-      const phi2 = (toNum(lat2) * Math.PI) / 180;
-      const dPhi = ((toNum(lat2) - toNum(lat1)) * Math.PI) / 180;
-      const dLambda = ((toNum(lon2) - toNum(lon1)) * Math.PI) / 180;
-      const a = Math.sin(dPhi / 2) * Math.sin(dPhi / 2) + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) * Math.sin(dLambda / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const d = R * c;
-      if (!isFinite(d)) return NaN;
-      return d;
-    } catch (e) {
-      return NaN;
-    }
-  }
+  // ── Fetch ──────────────────────────────────────────────────────────────────
 
   const fetchPendingRequests = useCallback(async () => {
-    if (!resolvedInstructorId) return setLoading(false);
+    if (!resolvedInstructorId) {
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(
-        `/api/security/auth/get-pending-trainee-requests/?instructor_id=${resolvedInstructorId}`
+        `/api/security/auth/get-pending-trainee-requests/?instructor_id=${resolvedInstructorId}`,
       );
       if (!res.ok) throw new Error('Failed to fetch requests');
-
       const data = await res.json();
-      setRequests(data.requests || []);
+      setRequests(data.requests ?? []);
     } catch (error: unknown) {
       console.error('Fetch error:', error);
       toast.error('Failed to load pending requests');
     } finally {
       setLoading(false);
     }
-  }, [instructorId]);
+  }, [resolvedInstructorId]); // ← was [instructorId] — that variable doesn't exist, causing the crash
 
   useEffect(() => {
-    // defer initial fetch to avoid synchronous setState inside effect
     const t = setTimeout(() => void fetchPendingRequests(), 0);
-    // Refresh every 10 seconds
     const interval = setInterval(() => void fetchPendingRequests(), 10000);
     return () => {
       clearTimeout(t);
       clearInterval(interval);
     };
   }, [fetchPendingRequests]);
+
+  // ── Actions ────────────────────────────────────────────────────────────────
 
   const handleApprove = async (requestId: string) => {
     setApproving(requestId);
@@ -123,16 +159,12 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ request_id: requestId }),
       });
-
       if (!res.ok) throw new Error('Approval failed');
-
       const data = await res.json();
       toast.success(`OTP approved! Code: ${data.otp_code}`);
-      
-      // Remove from pending list
-      setRequests(requests.filter((r) => r.id !== requestId));
+      setRequests((prev) => prev.filter((r) => r.id !== requestId));
     } catch (error: any) {
-      toast.error(error.message || 'Failed to approve request');
+      toast.error(error?.message || 'Failed to approve request');
     } finally {
       setApproving(null);
     }
@@ -140,31 +172,27 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
 
   const handleReject = async () => {
     if (!selectedRequest) return;
-
     setRejecting(selectedRequest.id);
     try {
       const res = await fetch('/api/security/auth/reject-trainee-registration/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          request_id: selectedRequest.id,
-          reason: rejectReason,
-        }),
+        body: JSON.stringify({ request_id: selectedRequest.id, reason: rejectReason }),
       });
-
       if (!res.ok) throw new Error('Rejection failed');
-
       toast.success('Request rejected. Notification sent to trainee.');
-      setRequests(requests.filter((r) => r.id !== selectedRequest.id));
+      setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
       setShowRejectModal(false);
       setRejectReason('');
       setSelectedRequest(null);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to reject request');
+      toast.error(error?.message || 'Failed to reject request');
     } finally {
       setRejecting(null);
     }
   };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -222,12 +250,16 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
                           {request.avatar_url ? (
                             <button
                               onClick={() => {
-                                setPhotoModalUrl(request.avatar_url || null);
+                                setPhotoModalUrl(request.avatar_url ?? null);
                                 setShowPhotoModal(true);
                               }}
                               className="w-10 h-10 rounded-full overflow-hidden border"
                             >
-                              <img src={request.avatar_url || ''} alt={`${request.full_name} avatar`} className="w-full h-full object-cover" />
+                              <img
+                                src={request.avatar_url}
+                                alt={`${request.full_name} avatar`}
+                                className="w-full h-full object-cover"
+                              />
                             </button>
                           ) : (
                             <User className="w-6 h-6 text-blue-500" />
@@ -252,20 +284,25 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
                       </div>
 
                       <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase">Requested</label>
+                        <label className="text-xs font-semibold text-gray-500 uppercase">
+                          Requested
+                        </label>
                         <p className="text-sm text-gray-700 mt-1">
-                          {new Date(request.requested_at).toLocaleDateString()} {new Date(request.requested_at).toLocaleTimeString()}
+                          {new Date(request.requested_at).toLocaleDateString()}{' '}
+                          {new Date(request.requested_at).toLocaleTimeString()}
                         </p>
                       </div>
                     </div>
 
-                    {/* Middle: Company/School Info */}
+                    {/* Middle: Company / School Info */}
                     <div className="space-y-3">
                       {request.role === 'trainee' && (
                         <>
                           {request.school_name && (
                             <div>
-                              <label className="text-xs font-semibold text-gray-500 uppercase">School</label>
+                              <label className="text-xs font-semibold text-gray-500 uppercase">
+                                School
+                              </label>
                               <div className="flex items-center gap-2 mt-1">
                                 <Building className="w-4 h-4 text-green-500" />
                                 <p className="text-sm text-gray-700">{request.school_name}</p>
@@ -274,7 +311,9 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
                           )}
                           {request.course && (
                             <div>
-                              <label className="text-xs font-semibold text-gray-500 uppercase">Course</label>
+                              <label className="text-xs font-semibold text-gray-500 uppercase">
+                                Course
+                              </label>
                               <div className="flex items-center gap-2 mt-1">
                                 <Book className="w-4 h-4 text-purple-500" />
                                 <p className="text-sm text-gray-700">{request.course}</p>
@@ -286,26 +325,33 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
 
                       {request.company_name && (
                         <div>
-                          <label className="text-xs font-semibold text-gray-500 uppercase">Company</label>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Building className="w-4 h-4 text-green-500" />
-                            <p className="text-sm text-gray-700">{request.company_name}</p>
-                            {request.gps_latitude && request.gps_longitude && (
-                              <div className="flex items-center gap-2">
-                                <p className="text-xs text-gray-500">{request.gps_latitude.toFixed ? `${request.gps_latitude.toFixed(5)}, ${request.gps_longitude.toFixed(5)}` : `${request.gps_latitude}, ${request.gps_longitude}`}</p>
+                          <label className="text-xs font-semibold text-gray-500 uppercase">
+                            Company
+                          </label>
+                          <div className="flex flex-col gap-1 mt-1">
+                            <div className="flex items-center gap-2">
+                              <Building className="w-4 h-4 text-green-500 shrink-0" />
+                              <p className="text-sm text-gray-700">{request.company_name}</p>
+                            </div>
+                            {request.gps_latitude != null && request.gps_longitude != null && (
+                              <div className="flex items-center gap-2 ml-6">
+                                <p className="text-xs text-gray-500">
+                                  {Number(request.gps_latitude).toFixed(5)},{' '}
+                                  {Number(request.gps_longitude).toFixed(5)}
+                                </p>
                                 <button
                                   onClick={() => {
                                     setSelectedRequest(request);
                                     setShowMapModal(true);
                                   }}
-                                  className="text-xs text-blue-600 underline ml-2"
+                                  className="text-xs text-blue-600 underline"
                                 >
                                   View on map
                                 </button>
                               </div>
                             )}
                             {request.company_address && (
-                              <p className="text-xs text-gray-500 ml-3">{request.company_address}</p>
+                              <p className="text-xs text-gray-500 ml-6">{request.company_address}</p>
                             )}
                           </div>
                         </div>
@@ -315,23 +361,22 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
                     {/* Right: OTP Display */}
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 flex flex-col justify-center items-center space-y-3">
                       <div className="text-center">
-                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-2">OTP Code</label>
-                        <div className="relative">
+                        <label className="text-xs font-semibold text-gray-500 uppercase block mb-2">
+                          OTP Code
+                        </label>
+                        <div className="relative flex items-center gap-2">
                           <div
-                            className={`font-mono text-2xl font-bold tracking-widest ${
+                            className={`font-mono text-2xl font-bold tracking-widest select-none ${
                               showOTP[request.id] ? 'text-blue-600' : 'text-transparent'
-                            } select-none`}
+                            }`}
                           >
                             {showOTP[request.id] ? request.otp_code : '••••••'}
                           </div>
                           <button
                             onClick={() =>
-                              setShowOTP((prev) => ({
-                                ...prev,
-                                [request.id]: !prev[request.id],
-                              }))
+                              setShowOTP((prev) => ({ ...prev, [request.id]: !prev[request.id] }))
                             }
-                            className="absolute right-0 top-0 text-gray-500 hover:text-gray-700"
+                            className="text-gray-500 hover:text-gray-700"
                           >
                             {showOTP[request.id] ? (
                               <EyeOff className="w-5 h-5" />
@@ -393,7 +438,7 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
         </div>
       </div>
 
-      {/* Reject Modal */}
+      {/* ── Reject Modal ───────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showRejectModal && (
           <motion.div
@@ -410,7 +455,8 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
             >
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Reject Request</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Are you sure you want to reject {selectedRequest?.full_name}&apos;s registration request?
+                Are you sure you want to reject {selectedRequest?.full_name}&apos;s registration
+                request?
               </p>
 
               <textarea
@@ -445,72 +491,95 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
         )}
       </AnimatePresence>
 
-  {/* Map Modal (zone metadata is included in each request as `zone` by the server) */}
+      {/* ── Map Modal ──────────────────────────────────────────────────────── */}
       <AnimatePresence>
-        {showMapModal && selectedRequest && selectedRequest.gps_latitude && selectedRequest.gps_longitude && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-          >
+        {showMapModal &&
+          selectedRequest &&
+          selectedRequest.gps_latitude != null &&
+          selectedRequest.gps_longitude != null && (
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
             >
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h3 className="text-lg font-semibold">Trainee Location</h3>
-                  {selectedRequest?.zone?.name ? (
-                    <div className="text-sm text-gray-600">
-                      {selectedRequest.zone.name} · {
-                        (() => {
-                          const d = haversineDistance(selectedRequest.gps_latitude, selectedRequest.gps_longitude, selectedRequest.zone.lat, selectedRequest.zone.lng);
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className="text-lg font-semibold">Trainee Location</h3>
+                    {selectedRequest.zone?.name && (
+                      <div className="text-sm text-gray-600">
+                        {selectedRequest.zone.name}
+                        {' · '}
+                        {(() => {
+                          const d = haversineDistance(
+                            selectedRequest.gps_latitude,
+                            selectedRequest.gps_longitude,
+                            selectedRequest.zone?.lat,
+                            selectedRequest.zone?.lng,
+                          );
                           if (isNaN(d)) return 'distance unknown';
-                          if (d >= 1000) return `${(d / 1000).toFixed(2)} km from zone center`;
-                          return `${Math.round(d)} m from zone center`;
-                        })()
-                      }
-                    </div>
-                  ) : null}
+                          return d >= 1000
+                            ? `${(d / 1000).toFixed(2)} km from zone center`
+                            : `${Math.round(d)} m from zone center`;
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="text-sm text-blue-600"
+                    onClick={() => setShowMapModal(false)}
+                  >
+                    Close
+                  </button>
                 </div>
-                <button className="text-sm text-blue-600" onClick={() => setShowMapModal(false)}>Close</button>
-              </div>
-              <div style={{ height: 480, width: '100%' }}>
-                <MapContainer
-                  center={[Number(selectedRequest.gps_latitude), Number(selectedRequest.gps_longitude)]}
-                  zoom={16}
-                  style={{ height: '100%', width: '100%' }}
-                >
-                  <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
-                  <Marker position={[Number(selectedRequest.gps_latitude), Number(selectedRequest.gps_longitude)]}>
-                    <Popup>
-                      {selectedRequest.full_name}<br />{selectedRequest.company_name}
-                    </Popup>
-                  </Marker>
-                  {/* geofence circle: use server-provided zone radius when available */}
-                  {/* Use zone provided by backend when available, otherwise fallback to 100m at reported coords */}
-                  <Circle
+
+                <div style={{ height: 480, width: '100%' }}>
+                  <MapContainer
                     center={[
-                      Number(selectedRequest.zone?.lat ?? selectedRequest.gps_latitude),
-                      Number(selectedRequest.zone?.lng ?? selectedRequest.gps_longitude),
+                      Number(selectedRequest.gps_latitude),
+                      Number(selectedRequest.gps_longitude),
                     ]}
-                    radius={Number(selectedRequest.zone?.radius ?? 100)}
-                    pathOptions={{ color: '#16a34a', fillOpacity: 0.1 }}
-                  />
-                </MapContainer>
-              </div>
+                    zoom={16}
+                    style={{ height: '100%', width: '100%' }}
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <Marker
+                      position={[
+                        Number(selectedRequest.gps_latitude),
+                        Number(selectedRequest.gps_longitude),
+                      ]}
+                    >
+                      <Popup>
+                        {selectedRequest.full_name}
+                        <br />
+                        {selectedRequest.company_name}
+                      </Popup>
+                    </Marker>
+                    <Circle
+                      center={[
+                        Number(selectedRequest.zone?.lat ?? selectedRequest.gps_latitude),
+                        Number(selectedRequest.zone?.lng ?? selectedRequest.gps_longitude),
+                      ]}
+                      radius={Number(selectedRequest.zone?.radius ?? 100)}
+                      pathOptions={{ color: '#16a34a', fillOpacity: 0.1 }}
+                    />
+                  </MapContainer>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          )}
       </AnimatePresence>
 
-      {/* Photo Modal */}
+      {/* ── Photo Modal ────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showPhotoModal && photoModalUrl && (
           <motion.div
@@ -529,10 +598,19 @@ export default function InstructorPendingRequests({ instructorId: propInstructor
             >
               <div className="flex justify-between items-start mb-2">
                 <h3 className="text-lg font-semibold">Trainee Photo</h3>
-                <button className="text-sm text-blue-600" onClick={() => setShowPhotoModal(false)}>Close</button>
+                <button
+                  className="text-sm text-blue-600"
+                  onClick={() => setShowPhotoModal(false)}
+                >
+                  Close
+                </button>
               </div>
               <div className="w-full h-[60vh] flex items-center justify-center">
-                <img src={photoModalUrl} alt="Trainee photo" className="max-h-full max-w-full object-contain" />
+                <img
+                  src={photoModalUrl}
+                  alt="Trainee photo"
+                  className="max-h-full max-w-full object-contain"
+                />
               </div>
             </motion.div>
           </motion.div>

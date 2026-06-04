@@ -1,25 +1,86 @@
-# Node dependencies
+# =========================
+# Node / React / Vite
+# =========================
 node_modules/
-
-# Build folders
 dist/
 build/
+.vite/
+coverage/
 
-# Environment variables
+# =========================
+# Environment Variables
+# =========================
 .env
 .env.local
-.env.*.local
+.env.development.local
+.env.production.local
+.env.test.local
 
-# Python cache
+# =========================
+# Python / Django
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
-# Django media
-backend/media/
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
 
+# Django
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+
+# Django migrations (optional)
+# */migrations/*
+# !*/migrations/__init__.py
+
+# =========================
 # Logs
+# =========================
 *.log
+logs/
 
-# System files
+# =========================
+# IDEs
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS Files
+# =========================
 .DS_Store
 Thumbs.db
+
+# =========================
+# Testing
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Supabase
+# =========================
+.supabase/
+supabase/.temp/
+
+# Supabase local env
+supabase/.env
+
+# =========================
+# TypeScript
+# =========================
+*.tsbuildinfo
+
+# =========================
+# Misc
+# =========================
+.cache/
+.tmp/
+temp/

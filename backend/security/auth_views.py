@@ -914,14 +914,14 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
             except Exception:
                 # If FaceRegistration model not present or error occurs, continue without failing registration
                 logging.exception('Error while promoting avatar to face registration')
-        
-        # Send confirmation email
-        send_confirmation_email(otp_request.email, otp_request.full_name)
-    
+        return JsonResponse({'success': True, 'message': 'Registration completed. Please log in.'})
+    except Exception as e:
+        logging.exception('Error completing trainee registration: %s', e)
+        return JsonResponse({'error': str(e)}, status=500)
 
-    @csrf_exempt
-    @require_http_methods(["POST"]) 
-    def server_create_employee(request: HttpRequest) -> JsonResponse:
+@csrf_exempt
+@require_http_methods(["POST"])
+def server_create_employee(request: HttpRequest) -> JsonResponse:
         """Server-side Supabase insert using the Service Role Key to bypass RLS.
 
         POST JSON body should include the employee fields (name, email, employee_id, department,
@@ -1001,44 +1001,6 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
             logging.exception('server_create_employee error')
             return JsonResponse({'error': str(e)}, status=500)
         
-        # Return login credentials
-        refresh = RefreshToken.for_user(user)
-        # Determine avatar URL to return (prefer FaceRegistration.image if available)
-        avatar_url = None
-        try:
-            from .models import FaceRegistration
-            fr = FaceRegistration.objects.filter(user=user).first()
-            if fr and fr.image:
-                avatar_url = fr.image.url
-        except Exception:
-            pass
-        if not avatar_url:
-            try:
-                avatar_url = otp_request.avatar_url or (otp_request.avatar.url if otp_request.avatar else None)
-            except Exception:
-                avatar_url = None
-
-        return JsonResponse({
-            'success': True,
-            'message': 'Registration completed successfully!',
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token)
-            },
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'name': user.get_full_name(),
-                'role': otp_request.role,
-                'avatar': avatar_url,
-                'company': otp_request.company_name
-            }
-        }, status=201)
-    
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_instructor_by_email(request: HttpRequest) -> JsonResponse:

@@ -126,10 +126,12 @@ export function Register() {
 
   // Registration location state
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
-  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number } | undefined>();
+  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>();
   const [registrationAddress, setRegistrationAddress] = useState<string>('');
   const [showLocationMap, setShowLocationMap] = useState(false);
   const [pickingLocation, setPickingLocation] = useState(false);
+  const watchIdRef = React.useRef<number | null>(null);
+  const [liveTracking, setLiveTracking] = useState(false);
 
   // Load complete lists using country-state-city
   const allCountries = Country.getAllCountries();
@@ -181,13 +183,55 @@ export function Register() {
     try {
       const position = await getCurrentLocation();
       const { latitude, longitude } = position.coords;
-      setRegistrationLocation({ lat: latitude, lng: longitude });
+      setRegistrationLocation({ lat: latitude, lng: longitude, accuracy: position.coords.accuracy });
       setLocationStatus('captured');
     } catch (err: unknown) {
       const isDenied = isGeolocationPositionError(err) && err.code === 1;
       setLocationStatus(isDenied ? 'denied' : 'error');
     }
   };
+
+  const startLiveTracking = () => {
+    if (!('geolocation' in navigator)) {
+      toast.error('Geolocation not supported');
+      return;
+    }
+    if (watchIdRef.current !== null) return;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setRegistrationLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setLocationStatus('captured');
+      },
+      (err) => {
+        console.error('watchPosition error', err);
+        const isDenied = isGeolocationPositionError(err) && err.code === 1;
+        setLocationStatus(isDenied ? 'denied' : 'error');
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+    watchIdRef.current = id as unknown as number;
+    setLiveTracking(true);
+    toast.success('Live location tracking started');
+  };
+
+  const stopLiveTracking = () => {
+    if (watchIdRef.current !== null && 'geolocation' in navigator) {
+      navigator.geolocation.clearWatch(watchIdRef.current as number);
+      watchIdRef.current = null;
+    }
+    setLiveTracking(false);
+    toast('Live tracking stopped');
+  };
+
+  useEffect(() => {
+    return () => {
+      // cleanup watcher
+      if (watchIdRef.current !== null && 'geolocation' in navigator) {
+        navigator.geolocation.clearWatch(watchIdRef.current as number);
+        watchIdRef.current = null;
+      }
+    };
+  }, []);
 
   // Allow user to begin adjusting the captured location
   const startPickLocation = () => {
@@ -1629,10 +1673,37 @@ export function Register() {
                                       setLocationStatus('captured');
                                       setPickingLocation(false);
                                     }}
-                                    liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng } : null}
+                                    liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
                                     className="h-52"
                                   />
                                 </div>
+
+                                <div className="absolute top-3 right-3 z-[1100] pointer-events-auto flex items-center gap-2">
+                                  {!liveTracking ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => startLiveTracking()}
+                                      className="px-3 py-1.5 bg-white border border-gray-200 text-sky-700 text-xs font-bold rounded-lg hover:bg-sky-50 transition-colors"
+                                    >
+                                      Start Live
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => stopLiveTracking()}
+                                      className="px-3 py-1.5 bg-white border border-red-200 text-red-700 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors"
+                                    >
+                                      Stop Live
+                                    </button>
+                                  )}
+                                  <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-sky-100">
+                                    <span className="font-semibold text-sky-700">{liveTracking ? 'Live' : 'Idle'}</span>
+                                    {registrationLocation && (
+                                      <span className="text-gray-500 ml-2">{registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}</span>
+                                    )}
+                                  </div>
+                                </div>
+
                                 <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
                               </motion.div>
                             )}
@@ -1905,17 +1976,17 @@ export function Register() {
 
           {/* Navigation - Only show when role is selected */}
           {role !== null && (
-              <div className="mt-6">
-                {validationErrors.length > 0 && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded text-sm text-red-700">
-                    <strong className="block mb-1">Please fix the following before continuing:</strong>
-                    <ul className="list-disc list-inside">
-                      {validationErrors.map((e) => (
-                        <li key={e}>{e}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+            <div className="mt-6">
+              {validationErrors.length > 0 && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded text-sm text-red-700">
+                  <strong className="block mb-1">Please fix the following before continuing:</strong>
+                  <ul className="list-disc list-inside">
+                    {validationErrors.map((e) => (
+                      <li key={e}>{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="flex gap-3">
                 {step > 0 && (

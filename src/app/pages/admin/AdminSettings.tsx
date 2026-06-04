@@ -21,7 +21,7 @@ import { fetchSecurityHealth, isSecurityApiConfigured, type SecurityHealthRespon
 import { useApp } from '../../store/AppContext';
 
 export function AdminSettings() {
-  const { settings, updateSettings, changeCurrentUserPassword } = useApp();
+  const { settings, updateSettings, changeCurrentUserPassword, currentUser } = useApp();
   const [form, setForm] = useState(settings);
   const supabaseConnected = isSupabaseConfigured();
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
@@ -227,16 +227,11 @@ export function AdminSettings() {
     }
   };
 
-  useEffect(() => {
-    refreshPersistedList();
-     
-  }, []);
-
-  const fetchOtps = async () => {
-    if (!settings || !settings.currentInstructorId) return;
+  async function fetchOtps() {
+    if (!currentUser?.id) return;
     setLoadingOtps(true);
     try {
-      const res = await fetch(`/api/security/auth/list-instructor-otps/?instructor_id=${settings.currentInstructorId}`);
+      const res = await fetch(`/api/security/auth/list-instructor-otps/?instructor_id=${currentUser.id}`);
       if (!res.ok) throw new Error('Failed to load OTPs');
       const d = await res.json();
       setOtps(d.otps || []);
@@ -245,15 +240,22 @@ export function AdminSettings() {
     } finally {
       setLoadingOtps(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    refreshPersistedList();
+    if (currentUser?.id) {
+      fetchOtps();
+    }
+  }, [currentUser?.id]);
 
   const handleGenerateOtp = async () => {
-    if (!settings || !settings.currentInstructorId) return toast.error('Instructor context not available');
+    if (!currentUser?.id) return toast.error('Instructor context not available');
     try {
       const res = await fetch('/api/security/auth/generate-instructor-otp/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructor_id: settings.currentInstructorId }),
+        body: JSON.stringify({ instructor_id: currentUser.id }),
       });
       if (!res.ok) throw new Error('Failed to generate OTP');
       const d = await res.json();
@@ -267,12 +269,12 @@ export function AdminSettings() {
   };
 
   const handleRevokeOtp = async (code: string) => {
-    if (!settings || !settings.currentInstructorId) return;
+    if (!currentUser?.id) return;
     try {
       const res = await fetch('/api/security/auth/revoke-instructor-otp/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructor_id: settings.currentInstructorId, otp_code: code }),
+        body: JSON.stringify({ instructor_id: currentUser.id, otp_code: code }),
       });
       if (!res.ok) throw new Error('Revoke failed');
       toast.success('OTP revoked');

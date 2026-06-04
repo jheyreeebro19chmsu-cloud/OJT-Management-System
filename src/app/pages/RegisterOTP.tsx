@@ -24,7 +24,7 @@ import { getCurrentLocation } from '../utils/geo';
 
 // Fix Leaflet marker icon for many bundlers
 try {
-  // @ts-expect-error - delete private internals for bundlers that embed icons
+  // @ts-ignore - delete private internals for bundlers that embed icons
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon-2x.png',
@@ -69,7 +69,7 @@ export function RegisterOTP() {
   });
 
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'captured' | 'error'>('idle');
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [location, setLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
 
   const [showFaceCapture, setShowFaceCapture] = useState(false);
   const [facePhoto, setFacePhoto] = useState<string | undefined>();
@@ -427,7 +427,7 @@ export function RegisterOTP() {
           {step === 'face' && (
             <motion.div key="face" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <h3 className="text-lg font-semibold mb-4">Face Recognition</h3>
-              {showFaceCapture ? <FaceCapture onSuccess={handleFaceSuccess} onCancel={() => setShowFaceCapture(false)} /> : facePhoto ? (
+              {showFaceCapture ? <FaceCapture mode="register" onSuccess={handleFaceSuccess} onCancel={() => setShowFaceCapture(false)} /> : facePhoto ? (
                 <div className="space-y-4">
                   <img src={facePhoto} alt="Face" className="w-full h-64 object-cover rounded-lg" />
                   <button onClick={() => setShowFaceCapture(true)} className="w-full px-4 py-2 text-blue-600 border border-blue-600 rounded-lg">Retake Photo</button>
