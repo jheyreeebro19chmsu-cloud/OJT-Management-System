@@ -12,6 +12,7 @@ from .models import (
     Student, OJTInstructor, HTE, StudentOJTApplication, TimeRecord,
     FaceRegistration, AttendancePhoto
 )
+from .utils import calculate_distance, safe_float
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -67,6 +68,17 @@ def time_in(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Student or application not found'}, status=404)
         
         now = timezone.localtime(timezone.now())
+        # Enforce geofence: require client to send lat/lng (and optional accuracy in meters)
+        user_lat = data.get('lat')
+        user_lng = data.get('lng')
+        accuracy = safe_float(data.get('accuracy'), 0.0)
+        if user_lat is None or user_lng is None:
+            return JsonResponse({'error': 'lat and lng required for attendance geofence verification'}, status=400)
+        try:
+            user_lat_f = float(user_lat)
+            user_lng_f = float(user_lng)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'lat and lng must be numeric'}, status=400)
         morning_in = getattr(settings, 'MORNING_IN', dtime(hour=8, minute=0))
         afternoon_in = getattr(settings, 'AFTERNOON_IN', dtime(hour=13, minute=0))
         tolerance_minutes = getattr(settings, 'ATTENDANCE_TOLERANCE_MINUTES', 30)
@@ -83,6 +95,12 @@ def time_in(request: HttpRequest) -> JsonResponse:
             session = 'afternoon'
         else:
             return JsonResponse({'error': 'Not within allowed time-in window'}, status=400)
+
+        # Check geofence against application's configured location
+        if application.gps_latitude is not None and application.gps_longitude is not None:
+            dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
+            if (dist + (accuracy or 0.0)) > float(application.geofence_radius or 0.0):
+                return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': application.geofence_radius}, status=403)
 
         existing = TimeRecord.objects.filter(student=student, application=application, date=now.date(), session=session, time_out__isnull=True).first()
         if existing:
@@ -123,6 +141,17 @@ def time_out(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Student or application not found'}, status=404)
         
         now = timezone.localtime(timezone.now())
+        # Enforce geofence: require client to send lat/lng (and optional accuracy in meters)
+        user_lat = data.get('lat')
+        user_lng = data.get('lng')
+        accuracy = safe_float(data.get('accuracy'), 0.0)
+        if user_lat is None or user_lng is None:
+            return JsonResponse({'error': 'lat and lng required for attendance geofence verification'}, status=400)
+        try:
+            user_lat_f = float(user_lat)
+            user_lng_f = float(user_lng)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'lat and lng must be numeric'}, status=400)
         today = now.date()
         morning_out = getattr(settings, 'MORNING_OUT', dtime(hour=12, minute=0))
         afternoon_out = getattr(settings, 'AFTERNOON_OUT', dtime(hour=17, minute=0))
@@ -138,6 +167,12 @@ def time_out(request: HttpRequest) -> JsonResponse:
             session = 'morning'
         elif within(afternoon_out, tolerance_minutes):
             session = 'afternoon'
+
+        # Check geofence before allowing time out
+        if application.gps_latitude is not None and application.gps_longitude is not None:
+            dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
+            if (dist + (accuracy or 0.0)) > float(application.geofence_radius or 0.0):
+                return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': application.geofence_radius}, status=403)
 
         if session:
             time_record = TimeRecord.objects.filter(student=student, application=application, date=today, session=session, time_out__isnull=True).first()
