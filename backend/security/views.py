@@ -326,17 +326,30 @@ def register_face(request: HttpRequest) -> JsonResponse:
     try:
         import face_recognition # type: ignore
         img = face_recognition.load_image_file(registration.image.path)
-        encodings = face_recognition.face_encodings(img)
+        
+        # Try default face detection
+        locations = face_recognition.face_locations(img)
+        if not locations:
+            # If no face found, try upsampling once for smaller faces
+            locations = face_recognition.face_locations(img, number_of_times_to_upsample=2)
+            
+        encodings = face_recognition.face_encodings(img, known_face_locations=locations)
         if encodings:
             registration.face_encoding = list(encodings[0])
             registration.save()
             logger.info(f"Face registration successful for {employee_id} with brightness {brightness_check['brightness']:.1f} - Image stored in database")
         else:
-            logger.warning(f"No face detected in registered image for {employee_id}")
+            logger.warning(f"No face detected in registered image for {employee_id}. Saving as avatar anyway, but face login may not work.")
+            registration.face_encoding = None
+            registration.save()
+            # Return success anyway so they can at least use it as an avatar
             return JsonResponse({
-                "success": False,
-                "message": "No face detected in the image. Please try again with a clear photo."
-            }, status=422)
+                "success": True,
+                "image_url": image_url,
+                "message": "Avatar uploaded, but no face was clearly detected. Facial recognition may not work.",
+                "brightness": brightness_check['brightness'],
+                "status": brightness_check['status']
+            })
     except BaseException as e:
         # face_recognition may raise SystemExit or other BaseExceptions when models are missing.
         # Don't fail the whole registration if encoding fails, but log it.
