@@ -54,7 +54,7 @@ def request_otp(request: HttpRequest) -> JsonResponse:
         full_name = data.get('full_name', 'User')
         if not email:
             return JsonResponse({'error': 'Email is required'}, status=400)
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         otp = OTPVerification.create_otp(email)
         if send_verification_email(email, otp.otp_code, full_name):
@@ -92,7 +92,7 @@ def register_student(request: HttpRequest) -> JsonResponse:
         first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
         if not all([email, password, first_name, last_name]):
             return JsonResponse({'error': 'Required fields missing'}, status=400)
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         if not OTPVerification.objects.filter(email=email, is_verified=True).exists():
             return JsonResponse({'error': 'Email not verified'}, status=400)
@@ -116,7 +116,7 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
         first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
         if not all([email, password, first_name, last_name]):
             return JsonResponse({'error': 'Required fields missing'}, status=400)
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         if not OTPVerification.objects.filter(email=email, is_verified=True).exists():
             return JsonResponse({'error': 'Email not verified'}, status=400)
@@ -146,10 +146,13 @@ def register_hte(request: HttpRequest) -> JsonResponse:
     try:
         data = json.loads(request.body)
         email = data.get('email', '').strip()
-        if not email or User.objects.filter(email=email).exists():
+        if not email or User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Invalid or duplicate email'}, status=400)
         with transaction.atomic():
-            user = User.objects.create_user(username=email, email=email, password=User.objects.make_random_password(), first_name=data.get('first_name', ''), last_name=data.get('last_name', ''))
+            # Use a secure random string generator for password instead of relying on UserManager
+            from django.utils.crypto import get_random_string
+            random_password = get_random_string(12)
+            user = User.objects.create_user(username=email, email=email, password=random_password, first_name=data.get('first_name', ''), last_name=data.get('last_name', ''))
             UserRole.objects.create(user=user, role='hte', is_verified=True)
             HTE.objects.create(
                 user=user,
@@ -171,7 +174,7 @@ def login(request: HttpRequest) -> JsonResponse:
     try:
         data = json.loads(request.body)
         email, password = data.get('email', '').strip(), data.get('password', '').strip()
-        user = User.objects.filter(email=email).first()
+        user = User.objects.filter(email__iexact=email).first()
         if not user or not user.check_password(password):
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
         role_obj = UserRole.objects.filter(user=user).first()
@@ -305,7 +308,7 @@ def request_trainee_otp_registration(request: HttpRequest) -> JsonResponse:
         instructor_id = data.get('instructor_id')
         
         # Check if email already registered
-        if User.objects.filter(email=email).exists():
+        if User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         
         # Check if already has pending request
@@ -340,6 +343,17 @@ def request_trainee_otp_registration(request: HttpRequest) -> JsonResponse:
             if not (-180.0 <= lngv <= 180.0):
                 logger.warning('gps_longitude out of bounds: %s', lngv)
                 return JsonResponse({'error': 'gps_longitude out of bounds'}, status=400)
+        # Validate gps accuracy if provided
+        gps_acc = data.get('gps_accuracy')
+        if gps_acc is not None:
+            try:
+                accv = float(gps_acc)
+            except Exception:
+                logger.warning('Invalid gps_accuracy format for request: %s', gps_acc)
+                return JsonResponse({'error': 'Invalid gps_accuracy'}, status=400)
+            if accv < 0:
+                logger.warning('gps_accuracy negative: %s', accv)
+                return JsonResponse({'error': 'gps_accuracy invalid'}, status=400)
 
         # Generate OTP
         otp_code = OTPVerification.generate_otp()
@@ -358,6 +372,7 @@ def request_trainee_otp_registration(request: HttpRequest) -> JsonResponse:
             'instructor': instructor,
             'gps_latitude': data.get('gps_latitude'),
             'gps_longitude': data.get('gps_longitude'),
+            'gps_accuracy': data.get('gps_accuracy'),
         }
         
         # Add role-specific fields
@@ -438,6 +453,7 @@ def get_pending_trainee_requests(request: HttpRequest) -> JsonResponse:
                 'school_name': p.school_name,
                 'gps_latitude': p.gps_latitude,
                 'gps_longitude': p.gps_longitude,
+                'gps_accuracy': getattr(p, 'gps_accuracy', None),
                 'company_address': p.company_address,
                 'avatar_url': p.avatar.url if getattr(p, 'avatar', None) else None,
                 'face_registered': bool(p.face_registered_at),
@@ -716,7 +732,7 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Face recognition required'}, status=400)
         
         # Check email not already registered
-        if User.objects.filter(email=otp_request.email).exists():
+        if User.objects.filter(email__iexact=otp_request.email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         
         # Create user account
@@ -782,6 +798,63 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
         
         # Send confirmation email
         send_confirmation_email(otp_request.email, otp_request.full_name)
+    
+
+    @csrf_exempt
+    @require_http_methods(["POST"]) 
+    def server_create_employee(request: HttpRequest) -> JsonResponse:
+        """Server-side Supabase insert using the Service Role Key to bypass RLS.
+
+        POST JSON body should include the employee fields (name, email, employee_id, department,
+        position, company_name, supervisor_name, school_name, course, start_date, end_date,
+        required_hours, photo, active, registration_lat, registration_lng, registration_address).
+        """
+        try:
+            data = json.loads(request.body)
+
+            # Determine Supabase config
+            supabase_url = getattr(settings, 'SUPABASE_URL', None) or os.environ.get('VITE_SUPABASE_URL') or os.environ.get('SUPABASE_URL')
+            supabase_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', None) or os.environ.get('VITE_SUPABASE_SERVICE_ROLE_KEY')
+
+            if not supabase_url or not supabase_key:
+                return JsonResponse({'error': 'Supabase URL or Service Role Key not configured on server'}, status=500)
+
+            payload = {}
+            # Map known fields; accept extras but only send safe keys
+            allowed = [
+                'id','name','employee_id','email','department','position','company_name','supervisor_name',
+                'school_name','course','start_date','end_date','required_hours','photo','face_registered','active',
+                'registration_lat','registration_lng','registration_address'
+            ]
+            for k in allowed:
+                if k in data:
+                    payload[k] = data[k]
+
+            url = supabase_url.rstrip('/') + '/rest/v1/employees'
+            headers = {
+                'apikey': supabase_key,
+                'Authorization': f'Bearer {supabase_key}',
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            }
+
+            r = requests.post(url, headers=headers, json=[payload], timeout=10)
+
+            try:
+                body = r.json()
+            except Exception:
+                body = r.text
+
+            if r.status_code >= 200 and r.status_code < 300:
+                # Supabase returns an array of created rows
+                created = body[0] if isinstance(body, list) and len(body) > 0 else body
+                return JsonResponse({'success': True, 'employee': created})
+            else:
+                return JsonResponse({'error': 'Supabase insert failed', 'status': r.status_code, 'detail': body}, status=500)
+
+        except Exception as e:
+            logging.exception('server_create_employee error')
+            return JsonResponse({'error': str(e)}, status=500)
         
         # Return login credentials
         refresh = RefreshToken.for_user(user)
@@ -831,7 +904,7 @@ def get_instructor_by_email(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'email required'}, status=400)
         
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email__iexact=email)
             instructor = OJTInstructor.objects.get(user=user)
             return JsonResponse({
                 'success': True,
@@ -1024,7 +1097,7 @@ def reset_password(request: HttpRequest) -> JsonResponse:
         if not email or not new_password:
             return JsonResponse({'error': 'email and new_password required'}, status=400)
 
-        user = User.objects.filter(email=email).first()
+        user = User.objects.filter(email__iexact=email).first()
         if not user:
             return JsonResponse({'error': 'User not found'}, status=404)
 
