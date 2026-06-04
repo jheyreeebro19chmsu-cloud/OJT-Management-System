@@ -649,8 +649,6 @@ export function Register() {
     if (role === 'trainee') {
       if (step === 0) {
         if (hasEmail && emailExists) errors.push('Email already in use');
-        const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
-        if (!hasAge) errors.push('Birthdate/Age');
         if (locationStatus !== 'captured') errors.push('Capture Location');
       }
       if (step === 1) {
