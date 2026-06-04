@@ -1,5 +1,6 @@
 """Authentication and registration views for OJT system."""
 import json
+import traceback
 import os
 import urllib.request
 import qrcode
@@ -44,6 +45,23 @@ def send_confirmation_email(email: str, full_name: str = "User") -> bool:
         print(f"Error sending email: {e}")
         return False
 
+
+def _error_response(message: str, exc: Exception = None, status: int = 500) -> JsonResponse:
+    """Return a JSON error response with optional limited traceback for debugging.
+
+    Traceback is truncated to avoid excessively large responses.
+    """
+    payload = {"error": message}
+    if exc is not None:
+        try:
+            tb = traceback.format_exc()
+            payload["detail"] = str(exc)
+            payload["exception_type"] = type(exc).__name__
+            payload["traceback"] = tb[:1500]
+        except Exception:
+            payload["detail"] = str(exc)
+    return JsonResponse(payload, status=status)
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def request_otp(request: HttpRequest) -> JsonResponse:
@@ -61,7 +79,12 @@ def request_otp(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'success': True, 'message': 'OTP sent to email', 'expires_in_minutes': 10})
         return JsonResponse({'error': 'Failed to send OTP email'}, status=500)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger = logging.getLogger(__name__)
+        try:
+            logger.exception('register_student failed: %s', e)
+        except Exception:
+            pass
+        return _error_response('Internal server error during student registration', e, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -80,7 +103,12 @@ def verify_otp(request: HttpRequest) -> JsonResponse:
         otp.save()
         return JsonResponse({'success': True, 'message': 'OTP verified successfully'})
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger = logging.getLogger(__name__)
+        try:
+            logger.exception('register_instructor failed: %s', e)
+        except Exception:
+            pass
+        return _error_response('Internal server error during instructor registration', e, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -88,6 +116,7 @@ def register_student(request: HttpRequest) -> JsonResponse:
     """Register a new student."""
     try:
         data = json.loads(request.body)
+        captured_image = data.get('captured_image')
         email, password = data.get('email', '').strip(), data.get('password', '').strip()
         first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
         if not all([email, password, first_name, last_name]):
@@ -100,11 +129,48 @@ def register_student(request: HttpRequest) -> JsonResponse:
             user = User.objects.create_user(username=email, email=email, password=password, first_name=first_name, last_name=last_name)
             UserRole.objects.create(user=user, role='student', is_verified=True)
             Student.objects.create(user=user, age=data.get('age'), address=data.get('address', '').strip())
+            # optional: register face immediately if provided
+            if captured_image:
+                try:
+                    import base64, io
+                    from django.core.files.base import ContentFile
+                    from .models import FaceRegistration
+                    from PIL import Image
+                    import numpy as np
+                    try:
+                        import face_recognition
+                    except Exception:
+                        face_recognition = None
+
+                    raw = captured_image
+                    if raw.startswith('data:'):
+                        raw = raw.split(',', 1)[1]
+                    image_bytes = base64.b64decode(raw)
+                    emp_id = f"emp_{user.id}"
+                    fr = FaceRegistration.objects.create(user=user, employee_id=emp_id)
+                    fr.image_data = image_bytes
+                    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG')
+                    buf.seek(0)
+                    fr.image.save(f"{emp_id}.jpg", ContentFile(buf.read()), save=False)
+                    if face_recognition:
+                        try:
+                            arr = np.array(img)
+                            encs = face_recognition.face_encodings(arr)
+                            if encs:
+                                fr.face_encoding = encs[0].tolist()
+                        except Exception:
+                            pass
+                    fr.save()
+                except Exception:
+                    pass
         send_confirmation_email(email, f"{first_name} {last_name}")
         refresh = RefreshToken.for_user(user)
         # Include avatar / face registration status when available
         avatar_url = None
         face_registered = False
+        face_reg_obj = None
         try:
             from .models import FaceRegistration
             fr = FaceRegistration.objects.filter(user=user).first()
@@ -114,10 +180,21 @@ def register_student(request: HttpRequest) -> JsonResponse:
                 except Exception:
                     avatar_url = None
                 face_registered = bool(fr.face_encoding) or bool(getattr(fr, 'face_registered', False))
+                face_reg_obj = {'image_url': avatar_url, 'has_encoding': bool(fr.face_encoding)}
         except Exception:
             pass
 
-        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'student', 'avatar': avatar_url, 'face_registered': face_registered}}, status=201)
+        user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'student', 'avatar': avatar_url, 'face_registered': face_registered}
+        # include optional company info if provided in request
+        if data.get('company_name'):
+            user_obj['company_name'] = data.get('company_name')
+        if data.get('required_hours'):
+            try:
+                user_obj['required_hours'] = int(data.get('required_hours'))
+            except Exception:
+                user_obj['required_hours'] = data.get('required_hours')
+
+        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -127,6 +204,7 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
     """Register a new OJT instructor."""
     try:
         data = json.loads(request.body)
+        captured_image = data.get('captured_image')
         email, password = data.get('email', '').strip(), data.get('password', '').strip()
         first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
         if not all([email, password, first_name, last_name]):
@@ -148,11 +226,48 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
             img_io.seek(0)
             instructor.qr_code = qr_data
             instructor.qr_code_image.save(f'qr_{instructor.id}.png', ContentFile(img_io.read()), save=True)
+            # optional face registration
+            if captured_image:
+                try:
+                    import base64, io
+                    from django.core.files.base import ContentFile
+                    from .models import FaceRegistration
+                    from PIL import Image
+                    import numpy as np
+                    try:
+                        import face_recognition
+                    except Exception:
+                        face_recognition = None
+
+                    raw = captured_image
+                    if raw.startswith('data:'):
+                        raw = raw.split(',', 1)[1]
+                    image_bytes = base64.b64decode(raw)
+                    emp_id = f"emp_{user.id}"
+                    fr = FaceRegistration.objects.create(user=user, employee_id=emp_id)
+                    fr.image_data = image_bytes
+                    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG')
+                    buf.seek(0)
+                    fr.image.save(f"{emp_id}.jpg", ContentFile(buf.read()), save=False)
+                    if face_recognition:
+                        try:
+                            arr = np.array(img)
+                            encs = face_recognition.face_encodings(arr)
+                            if encs:
+                                fr.face_encoding = encs[0].tolist()
+                        except Exception:
+                            pass
+                    fr.save()
+                except Exception:
+                    pass
         send_confirmation_email(email, f"{first_name} {last_name}")
         refresh = RefreshToken.for_user(user)
         # Include avatar / face registration status when available
         avatar_url = None
         face_registered = False
+        face_reg_obj = None
         try:
             from .models import FaceRegistration
             fr = FaceRegistration.objects.filter(user=user).first()
@@ -162,10 +277,16 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
                 except Exception:
                     avatar_url = None
                 face_registered = bool(fr.face_encoding) or bool(getattr(fr, 'face_registered', False))
+                face_reg_obj = {'image_url': avatar_url, 'has_encoding': bool(fr.face_encoding)}
         except Exception:
             pass
 
-        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor', 'avatar': avatar_url, 'face_registered': face_registered}, 'qr_code_url': instructor.qr_code_image.url}, status=201)
+        user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor', 'avatar': avatar_url, 'face_registered': face_registered}
+        user_obj['course'] = instructor.course
+        user_obj['department'] = instructor.department
+        if face_reg_obj:
+            user_obj['face_registration'] = face_reg_obj
+        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj, 'qr_code_url': instructor.qr_code_image.url}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -174,7 +295,19 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
 def register_hte(request: HttpRequest) -> JsonResponse:
     """Register a new HTE."""
     try:
+        logger = logging.getLogger(__name__)
+        # Log raw request body (useful for debugging malformed payloads)
+        try:
+            logger.info('register_hte raw body: %s', request.body)
+        except Exception:
+            logger.exception('Failed to log raw request body for register_hte')
+
         data = json.loads(request.body)
+        captured_image = data.get('captured_image')
+        logger.info('register_hte parsed data: %s', {k: v for k, v in (data or {}).items() if k != 'password'})
+        # Diagnostic trigger: if client includes `_diag: true` in payload, return parsed body for debugging
+        if data.get('_diag'):
+            return JsonResponse({'success': True, 'diagnostic': True, 'parsed': {k: (v[:200] + '...') if isinstance(v, str) and len(v) > 200 else v for k, v in data.items()}}, status=200)
         email = data.get('email', '').strip()
         if not email or User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Invalid or duplicate email'}, status=400)
@@ -192,10 +325,68 @@ def register_hte(request: HttpRequest) -> JsonResponse:
                 contact_person=data.get('contact_person', ''),
                 contact_phone=data.get('contact_phone', ''),
             )
+            # optional face registration
+            if captured_image:
+                try:
+                    import base64, io
+                    from django.core.files.base import ContentFile
+                    from .models import FaceRegistration
+                    from PIL import Image
+                    import numpy as np
+                    try:
+                        import face_recognition
+                    except Exception:
+                        face_recognition = None
+
+                    raw = captured_image
+                    if raw.startswith('data:'):
+                        raw = raw.split(',', 1)[1]
+                    image_bytes = base64.b64decode(raw)
+                    emp_id = f"emp_{user.id}"
+                    fr = FaceRegistration.objects.create(user=user, employee_id=emp_id)
+                    fr.image_data = image_bytes
+                    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG')
+                    buf.seek(0)
+                    fr.image.save(f"{emp_id}.jpg", ContentFile(buf.read()), save=False)
+                    if face_recognition:
+                        try:
+                            arr = np.array(img)
+                            encs = face_recognition.face_encodings(arr)
+                            if encs:
+                                fr.face_encoding = encs[0].tolist()
+                        except Exception:
+                            pass
+                    fr.save()
+                except Exception:
+                    pass
         refresh = RefreshToken.for_user(user)
-        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'hte'}}, status=201)
+        # include face registration details if present
+        face_reg_obj = None
+        try:
+            from .models import FaceRegistration
+            fr = FaceRegistration.objects.filter(user=user).first()
+            if fr:
+                try:
+                    img_url = fr.image.url if fr.image else None
+                except Exception:
+                    img_url = None
+                face_reg_obj = {'image_url': img_url, 'has_encoding': bool(fr.face_encoding)}
+        except Exception:
+            face_reg_obj = None
+
+        user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'hte', 'company_name': data.get('company_name', ''), 'company_address': data.get('company_address', '')}
+        if face_reg_obj:
+            user_obj['face_registration'] = face_reg_obj
+        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj}, status=201)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger = logging.getLogger(__name__)
+        try:
+            logger.exception('register_hte failed: %s', e)
+        except Exception:
+            pass
+        return _error_response('Internal server error during HTE registration', e, status=500)
 
 @csrf_exempt
 @require_http_methods(["POST"])
