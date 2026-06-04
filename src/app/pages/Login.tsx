@@ -7,6 +7,7 @@ import { useApp } from '../store/AppContext';
 import { getSchoolLogo } from '../utils/schoolLogos';
 
 
+
 export function Login() {
   const { login } = useApp();
   const navigate = useNavigate();
@@ -63,6 +64,8 @@ export function Login() {
       setLoading(false);
     }
   };
+
+
 
   useEffect(() => {
     try {
