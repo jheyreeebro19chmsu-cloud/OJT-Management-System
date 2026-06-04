@@ -15,11 +15,17 @@ export function isWithinGeofence(
   zoneLat: number,
   zoneLng: number,
   radiusMeters: number,
-  _accuracyMeters?: number
+  accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // Accurate geofence calculation: check if distance <= radius (with a standard 10-meter drift buffer)
-  return distance <= radiusMeters + 10;
+  // If the device reports an accuracy, we tighten the acceptance criteria.
+  // We consider the user inside only if the *worst‑case* distance (distance + accuracy)
+  // is still within the allowed radius. This prevents false positives when GPS
+  // jitter is large relative to the geofence size.
+  const buffer = typeof accuracyMeters === 'number' ? Math.min(5, accuracyMeters) : 5; // 5 m default drift
+  const effectiveRadius = radiusMeters - buffer;
+  if (effectiveRadius <= 0) return false; // guard against overly small zones
+  return distance <= effectiveRadius;
 }
 
 export function formatDistance(meters: number): string {
@@ -29,16 +35,44 @@ export function formatDistance(meters: number): string {
 
 // Using `any` here to avoid depending on DOM lib types in environments
 export function getCurrentLocation(): Promise<any> {
+  // Collect a few high‑accuracy readings and average them to reduce jitter.
+  const readings: { lat: number; lng: number; accuracy?: number }[] = [];
+  const maxAttempts = 3;
+  const timeoutMs = 3000;
+
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation is not supported by this browser.'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-    });
+    const collect = (attempt: number) => {
+      if (attempt >= maxAttempts) {
+        // Average the collected points.
+        if (readings.length === 0) return reject(new Error('No GPS readings obtained'));
+        const avg = readings.reduce(
+          (acc, cur) => ({
+            lat: acc.lat + cur.lat / readings.length,
+            lng: acc.lng + cur.lng / readings.length,
+            accuracy: (acc.accuracy ?? 0) + (cur.accuracy ?? 0) / readings.length,
+          }),
+          { lat: 0, lng: 0, accuracy: 0 }
+        );
+        resolve({
+          coords: { latitude: avg.lat, longitude: avg.lng, accuracy: avg.accuracy },
+        } as any);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          readings.push({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+          // Small pause before next attempt to allow GPS to stabilise.
+          setTimeout(() => collect(attempt + 1), 400);
+        },
+        (err) => reject(err),
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
+      );
+    };
+    collect(0);
   });
 }
 
