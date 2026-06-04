@@ -17,14 +17,15 @@ export const getApiBase = (): string => {
     return `${securityKey.replace(/\/+$/, '')}/api`;
   }
 
-  // 3. Fallback: If running in production (on Vercel/Render) but env is unset, default to Render backend
+  // 3. Fallback: If running in production or on Render, use local proxy (/api routes)
+  // The frontend Node server proxies /api/* requests to the backend with CORS headers
   if (
     typeof window !== 'undefined' &&
     window.location &&
     window.location.hostname !== 'localhost' &&
     window.location.hostname !== '127.0.0.1'
   ) {
-    return 'https://ojt-management-system-capstone-f35i.onrender.com/api';
+    return '/api';
   }
 
   // 4. Default for local development

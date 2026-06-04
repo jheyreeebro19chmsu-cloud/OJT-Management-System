@@ -1,8 +1,10 @@
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { URL } from 'url';
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
@@ -18,6 +20,59 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 10000;
 const DIST_DIR = path.join(__dirname, 'dist');
+const BACKEND_URL = 'https://ojt-management-system-capstone-f35i.onrender.com';
+
+// Helper: Proxy API request to backend with CORS headers
+function proxyRequest(req, res, targetUrl) {
+  const proxyUrl = new URL(targetUrl);
+  const options = {
+    hostname: proxyUrl.hostname,
+    port: proxyUrl.port || 443,
+    path: proxyUrl.pathname + proxyUrl.search,
+    method: req.method,
+    headers: {
+      ...req.headers,
+      'host': proxyUrl.hostname,
+    },
+  };
+
+  // Remove hop-by-hop headers
+  delete options.headers['connection'];
+  delete options.headers['transfer-encoding'];
+
+  const protocol = proxyUrl.protocol === 'https:' ? https : http;
+  const proxyReq = protocol.request(options, (proxyRes) => {
+    // Add CORS headers to the response
+    res.statusCode = proxyRes.statusCode;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+    // Copy headers from backend (except hop-by-hop headers)
+    Object.keys(proxyRes.headers).forEach((key) => {
+      if (!['connection', 'transfer-encoding', 'content-encoding'].includes(key.toLowerCase())) {
+        res.setHeader(key, proxyRes.headers[key]);
+      }
+    });
+
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('Proxy request error:', err);
+    res.statusCode = 502;
+    res.setHeader('Content-Type', 'text/plain');
+    res.end('Bad Gateway: Backend unavailable');
+  });
+
+  // Handle request body for POST/PUT/PATCH
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    req.pipe(proxyReq);
+  } else {
+    proxyReq.end();
+  }
+}
 
 // Check at startup if dist directory and index.html exist; if not, trigger programmatic Vite build!
 try {
@@ -53,13 +108,34 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  // Decode URL to handle spaces/special characters
-  let filePath = path.join(DIST_DIR, decodeURIComponent(req.url.split('?')[0]));
-
   // Log incoming requests
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
 
-  // Only allow GET/HEAD requests
+  // ====== API PROXY ROUTE ======
+  // If request is for /api/*, proxy to backend with CORS headers
+  if (req.url.startsWith('/api/')) {
+    const backendPath = req.url; // Already includes /api/...
+    const targetUrl = BACKEND_URL + backendPath;
+    console.log(`Proxying ${req.method} ${req.url} -> ${targetUrl}`);
+    return proxyRequest(req, res, targetUrl);
+  }
+
+  // ====== OPTIONS PREFLIGHT HANDLER ======
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 200;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.end();
+    return;
+  }
+
+  // ====== STATIC FILE SERVING ======
+  // Decode URL to handle spaces/special characters
+  let filePath = path.join(DIST_DIR, decodeURIComponent(req.url.split('?')[0]));
+
+  // Only allow GET/HEAD requests for static files
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.statusCode = 405;
     res.setHeader('Content-Type', 'text/plain');
