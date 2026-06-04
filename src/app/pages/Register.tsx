@@ -1629,23 +1629,24 @@ export function Register() {
                     <>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Email Address *
+                        </label>
+                        <input
+                          type="email"
+                          value={form.email}
+                          onChange={(e) => update('email', e.target.value)}
+                          placeholder="your.email@company.com"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
                           Contact Person / Representative *
                         </label>
                         <input
                           value={form.contactPerson}
                           onChange={(e) => update('contactPerson', e.target.value)}
                           placeholder="Full Name of Representative"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">
-                          Username *
-                        </label>
-                        <input
-                          value={form.username}
-                          onChange={(e) => update('username', e.target.value)}
-                          placeholder="choose_a_username"
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
                       </div>
