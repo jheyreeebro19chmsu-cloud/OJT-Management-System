@@ -625,7 +625,9 @@ export function Register() {
         if (hasEmail && emailExists) errors.push('Email already in use');
         const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
         if (!hasAge) errors.push('Birthdate/Age');
-        if (locationStatus !== 'captured') errors.push('Capture Location');
+        // Only require capture when location is actively being captured or not attempted yet.
+        // Allow proceeding when permission was denied or capture errored (some browsers block geolocation).
+        if (locationStatus === 'idle' || locationStatus === 'capturing') errors.push('Capture Location');
       }
       if (step === 1) {
         if (!form.companyName?.trim()) errors.push('Company Name');
