@@ -228,6 +228,15 @@ if os.environ.get('DJANGO_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true'):
 if os.environ.get('DJANGO_FORCE_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true', 'yes'):
     CORS_ALLOW_ALL_ORIGINS = True
 
+# ---------------------------------------------
+# TEMPORARY HOTFIX — Force CORS during rollback
+# This forces the backend to allow all origins to unblock the
+# frontend while you apply a safer, environment-based fix.
+# Remove this block as soon as you confirm registration works
+# and instead set `DJANGO_CORS_ORIGINS` or `DJANGO_FORCE_ALLOW_ALL_ORIGINS`.
+# ---------------------------------------------
+CORS_ALLOW_ALL_ORIGINS = True
+
 DEFAULT_GEOFENCE_ZONES = [
     {
         "name": "Main Training Center",
