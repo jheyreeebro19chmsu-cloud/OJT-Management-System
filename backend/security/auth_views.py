@@ -281,10 +281,13 @@ def register_hte(request: HttpRequest) -> JsonResponse:
                 contact_phone=data.get('contact_phone', ''),
             )
             # Note: face registration for HTE is intentionally disabled.
-        refresh = RefreshToken.for_user(user)
-        # Do not include face registration for HTE
-        user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'hte', 'company_name': data.get('company_name', ''), 'company_address': data.get('company_address', '')}
-        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj}, status=201)
+        # After creating user and HTE record
+        # Prepare response data including password if generated
+        response_data = {'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj}
+        if not password:
+            # password was auto-generated, include it in response for user convenience
+            response_data['generated_password'] = user_password
+        return JsonResponse(response_data, status=201)
     except Exception as e:
         logger = logging.getLogger(__name__)
         try:

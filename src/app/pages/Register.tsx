@@ -1157,6 +1157,40 @@ export function Register() {
                               <MapPin size={16} />
                             )}
                             {locationStatus === 'captured' ? 'Location Secured' : 'Pin Precise Company Location'}
+                          <div className="mt-4">
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                            <div className="relative">
+                              <input
+                                type={showPassword ? 'text' : 'password'}
+                                value={form.password}
+                                onChange={(e) => update('password', e.target.value)}
+                                placeholder="Min 8 characters"
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              value={form.confirmPassword}
+                              onChange={(e) => update('confirmPassword', e.target.value)}
+                              placeholder="Repeat password"
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 px-1">
+                            <input
+                              type="checkbox"
+                              id="show-pw"
+                              checked={showPassword}
+                              onChange={() => setShowPassword(!showPassword)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">
+                              Show passwords
+                            </label>
+                          </div>
                           </button>
                         </div>
                       </div>
