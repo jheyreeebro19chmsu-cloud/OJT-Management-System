@@ -170,6 +170,11 @@ class TimeRecord(models.Model):
         ('unspecified', 'Unspecified'),
     ]
     session = models.CharField(max_length=20, choices=SESSION_CHOICES, default='unspecified')
+    # Store GPS coordinates submitted at time in / time out
+    time_in_lat = models.FloatField(null=True, blank=True)
+    time_in_lng = models.FloatField(null=True, blank=True)
+    time_out_lat = models.FloatField(null=True, blank=True)
+    time_out_lng = models.FloatField(null=True, blank=True)
     
     notes = models.TextField(blank=True)
     is_approved = models.BooleanField(default=False)
@@ -400,6 +405,7 @@ class TraineeOTPRequest(models.Model):
     # Geofencing
     gps_latitude = models.FloatField(null=True, blank=True)
     gps_longitude = models.FloatField(null=True, blank=True)
+    gps_accuracy = models.FloatField(null=True, blank=True, help_text='Estimated accuracy in meters from device GPS')
     geofence_radius = models.FloatField(default=100.0)
     
     # School info (for trainee)

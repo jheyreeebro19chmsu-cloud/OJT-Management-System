@@ -29,7 +29,7 @@ import DTRScreen from './screens/DTRScreen';
 import HTELinkScreen from './screens/HTELinkScreen';
 import InstructorTraineesScreen from './screens/InstructorTraineesScreen';
 import InstructorDashboard from './screens/InstructorDashboard';
-import { getSchoolLogo } from '../src/app/utils/schoolLogos';
+import { getSchoolLogo } from './utils/schoolLogos';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
 

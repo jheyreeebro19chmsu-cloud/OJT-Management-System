@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, useCameraPermissions } from 'expo-camera';
 import { Camera as CameraIcon, X } from 'lucide-react-native';
 
 interface FaceScannerProps {
@@ -14,7 +14,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   const [lastCaptureTime, setLastCaptureTime] = useState(0);
   const [brightness] = useState(128);
   const [lightingStatus] = useState<'dark' | 'good' | 'bright'>('good');
-  const cameraRef = React.useRef<React.ElementRef<typeof CameraView> | null>(null);
+  const cameraRef = React.useRef<React.ElementRef<typeof Camera> | null>(null);
 
   useEffect(() => {
     if (!permission) {
@@ -54,11 +54,13 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
     setLastCaptureTime(now);
 
     try {
+      if (!cameraRef.current || typeof cameraRef.current.takePictureAsync !== 'function') {
+        throw new Error('Camera not ready');
+      }
+
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.5,
         base64: true,
-        shutterSound: false,
-        skipProcessing: true,
       });
 
       if (!photo.base64) {
@@ -81,11 +83,10 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
   return (
     <View style={styles.container}>
-      <CameraView
-        ref={cameraRef}
+      <Camera
+        ref={(r) => (cameraRef.current = r)}
         style={styles.camera}
-        facing="front"
-        mirror
+        type={Camera.Constants.Type.front}
       >
         <View style={styles.overlay}>
           <View
@@ -111,7 +112,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
             <View style={{ width: 48 }} />
           </View>
         </View>
-      </CameraView>
+      </Camera>
 
       <View style={styles.footer}>
         <Text style={styles.hint}>Position your face inside the frame</Text>

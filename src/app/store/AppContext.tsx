@@ -830,7 +830,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const { data: existingEmp } = await supabase
           .from('employees')
           .select('id')
-          .eq('email', cleanData.email)
+          .ilike('email', cleanData.email)
           .maybeSingle();
 
         if (existingEmp) {

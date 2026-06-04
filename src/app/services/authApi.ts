@@ -170,18 +170,20 @@ export const authAPI = {
     }),
 
   // Time Tracking
-  timeIn: (userId: number, applicationId: number, gpsLatitude: number, gpsLongitude: number) =>
+  timeIn: (userId: number, applicationId?: number, gpsLatitude?: number, gpsLongitude?: number, gpsAccuracy?: number) =>
     api.post<{ success: boolean; message: string; time_in: string }>('/attendance/time-in/', {
       user_id: userId,
-      application_id: applicationId,
-      gps_latitude: gpsLatitude,
-      gps_longitude: gpsLongitude,
+      ...(applicationId ? { application_id: applicationId } : {}),
+      ...(gpsLatitude !== undefined && gpsLongitude !== undefined ? { gps_latitude: gpsLatitude, gps_longitude: gpsLongitude } : {}),
+      ...(gpsAccuracy !== undefined ? { gps_accuracy: gpsAccuracy } : {}),
     }),
 
-  timeOut: (userId: number, applicationId: number) =>
+  timeOut: (userId: number, applicationId?: number, gpsLatitude?: number, gpsLongitude?: number, gpsAccuracy?: number) =>
     api.post<{ success: boolean; message: string; time_out: string; hours_rendered: number }>('/attendance/time-out/', {
       user_id: userId,
-      application_id: applicationId,
+      ...(applicationId ? { application_id: applicationId } : {}),
+      ...(gpsLatitude !== undefined && gpsLongitude !== undefined ? { gps_latitude: gpsLatitude, gps_longitude: gpsLongitude } : {}),
+      ...(gpsAccuracy !== undefined ? { gps_accuracy: gpsAccuracy } : {}),
     }),
 
   // Announcements

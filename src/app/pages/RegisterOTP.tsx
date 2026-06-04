@@ -83,8 +83,8 @@ export function RegisterOTP() {
     setLocationStatus('loading');
     try {
       const pos = await getCurrentLocation();
-      if (pos) {
-        setLocation({ lat: pos.latitude, lng: pos.longitude });
+      if (pos && pos.coords) {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
         setLocationStatus('captured');
       }
     } catch (err) {
@@ -168,6 +168,7 @@ export function RegisterOTP() {
       if (location) {
         payload.gps_latitude = location.lat;
         payload.gps_longitude = location.lng;
+        if ((location as any).accuracy) payload.gps_accuracy = (location as any).accuracy;
       }
       if (form.company_name) payload.company_name = form.company_name;
       if (form.school_name) payload.school_name = form.school_name;

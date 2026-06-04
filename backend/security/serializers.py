@@ -28,6 +28,8 @@ class RegisterSerializer(serializers.Serializer):
     barangay = serializers.CharField(required=False, allow_blank=True)
     contact_person = serializers.CharField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(required=False, allow_blank=True)
+    # optional captured face image as base64 data URL
+    captured_image = serializers.CharField(required=False, allow_blank=True)
 
     def validate_email(self, value):
         if User.objects.filter(email__iexact=value).exists():
@@ -40,6 +42,7 @@ class RegisterSerializer(serializers.Serializer):
         email = validated_data.get('email')
         first_name = validated_data.get('first_name', '')
         last_name = validated_data.get('last_name', '')
+        captured_image = validated_data.pop('captured_image', None)
 
         with transaction.atomic():
             user = User.objects.create_user(username=email, email=email, password=password,
@@ -58,6 +61,49 @@ class RegisterSerializer(serializers.Serializer):
                                    barangay=validated_data.get('barangay', ''),
                                    contact_person=validated_data.get('contact_person', ''),
                                    contact_phone=validated_data.get('contact_phone', ''))
+
+            # If a captured_image was provided and the role is student, try to create a FaceRegistration record
+            if captured_image and role == 'student':
+                try:
+                    import base64, io
+                    from django.core.files.base import ContentFile
+                    from .models import FaceRegistration
+                    from PIL import Image
+                    import numpy as np
+                    try:
+                        import face_recognition
+                    except Exception:
+                        face_recognition = None
+
+                    # Expect data URL like 'data:image/png;base64,...' or raw base64
+                    raw = captured_image
+                    if raw.startswith('data:'):
+                        raw = raw.split(',', 1)[1]
+                    image_bytes = base64.b64decode(raw)
+                    # Save binary and image file
+                    emp_id = f"emp_{user.id}"
+                    fr = FaceRegistration.objects.create(user=user, employee_id=emp_id)
+                    fr.image_data = image_bytes
+                    fr.image_format = 'jpeg'
+                    # Save image file using PIL to normalize
+                    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG')
+                    buf.seek(0)
+                    fr.image.save(f"{emp_id}.jpg", ContentFile(buf.read()), save=False)
+                    # Try to compute face encoding
+                    if face_recognition:
+                        try:
+                            arr = np.array(img)
+                            encs = face_recognition.face_encodings(arr)
+                            if encs:
+                                fr.face_encoding = encs[0].tolist()
+                        except Exception:
+                            pass
+                    fr.save()
+                except Exception:
+                    # Do not fail registration if face processing fails
+                    pass
 
         return user
 

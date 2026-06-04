@@ -4,6 +4,7 @@ from django.core.files.base import ContentFile
 from django.http import JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.core.files.storage import default_storage
 
 from .models import (
     Student, OJTInstructor, Announcement, AnnouncementSubmission
@@ -85,6 +86,9 @@ def get_announcements(request: HttpRequest) -> JsonResponse:
             img_name = getattr(a.image, 'name', None) if getattr(a, 'image', None) else None
             img_path = None
             try:
+                # Some storage backends may not expose a filesystem path; check storage existence instead
+                if img_name and not default_storage.exists(img_name):
+                    logger.warning('Announcement image missing on storage id=%s name=%s', a.id, img_name)
                 img_path = getattr(a.image, 'path', None) if getattr(a, 'image', None) else None
             except Exception:
                 img_path = None

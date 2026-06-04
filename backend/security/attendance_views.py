@@ -68,17 +68,25 @@ def time_in(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Student or application not found'}, status=404)
         
         now = timezone.localtime(timezone.now())
-        # Enforce geofence: require client to send lat/lng (and optional accuracy in meters)
-        user_lat = data.get('lat')
-        user_lng = data.get('lng')
-        accuracy = safe_float(data.get('accuracy'), 0.0)
+        # Enforce geofence: accept several possible GPS key names from clients
+        accuracy = safe_float(data.get('accuracy') or data.get('gps_accuracy') or data.get('accuracy_m'), 0.0)
+        user_lat = data.get('lat') if data.get('lat') is not None else data.get('gps_latitude') if data.get('gps_latitude') is not None else data.get('gps_lat')
+        user_lng = data.get('lng') if data.get('lng') is not None else data.get('gps_longitude') if data.get('gps_longitude') is not None else data.get('gps_lng')
+        # Also accept nested registrationLocation shape if provided (unlikely for time-in but harmless)
         if user_lat is None or user_lng is None:
-            return JsonResponse({'error': 'lat and lng required for attendance geofence verification'}, status=400)
+            regloc = data.get('registrationLocation') or data.get('registration_location') or {}
+            if isinstance(regloc, dict) and regloc.get('lat') is not None and regloc.get('lng') is not None:
+                user_lat = regloc.get('lat')
+                user_lng = regloc.get('lng')
+
+        if user_lat is None or user_lng is None:
+            return JsonResponse({'error': 'gps_latitude and gps_longitude (or lat/lng) required for attendance geofence verification'}, status=400)
+
         try:
             user_lat_f = float(user_lat)
             user_lng_f = float(user_lng)
         except (TypeError, ValueError):
-            return JsonResponse({'error': 'lat and lng must be numeric'}, status=400)
+            return JsonResponse({'error': 'gps_latitude and gps_longitude must be numeric'}, status=400)
         morning_in = getattr(settings, 'MORNING_IN', dtime(hour=8, minute=0))
         afternoon_in = getattr(settings, 'AFTERNOON_IN', dtime(hour=13, minute=0))
         tolerance_minutes = getattr(settings, 'ATTENDANCE_TOLERANCE_MINUTES', 30)
@@ -97,9 +105,11 @@ def time_in(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Not within allowed time-in window'}, status=400)
 
         # Check geofence against application's configured location
+        geofence_passed = True
         if application.gps_latitude is not None and application.gps_longitude is not None:
             dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
             if (dist + (accuracy or 0.0)) > float(application.geofence_radius or 0.0):
+                geofence_passed = False
                 return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': application.geofence_radius}, status=403)
 
         existing = TimeRecord.objects.filter(student=student, application=application, date=now.date(), session=session, time_out__isnull=True).first()
@@ -111,7 +121,9 @@ def time_in(request: HttpRequest) -> JsonResponse:
             application=application,
             time_in=now,
             date=now.date(),
-            session=session
+            session=session,
+            time_in_lat=user_lat_f,
+            time_in_lng=user_lng_f
         )
         
         return JsonResponse({
@@ -141,17 +153,23 @@ def time_out(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'Student or application not found'}, status=404)
         
         now = timezone.localtime(timezone.now())
-        # Enforce geofence: require client to send lat/lng (and optional accuracy in meters)
-        user_lat = data.get('lat')
-        user_lng = data.get('lng')
-        accuracy = safe_float(data.get('accuracy'), 0.0)
+        # Enforce geofence: accept several possible GPS key names from clients
+        accuracy = safe_float(data.get('accuracy') or data.get('gps_accuracy') or data.get('accuracy_m'), 0.0)
+        user_lat = data.get('lat') if data.get('lat') is not None else data.get('gps_latitude') if data.get('gps_latitude') is not None else data.get('gps_lat')
+        user_lng = data.get('lng') if data.get('lng') is not None else data.get('gps_longitude') if data.get('gps_longitude') is not None else data.get('gps_lng')
         if user_lat is None or user_lng is None:
-            return JsonResponse({'error': 'lat and lng required for attendance geofence verification'}, status=400)
+            regloc = data.get('registrationLocation') or data.get('registration_location') or {}
+            if isinstance(regloc, dict) and regloc.get('lat') is not None and regloc.get('lng') is not None:
+                user_lat = regloc.get('lat')
+                user_lng = regloc.get('lng')
+
+        if user_lat is None or user_lng is None:
+            return JsonResponse({'error': 'gps_latitude and gps_longitude (or lat/lng) required for attendance geofence verification'}, status=400)
         try:
             user_lat_f = float(user_lat)
             user_lng_f = float(user_lng)
         except (TypeError, ValueError):
-            return JsonResponse({'error': 'lat and lng must be numeric'}, status=400)
+            return JsonResponse({'error': 'gps_latitude and gps_longitude must be numeric'}, status=400)
         today = now.date()
         morning_out = getattr(settings, 'MORNING_OUT', dtime(hour=12, minute=0))
         afternoon_out = getattr(settings, 'AFTERNOON_OUT', dtime(hour=17, minute=0))
@@ -168,10 +186,12 @@ def time_out(request: HttpRequest) -> JsonResponse:
         elif within(afternoon_out, tolerance_minutes):
             session = 'afternoon'
 
+        geofence_passed = True
         # Check geofence before allowing time out
         if application.gps_latitude is not None and application.gps_longitude is not None:
             dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
             if (dist + (accuracy or 0.0)) > float(application.geofence_radius or 0.0):
+                geofence_passed = False
                 return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': application.geofence_radius}, status=403)
 
         if session:
@@ -183,7 +203,10 @@ def time_out(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'No active time in found for today'}, status=404)
         
         time_record.time_out = timezone.now()
-        time_record.calculate_hours # Accessing as property now
+        time_record.time_out_lat = user_lat_f
+        time_record.time_out_lng = user_lng_f
+        # compute hours rendered
+        _ = time_record.calculate_hours
         time_record.save()
         
         application.rendered_hours += time_record.hours_rendered

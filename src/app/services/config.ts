@@ -45,11 +45,27 @@ export const SECURITY_API_KEY = getSecurityApiKey();
 
 export const getPhotoUrl = (photoPath: string | null | undefined): string => {
   if (!photoPath) return '';
-  if (photoPath.startsWith('http://') || photoPath.startsWith('https://') || photoPath.startsWith('data:')) {
-    return photoPath;
+  // Handle object values stored accidentally (e.g., { url })
+  try {
+    if (typeof photoPath === 'object' && photoPath !== null) {
+      const anyp: any = photoPath as any;
+      if (typeof anyp.url === 'string' && anyp.url) photoPath = anyp.url;
+      else return '';
+    }
+  } catch {
+    return '';
+  }
+
+  const trimmed = String(photoPath).trim();
+  if (!trimmed) return '';
+  // Treat common sentinel values from storage providers as missing
+  if (/^not\s*found$/i.test(trimmed) || /not\s*found/i.test(trimmed) || trimmed === 'None') return '';
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
   }
   const serverRoot = API_BASE.replace(/\/api$/, '').replace(/\/+$/, '');
-  const cleanPath = photoPath.startsWith('/') ? photoPath : `/${photoPath}`;
+  const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   return `${serverRoot}${cleanPath}`;
 };
 

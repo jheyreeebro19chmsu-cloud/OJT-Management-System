@@ -116,6 +116,7 @@ def register_student(request: HttpRequest) -> JsonResponse:
     """Register a new student."""
     try:
         data = json.loads(request.body)
+        # captured_image accepted for students (optional)
         captured_image = data.get('captured_image')
         email, password = data.get('email', '').strip(), data.get('password', '').strip()
         first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
@@ -204,7 +205,6 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
     """Register a new OJT instructor."""
     try:
         data = json.loads(request.body)
-        captured_image = data.get('captured_image')
         email, password = data.get('email', '').strip(), data.get('password', '').strip()
         first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
         if not all([email, password, first_name, last_name]):
@@ -226,66 +226,14 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
             img_io.seek(0)
             instructor.qr_code = qr_data
             instructor.qr_code_image.save(f'qr_{instructor.id}.png', ContentFile(img_io.read()), save=True)
-            # optional face registration
-            if captured_image:
-                try:
-                    import base64, io
-                    from django.core.files.base import ContentFile
-                    from .models import FaceRegistration
-                    from PIL import Image
-                    import numpy as np
-                    try:
-                        import face_recognition
-                    except Exception:
-                        face_recognition = None
-
-                    raw = captured_image
-                    if raw.startswith('data:'):
-                        raw = raw.split(',', 1)[1]
-                    image_bytes = base64.b64decode(raw)
-                    emp_id = f"emp_{user.id}"
-                    fr = FaceRegistration.objects.create(user=user, employee_id=emp_id)
-                    fr.image_data = image_bytes
-                    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-                    buf = io.BytesIO()
-                    img.save(buf, format='JPEG')
-                    buf.seek(0)
-                    fr.image.save(f"{emp_id}.jpg", ContentFile(buf.read()), save=False)
-                    if face_recognition:
-                        try:
-                            arr = np.array(img)
-                            encs = face_recognition.face_encodings(arr)
-                            if encs:
-                                fr.face_encoding = encs[0].tolist()
-                        except Exception:
-                            pass
-                    fr.save()
-                except Exception:
-                    pass
+            # Note: face registration for instructors is intentionally disabled.
         send_confirmation_email(email, f"{first_name} {last_name}")
         refresh = RefreshToken.for_user(user)
-        # Include avatar / face registration status when available
-        avatar_url = None
-        face_registered = False
-        face_reg_obj = None
-        try:
-            from .models import FaceRegistration
-            fr = FaceRegistration.objects.filter(user=user).first()
-            if fr:
-                try:
-                    avatar_url = fr.image.url if fr.image else None
-                except Exception:
-                    avatar_url = None
-                face_registered = bool(fr.face_encoding) or bool(getattr(fr, 'face_registered', False))
-                face_reg_obj = {'image_url': avatar_url, 'has_encoding': bool(fr.face_encoding)}
-        except Exception:
-            pass
-
-        user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor', 'avatar': avatar_url, 'face_registered': face_registered}
+        # Do not include face registration or avatar for instructors
+        user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor'}
         user_obj['course'] = instructor.course
         user_obj['department'] = instructor.department
-        if face_reg_obj:
-            user_obj['face_registration'] = face_reg_obj
+        # face_registration intentionally omitted for instructors
         return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj, 'qr_code_url': instructor.qr_code_image.url}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -325,60 +273,10 @@ def register_hte(request: HttpRequest) -> JsonResponse:
                 contact_person=data.get('contact_person', ''),
                 contact_phone=data.get('contact_phone', ''),
             )
-            # optional face registration
-            if captured_image:
-                try:
-                    import base64, io
-                    from django.core.files.base import ContentFile
-                    from .models import FaceRegistration
-                    from PIL import Image
-                    import numpy as np
-                    try:
-                        import face_recognition
-                    except Exception:
-                        face_recognition = None
-
-                    raw = captured_image
-                    if raw.startswith('data:'):
-                        raw = raw.split(',', 1)[1]
-                    image_bytes = base64.b64decode(raw)
-                    emp_id = f"emp_{user.id}"
-                    fr = FaceRegistration.objects.create(user=user, employee_id=emp_id)
-                    fr.image_data = image_bytes
-                    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-                    buf = io.BytesIO()
-                    img.save(buf, format='JPEG')
-                    buf.seek(0)
-                    fr.image.save(f"{emp_id}.jpg", ContentFile(buf.read()), save=False)
-                    if face_recognition:
-                        try:
-                            arr = np.array(img)
-                            encs = face_recognition.face_encodings(arr)
-                            if encs:
-                                fr.face_encoding = encs[0].tolist()
-                        except Exception:
-                            pass
-                    fr.save()
-                except Exception:
-                    pass
+            # Note: face registration for HTE is intentionally disabled.
         refresh = RefreshToken.for_user(user)
-        # include face registration details if present
-        face_reg_obj = None
-        try:
-            from .models import FaceRegistration
-            fr = FaceRegistration.objects.filter(user=user).first()
-            if fr:
-                try:
-                    img_url = fr.image.url if fr.image else None
-                except Exception:
-                    img_url = None
-                face_reg_obj = {'image_url': img_url, 'has_encoding': bool(fr.face_encoding)}
-        except Exception:
-            face_reg_obj = None
-
+        # Do not include face registration for HTE
         user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'hte', 'company_name': data.get('company_name', ''), 'company_address': data.get('company_address', '')}
-        if face_reg_obj:
-            user_obj['face_registration'] = face_reg_obj
         return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj}, status=201)
     except Exception as e:
         logger = logging.getLogger(__name__)

@@ -59,41 +59,47 @@ export function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
   const [form, setForm] = useState({
+    // Personal Information
     name: '',
-    first_name: '',
-    last_name: '',
-    middle_initial: '',
+    firstName: '',
+    lastName: '',
+    middleInitial: '',
     email: '',
+    birthdate: '',
+    age: '',
+    username: '',
+    password: '',
+    confirmPassword: '',
+    // Location/Address
+    country: 'PH',
+    countryManual: '',
+    region: '',
+    regionManual: '',
+    province: '',
+    provinceManual: '',
+    city: '',
+    cityManual: '',
+    street: '',
+    barangay: '',
+    barangayManual: '',
+    // Position/Role
     department: '',
     position: 'OJT Trainee',
+    // Company (for HTE)
     companyName: '',
-    instructorEmail: '',
-    supervisorName: '',
+    companyAddress: '',
+    contactPerson: '',
+    contactPhone: '',
+    // School/Instructor Information
     schoolName: '',
     course: '',
+    instructorEmail: '',
+    supervisorName: '',
+    // Employment
     employeeId: '',
     startDate: '',
     endDate: '',
     requiredHours: 486,
-    contactPerson: '',
-    contactPhone: '',
-    companyAddress: '',
-    birthdate: '',
-    age: '',
-    country: 'PH',
-    country_manual: '',
-    region: '',
-    region_manual: '',
-    province: '',
-    province_manual: '',
-    city: '',
-    city_manual: '',
-    street: '',
-    barangay: '',
-    barangay_manual: '',
-    username: '',
-    password: '',
-    confirmPassword: '',
   });
 
   const [otpCode, setOtpCode] = useState('');
@@ -374,8 +380,8 @@ export function Register() {
     if (true) {
       // bypass isOtpVerified check
       try {
-        let first_name = form.first_name;
-        let last_name = form.last_name;
+        let firstName = form.firstName;
+        let lastName = form.lastName;
         if (!first_name || !last_name) {
           const parts = (form.name || '').trim().split(/\s+/);
           first_name = parts.length > 0 ? parts[0] : form.name;
@@ -387,9 +393,9 @@ export function Register() {
           const payload = {
             email: form.email,
             password: form.password,
-            first_name,
-            last_name,
-            middle_initial: form.middle_initial || undefined,
+            first_name: firstName,
+            last_name: lastName,
+            middle_initial: form.middleInitial || undefined,
             age: form.age ? Number(form.age) : undefined,
             address: composedAddress || undefined,
             captured_image: photo || undefined,
@@ -411,8 +417,8 @@ export function Register() {
         } else if (role === 'hte') {
           const payload = {
               email: form.email || form.username,
-              first_name: first_name,
-              last_name: last_name,
+              first_name: firstName,
+              last_name: lastName,
               company_name: form.companyName,
               company_address: form.companyAddress,
               contact_person: form.contactPerson,
@@ -556,7 +562,7 @@ export function Register() {
   const getValidationErrors = () => {
     const errors = [];
 
-    const hasName = Boolean(form.name || ((form.first_name || '').trim() && (form.last_name || '').trim()));
+    const hasName = Boolean(form.name || ((form.firstName || '').trim() && (form.lastName || '').trim()));
     const hasEmail = Boolean((form.email && form.email.toString().trim()) || (form.username && form.username.toString().trim()));
 
     // Check for email duplication
@@ -1142,8 +1148,8 @@ export function Register() {
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
                           <input
-                            value={form.last_name}
-                            onChange={(e) => update('last_name', e.target.value)}
+                            value={form.lastName}
+                            onChange={(e) => update('lastName', e.target.value)}
                             placeholder="Dela Cruz"
                             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                           />
@@ -1151,8 +1157,8 @@ export function Register() {
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
                           <input
-                            value={form.first_name}
-                            onChange={(e) => update('first_name', e.target.value)}
+                            value={form.firstName}
+                            onChange={(e) => update('firstName', e.target.value)}
                             placeholder="Juan"
                             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                           />
@@ -1160,8 +1166,8 @@ export function Register() {
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
                           <input
-                            value={form.middle_initial}
-                            onChange={(e) => update('middle_initial', e.target.value)}
+                            value={form.middleInitial}
+                            onChange={(e) => update('middleInitial', e.target.value)}
                             placeholder="D"
                             maxLength={1}
                             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
