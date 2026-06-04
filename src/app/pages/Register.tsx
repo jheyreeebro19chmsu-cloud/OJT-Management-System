@@ -43,7 +43,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png',
 });
 
-const stepsTrainee = ['Personal Info'];
+const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 // Do NOT include face registration for OJT Instructor or HTE
 const stepsAdmin = ['Personal Info'];
 const stepsHTE = ['Company Info', 'Contact Info'];
@@ -424,95 +424,8 @@ export function Register() {
     const empId =
       form.employeeId ||
       `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
-    // If OTP was verified against backend, attempt server registration first
-    if (true) {
-      // bypass isOtpVerified check
-      try {
-        let firstName = form.firstName || form.name?.split(/\s+/)[0] || '';
-        let lastName = form.lastName || form.name?.split(/\s+/).slice(1).join(' ') || '';
-        if (!firstName && !lastName && form.name) {
-          const parts = (form.name || '').trim().split(/\s+/);
-          firstName = parts.length > 0 ? parts[0] : '';
-          lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
-        }
 
-        if (role === 'admin' || role === 'trainee') {
-          if (!form.email || !form.password) {
-            setSubmitError('Email and password are required');
-            setIsSubmitting(false);
-            return;
-          }
-          const composedAddress = [form.street, form.city, form.country].filter(Boolean).join(', ');
-          const payload = {
-            email: form.email,
-            password: form.password,
-            first_name: firstName || 'User',
-            last_name: lastName || '',
-            middle_initial: form.middleInitial || undefined,
-            age: form.age ? Number(form.age) : undefined,
-            address: composedAddress || undefined,
-            captured_image: photo || undefined,
-          };
-          const res = await authAPI.registerStudent(payload);
-          if (res?.data?.tokens) {
-            // Server-side registration succeeded — surface face_registration if present
-            const user = (res.data as any)?.user;
-            if (user?.face_registration) {
-              setFaceRegistered(Boolean(user.face_registration.has_encoding));
-              if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
-            } else if (user?.avatar) {
-              setPhoto(user.avatar);
-            }
-            toast.success('Registration successful! Please log in.');
-            setIsSubmitting(false);
-            navigate('/login');
-            return;
-          } else {
-            throw new Error((res?.data as any)?.error || 'Registration failed');
-          }
-        } else if (role === 'hte') {
-          if (!form.email && !form.username) {
-            setSubmitError('Email or username is required');
-            setIsSubmitting(false);
-            return;
-          }
-          const payload = {
-            email: form.email || form.username,
-            first_name: firstName || 'User',
-            last_name: lastName || '',
-            company_name: form.companyName || '',
-            company_address: form.companyAddress || '',
-            contact_person: form.contactPerson || '',
-            contact_phone: form.contactPhone || '',
-          };
-          const res = await authAPI.registerHTE(payload);
-          if (res?.data?.tokens) {
-            const user = (res.data as any)?.user;
-            if (user?.face_registration) {
-              setFaceRegistered(Boolean(user.face_registration.has_encoding));
-              if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
-            } else if (user?.avatar) {
-              setPhoto(user.avatar);
-            }
-            toast.success('Registration successful! Please log in.');
-            setIsSubmitting(false);
-            navigate('/login');
-            return;
-          } else {
-            throw new Error((res?.data as any)?.error || 'Registration failed');
-          }
-        }
-      } catch (err) {
-        console.error('Registration exception:', err);
-        const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
-        setSubmitError(msg);
-        // Notify user but continue to fallback to local registration so the form can still submit
-        toast.error('Server registration failed, falling back to local registration: ' + msg);
-        // do not return here — allow fallback to `registerEmployee` below
-      }
-    }
-
-    // If OAuth HTE flow pending (no OTP), attempt HTE registration via backend
+    // If OAuth HTE flow pending, attempt HTE registration via backend
     if (oauthPending && role === 'hte') {
       try {
         const parts = (form.name || '').trim().split(/\s+/);
@@ -552,8 +465,24 @@ export function Register() {
         setIsSubmitting(false);
       }
       setOauthPending(false);
-    } else if (!oauthPending) {
-      setIsSubmitting(false);
+      // OAuth HTE path ended — do not fall through to registerEmployee
+      return;
+    }
+
+    // ── Standard Supabase registration path ──────────────────────────────────
+    // Validate required fields before calling registerEmployee
+    if (role === 'admin' || role === 'trainee') {
+      if (!form.email || !form.password) {
+        setSubmitError('Email and password are required');
+        setIsSubmitting(false);
+        return;
+      }
+    } else if (role === 'hte') {
+      if (!form.email && !form.username) {
+        setSubmitError('Email or username is required');
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     const buildAddrFromForm = () => {
@@ -580,18 +509,32 @@ export function Register() {
 
     const computedAddress = registrationAddress || buildAddrFromForm() || undefined;
 
-    const result = await registerEmployee({
-      ...form,
-      employeeId: empId,
-      position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-      requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
-      faceRegistered,
-      photo,
-      active: true,
-      registrationLocation,
-      registrationAddress: computedAddress,
-      password: form.password,
-    });
+    // Compose full name from parts if form.name is empty
+    const composedName = form.name ||
+      [form.firstName, form.middleInitial, form.lastName].filter(Boolean).join(' ') ||
+      (form.email ? form.email.split('@')[0] : 'User');
+
+    let result: { success: boolean; message?: string; employee?: any };
+    try {
+      result = await registerEmployee({
+        ...form,
+        name: composedName,
+        employeeId: empId,
+        position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
+        requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
+        faceRegistered,
+        photo,
+        active: true,
+        registrationLocation,
+        registrationAddress: computedAddress,
+        password: form.password,
+      });
+    } catch (err: any) {
+      console.error('registerEmployee threw:', err);
+      toast.error('Registration error: ' + (err?.message || String(err)));
+      setIsSubmitting(false);
+      return;
+    }
 
     if (!result.success) {
       const msg = result.message || '';
@@ -625,12 +568,14 @@ export function Register() {
             active: true,
           });
           toast.success('Updated existing account and completed registration. Please log in.');
+          setIsSubmitting(false);
           navigate('/login');
           return;
         }
       }
 
       toast.error(msg || 'Registration failed. Please check your inputs.');
+      setIsSubmitting(false);
       return;
     }
 
@@ -651,6 +596,7 @@ export function Register() {
 
     // Auto-redirect based on role
     // Redirect to login after successful registration
+    setIsSubmitting(false);
     if (role === 'admin') {
       // For admin, show the success screen with QR code
       setRegistrationComplete(true);

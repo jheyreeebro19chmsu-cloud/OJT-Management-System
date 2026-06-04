@@ -827,15 +827,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (useSupabase) {
       try {
-        // Query Supabase directly to double check email uniqueness on the server
-        const { data: existingEmp } = await supabase
-          .from('employees')
-          .select('id')
-          .ilike('email', cleanData.email)
-          .maybeSingle();
+        // Query Supabase to double-check email uniqueness (best-effort — RLS may block anon reads)
+        try {
+          const { data: existingEmp } = await supabase
+            .from('employees')
+            .select('id')
+            .ilike('email', cleanData.email)
+            .maybeSingle();
 
-        if (existingEmp) {
-          return { success: false, message: 'Email address already registered in Supabase.' };
+          if (existingEmp) {
+            return { success: false, message: 'Email address already registered in Supabase.' };
+          }
+        } catch (checkErr) {
+          // RLS or network error — skip uniqueness pre-check; signUp will catch duplicates
+          console.warn('Email uniqueness pre-check failed (possibly RLS), proceeding with signUp:', checkErr);
         }
 
         let authId: string | undefined;
@@ -852,6 +857,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
 
           if (authError) {
+            // Check if this is a duplicate-email error from Supabase auth
+            if (authError.message?.toLowerCase().includes('already registered') ||
+                authError.message?.toLowerCase().includes('user already exists')) {
+              return { success: false, message: 'Email address already registered. Please log in instead.' };
+            }
             console.warn('Supabase signUp failed, falling back to local create:', authError);
             // Local fallback: persist password and create the employee locally so the user can sign up immediately
             setPasswordForEmail(cleanData.email, password);
@@ -867,6 +877,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             authId = authData.user.id;
           }
         }
+
 
         const employeePayload = {
           ...cleanData,
@@ -943,7 +954,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return { success: false, message: 'Failed to create database record in Supabase.' };
         }
       } catch (err: any) {
-        return { success: false, message: err.message || 'Supabase signup failed.' };
+        console.error('registerEmployee Supabase path error:', err);
+        const errMsg = err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Unknown error during Supabase registration.';
+        return { success: false, message: errMsg };
       }
     } else {
       if (password) {
