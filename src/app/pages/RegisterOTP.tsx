@@ -112,25 +112,10 @@ export function RegisterOTP() {
   };
 
   const validateInfo = () => {
-    if (!form.firstName || !form.lastName || !form.email) {
-      toast.error('Please fill required fields');
-      return false;
-    }
-    if (!form.email.includes('@')) {
+    // Only validate email format if provided
+    if (form.email && !form.email.includes('@')) {
       toast.error('Enter a valid email');
       return false;
-    }
-    if (role === 'trainee') {
-      if (!form.schoolName || !form.course) {
-        toast.error('Please fill school info');
-        return false;
-      }
-    }
-    if (role === 'hte') {
-      if (!form.companyName || !form.companyAddress) {
-        toast.error('Please fill company info');
-        return false;
-      }
     }
     return true;
   };

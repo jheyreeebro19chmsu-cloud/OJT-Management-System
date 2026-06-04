@@ -616,32 +616,13 @@ export function Register() {
     // Role-specific and Step-specific Validation
     if (role === 'admin') {
       if (step === 0) {
-        if (!hasName) errors.push('Full Name');
-        if (!hasEmail) errors.push('Valid Email');
         if (hasEmail && emailExists) errors.push('Email already in use');
-        if (!hasValidPassword) errors.push('Password');
-        if (!hasValidCountry) errors.push('Country');
-        if (!hasValidRegion) errors.push('Region');
-        if (!hasValidProvince) errors.push('Province');
-        if (!hasValidCity) errors.push('City/Municipality');
-        if (!hasValidBarangay) errors.push('Barangay');
-        if (!form.department?.trim()) errors.push('Department');
-        if (!form.course?.trim()) errors.push('Course');
       }
     }
 
     if (role === 'trainee') {
       if (step === 0) {
-        if (!hasName) errors.push('Full Name');
-        if (!hasEmail) errors.push('Valid Email');
         if (hasEmail && emailExists) errors.push('Email already in use');
-        if (!hasValidPassword) errors.push('Password');
-        if (!hasValidCountry) errors.push('Country');
-        if (!hasValidRegion) errors.push('Region');
-        if (!hasValidProvince) errors.push('Province');
-        if (!hasValidCity) errors.push('City/Municipality');
-        if (!hasValidBarangay) errors.push('Barangay');
-        
         const hasAge = form.age !== '' && form.age !== undefined && form.age !== null;
         if (!hasAge) errors.push('Birthdate/Age');
         if (locationStatus !== 'captured') errors.push('Capture Location');
@@ -653,28 +634,19 @@ export function Register() {
         if (!form.requiredHours) errors.push('OJT Hours');
       }
       if (step === 2) {
-        if (!form.schoolName?.trim()) errors.push('School Name');
-        if (!form.course?.trim()) errors.push('Course');
+        // No required fields for step 2
       }
     }
 
     if (role === 'hte') {
       if (step === 0) {
         if (!form.companyName?.trim()) errors.push('Company Name');
-        if (!hasValidCountry) errors.push('Country');
-        if (!hasValidRegion) errors.push('Region');
-        if (!hasValidProvince) errors.push('Province');
-        if (!hasValidCity) errors.push('City/Municipality');
-        if (!hasValidBarangay) errors.push('Barangay');
         // Allow proceeding without captured location (some devices/browsers block geolocation)
       }
       if (step === 1) {
-        if (!hasEmail) errors.push('Contact Email');
         if (hasEmail && emailExists) errors.push('Email already in use');
         // Username is optional for HTE; auto-filled from email when possible
         // if (!form.username?.trim()) errors.push('Username');
-        if (!form.contactPerson?.trim()) errors.push('Contact Person');
-        if (!form.contactPhone?.trim()) errors.push('Contact Phone');
       }
     }
 
