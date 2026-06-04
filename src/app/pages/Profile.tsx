@@ -61,6 +61,17 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// Utility to safely format dates without throwing on invalid values
+function safeFormatDate(value: any, options?: Intl.DateTimeFormatOptions) {
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-US', options || { month: 'long', day: 'numeric', year: 'numeric' });
+  } catch {
+    return '—';
+  }
+}
+
 export function Profile() {
   const {
     currentUser,
@@ -125,7 +136,8 @@ export function Profile() {
 
   const totalHours = records.reduce((s, r) => s + (r.totalHours || 0), 0);
   const presentDays = records.filter((r) => r.status === 'present' || r.status === 'overtime').length;
-  const progressPct = Math.min((totalHours / employee.requiredHours) * 100, 100);
+  const reqHours = Number(employee.requiredHours) || 0;
+  const progressPct = reqHours > 0 ? Math.min((totalHours / reqHours) * 100, 100) : 0;
 
   const handleSave = () => {
     updateEmployee(employee.id, form);
@@ -248,13 +260,7 @@ export function Profile() {
                   <Award size={16} className={gc.color} />
                 </div>
                 <h3 className={`font-bold text-sm ${gc.color}`}>OJT Evaluation Result</h3>
-                <span className="ml-auto text-xs text-gray-500">
-                  {new Date(evaluation.evaluatedAt).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </span>
+                <span className="ml-auto text-xs text-gray-500">{safeFormatDate(evaluation.evaluatedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
               </div>
 
               <div className="text-center mb-4">
@@ -316,13 +322,7 @@ export function Profile() {
                 {hostFeedback.hostCompany} - {hostFeedback.hostName}
               </p>
             </div>
-            <span className="ml-auto text-xs text-gray-400">
-              {new Date(hostFeedback.submittedAt).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
-            </span>
+            <span className="ml-auto text-xs text-gray-400">{safeFormatDate(hostFeedback.submittedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-4">
@@ -516,22 +516,8 @@ export function Profile() {
           <InfoRow label="Company" value={employee.companyName} />
           <InfoRow label="Department" value={employee.department} />
           <InfoRow label="Position" value={employee.position} />
-          <InfoRow
-            label="Start Date"
-            value={new Date(employee.startDate).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          />
-          <InfoRow
-            label="End Date"
-            value={new Date(employee.endDate).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          />
+          <InfoRow label="Start Date" value={safeFormatDate(employee.startDate)} />
+          <InfoRow label="End Date" value={safeFormatDate(employee.endDate)} />
         </Section>
       </motion.div>
 
@@ -547,25 +533,11 @@ export function Profile() {
       {/* Schedule */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
         <Section title="Schedule Info" icon={<Clock size={15} className="text-blue-700" />}>
-          <InfoRow
-            label="OJT Start"
-            value={new Date(employee.startDate).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          />
-          <InfoRow
-            label="OJT End"
-            value={new Date(employee.endDate).toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          />
+          <InfoRow label="OJT Start" value={safeFormatDate(employee.startDate)} />
+          <InfoRow label="OJT End" value={safeFormatDate(employee.endDate)} />
           <InfoRow
             label="Hours Left"
-            value={`${Math.max(0, employee.requiredHours - totalHours).toFixed(1)} hrs remaining`}
+            value={`${Math.max(0, (reqHours || 0) - totalHours).toFixed(1)} hrs remaining`}
           />
         </Section>
       </motion.div>
