@@ -121,6 +121,8 @@ export function Register() {
   const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
   const [emailMsg, setEmailMsg] = useState('');
   const [emailValidationUnavailable, setEmailValidationUnavailable] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Registration location state
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
@@ -267,8 +269,8 @@ export function Register() {
       if (!instructorId) throw new Error('Instructor not found');
 
       const parts = (form.name || '').trim().split(/\s+/);
-      const first_name = form.first_name || parts[0] || '';
-      const last_name = form.last_name || parts.slice(1).join(' ') || '';
+      const first_name = form.firstName || parts[0] || '';
+      const last_name = form.lastName || parts.slice(1).join(' ') || '';
 
       const payload: any = {
         instructor_id: instructorId,
@@ -373,6 +375,8 @@ export function Register() {
   };
 
   const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
     const empId =
       form.employeeId ||
       `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
@@ -380,72 +384,87 @@ export function Register() {
     if (true) {
       // bypass isOtpVerified check
       try {
-        let firstName = form.firstName;
-        let lastName = form.lastName;
-        if (!first_name || !last_name) {
+        let firstName = form.firstName || form.name?.split(/\s+/)[0] || '';
+        let lastName = form.lastName || form.name?.split(/\s+/).slice(1).join(' ') || '';
+        if (!firstName && !lastName && form.name) {
           const parts = (form.name || '').trim().split(/\s+/);
-          first_name = parts.length > 0 ? parts[0] : form.name;
-          last_name = parts.length > 1 ? parts.slice(1).join(' ') : '';
+          firstName = parts.length > 0 ? parts[0] : '';
+          lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
         }
 
         if (role === 'admin' || role === 'trainee') {
+          if (!form.email || !form.password) {
+            setSubmitError('Email and password are required');
+            setIsSubmitting(false);
+            return;
+          }
           const composedAddress = [form.street, form.city, form.country].filter(Boolean).join(', ');
           const payload = {
             email: form.email,
             password: form.password,
-            first_name: firstName,
-            last_name: lastName,
+            first_name: firstName || 'User',
+            last_name: lastName || '',
             middle_initial: form.middleInitial || undefined,
             age: form.age ? Number(form.age) : undefined,
             address: composedAddress || undefined,
             captured_image: photo || undefined,
           };
           const res = await authAPI.registerStudent(payload);
-          if (res.data && (res.data as any).tokens) {
+          if (res?.data?.tokens) {
             // Server-side registration succeeded — surface face_registration if present
-            const user = (res.data as any).user || {};
-            if (user.face_registration) {
+            const user = (res.data as any)?.user;
+            if (user?.face_registration) {
               setFaceRegistered(Boolean(user.face_registration.has_encoding));
               if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
-            } else if (user.avatar) {
+            } else if (user?.avatar) {
               setPhoto(user.avatar);
             }
             toast.success('Registration successful! Please log in.');
+            setIsSubmitting(false);
             navigate('/login');
             return;
+          } else {
+            throw new Error((res?.data as any)?.error || 'Registration failed');
           }
         } else if (role === 'hte') {
+          if (!form.email && !form.username) {
+            setSubmitError('Email or username is required');
+            setIsSubmitting(false);
+            return;
+          }
           const payload = {
-              email: form.email || form.username,
-              first_name: firstName,
-              last_name: lastName,
-              company_name: form.companyName,
-              company_address: form.companyAddress,
-              contact_person: form.contactPerson,
-              contact_phone: form.contactPhone,
-            };
-            const res = await authAPI.registerHTE(payload);
-          if (res.data && (res.data as any).tokens) {
-            const user = (res.data as any).user || {};
-            if (user.face_registration) {
+            email: form.email || form.username,
+            first_name: firstName || 'User',
+            last_name: lastName || '',
+            company_name: form.companyName || '',
+            company_address: form.companyAddress || '',
+            contact_person: form.contactPerson || '',
+            contact_phone: form.contactPhone || '',
+          };
+          const res = await authAPI.registerHTE(payload);
+          if (res?.data?.tokens) {
+            const user = (res.data as any)?.user;
+            if (user?.face_registration) {
               setFaceRegistered(Boolean(user.face_registration.has_encoding));
               if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
-            } else if (user.avatar) {
+            } else if (user?.avatar) {
               setPhoto(user.avatar);
             }
             toast.success('Registration successful! Please log in.');
+            setIsSubmitting(false);
             navigate('/login');
             return;
-          } else if (res.data && (res.data as any).error) {
-            console.error('HTE register error:', res.data.error);
-            toast.error('Registration failed: ' + (res.data.error || 'Unknown server error'));
+          } else {
+            throw new Error((res?.data as any)?.error || 'Registration failed');
           }
         }
       } catch (err) {
-          console.error('HTE register exception:', err);
+          console.error('Registration exception:', err);
           const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
+          setSubmitError(msg);
           toast.error('Registration failed: ' + msg);
-          // If server registration fails, fall back to local registration below
+          setIsSubmitting(false);
+          return;
       }
     }
 
@@ -457,43 +476,46 @@ export function Register() {
         const last_name = parts.slice(1).join(' ') || '';
         const payload = {
           email: form.email || form.username,
-          first_name,
-          last_name,
-          company_name: form.companyName,
-          company_address: form.companyAddress,
-          contact_person: form.contactPerson,
-          contact_phone: form.contactPhone,
+          first_name: first_name || 'User',
+          last_name: last_name || '',
+          company_name: form.companyName || '',
+          company_address: form.companyAddress || '',
+          contact_person: form.contactPerson || '',
+          contact_phone: form.contactPhone || '',
         };
         const res = await authAPI.registerHTE(payload);
-        if (res.data && (res.data as any).tokens) {
-          const user = (res.data as any).user || {};
-          if (user.face_registration) {
+        if (res?.data?.tokens) {
+          const user = (res.data as any)?.user;
+          if (user?.face_registration) {
             setFaceRegistered(Boolean(user.face_registration.has_encoding));
             if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
-          } else if (user.avatar) {
+          } else if (user?.avatar) {
             setPhoto(user.avatar);
           }
           toast.success('Registration successful! Please log in.');
           setOauthPending(false);
+          setIsSubmitting(false);
           navigate('/login');
           return;
-        } else if (res.data && (res.data as any).error) {
-          console.error('HTE register (oauthPending) error:', res.data.error);
-          toast.error('Registration failed: ' + (res.data.error || 'Unknown server error'));
+        } else {
+          throw new Error((res?.data as any)?.error || 'OAuth HTE registration failed');
         }
       } catch (err) {
         console.error('HTE register (oauthPending) exception:', err);
         const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
+        setSubmitError(msg);
         toast.error('Registration failed: ' + msg);
-        // fallback: continue to local registration
+        setIsSubmitting(false);
       }
       setOauthPending(false);
+    } else if (!oauthPending) {
+      setIsSubmitting(false);
     }
 
     const buildAddrFromForm = () => {
       const parts = [] as string[];
-      if (form.barangay === 'other' && form.barangay_manual) {
-        parts.push(form.barangay_manual);
+      if (form.barangay === 'other' && form.barangayManual) {
+        parts.push(form.barangayManual);
       } else if (form.barangay) {
         parts.push(form.barangay);
       }
@@ -580,14 +602,14 @@ export function Register() {
     const passwordsMatch = form.password && form.password === form.confirmPassword;
     const hasValidPassword = hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch;
 
-    const hasValidCountry = form.country === 'other' ? Boolean(form.country_manual?.trim()) : Boolean(form.country);
-    const hasValidRegion = form.region === 'other' ? Boolean(form.region_manual?.trim()) : Boolean(form.region);
-    const hasValidCity = form.city === 'other' ? Boolean(form.city_manual?.trim()) : Boolean(form.city);
-    const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangay_manual?.trim()) : Boolean(form.barangay);
+    const hasValidCountry = form.country === 'other' ? Boolean(form.countryManual?.trim()) : Boolean(form.country);
+    const hasValidRegion = form.region === 'other' ? Boolean(form.regionManual?.trim()) : Boolean(form.region);
+    const hasValidCity = form.city === 'other' ? Boolean(form.cityManual?.trim()) : Boolean(form.city);
+    const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangayManual?.trim()) : Boolean(form.barangay);
     const hasValidProvince =
       form.country === 'PH'
         ? form.province === 'other'
-          ? Boolean(form.province_manual?.trim())
+          ? Boolean(form.provinceManual?.trim())
           : Boolean(form.province)
         : true;
 
@@ -1908,16 +1930,29 @@ export function Register() {
                 ) : (
                   <button
                     onClick={handleSubmit}
-                    disabled={!isStepValid()}
+                    disabled={!isStepValid() || isSubmitting}
                     className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
                   >
-                    <Check size={14} />
-                    Complete Registration
+                    {isSubmitting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Registering...
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        Complete Registration
+                      </>
+                    )}
                   </button>
                 )}
               </div>
-              {/* Temporary debug: force submit for HTE to capture server diagnostic echo */}
-              {/* Force submit removed for HTE */}
+              {/* Error message display */}
+              {submitError && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-700">{submitError}</p>
+                </div>
+              )}
             </div>
           )}
 

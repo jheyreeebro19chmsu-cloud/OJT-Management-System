@@ -47,8 +47,8 @@ export function RegisterOTP() {
   const [instructorEmail, setInstructorEmail] = useState('');
 
   const [form, setForm] = useState({
-    first_name: '',
-    last_name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -59,13 +59,13 @@ export function RegisterOTP() {
     province: '',
     city: '',
     barangay: '',
-    school_name: '',
+    schoolName: '',
     course: '',
-    year_level: '',
-    company_name: '',
-    company_address: '',
-    contact_person: '',
-    contact_phone: '',
+    yearLevel: '',
+    companyName: '',
+    companyAddress: '',
+    contactPerson: '',
+    contactPhone: '',
   });
 
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'captured' | 'error'>('idle');
@@ -112,7 +112,7 @@ export function RegisterOTP() {
   };
 
   const validateInfo = () => {
-    if (!form.first_name || !form.last_name || !form.email) {
+    if (!form.firstName || !form.lastName || !form.email) {
       toast.error('Please fill required fields');
       return false;
     }
@@ -121,13 +121,13 @@ export function RegisterOTP() {
       return false;
     }
     if (role === 'trainee') {
-      if (!form.school_name || !form.course) {
+      if (!form.schoolName || !form.course) {
         toast.error('Please fill school info');
         return false;
       }
     }
     if (role === 'hte') {
-      if (!form.company_name || !form.company_address) {
+      if (!form.companyName || !form.companyAddress) {
         toast.error('Please fill company info');
         return false;
       }
@@ -160,8 +160,8 @@ export function RegisterOTP() {
     try {
       const payload: any = {
         email: form.email,
-        first_name: form.first_name,
-        last_name: form.last_name,
+        first_name: form.firstName,
+        last_name: form.lastName,
         role: role,
         instructor_email: instructorEmail,
       };
@@ -170,8 +170,8 @@ export function RegisterOTP() {
         payload.gps_longitude = location.lng;
         if ((location as any).accuracy) payload.gps_accuracy = (location as any).accuracy;
       }
-      if (form.company_name) payload.company_name = form.company_name;
-      if (form.school_name) payload.school_name = form.school_name;
+      if (form.companyName) payload.company_name = form.companyName;
+      if (form.schoolName) payload.school_name = form.schoolName;
 
       const res = await fetch('/api/security/auth/request-trainee-otp-registration/', {
         method: 'POST',
@@ -358,22 +358,22 @@ export function RegisterOTP() {
           {step === 'info' && (
             <motion.div key="info" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-lg shadow-lg p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <input type="text" placeholder="First Name *" value={form.first_name} onChange={(e) => handleFormChange('first_name', e.target.value)} className="px-4 py-2 border rounded-lg" />
-                <input type="text" placeholder="Last Name *" value={form.last_name} onChange={(e) => handleFormChange('last_name', e.target.value)} className="px-4 py-2 border rounded-lg" />
+                <input type="text" placeholder="First Name *" value={form.firstName} onChange={(e) => handleFormChange('firstName', e.target.value)} className="px-4 py-2 border rounded-lg" />
+                <input type="text" placeholder="Last Name *" value={form.lastName} onChange={(e) => handleFormChange('lastName', e.target.value)} className="px-4 py-2 border rounded-lg" />
               </div>
               <input type="email" placeholder="Email *" value={form.email} onChange={(e) => handleFormChange('email', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               <input type="number" placeholder="Age" value={form.age} onChange={(e) => handleFormChange('age', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               <input type="text" placeholder="Street Address" value={form.street} onChange={(e) => handleFormChange('street', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
               {role === 'trainee' && (
                 <>
-                  <input type="text" placeholder="School Name *" value={form.school_name} onChange={(e) => handleFormChange('school_name', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                  <input type="text" placeholder="School Name *" value={form.schoolName} onChange={(e) => handleFormChange('schoolName', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
                   <input type="text" placeholder="Course *" value={form.course} onChange={(e) => handleFormChange('course', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
                 </>
               )}
               {role === 'hte' && (
                 <>
-                  <input type="text" placeholder="Company Name *" value={form.company_name} onChange={(e) => handleFormChange('company_name', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
-                  <input type="text" placeholder="Company Address *" value={form.company_address} onChange={(e) => handleFormChange('company_address', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                  <input type="text" placeholder="Company Name *" value={form.companyName} onChange={(e) => handleFormChange('companyName', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                  <input type="text" placeholder="Company Address *" value={form.companyAddress} onChange={(e) => handleFormChange('companyAddress', e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
                 </>
               )}
               <div className="flex gap-3 pt-4">

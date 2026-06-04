@@ -232,27 +232,29 @@ def get_hte_time_records(request: HttpRequest) -> JsonResponse:
         if not hte:
             return JsonResponse({'error': 'HTE profile not found'}, status=404)
 
+        # Use select_related to avoid N+1 queries
         applications = StudentOJTApplication.objects.filter(hte=hte)
-        time_records = TimeRecord.objects.filter(application__in=applications).order_by('-date')
+        time_records = TimeRecord.objects.filter(application__in=applications).select_related('student__user', 'application').order_by('-date')
 
         data = [
             {
                 'id': t.id,
-                'student_name': t.student.user.get_full_name(),
-                'application_id': t.application.id,
-                'date': t.date.isoformat(),
+                'student_name': t.student.user.get_full_name() if t.student and t.student.user else 'Unknown',
+                'application_id': t.application.id if t.application else None,
+                'date': t.date.isoformat() if t.date else None,
                 'time_in': t.time_in.isoformat() if t.time_in else None,
                 'time_out': t.time_out.isoformat() if t.time_out else None,
-                'hours_rendered': t.hours_rendered,
-                'is_approved': t.is_approved,
-                'notes': t.notes,
+                'hours_rendered': t.hours_rendered or 0,
+                'is_approved': t.is_approved if hasattr(t, 'is_approved') else False,
+                'notes': t.notes or '',
             }
             for t in time_records
         ]
 
         return JsonResponse({'success': True, 'time_records': data})
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.exception("get_hte_time_records failed: %s", e)
+        return JsonResponse({'error': 'Failed to retrieve time records'}, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -269,13 +271,14 @@ def get_hte_registrations(request: HttpRequest) -> JsonResponse:
         attendance_photos = AttendancePhoto.objects.filter(application__in=applications)
         employee_ids = set([p.employee_id for p in attendance_photos if p.employee_id])
 
-        registrations = FaceRegistration.objects.filter(employee_id__in=employee_ids)
+        # Use select_related to avoid N+1 queries
+        registrations = FaceRegistration.objects.filter(employee_id__in=employee_ids).select_related('user')
         data = [
             {
                 'id': r.id,
                 'employee_id': r.employee_id,
                 'image_url': request.build_absolute_uri(r.image.url) if r.image else None,
-                'created_at': r.created_at.isoformat(),
+                'created_at': r.created_at.isoformat() if r.created_at else None,
             }
             for r in registrations
         ]
