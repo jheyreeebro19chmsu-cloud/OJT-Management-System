@@ -141,6 +141,43 @@ export function Register() {
     localStorage.setItem('pending_oauth_role', nextRole || '');
   };
 
+  // Temporary debug: force-submit HTE registration (bypass client validation)
+  const handleForceSubmit = async () => {
+    if (role !== 'hte') return;
+    try {
+      const parts = (form.name || '').trim().split(/\s+/);
+      const first_name = form.first_name || parts[0] || '';
+      const last_name = form.last_name || parts.slice(1).join(' ') || '';
+      const payload: any = {
+        email: form.email || form.username,
+        first_name,
+        last_name,
+        company_name: form.companyName,
+        company_address: form.companyAddress,
+        contact_person: form.contactPerson,
+        contact_phone: form.contactPhone,
+        captured_image: photo || undefined,
+        _diag: true,
+      };
+
+      const res = await authAPI.registerHTE(payload).catch((e) => ({ error: true, e }));
+      console.log('Force submit response:', res);
+      if ((res as any)?.data) {
+        // Show diagnostic echo if present
+        const diag = (res as any).data.diagnostic ? (res as any).data : (res as any).data;
+        alert('Server response (check console for details)');
+        console.log('Server diagnostic:', diag);
+        toast.success('Force submit: server responded (check console)');
+      } else if ((res as any)?.error) {
+        console.error('Force submit error', (res as any).e || res);
+        toast.error('Force submit failed: see console');
+      }
+    } catch (err) {
+      console.error('Force submit exception:', err);
+      toast.error('Force submit exception: ' + ((err as any)?.message || String(err)));
+    }
+  };
+
   // Capture location on mount and detect OAuth HTE prefill
   useEffect(() => {
     captureLocation();
@@ -1912,6 +1949,14 @@ export function Register() {
                   </button>
                 )}
               </div>
+              {/* Temporary debug: force submit for HTE to capture server diagnostic echo */}
+              {role === 'hte' && (
+                <div className="mt-3 text-center">
+                  <button onClick={handleForceSubmit} className="text-xs text-red-600 underline">
+                    Force Submit (debug)
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
