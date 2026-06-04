@@ -459,12 +459,12 @@ export function Register() {
           }
         }
       } catch (err) {
-          console.error('Registration exception:', err);
-          const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
-          setSubmitError(msg);
-          toast.error('Registration failed: ' + msg);
-          setIsSubmitting(false);
-          return;
+        console.error('Registration exception:', err);
+        const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
+        setSubmitError(msg);
+        // Notify user but continue to fallback to local registration so the form can still submit
+        toast.error('Server registration failed, falling back to local registration: ' + msg);
+        // do not return here — allow fallback to `registerEmployee` below
       }
     }
 
