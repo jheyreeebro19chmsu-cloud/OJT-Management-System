@@ -11,7 +11,8 @@ import {
   uploadAttendancePhoto,
 } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
-import { formatTime, calculateTotalHours, getAttendanceStatus } from '../utils/geo';
+import { formatTime, calculateTotalHours, getAttendanceStatus, getCurrentLocation } from '../utils/geo';
+import { authAPI } from '../services/authApi';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
@@ -113,6 +114,41 @@ export function TimeRecord() {
       setCompletedMessage(
         `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
       );
+      // Attempt server-side time-in with GPS if backend is configured
+      if (isSecurityApiConfigured()) {
+        const possibleUserId = (employee as any).user_id || (employee as any).userId || (employee as any).id;
+        const userIdNum = Number(possibleUserId);
+        const possibleAppId = (employee as any).applicationId || (employee as any).application_id || (settings as any).activeApplicationId;
+        const appIdNum = possibleAppId !== undefined ? Number(possibleAppId) : undefined;
+
+        if (!Number.isNaN(userIdNum) && appIdNum && !Number.isNaN(appIdNum)) {
+          try {
+            let lat: number | undefined = geofenceCoords?.lat;
+            let lng: number | undefined = geofenceCoords?.lng;
+            let acc: number | undefined = undefined;
+            if (lat === undefined || lng === undefined) {
+              try {
+                const pos = await getCurrentLocation();
+                lat = pos.coords.latitude;
+                lng = pos.coords.longitude;
+                acc = pos.coords.accuracy;
+              } catch (err) {
+                // Ignore: we already recorded locally
+              }
+            }
+            await authAPI.timeIn(userIdNum, appIdNum, lat, lng, acc);
+          } catch (err: any) {
+            if (err?.response?.status === 403) {
+              const msg = err.response?.data?.error || 'User is outside the allowed geofence';
+              setCompletedMessage((prev) => `${prev} — Server: ${msg}`);
+            } else {
+              console.error('timeIn API error', err);
+            }
+          }
+        } else {
+          console.warn('Skipping server time-in: missing numeric user_id or application_id');
+        }
+      }
     } else if (currentRecord) {
       const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
       updateTimeRecord(currentRecord.id, {
@@ -125,6 +161,41 @@ export function TimeRecord() {
         status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
       });
       setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)} • Total: ${totalHours.toFixed(2)} hours`);
+      // Attempt server-side time-out with GPS if backend is configured
+      if (isSecurityApiConfigured()) {
+        const possibleUserId = (employee as any).user_id || (employee as any).userId || (employee as any).id;
+        const userIdNum = Number(possibleUserId);
+        const possibleAppId = (employee as any).applicationId || (employee as any).application_id || (settings as any).activeApplicationId;
+        const appIdNum = possibleAppId !== undefined ? Number(possibleAppId) : undefined;
+
+        if (!Number.isNaN(userIdNum) && appIdNum && !Number.isNaN(appIdNum)) {
+          try {
+            let lat: number | undefined = geofenceCoords?.lat;
+            let lng: number | undefined = geofenceCoords?.lng;
+            let acc: number | undefined = undefined;
+            if (lat === undefined || lng === undefined) {
+              try {
+                const pos = await getCurrentLocation();
+                lat = pos.coords.latitude;
+                lng = pos.coords.longitude;
+                acc = pos.coords.accuracy;
+              } catch (err) {
+                // Ignore
+              }
+            }
+            await authAPI.timeOut(userIdNum, appIdNum, lat, lng, acc);
+          } catch (err: any) {
+            if (err?.response?.status === 403) {
+              const msg = err.response?.data?.error || 'User is outside the allowed geofence';
+              setCompletedMessage((prev) => `${prev} — Server: ${msg}`);
+            } else {
+              console.error('timeOut API error', err);
+            }
+          }
+        } else {
+          console.warn('Skipping server time-out: missing numeric user_id or application_id');
+        }
+      }
     }
     setPageState('completed');
   };
@@ -169,6 +240,16 @@ export function TimeRecord() {
           <p className="text-blue-300 text-xs">
             {employee?.employeeId} • {employee?.department}
           </p>
+          {isSecurityApiConfigured() && (
+            <p className="text-blue-100 text-xxs mt-1">
+              {(() => {
+                const possibleUserId = (employee as any)?.user_id || (employee as any)?.userId || (employee as any)?.id;
+                const userIdNum = Number(possibleUserId);
+                if (!Number.isNaN(userIdNum)) return `Canonical emp id: emp_${userIdNum}`;
+                return 'Canonical emp id: N/A';
+              })()}
+            </p>
+          )}
         </div>
 
         {/* Today's Status Row */}

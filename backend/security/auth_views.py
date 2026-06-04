@@ -102,7 +102,22 @@ def register_student(request: HttpRequest) -> JsonResponse:
             Student.objects.create(user=user, age=data.get('age'), address=data.get('address', '').strip())
         send_confirmation_email(email, f"{first_name} {last_name}")
         refresh = RefreshToken.for_user(user)
-        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'student'}}, status=201)
+        # Include avatar / face registration status when available
+        avatar_url = None
+        face_registered = False
+        try:
+            from .models import FaceRegistration
+            fr = FaceRegistration.objects.filter(user=user).first()
+            if fr:
+                try:
+                    avatar_url = fr.image.url if fr.image else None
+                except Exception:
+                    avatar_url = None
+                face_registered = bool(fr.face_encoding) or bool(getattr(fr, 'face_registered', False))
+        except Exception:
+            pass
+
+        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'student', 'avatar': avatar_url, 'face_registered': face_registered}}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -135,7 +150,22 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
             instructor.qr_code_image.save(f'qr_{instructor.id}.png', ContentFile(img_io.read()), save=True)
         send_confirmation_email(email, f"{first_name} {last_name}")
         refresh = RefreshToken.for_user(user)
-        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor'}, 'qr_code_url': instructor.qr_code_image.url}, status=201)
+        # Include avatar / face registration status when available
+        avatar_url = None
+        face_registered = False
+        try:
+            from .models import FaceRegistration
+            fr = FaceRegistration.objects.filter(user=user).first()
+            if fr:
+                try:
+                    avatar_url = fr.image.url if fr.image else None
+                except Exception:
+                    avatar_url = None
+                face_registered = bool(fr.face_encoding) or bool(getattr(fr, 'face_registered', False))
+        except Exception:
+            pass
+
+        return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor', 'avatar': avatar_url, 'face_registered': face_registered}, 'qr_code_url': instructor.qr_code_image.url}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -824,11 +854,37 @@ def complete_trainee_registration(request: HttpRequest) -> JsonResponse:
             allowed = [
                 'id','name','employee_id','email','department','position','company_name','supervisor_name',
                 'school_name','course','start_date','end_date','required_hours','photo','face_registered','active',
-                'registration_lat','registration_lng','registration_address'
+                'registration_lat','registration_lng','registration_address','gps_latitude','gps_longitude'
             ]
+
+            # Copy allowed scalar fields
             for k in allowed:
-                if k in data:
+                if k in data and not isinstance(data.get(k), dict):
                     payload[k] = data[k]
+
+            # Accept frontend shape `registrationLocation: { lat, lng }`
+            reg_loc = data.get('registrationLocation') or data.get('registration_location')
+            if isinstance(reg_loc, dict):
+                try:
+                    lat = float(reg_loc.get('lat'))
+                    lng = float(reg_loc.get('lng'))
+                    payload['registration_lat'] = lat
+                    payload['registration_lng'] = lng
+                except Exception:
+                    # ignore malformed coords
+                    pass
+
+            # Accept common GPS aliases
+            if 'gps_latitude' in data and 'registration_lat' not in payload:
+                try:
+                    payload['registration_lat'] = float(data.get('gps_latitude'))
+                except Exception:
+                    pass
+            if 'gps_longitude' in data and 'registration_lng' not in payload:
+                try:
+                    payload['registration_lng'] = float(data.get('gps_longitude'))
+                except Exception:
+                    pass
 
             url = supabase_url.rstrip('/') + '/rest/v1/employees'
             headers = {

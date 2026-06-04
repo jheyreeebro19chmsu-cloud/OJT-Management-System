@@ -174,6 +174,7 @@ def check_geofence(request: HttpRequest) -> JsonResponse:
             "accuracy_m": accuracy,
             "geofence_advisory": True,
             "advisory_note": "Server recomputed distance from reported coordinates; GPS can be inaccurate or spoofed.",
+            def debug_list_face_registrations(request: HttpRequest) -> JsonResponse:
         }
     )
 
@@ -338,7 +339,8 @@ def enroll_face(request: HttpRequest) -> JsonResponse:
             return JsonResponse({'error': 'captured_image required'}, status=400)
 
         # create or update FaceRegistration for this user
-        emp_id = f"user-{user.id}"
+        # Use the canonical `emp_{id}` prefix used elsewhere (complete_trainee_registration)
+        emp_id = f"emp_{user.id}"
         reg, _ = FaceRegistration.objects.get_or_create(user=user, defaults={'employee_id': emp_id})
         # delete previous image if exists
         if reg.image:
@@ -369,7 +371,7 @@ def enroll_face(request: HttpRequest) -> JsonResponse:
             supabase_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', None)
             if supabase_url and supabase_key and reg.image:
                 bucket = 'face-photos'
-                dest_path = f"user-{user.id}_{uuid.uuid4().hex}.{reg.image_format or 'jpg'}"
+                dest_path = f"emp_{user.id}_{uuid.uuid4().hex}.{reg.image_format or 'jpg'}"
                 upload_url = f"{supabase_url.rstrip('/')}/storage/v1/object/{bucket}/{dest_path}"
                 with open(reg.image.path, 'rb') as f:
                     img_bytes = f.read()

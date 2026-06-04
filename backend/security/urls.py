@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views, auth_views, attendance_views, application_views, announcement_views
+from . import api_views
 
 urlpatterns = [
     # Security/Face/Geofence endpoints
@@ -11,6 +12,7 @@ urlpatterns = [
     path("osm/streets/", views.osm_streets, name="osm_streets"),
     path("face/register/", views.register_face, name="register_face"),
     path("face/enroll/", views.enroll_face, name="enroll_face"),
+    path("face/debug/registrations/", views.debug_list_face_registrations, name="debug_list_face_registrations"),
     path("face/verify/", views.verify_face, name="verify_face"),
     path("attendance/photo/", views.save_attendance_photo, name="save_attendance_photo"),
     path("mobile/register/", views.mobile_register, name="mobile_register"),
@@ -24,6 +26,8 @@ urlpatterns = [
     path("auth/register-student/", auth_views.register_student, name="register_student"),
     path("auth/register-instructor/", auth_views.register_instructor, name="register_instructor"),
     path("auth/register-hte/", auth_views.register_hte, name="register_hte"),
+    # DRF-backed registration endpoints (serializer + transactional save)
+    path("auth/api/register/", api_views.RegisterAPIView.as_view(), name="api_register"),
     path("auth/server-create-employee/", auth_views.server_create_employee, name="server_create_employee"),
     path("auth/reset-password/", auth_views.reset_password, name="reset_password"),
     path("auth/check-email/", auth_views.check_email, name="check_email"),

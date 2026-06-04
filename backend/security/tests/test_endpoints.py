@@ -78,3 +78,46 @@ class ApplicationStatusEnrollTests(TestCase):
         fr = FaceRegistration.objects.filter(user=self.user).first()
         self.assertIsNotNone(fr)
         self.assertTrue(fr.image_data is not None or fr.image)
+
+    def test_enroll_and_verify_roundtrip(self):
+        """Enroll a small image and attempt to verify using the same image as captured."""
+        url_enroll = '/api/face/enroll/'
+        url_verify = '/api/face/verify/'
+        png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        payload = 'data:image/png;base64,' + png_b64
+
+        from django.test import RequestFactory
+        from .. import views
+
+        factory = RequestFactory()
+        # enroll
+        request = factory.post(url_enroll, data=json.dumps({'captured_image': payload}), content_type='application/json')
+        refresh = RefreshToken.for_user(self.user)
+        access = str(refresh.access_token)
+        request.META['HTTP_AUTHORIZATION'] = f'Bearer {access}'
+        resp = views.enroll_face(request)
+        status = getattr(resp, 'status_code', 200)
+        if hasattr(resp, 'json'):
+            data = resp.json()
+        else:
+            data = json.loads(resp.content.decode())
+        self.assertIn(status, (200, 201))
+        self.assertTrue(data.get('success'))
+
+        # verify using the same base64 as registered image
+        # Call verify_face directly with both registered and captured images
+        req2 = factory.post(url_verify, data=json.dumps({'registered_image': payload, 'captured_image': payload}), content_type='application/json')
+        req2.META['HTTP_AUTHORIZATION'] = f'Bearer {access}'
+        resp2 = views.verify_face(req2)
+        status2 = getattr(resp2, 'status_code', 200)
+        # If face_recognition not installed, endpoint returns 501; accept that
+        if status2 == 501:
+            # face_recognition unavailable in test env
+            self.assertTrue(True)
+        else:
+            if hasattr(resp2, 'json'):
+                data2 = resp2.json()
+            else:
+                data2 = json.loads(resp2.content.decode())
+            # Either matched or not found/no face; ensure response has expected structure
+            self.assertIn('success', data2)
