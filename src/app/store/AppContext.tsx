@@ -864,16 +864,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
         };
 
         let created = null as any;
+        // First try server-side insert (secure) which uses SUPABASE_SERVICE_ROLE_KEY on the server
         try {
-          created = await supabaseService.createEmployee(employeePayload);
-        } catch (createErr: any) {
-          console.error('Supabase createEmployee failed, falling back to local save:', createErr);
-          // Fallback: create locally so the user can sign up immediately
-          if (password) {
-            setPasswordForEmail(cleanData.email, password);
+          const resp = await fetch('/api/auth/server-create-employee/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(employeePayload),
+          });
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json && json.success && json.employee) {
+              created = json.employee;
+            } else if (json && json.employee) {
+              created = json.employee;
+            }
+          } else {
+            const errBody = await resp.text();
+            console.warn('Server create employee returned non-OK:', resp.status, errBody);
           }
-          setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
-          return { success: true, message: 'Created locally; Supabase sync failed: ' + (createErr?.message || String(createErr)), employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false } } as any;
+        } catch (err) {
+          console.warn('Server create employee request failed, will fallback to client Supabase:', err);
+        }
+
+        // Fallback to direct Supabase insert if server endpoint didn't return created row
+        if (!created) {
+          try {
+            created = await supabaseService.createEmployee(employeePayload);
+          } catch (createErr: any) {
+            console.error('Supabase createEmployee failed, falling back to local save:', createErr);
+            // Fallback: create locally so the user can sign up immediately
+            if (password) {
+              setPasswordForEmail(cleanData.email, password);
+            }
+            setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
+            return { success: true, message: 'Created locally; Supabase sync failed: ' + (createErr?.message || String(createErr)), employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false } } as any;
+          }
         }
 
         if (created) {
