@@ -153,10 +153,8 @@ export function Register() {
 
   // Force-submit removed: face capture/force submit is disabled for HTE and Instructors
 
-  // Capture location on mount and detect OAuth HTE prefill
+  // Detect OAuth HTE prefill on mount
   useEffect(() => {
-    captureLocation();
-
     try {
       const params = new URLSearchParams(window.location.search);
       const h = params.get('h');
@@ -177,6 +175,13 @@ export function Register() {
       // ignore
     }
   }, []);
+
+  // Automatically capture location for non‑trainee roles (admin, hte) when role is known
+  useEffect(() => {
+    if (role && role !== 'trainee' && locationStatus === 'idle') {
+      captureLocation();
+    }
+  }, [role, locationStatus]);
 
   const captureLocation = async () => {
     setLocationStatus('capturing');
@@ -324,6 +329,7 @@ export function Register() {
         role: 'trainee',
       };
 
+        // Include registration location for trainees if available
       if (registrationLocation) {
         payload.gps_latitude = registrationLocation.lat;
         payload.gps_longitude = registrationLocation.lng;
@@ -439,6 +445,12 @@ export function Register() {
           company_address: form.companyAddress || '',
           contact_person: form.contactPerson || '',
           contact_phone: form.contactPhone || '',
+          // Include registration GPS location if available
+          ...(registrationLocation ? {
+            gps_latitude: registrationLocation.lat,
+            gps_longitude: registrationLocation.lng,
+            gps_accuracy: registrationLocation.accuracy,
+          } : {}),
         };
         const res = await authAPI.registerHTE(payload);
         if (res?.data?.tokens) {
@@ -535,7 +547,8 @@ export function Register() {
         faceRegistered,
         photo,
         active: true,
-        registrationLocation,
+        // Ensure location info is always persisted even if GPS is missing
+        registrationLocation: registrationLocation || undefined,
         registrationAddress: computedAddress,
         password: form.password,
       });
@@ -659,7 +672,7 @@ export function Register() {
     if (role === 'trainee') {
       if (step === 0) {
         if (hasEmail && emailExists) errors.push('Email already in use');
-        if (locationStatus !== 'captured') errors.push('Capture Location');
+        // Location capture is no longer required for trainees
       }
       if (step === 1) {
         if (!form.companyName?.trim()) errors.push('Company Name');
@@ -709,7 +722,7 @@ export function Register() {
     captured: {
       color: 'bg-green-50 border-green-200',
       text: 'text-green-700',
-      label: registrationLocation ? `Location captured: ${registrationLocation.lat.toFixed(5)}, ${registrationLocation.lng.toFixed(5)}` : `Location captured: ${registrationAddress}`,
+      label: registrationLocation ? `Location captured: ${registrationLocation.lat.toFixed(5)}, ${registrationLocation.lng.toFixed(5)}` : '',
       icon: <Check size={14} className="text-green-500" />,
     },
     denied: {

@@ -107,7 +107,7 @@ export function TimeRecord() {
         timeInFaceVerified: true,
         timeOutFaceVerified: false,
         status,
-        timeInLocation: geofenceCoords,
+        timeInLocation: geofenceCoords || (employee as any).registrationLocation,
         timeInPhoto: storedImage,
       });
       setCurrentRecord(newRecord);
@@ -156,7 +156,7 @@ export function TimeRecord() {
         timeOutGeofenced: geofencePassed,
         timeOutFaceVerified: true,
         totalHours,
-        timeOutLocation: geofenceCoords,
+        timeOutLocation: geofenceCoords || (employee as any).registrationLocation,
         timeOutPhoto: storedImage,
         status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
       });
