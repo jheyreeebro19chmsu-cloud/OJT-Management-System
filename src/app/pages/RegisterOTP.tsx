@@ -232,78 +232,96 @@ export function RegisterOTP() {
     }
   };
 
-  const handleCompleteRegistration = async () => {
-    if (!form.password || form.password !== form.confirmPassword) return toast.error('Passwords do not match');
-    setLoading(true);
-    try {
-      const payload = { request_id: requestId, password: form.password };
-      const res = await fetch('/api/security/auth/complete-trainee-registration/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.text().catch(() => 'Registration failed');
-        throw new Error(err);
-      }
-      const data = await res.json();
-      toast.success('Registration completed');
-      if (data.tokens) {
-        localStorage.setItem('access_token', data.tokens.access);
-        localStorage.setItem('refresh_token', data.tokens.refresh);
-      }
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
+const handleCompleteRegistration = async () => {
+  // Validate inputs
+  if (!requestId) {
+    toast.error('Missing registration session');
+    return;
+  }
+  if (!form.password) {
+    toast.error('Password is required');
+    return;
+  }
+  if (form.password.length < 8) {
+    toast.error('Password must be at least 8 characters');
+    return;
+  }
+  if (form.password !== form.confirmPassword) {
+    toast.error('Passwords do not match');
+    return;
+  }
 
-        try {
-          // Persist a minimal Employee record so the SPA can show profile + photo immediately
-          const existing = localStorage.getItem('ojt_employees');
-          const employees = existing ? JSON.parse(existing) : [];
-          const newEmp = {
-            id: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
-            name: data.user.name || data.user.email || 'New User',
-            employeeId: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
-            email: data.user.email || '',
-            department: data.user.department || '',
-            position: data.user.role === 'trainee' ? 'OJT Trainee' : data.user.role,
-            companyName: data.user.company || '',
-            supervisorName: '',
-            schoolName: data.user.school || '',
-            course: data.user.course || '',
-            startDate: new Date().toISOString().split('T')[0],
-            endDate: new Date().toISOString().split('T')[0],
-            requiredHours: 0,
-            photo: data.user.avatar || '',
-            faceRegistered: true,
-            createdAt: new Date().toISOString().split('T')[0],
-            active: true,
-          };
-          employees.push(newEmp);
-          localStorage.setItem('ojt_employees', JSON.stringify(employees));
-
-          // Also set the app's current user key so the provider can pick it up on reload
-          const currentUser = {
-            id: newEmp.id,
-            name: newEmp.name,
-            role: newEmp.position === 'OJT Trainee' ? 'employee' : 'employee',
-            employeeId: newEmp.id,
-          };
-          localStorage.setItem('ojt_current_user', JSON.stringify(currentUser));
-        } catch (e) {
-          // ignore storage errors
-        }
-      }
-
-      // Give UI a moment then reload so AppProvider picks up the new current user and employee
-      setTimeout(() => {
-        window.location.reload();
-      }, 900);
-    } catch (err: any) {
-      toast.error(err?.message || 'Registration failed');
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const payload = {
+      request_id: requestId,
+      password: form.password,
+      confirm_password: form.confirmPassword,
+    };
+    const res = await fetch('/api/security/auth/complete-trainee-registration/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => 'Registration failed');
+      throw new Error(err);
     }
-  };
+    const data = await res.json();
+    toast.success('Registration completed');
+    // store tokens
+    if (data.tokens) {
+      localStorage.setItem('access_token', data.tokens.access);
+      localStorage.setItem('refresh_token', data.tokens.refresh);
+    }
+    // store user and employee info
+    if (data.user) {
+      localStorage.setItem('user', JSON.stringify(data.user));
+      try {
+        const existing = localStorage.getItem('ojt_employees');
+        const employees = existing ? JSON.parse(existing) : [];
+        const newEmp = {
+          id: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
+          name: data.user.name || data.user.email || 'New User',
+          employeeId: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
+          email: data.user.email || '',
+          department: data.user.department || '',
+          position: data.user.role === 'trainee' ? 'OJT Trainee' : data.user.role,
+          companyName: data.user.company || '',
+          supervisorName: '',
+          schoolName: data.user.school || '',
+          course: data.user.course || '',
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: new Date().toISOString().split('T')[0],
+          requiredHours: 0,
+          photo: data.user.avatar || '',
+          faceRegistered: true,
+          createdAt: new Date().toISOString().split('T')[0],
+          active: true,
+        };
+        employees.push(newEmp);
+        localStorage.setItem('ojt_employees', JSON.stringify(employees));
+        const currentUser = {
+          id: newEmp.id,
+          name: newEmp.name,
+          role: 'employee',
+          employeeId: newEmp.id,
+        };
+        localStorage.setItem('ojt_current_user', JSON.stringify(currentUser));
+      } catch (e) {
+        console.error('Storage update failed', e);
+      }
+    }
+    setTimeout(() => {
+      window.location.reload();
+    }, 900);
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    toast.error(err?.message || 'Registration failed');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
