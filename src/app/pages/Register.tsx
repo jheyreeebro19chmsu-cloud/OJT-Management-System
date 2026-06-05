@@ -855,8 +855,8 @@ export function Register() {
           </div>
         )}
 
-        {/* Location status bar - Only show when role is selected */}
-        {role !== null && (
+        {/* Location status bar - Only show when role is selected and not trainee */}
+        {role !== null && role !== 'trainee' && (
           <div
             className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border mb-4 ${locConfig.color} ${locConfig.text}`}
           >

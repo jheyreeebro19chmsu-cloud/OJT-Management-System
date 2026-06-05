@@ -447,6 +447,10 @@ export function Profile() {
                 </div>
               </div>
             )}
+            {/* Fallback to raw GPS coordinates if address missing */}
+            {(!employee.registrationAddress && (employee as any).registrationLocation) && (
+              <InfoRow label="Registered Location" value={`${(employee as any).registrationLocation.lat.toFixed(5)}, ${(employee as any).registrationLocation.lng.toFixed(5)}`} />
+            )}
           </div>
         )}
       </motion.div>
