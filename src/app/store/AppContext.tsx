@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { authAPI } from '../services/authApi';
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
@@ -686,6 +687,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const fallbackPassword =
         emp.position === 'OJT Instructor' ? 'admin123' : emp.position === 'HTE Representative' ? 'hte123' : 'ojt2024';
       if (password === (storedPassword || fallbackPassword)) {
+        // Obtain JWT token from backend login endpoint
+        try {
+          const resp = await authAPI.login(emp.email, password);
+          if (resp && resp.data && resp.data.tokens) {
+            localStorage.setItem('ojt_jwt_access_token', resp.data.tokens.access);
+            localStorage.setItem('ojt_jwt_refresh_token', resp.data.tokens.refresh);
+          }
+        } catch (e) {
+          console.warn('Failed to obtain JWT token during local login:', e);
+        }
         const role: User['role'] =
           emp.position === 'OJT Instructor' ? 'admin' : emp.position === 'HTE Representative' ? 'hte' : 'employee';
         const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id, email: normalizeEmail(emp.email) };

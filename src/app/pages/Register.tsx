@@ -709,7 +709,7 @@ export function Register() {
     captured: {
       color: 'bg-green-50 border-green-200',
       text: 'text-green-700',
-      label: `Location captured: ${registrationAddress}`,
+      label: registrationLocation ? `Location captured: ${registrationLocation.lat.toFixed(5)}, ${registrationLocation.lng.toFixed(5)}` : `Location captured: ${registrationAddress}`,
       icon: <Check size={14} className="text-green-500" />,
     },
     denied: {

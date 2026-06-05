@@ -35,44 +35,12 @@ export function formatDistance(meters: number): string {
 
 // Using `any` here to avoid depending on DOM lib types in environments
 export function getCurrentLocation(): Promise<any> {
-  // Collect a few high‑accuracy readings and average them to reduce jitter.
-  const readings: { lat: number; lng: number; accuracy?: number }[] = [];
-  const maxAttempts = 3;
-  const timeoutMs = 3000;
-
   return new Promise((resolve, reject) => {
-    const collect = (attempt: number) => {
-      if (attempt >= maxAttempts) {
-        // Average the collected points.
-        if (readings.length === 0) return reject(new Error('No GPS readings obtained'));
-        const avg = readings.reduce(
-          (acc, cur) => ({
-            lat: acc.lat + cur.lat / readings.length,
-            lng: acc.lng + cur.lng / readings.length,
-            accuracy: (acc.accuracy ?? 0) + (cur.accuracy ?? 0) / readings.length,
-          }),
-          { lat: 0, lng: 0, accuracy: 0 }
-        );
-        resolve({
-          coords: { latitude: avg.lat, longitude: avg.lng, accuracy: avg.accuracy },
-        } as any);
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          readings.push({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          });
-          // Small pause before next attempt to allow GPS to stabilise.
-          setTimeout(() => collect(attempt + 1), 400);
-        },
-        (err) => reject(err),
-        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
-      );
-    };
-    collect(0);
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      reject,
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
   });
 }
 

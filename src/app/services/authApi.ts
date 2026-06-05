@@ -12,7 +12,7 @@ const api = axios.create({
 
 // Add token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
+  const token = localStorage.getItem('ojt_jwt_access_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -25,22 +25,23 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest?.headers?.authorization?.includes('refresh')) {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${API_BASE}/auth/token/refresh/`, {
-            refresh: refreshToken,
-          });
-          localStorage.setItem('access_token', response.data.access);
-          api.defaults.headers.authorization = `Bearer ${response.data.access}`;
-          return api(originalRequest!);
-        } catch {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          window.location.href = '/login';
+        const refreshToken = localStorage.getItem('ojt_jwt_refresh_token');
+        if (refreshToken) {
+          try {
+            const response = await axios.post(`${API_BASE}/auth/token/refresh/`, {
+              refresh: refreshToken,
+            });
+            localStorage.setItem('ojt_jwt_access_token', response.data.access);
+            localStorage.setItem('ojt_jwt_refresh_token', response.data.refresh);
+            api.defaults.headers.authorization = `Bearer ${response.data.access}`;
+            return api(originalRequest!);
+          } catch {
+            localStorage.removeItem('ojt_jwt_access_token');
+            localStorage.removeItem('ojt_jwt_refresh_token');
+            window.location.href = '/login';
+          }
         }
       }
-    }
     return Promise.reject(error);
   }
 );

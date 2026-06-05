@@ -80,6 +80,7 @@ function getAuthToken(): string | null {
  */
 function getHeaders(): HeadersInit {
   const token = getAuthToken();
+  console.log('HTE API getHeaders token:', token);
   return {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
@@ -93,7 +94,7 @@ export async function getHTEDashboard(): Promise<
   ApiResponse<{ metrics: HTEDashboardMetrics; recent_time_records: TimeRecord[] }>
 > {
   try {
-    const response = await fetch(`${API_BASE}/security/hte/dashboard/`, {
+    const response = await fetch(`${API_BASE}/hte/dashboard/`, {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -116,7 +117,7 @@ export async function getHTEDashboard(): Promise<
  */
 export async function getHTEApplications(): Promise<ApiResponse<{ applications: HTEApplication[] }>> {
   try {
-    const response = await fetch(`${API_BASE}/security/hte/applications/`, {
+    const response = await fetch(`${API_BASE}/hte/applications/`, {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -139,7 +140,7 @@ export async function getHTEApplications(): Promise<ApiResponse<{ applications: 
  */
 export async function getHTETimeRecords(): Promise<ApiResponse<{ time_records: TimeRecord[] }>> {
   try {
-    const response = await fetch(`${API_BASE}/security/hte/time-records/`, {
+    const response = await fetch(`${API_BASE}/hte/time-records/`, {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -162,7 +163,7 @@ export async function getHTETimeRecords(): Promise<ApiResponse<{ time_records: T
  */
 export async function getHTEAccessRequests(): Promise<ApiResponse<{ access_requests: AccessRequest[] }>> {
   try {
-    const response = await fetch(`${API_BASE}/security/hte/access-requests/`, {
+    const response = await fetch(`${API_BASE}/hte/access-requests/`, {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -185,7 +186,7 @@ export async function getHTEAccessRequests(): Promise<ApiResponse<{ access_reque
  */
 export async function getHTERegistrations(): Promise<ApiResponse<{ registrations: Registration[] }>> {
   try {
-    const response = await fetch(`${API_BASE}/security/hte/registrations/`, {
+    const response = await fetch(`${API_BASE}/hte/registrations/`, {
       method: 'GET',
       headers: getHeaders(),
     });

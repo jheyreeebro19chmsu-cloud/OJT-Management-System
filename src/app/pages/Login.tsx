@@ -34,7 +34,7 @@ export function Login() {
       if (user.role === 'admin') navigate('/admin');
       else if (user.role === 'hte') {
         localStorage.setItem('ojt_hte_user', JSON.stringify(user));
-        navigate('/hte/dashboard');
+        navigate('/hte');
       } else if (user.role === 'host') navigate('/host/feedback');
       else navigate('/app');
     } else {
