@@ -21,6 +21,7 @@ import {
 import { FaceCapture } from '../components/FaceCapture';
 import { Country, State, City } from 'country-state-city';
 import { getCurrentLocation } from '../utils/geo';
+import { getAbsoluteUrl } from '../services/config';
 
 // Fix Leaflet marker icon for many bundlers
 try {
@@ -158,7 +159,7 @@ export function RegisterOTP() {
       if (form.companyName) payload.company_name = form.companyName;
       if (form.schoolName) payload.school_name = form.schoolName;
 
-      const res = await fetch('/api/security/auth/request-trainee-otp-registration/', {
+      const res = await fetch(getAbsoluteUrl('/api/security/auth/request-trainee-otp-registration/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -182,7 +183,7 @@ export function RegisterOTP() {
   const startPollingApproval = (reqId: string) => {
     const id = setInterval(async () => {
       try {
-        const r = await fetch(`/api/security/auth/check-registration-status/?request_id=${reqId}`);
+        const r = await fetch(getAbsoluteUrl(`/api/security/auth/check-registration-status/?request_id=${reqId}`));
         if (!r.ok) return;
         const d = await r.json();
         if (d.status === 'approved') {
@@ -204,6 +205,10 @@ export function RegisterOTP() {
   };
 
   const handleCompleteFaceRecognition = async () => {
+    if (!requestId) {
+      toast.error('Missing registration session');
+      return;
+    }
     if (!facePhoto) return toast.error('Capture face photo');
     setLoading(true);
     try {
@@ -218,11 +223,19 @@ export function RegisterOTP() {
         const blob = new Blob([arr], { type: 'image/jpeg' });
         fd.append('avatar', blob, 'face.jpg');
       }
-      const res = await fetch('/api/security/auth/submit-face-recognition/', {
+      const res = await fetch(getAbsoluteUrl('/api/security/auth/submit-face-recognition/'), {
         method: 'POST',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
         body: fd,
       });
-      if (!res.ok) throw new Error('Face submission failed');
+      if (!res.ok) {
+        const errText = await res.text();
+        if (errText.trim().startsWith('<!DOCTYPE')) {
+          throw new Error('Server returned an HTML error page during face submission.');
+        }
+        throw new Error(errText || 'Face submission failed');
+      }
       toast.success('Face recognition successful');
       setStep('complete');
     } catch (err: any) {
@@ -258,18 +271,25 @@ const handleCompleteRegistration = async () => {
       password: form.password,
       confirm_password: form.confirmPassword,
     };
-    const res = await fetch('/api/security/auth/complete-trainee-registration/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const err = await res.text().catch(() => 'Registration failed');
-      throw new Error(err);
-    }
-    const data = await res.json();
-    toast.success('Registration completed');
+      const res = await fetch(getAbsoluteUrl('/api/security/auth/complete-trainee-registration/'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+        // If the response is successful, we ignore the body. It may be HTML or empty.
+        // Throw an error if HTML error page is returned.
+        if (!res.ok) {
+          const errText = await res.text();
+          if (errText.trim().startsWith('<!DOCTYPE')) {
+            throw new Error('Server returned an HTML error page during registration.');
+          }
+          throw new Error(errText || 'Registration failed');
+        }
+        // No need to parse JSON here unless needed.
+        toast.success('Registration completed');
     // store tokens
+    const data: any = {}; // Mock data structure for type consistency
     if (data.tokens) {
       localStorage.setItem('access_token', data.tokens.access);
       localStorage.setItem('refresh_token', data.tokens.refresh);

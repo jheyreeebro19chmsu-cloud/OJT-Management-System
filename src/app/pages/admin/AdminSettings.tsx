@@ -19,6 +19,7 @@ import { isSupabaseConfigured } from '../../lib/supabase';
 import addressApi from '../../services/addressApi';
 import { fetchSecurityHealth, isSecurityApiConfigured, type SecurityHealthResponse } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
+import { getAbsoluteUrl } from '../../services/config';
 
 export function AdminSettings() {
   const { settings, updateSettings, changeCurrentUserPassword, currentUser } = useApp();
@@ -231,7 +232,7 @@ export function AdminSettings() {
     if (!currentUser?.id) return;
     setLoadingOtps(true);
     try {
-      const res = await fetch(`/api/security/auth/list-instructor-otps/?instructor_id=${currentUser.id}`);
+      const res = await fetch(getAbsoluteUrl(`/api/security/auth/list-instructor-otps/?instructor_id=${currentUser.id}`));
       if (!res.ok) throw new Error('Failed to load OTPs');
       const d = await res.json();
       setOtps(d.otps || []);
@@ -252,7 +253,7 @@ export function AdminSettings() {
   const handleGenerateOtp = async () => {
     if (!currentUser?.id) return toast.error('Instructor context not available');
     try {
-      const res = await fetch('/api/security/auth/generate-instructor-otp/', {
+      const res = await fetch(getAbsoluteUrl('/api/security/auth/generate-instructor-otp/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instructor_id: currentUser.id }),
@@ -271,7 +272,7 @@ export function AdminSettings() {
   const handleRevokeOtp = async (code: string) => {
     if (!currentUser?.id) return;
     try {
-      const res = await fetch('/api/security/auth/revoke-instructor-otp/', {
+      const res = await fetch(getAbsoluteUrl('/api/security/auth/revoke-instructor-otp/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instructor_id: currentUser.id, otp_code: code }),

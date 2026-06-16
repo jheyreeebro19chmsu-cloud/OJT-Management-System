@@ -18,7 +18,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
-import { getPhotoUrl } from '../services/config';
+import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
 
 
 const navItems = [
@@ -67,7 +67,7 @@ export function AdminLayout() {
         return null;
       })();
       if (!instrId) return setPendingCount(0);
-      const res = await fetch(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${instrId}`);
+      const res = await fetch(getAbsoluteUrl(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${instrId}`));
       if (!res.ok) return;
       const data = await res.json();
       const count = Array.isArray(data.requests) ? data.requests.length : 0;
@@ -101,7 +101,7 @@ export function AdminLayout() {
       try {
         const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null; })();
         if (!instrId || typeof window === 'undefined' || !('EventSource' in window)) return;
-        const url = `/api/security/auth/pending-requests/stream/?instructor_id=${instrId}`;
+        const url = getAbsoluteUrl(`/api/security/auth/pending-requests/stream/?instructor_id=${instrId}`);
         es = new EventSource(url);
         es.onmessage = (ev) => {
           try {

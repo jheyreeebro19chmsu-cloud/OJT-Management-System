@@ -42,6 +42,9 @@ urlpatterns = [
     path("auth/complete-trainee-registration/", auth_views.complete_trainee_registration, name="complete_trainee_registration"),
     path("auth/get-instructor-by-email/", auth_views.get_instructor_by_email, name="get_instructor_by_email"),
     path("auth/check-registration-status/", auth_views.check_registration_status, name="check_registration_status"),
+    path("auth/generate-instructor-otp/", auth_views.generate_instructor_otp, name="generate_instructor_otp"),
+    path("auth/list-instructor-otps/", auth_views.list_instructor_otps, name="list_instructor_otps"),
+    path("auth/revoke-instructor-otp/", auth_views.revoke_instructor_otp, name="revoke_instructor_otp"),
     
     # Attendance endpoints
     path("auth/verify-qr/", attendance_views.verify_qr, name="verify_qr"),

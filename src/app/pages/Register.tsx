@@ -34,6 +34,7 @@ import { authAPI } from '../services/authApi';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
+import { getAbsoluteUrl } from '../services/config';
 
 // Fix Leaflet marker icon using a method that's safer for production builds
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -309,9 +310,9 @@ export function Register() {
 
     setRequestingInstructorOtp(true);
     try {
-      const lookup = await fetch(`/api/auth/get-instructor-by-email/?email=${encodeURIComponent(
+      const lookup = await fetch(getAbsoluteUrl(`/api/auth/get-instructor-by-email/?email=${encodeURIComponent(
         form.instructorEmail
-      )}`);
+      )}`));
       if (!lookup.ok) throw new Error('Instructor lookup failed');
       const lookupData = await lookup.json();
       const instructorId = lookupData?.instructor?.id || lookupData?.id || lookupData?.user?.id;
@@ -338,7 +339,7 @@ export function Register() {
       if (form.schoolName) payload.school_name = form.schoolName;
       if (form.course) payload.course = form.course;
 
-      const req = await fetch('/api/auth/request-trainee-otp-registration/', {
+      const req = await fetch(getAbsoluteUrl('/api/auth/request-trainee-otp-registration/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -777,7 +778,7 @@ export function Register() {
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch('/api/security/auth/generate-instructor-otp/', {
+                  const res = await fetch(getAbsoluteUrl('/api/security/auth/generate-instructor-otp/'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ instructor_id: registeredInstructorId }),

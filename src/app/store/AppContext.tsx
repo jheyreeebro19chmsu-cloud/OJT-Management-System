@@ -4,6 +4,7 @@ import { authAPI } from '../services/authApi';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
+import { getAbsoluteUrl } from '../services/config';
 import {
   Employee,
   TimeRecord,
@@ -907,7 +908,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         let created = null as any;
         // First try server-side insert (secure) which uses SUPABASE_SERVICE_ROLE_KEY on the server
         try {
-          const resp = await fetch('/api/auth/server-create-employee/', {
+          const resp = await fetch(getAbsoluteUrl('/api/auth/server-create-employee/'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(employeePayload),

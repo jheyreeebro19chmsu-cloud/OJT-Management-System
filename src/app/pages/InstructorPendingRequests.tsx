@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
+import { getAbsoluteUrl } from '../services/config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export default function InstructorPendingRequests({
     }
     try {
       const res = await fetch(
-        `/api/security/auth/get-pending-trainee-requests/?instructor_id=${resolvedInstructorId}`,
+        getAbsoluteUrl(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${resolvedInstructorId}`),
       );
       if (!res.ok) throw new Error('Failed to fetch requests');
       const data = await res.json();
@@ -154,7 +155,7 @@ export default function InstructorPendingRequests({
   const handleApprove = async (requestId: string) => {
     setApproving(requestId);
     try {
-      const res = await fetch('/api/security/auth/approve-trainee-registration/', {
+      const res = await fetch(getAbsoluteUrl('/api/security/auth/approve-trainee-registration/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ request_id: requestId }),
@@ -174,7 +175,7 @@ export default function InstructorPendingRequests({
   if (!selectedRequest) return;
   setRejecting(selectedRequest.id);
   try {
-    const res = await fetch('/api/security/auth/reject-trainee-registration/', {
+    const res = await fetch(getAbsoluteUrl('/api/security/auth/reject-trainee-registration/'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ request_id: selectedRequest.id, reason: rejectReason }),

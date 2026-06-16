@@ -44,6 +44,13 @@ export const getSecurityApiKey = (): string => {
 export const API_BASE = getApiBase();
 export const SECURITY_API_KEY = getSecurityApiKey();
 
+export const getAbsoluteUrl = (path: string): string => {
+  const apiBaseClean = API_BASE.replace(/\/+$/, '');
+  const cleanPath = path.startsWith('/api/') ? path.slice(4) : path;
+  const joinPath = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
+  return `${apiBaseClean}${joinPath}`;
+};
+
 export const getPhotoUrl = (photoPath: string | null | undefined): string => {
   if (!photoPath) return '';
   // Handle object values stored accidentally (e.g., { url })
