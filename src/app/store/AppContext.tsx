@@ -834,6 +834,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       companyName: employeeData.companyName || (employeeData.position === 'HTE Representative' ? 'HTE Partner' : 'N/A'),
       supervisorName: employeeData.supervisorName || 'N/A',
       schoolName: employeeData.schoolName || 'N/A',
+      campus: employeeData.campus || 'N/A',
       course: employeeData.course || 'N/A',
       startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
       endDate: employeeData.endDate || new Date().toISOString().split('T')[0],

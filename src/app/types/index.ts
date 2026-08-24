@@ -9,6 +9,7 @@ export interface Employee {
   companyName: string;
   supervisorName: string;
   schoolName: string;
+  campus?: string;
   course: string;
   startDate: string;
   endDate: string;

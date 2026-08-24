@@ -27,7 +27,6 @@ export function AdminSettings() {
   const supabaseConnected = isSupabaseConfigured();
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [securityHealthLoading, setSecurityHealthLoading] = useState(false);
-  // OTP management state
   const [otps, setOtps] = useState<Array<any>>([]);
   const [loadingOtps, setLoadingOtps] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -50,6 +49,7 @@ export function AdminSettings() {
       toast.error('Set VITE_DJANGO_API_URL in .env and restart the dev server.');
       return;
     }
+
     setSecurityHealthLoading(true);
     try {
       const h = await fetchSecurityHealth();
@@ -78,7 +78,6 @@ export function AdminSettings() {
     }
   };
 
-  // Offline streets uploader state
   const [uploadCountry, setUploadCountry] = useState('');
   const [uploadUrl, setUploadUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -95,6 +94,7 @@ export function AdminSettings() {
   const handleFileUpload = async (file?: File) => {
     if (!file) return;
     if (!uploadCountry) return toast.error('Enter country code (e.g. PH)');
+
     setUploading(true);
     setProgressPercent(null);
     try {
@@ -106,7 +106,7 @@ export function AdminSettings() {
       } else {
         toast.error('Registration failed (invalid data)');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to read or parse file');
     } finally {
       setUploading(false);
@@ -117,17 +117,19 @@ export function AdminSettings() {
   const handleUrlRegister = async () => {
     if (!uploadUrl) return toast.error('Enter a URL');
     if (!uploadCountry) return toast.error('Enter country code (e.g. PH)');
+
     setUploading(true);
     setProgressPercent(null);
     try {
       const res = await fetch(uploadUrl);
-      // try streaming the response to report progress
       const contentLength = res.headers.get('content-length');
+
       if (res.body && contentLength) {
         const total = parseInt(contentLength, 10);
         const reader = res.body.getReader();
         let received = 0;
         const chunks: Uint8Array[] = [];
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -137,6 +139,7 @@ export function AdminSettings() {
             setProgressPercent(Math.round((received / total) * 100));
           }
         }
+
         const decoder = new TextDecoder('utf-8');
         const text = chunks.map((c) => decoder.decode(c)).join('');
         const data = JSON.parse(text);
@@ -149,7 +152,7 @@ export function AdminSettings() {
         if (ok) toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()}`);
         else toast.error('Registration failed (invalid data)');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to fetch or parse JSON from URL');
     } finally {
       setUploading(false);
@@ -160,22 +163,24 @@ export function AdminSettings() {
   const handleDropboxRegister = async () => {
     if (!dropboxUrl) return toast.error('Enter Dropbox share URL');
     if (!uploadCountry) return toast.error('Enter country code (e.g. PH)');
+
     setUploading(true);
     setProgressPercent(null);
     try {
-      // Convert common Dropbox share url to direct download
       let url = dropboxUrl.trim();
-      // If it's a www.dropbox.com link with ?dl=0, replace with dl=1
       if (url.includes('dropbox.com')) {
         url = url.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
       }
+
       const res = await fetch(url);
       const contentLength = res.headers.get('content-length');
+
       if (res.body && contentLength) {
         const total = parseInt(contentLength, 10);
         const reader = res.body.getReader();
         let received = 0;
         const chunks: Uint8Array[] = [];
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -185,6 +190,7 @@ export function AdminSettings() {
             setProgressPercent(Math.round((received / total) * 100));
           }
         }
+
         const decoder = new TextDecoder('utf-8');
         const text = chunks.map((c) => decoder.decode(c)).join('');
         const data = JSON.parse(text);
@@ -197,12 +203,11 @@ export function AdminSettings() {
         if (ok) toast.success(`Registered offline streets for ${uploadCountry.toUpperCase()} from Dropbox`);
         else toast.error('Registration failed (invalid data)');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to fetch or parse JSON from Dropbox URL');
     } finally {
       setUploading(false);
       setProgressPercent(null);
-      // refresh list
       refreshPersistedList();
     }
   };
@@ -213,6 +218,7 @@ export function AdminSettings() {
       setPersistedCountries(list || []);
       const map: Record<string, { citiesCount: number; hasMeta: boolean }> = {};
       const detailsMap: Record<string, { name: string; regions: string[]; sampleCities: string[] }> = {};
+
       await Promise.all(
         (list || []).map(async (c) => {
           const s = await addressApi.getOfflineSummary(c);
@@ -221,9 +227,10 @@ export function AdminSettings() {
           detailsMap[c] = { name: d.name, regions: d.regions, sampleCities: d.sampleCities };
         })
       );
+
       setPersistedSummaries(map);
       setPersistedDetails(detailsMap);
-    } catch (err) {
+    } catch {
       // ignore
     }
   };
@@ -252,12 +259,14 @@ export function AdminSettings() {
 
   const handleGenerateOtp = async () => {
     if (!currentUser?.id) return toast.error('Instructor context not available');
+
     try {
       const res = await fetch(getAbsoluteUrl('/api/security/auth/generate-instructor-otp/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instructor_id: currentUser.id }),
       });
+
       if (!res.ok) throw new Error('Failed to generate OTP');
       const d = await res.json();
       toast.success('OTP generated and copied to clipboard');
@@ -271,12 +280,14 @@ export function AdminSettings() {
 
   const handleRevokeOtp = async (code: string) => {
     if (!currentUser?.id) return;
+
     try {
       const res = await fetch(getAbsoluteUrl('/api/security/auth/revoke-instructor-otp/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instructor_id: currentUser.id, otp_code: code }),
       });
+
       if (!res.ok) throw new Error('Revoke failed');
       toast.success('OTP revoked');
       fetchOtps();
@@ -293,7 +304,6 @@ export function AdminSettings() {
         <p className="text-sm text-gray-500">Configure attendance rules and verification requirements</p>
       </div>
 
-      {/* Work Schedule */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -308,6 +318,7 @@ export function AdminSettings() {
             <p className="text-xs text-gray-500">Define standard work hours and late threshold</p>
           </div>
         </div>
+
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -329,6 +340,7 @@ export function AdminSettings() {
               />
             </div>
           </div>
+
           <div>
             <label className="text-xs font-semibold text-gray-600 block mb-1.5">
               Late Threshold: <span className="text-blue-600">{form.lateThresholdMinutes} minutes</span>
@@ -348,8 +360,7 @@ export function AdminSettings() {
               <span>60 min</span>
             </div>
             <p className="text-xs text-gray-500 mt-1.5">
-              Trainees who clock in more than {form.lateThresholdMinutes} minutes after {form.workStartTime} will be
-              marked as late.
+              Trainees who clock in more than {form.lateThresholdMinutes} minutes after {form.workStartTime} will be marked as late.
             </p>
           </div>
         </div>
@@ -395,7 +406,6 @@ export function AdminSettings() {
         </div>
       </motion.div>
 
-      {/* Geofencing Settings */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -411,6 +421,7 @@ export function AdminSettings() {
             <p className="text-xs text-gray-500">Location-based attendance verification</p>
           </div>
         </div>
+
         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
           <div>
             <p className="font-medium text-gray-700 text-sm">Enable Geofencing</p>
@@ -427,6 +438,7 @@ export function AdminSettings() {
             />
           </button>
         </div>
+
         {form.geofenceEnabled && (
           <div className="mt-3 bg-green-50 rounded-xl p-3 text-xs text-green-700">
             <p>✓ Trainees must be within an active geofence zone to record attendance.</p>
@@ -435,6 +447,7 @@ export function AdminSettings() {
             </p>
           </div>
         )}
+
         {!form.geofenceEnabled && (
           <div className="mt-3 bg-yellow-50 rounded-xl p-3 text-xs text-yellow-700">
             <p>⚠ Geofencing is disabled. Trainees can clock in/out from any location.</p>
@@ -442,7 +455,6 @@ export function AdminSettings() {
         )}
       </motion.div>
 
-      {/* Facial Recognition Settings */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -459,7 +471,6 @@ export function AdminSettings() {
           </div>
         </div>
 
-        {/* Instructor OTP Management */}
         <div className="mt-6 border-t pt-4">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -486,8 +497,18 @@ export function AdminSettings() {
                       <div className="text-xs text-gray-400">Created: {new Date(o.created_at).toLocaleString()}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => { navigator.clipboard.writeText(o.otp_code); toast.success('Copied'); }} className="px-2 py-1 bg-blue-50 text-blue-600 rounded">Copy</button>
-                      <button onClick={() => handleRevokeOtp(o.otp_code)} className="px-2 py-1 bg-red-50 text-red-600 rounded">Revoke</button>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(o.otp_code);
+                          toast.success('Copied');
+                        }}
+                        className="px-2 py-1 bg-blue-50 text-blue-600 rounded"
+                      >
+                        Copy
+                      </button>
+                      <button onClick={() => handleRevokeOtp(o.otp_code)} className="px-2 py-1 bg-red-50 text-red-600 rounded">
+                        Revoke
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -495,7 +516,8 @@ export function AdminSettings() {
             )}
           </div>
         </div>
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl mt-4">
           <div>
             <p className="font-medium text-gray-700 text-sm">Enable Facial Recognition</p>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -511,6 +533,7 @@ export function AdminSettings() {
             />
           </button>
         </div>
+
         {form.facialRecognitionEnabled && (
           <div className="mt-3 bg-purple-50 rounded-xl p-3 text-xs text-purple-700">
             <p>✓ Trainees must pass facial recognition to record attendance.</p>
@@ -519,7 +542,6 @@ export function AdminSettings() {
         )}
       </motion.div>
 
-      {/* Verification Mode Info */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -571,7 +593,6 @@ export function AdminSettings() {
         </div>
       </motion.div>
 
-      {/* Offline Streets Uploader */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -630,9 +651,7 @@ export function AdminSettings() {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1">
-              Or register from Dropbox share link
-            </label>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">Or register from Dropbox share link</label>
             <div className="flex gap-2">
               <input
                 value={dropboxUrl}
@@ -648,8 +667,7 @@ export function AdminSettings() {
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Dropbox links will be converted to direct downloads; the file must be valid JSON matching the expected
-              structure.
+              Dropbox links will be converted to direct downloads; the file must be valid JSON matching the expected structure.
             </p>
           </div>
 
@@ -662,7 +680,6 @@ export function AdminSettings() {
             </div>
           )}
 
-          {/* Persisted offline datasets list */}
           <div className="mt-4">
             <h4 className="text-sm font-semibold text-gray-700 mb-2">Persisted Offline Datasets</h4>
             {persistedCountries.length === 0 ? (
@@ -709,6 +726,7 @@ export function AdminSettings() {
                           </button>
                         </div>
                       </div>
+
                       {d.regions.length > 0 && (
                         <div className="mt-2 text-xs text-gray-600">
                           <div className="font-semibold text-[12px] text-gray-700">Regions</div>
@@ -721,6 +739,7 @@ export function AdminSettings() {
                           </div>
                         </div>
                       )}
+
                       {d.sampleCities.length > 0 && (
                         <div className="mt-2 text-xs text-gray-600">
                           <div className="font-semibold text-[12px] text-gray-700">Sample Cities</div>
@@ -741,9 +760,9 @@ export function AdminSettings() {
           </div>
 
           <div className="text-xs text-gray-500">
-            Registered datasets are kept in memory for the current session. Use the <strong>Clear Cache</strong> button
-            below to clear street lookup cache.
+            Registered datasets are kept in memory for the current session. Use the <strong>Clear Cache</strong> button below to clear street lookup cache.
           </div>
+
           <div className="flex gap-2">
             <button
               onClick={async () => {
@@ -780,7 +799,6 @@ export function AdminSettings() {
         </div>
       </motion.div>
 
-      {/* Database Connection Status */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -817,13 +835,11 @@ export function AdminSettings() {
             <p className="text-xs text-gray-600">
               {supabaseConnected ? (
                 <>
-                  All data is being synced to your Supabase cloud database. Data is persistent and accessible across
-                  devices.
+                  All data is being synced to your Supabase cloud database. Data is persistent and accessible across devices.
                 </>
               ) : (
                 <>
-                  Data is stored locally in your browser. To enable cloud sync and multi-device access, connect to
-                  Supabase.
+                  Data is stored locally in your browser. To enable cloud sync and multi-device access, connect to Supabase.
                 </>
               )}
             </p>
@@ -889,13 +905,14 @@ export function AdminSettings() {
             <p className="text-xs text-gray-500">Geofence check, face register/verify, attendance photos</p>
           </div>
         </div>
+
         <p className="text-xs text-gray-600 mb-3">
           Configure <code className="bg-gray-100 px-1 rounded text-[11px]">VITE_DJANGO_API_URL</code> and optionally{' '}
           <code className="bg-gray-100 px-1 rounded text-[11px]">VITE_SECURITY_API_KEY</code> to match{' '}
-          <code className="bg-gray-100 px-1 rounded text-[11px]">DJANGO_SECURITY_API_KEY</code> on the server. Lock CORS
-          with <code className="bg-gray-100 px-1 rounded text-[11px]">DJANGO_CORS_ORIGINS</code> and enable HTTPS flags
-          when deployed.
+          <code className="bg-gray-100 px-1 rounded text-[11px]">DJANGO_SECURITY_API_KEY</code> on the server. Lock CORS with{' '}
+          <code className="bg-gray-100 px-1 rounded text-[11px]">DJANGO_CORS_ORIGINS</code> and enable HTTPS flags when deployed.
         </p>
+
         <button
           type="button"
           onClick={probeSecurityBackend}
@@ -904,6 +921,7 @@ export function AdminSettings() {
         >
           {securityHealthLoading ? 'Checking…' : 'Probe /api/health/'}
         </button>
+
         {securityHealth && (
           <div className="mt-3 text-xs rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-1 font-mono text-gray-700">
             <p>status: {securityHealth.status}</p>
@@ -913,7 +931,6 @@ export function AdminSettings() {
         )}
       </motion.div>
 
-      {/* Action Buttons */}
       <div className="flex gap-3">
         <button
           onClick={handleSave}

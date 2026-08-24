@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { URL } from 'url';
+import { getAllEmployees, createEmployee, updateEmployee, deleteEmployee } from './src/backend/db';
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
@@ -111,7 +112,123 @@ const server = http.createServer((req, res) => {
   // Log incoming requests
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
 
-  // ====== API PROXY ROUTE ======
+  // ----- SQLite Settings API -----
+  if (req.url.startsWith('/api/settings')) {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const parts = url.pathname.split('/');
+    const key = parts[3]; // /api/settings/:key
+
+// DB helpers imported at top
+
+    if (req.method === 'GET' && key) {
+      const value = getSetting(key);
+      res.statusCode = value !== null ? 200 : 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ key, value }));
+      return;
+    }
+
+    if (req.method === 'POST' && key) {
+      let body = '';
+      req.on('data', chunk => (body += chunk));
+      req.on('end', () => {
+        try {
+          const { value } = JSON.parse(body);
+          setSetting(key, value);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ success: true }));
+        } catch {
+          res.statusCode = 400;
+          res.end('Invalid JSON');
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'DELETE' && key) {
+      deleteSetting(key);
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    // Bad request (missing key or unsupported method)
+    res.statusCode = 400;
+    res.end('Invalid request');
+    return;
+  }
+
+  // ====== EMPLOYEE CRUD API ROUTES ======
+if (req.url.startsWith('/api/employees')) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const parts = url.pathname.split('/');
+  const id = parts[3]; // /api/employees/:id
+
+  if (req.method === 'GET' && !id) {
+    // List all employees
+    const employees = getAllEmployees();
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    res.end(JSON.stringify({ employees }));
+    return;
+  }
+
+  if (req.method === 'POST' && !id) {
+    // Create new employee
+    let body = '';
+    req.on('data', chunk => (body += chunk));
+    req.on('end', () => {
+      try {
+        const emp = JSON.parse(body);
+        const newId = createEmployee(emp.name, emp.email);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ success: true, id: newId }));
+      } catch {
+        res.statusCode = 400;
+        res.end('Invalid JSON');
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'PUT' && id) {
+    // Update employee (expects name and email)
+    let body = '';
+    req.on('data', chunk => (body += chunk));
+    req.on('end', () => {
+      try {
+        const emp = JSON.parse(body);
+        updateEmployee(Number(id), emp.name, emp.email);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ success: true }));
+      } catch {
+        res.statusCode = 400;
+        res.end('Invalid JSON');
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'DELETE' && id) {
+    deleteEmployee(Number(id));
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ success: true }));
+    return;
+  }
+
+  // Unsupported method
+  res.statusCode = 405;
+  res.end('Method Not Allowed');
+  return;
+}
   // If request is for /api/*, proxy to backend with CORS headers
   if (req.url.startsWith('/api/')) {
     const backendPath = req.url; // Already includes /api/...

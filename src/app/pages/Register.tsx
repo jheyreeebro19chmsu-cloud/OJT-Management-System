@@ -59,6 +59,48 @@ export function Register() {
   const [step, setStep] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
+  const schoolOptions = [
+    'University of St. La Salle',
+    'La Consolacion College Bacolod',
+    'Carlos Hilado Memorial State University',
+    'Bacolod City College',
+    'University of Negros Occidental - Recoletos',
+    'STI West Negros University',
+    'Other',
+  ];
+  const talisayDepartmentOptions = [
+    'College of Arts and Sciences',
+    'College of Business Management and Accountancy',
+    'College of Computer Studies',
+    'College of Education',
+    'College of Engineering',
+    'College of Industrial Technology',
+  ];
+  const programOptions = [
+    'BS Information Technology',
+    'BS Computer Science',
+    'BS Computer Engineering',
+    'BS Business Administration',
+    'BS Accountancy',
+    'BS Nursing',
+    'BS Psychology',
+    'BS Education',
+    'BS Criminology',
+    'BS Civil Engineering',
+    'Other',
+  ];
+  const talisayProgramOptions = [
+    'BS Information Technology',
+    'BS Computer Science',
+    'BS Computer Engineering',
+    'BS Business Administration',
+    'BS Accountancy',
+    'BS Psychology',
+    'Bachelor of Secondary Education',
+    'Bachelor of Elementary Education',
+    'BS Civil Engineering',
+    'Other',
+  ];
   const [form, setForm] = useState({
     // Personal Information
     name: '',
@@ -93,6 +135,7 @@ export function Register() {
     contactPhone: '',
     // School/Instructor Information
     schoolName: '',
+    campus: '',
     course: '',
     instructorEmail: '',
     supervisorName: '',
@@ -102,6 +145,9 @@ export function Register() {
     endDate: '',
     requiredHours: 486,
   });
+
+  const selectedDepartmentOptions = form.campus === 'Talisay Campus' ? talisayDepartmentOptions : schoolOptions;
+  const selectedProgramOptions = form.campus === 'Talisay Campus' ? talisayProgramOptions : programOptions;
 
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -337,6 +383,7 @@ export function Register() {
       }
       if (form.companyName) payload.company_name = form.companyName;
       if (form.schoolName) payload.school_name = form.schoolName;
+      if (form.campus) payload.campus = form.campus;
       if (form.course) payload.course = form.course;
 
       const req = await fetch(getAbsoluteUrl('/api/auth/request-trainee-otp-registration/'), {
@@ -581,6 +628,7 @@ export function Register() {
             contactPerson: form.contactPerson || existing.contactPerson,
             contactPhone: form.contactPhone || existing.contactPhone,
             schoolName: form.schoolName || existing.schoolName,
+            campus: form.campus || existing.campus,
             course: form.course || existing.course,
             startDate: form.startDate || existing.startDate,
             endDate: form.endDate || existing.endDate,
@@ -1875,22 +1923,50 @@ export function Register() {
                 </div>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">School / University *</label>
-                    <input
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">
+                      {form.campus === 'Talisay Campus' ? 'Department *' : 'College / University *'}
+                    </label>
+                    <select
                       value={form.schoolName}
                       onChange={(e) => update('schoolName', e.target.value)}
-                      placeholder="University Name"
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                    />
+                    >
+                      <option value="">{form.campus === 'Talisay Campus' ? 'Select Department' : 'Select College / University'}</option>
+                      {selectedDepartmentOptions.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Program *</label>
-                    <input
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Campus *</label>
+                    <select
+                      value={form.campus}
+                      onChange={(e) => update('campus', e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    >
+                      <option value="">Select Campus</option>
+                      <option value="Talisay Campus">Talisay Campus</option>
+                      <option value="Fortune Towne Campus">Fortune Towne Campus</option>
+                      <option value="Alijis Campus">Alijis Campus</option>
+                      <option value="Binalbagan Campus">Binalbagan Campus</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Program *</label>
+                    <select
                       value={form.course}
                       onChange={(e) => update('course', e.target.value)}
-                      placeholder="e.g. BS Information Technology"
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                    />
+                    >
+                      <option value="">Select Program</option>
+                      {selectedProgramOptions.map((program) => (
+                        <option key={program} value={program}>
+                          {program}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </motion.div>
