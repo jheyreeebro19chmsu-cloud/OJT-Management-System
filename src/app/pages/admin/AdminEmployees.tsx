@@ -8,7 +8,7 @@ import { isSecurityApiConfigured, registerFace } from '../../services/securityAp
 import { useApp } from '../../store/AppContext';
 import { Employee } from '../../types';
 import { getPhotoUrl } from '../../services/config';
-import { campusOptions, departmentOptions, courseOptions } from '../../data/academicOptions';
+import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 
 
 
@@ -518,10 +518,26 @@ export function AdminEmployees() {
                       </select>
                     </div>
                     <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">School</label>
+                      <select
+                        value={form.schoolName}
+                        onChange={(e) => upd('schoolName', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      >
+                        <option value="">Select School</option>
+                        <option value="Carlos Hilado Memorial State University">
+                          Carlos Hilado Memorial State University
+                        </option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="text-xs font-semibold text-gray-600 block mb-1">Department</label>
                       <select
                         value={form.department}
-                        onChange={(e) => upd('department', e.target.value)}
+                        onChange={(e) => {
+                          upd('department', e.target.value);
+                          upd('course', '');
+                        }}
                         className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                       >
                         <option value="">Select Department</option>
@@ -536,7 +552,7 @@ export function AdminEmployees() {
                         className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                       >
                         <option value="">Select Course</option>
-                        {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
+                        {getCoursesForDepartment(form.department).map((course) => <option key={course} value={course}>{course}</option>)}
                       </select>
                     </div>
                     <div className="grid grid-cols-2 gap-2">

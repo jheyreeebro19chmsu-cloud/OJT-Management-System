@@ -26,7 +26,7 @@ import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 
 
 import { PH_ADDRESS_DATA } from '../data/ph_address_data';
-import { campusOptions, departmentOptions, courseOptions } from '../data/academicOptions';
+import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { Country, State, City } from 'country-state-city';
 
 
@@ -105,8 +105,7 @@ export function Register() {
     requiredHours: 486,
   });
 
-  const selectedDepartmentOptions = departmentOptions;
-  const selectedProgramOptions = courseOptions;
+  const selectedProgramOptions = getCoursesForDepartment(form.department);
 
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -1882,18 +1881,32 @@ export function Register() {
                 </div>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">
-                      {form.campus === 'Talisay Campus' ? 'Department *' : 'College / University *'}
-                    </label>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">School *</label>
                     <select
                       value={form.schoolName}
                       onChange={(e) => update('schoolName', e.target.value)}
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                     >
-                      <option value="">{form.campus === 'Talisay Campus' ? 'Select Department' : 'Select College / University'}</option>
-                      {selectedDepartmentOptions.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
+                      <option value="">Select School</option>
+                      <option value="Carlos Hilado Memorial State University">
+                        Carlos Hilado Memorial State University
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+                    <select
+                      value={form.department}
+                      onChange={(e) => {
+                        update('department', e.target.value);
+                        update('course', '');
+                      }}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    >
+                      <option value="">Select Department</option>
+                      {departmentOptions.map((department) => (
+                        <option key={department} value={department}>
+                          {department}
                         </option>
                       ))}
                     </select>

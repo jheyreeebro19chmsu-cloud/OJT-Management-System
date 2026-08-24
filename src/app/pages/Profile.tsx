@@ -17,7 +17,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
-import { campusOptions, departmentOptions, courseOptions } from '../data/academicOptions';
+import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { readAsDataUrl } from './Announcements';
@@ -450,7 +450,7 @@ export function Profile() {
               <label className="text-xs text-gray-500 font-medium block mb-1">Department</label>
               <select
                 value={form.department}
-                onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))}
+                onChange={(e) => setForm((p) => ({ ...p, department: e.target.value, course: '' }))}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Department</option>
@@ -465,7 +465,7 @@ export function Profile() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Course</option>
-                {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
+                {getCoursesForDepartment(form.department).map((course) => <option key={course} value={course}>{course}</option>)}
               </select>
             </div>
           </div>
