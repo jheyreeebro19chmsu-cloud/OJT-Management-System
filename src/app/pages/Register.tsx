@@ -26,6 +26,7 @@ import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 
 
 import { PH_ADDRESS_DATA } from '../data/ph_address_data';
+import { campusOptions, departmentOptions, courseOptions } from '../data/academicOptions';
 import { Country, State, City } from 'country-state-city';
 
 
@@ -59,48 +60,6 @@ export function Register() {
   const [step, setStep] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
-  const schoolOptions = [
-    'University of St. La Salle',
-    'La Consolacion College Bacolod',
-    'Carlos Hilado Memorial State University',
-    'Bacolod City College',
-    'University of Negros Occidental - Recoletos',
-    'STI West Negros University',
-    'Other',
-  ];
-  const talisayDepartmentOptions = [
-    'College of Arts and Sciences',
-    'College of Business Management and Accountancy',
-    'College of Computer Studies',
-    'College of Education',
-    'College of Engineering',
-    'College of Industrial Technology',
-  ];
-  const programOptions = [
-    'BS Information Technology',
-    'BS Computer Science',
-    'BS Computer Engineering',
-    'BS Business Administration',
-    'BS Accountancy',
-    'BS Nursing',
-    'BS Psychology',
-    'BS Education',
-    'BS Criminology',
-    'BS Civil Engineering',
-    'Other',
-  ];
-  const talisayProgramOptions = [
-    'BS Information Technology',
-    'BS Computer Science',
-    'BS Computer Engineering',
-    'BS Business Administration',
-    'BS Accountancy',
-    'BS Psychology',
-    'Bachelor of Secondary Education',
-    'Bachelor of Elementary Education',
-    'BS Civil Engineering',
-    'Other',
-  ];
   const [form, setForm] = useState({
     // Personal Information
     name: '',
@@ -146,8 +105,8 @@ export function Register() {
     requiredHours: 486,
   });
 
-  const selectedDepartmentOptions = form.campus === 'Talisay Campus' ? talisayDepartmentOptions : schoolOptions;
-  const selectedProgramOptions = form.campus === 'Talisay Campus' ? talisayProgramOptions : programOptions;
+  const selectedDepartmentOptions = departmentOptions;
+  const selectedProgramOptions = courseOptions;
 
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -1947,10 +1906,11 @@ export function Register() {
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                     >
                       <option value="">Select Campus</option>
-                      <option value="Talisay Campus">Talisay Campus</option>
-                      <option value="Fortune Towne Campus">Fortune Towne Campus</option>
-                      <option value="Alijis Campus">Alijis Campus</option>
-                      <option value="Binalbagan Campus">Binalbagan Campus</option>
+                      {campusOptions.map((campus) => (
+                        <option key={campus} value={campus}>
+                          {campus}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>

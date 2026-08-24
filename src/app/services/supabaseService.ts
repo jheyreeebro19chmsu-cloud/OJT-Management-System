@@ -42,6 +42,7 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     company_name: employee.companyName,
     supervisor_name: employee.supervisorName,
     school_name: employee.schoolName,
+    campus: employee.campus,
     course: employee.course,
     start_date: employee.startDate,
     end_date: employee.endDate,
@@ -80,6 +81,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.companyName !== undefined) supabaseUpdates.company_name = updates.companyName;
   if (updates.supervisorName !== undefined) supabaseUpdates.supervisor_name = updates.supervisorName;
   if (updates.schoolName !== undefined) supabaseUpdates.school_name = updates.schoolName;
+  if (updates.campus !== undefined) supabaseUpdates.campus = updates.campus;
   if (updates.course !== undefined) supabaseUpdates.course = updates.course;
   if (updates.startDate !== undefined) supabaseUpdates.start_date = updates.startDate;
   if (updates.endDate !== undefined) supabaseUpdates.end_date = updates.endDate;
@@ -580,6 +582,7 @@ function transformSupabaseEmployee(data: any): Employee {
     companyName: data.company_name,
     supervisorName: data.supervisor_name,
     schoolName: data.school_name,
+    campus: data.campus,
     course: data.course,
     startDate: data.start_date,
     endDate: data.end_date,

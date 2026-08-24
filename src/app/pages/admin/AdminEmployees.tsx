@@ -8,6 +8,7 @@ import { isSecurityApiConfigured, registerFace } from '../../services/securityAp
 import { useApp } from '../../store/AppContext';
 import { Employee } from '../../types';
 import { getPhotoUrl } from '../../services/config';
+import { campusOptions, departmentOptions, courseOptions } from '../../data/academicOptions';
 
 
 
@@ -23,6 +24,7 @@ const BLANK_FORM = {
   companyName: '',
   supervisorName: '',
   schoolName: '',
+  campus: '',
   course: '',
   startDate: '',
   endDate: '',
@@ -436,6 +438,7 @@ export function AdminEmployees() {
                         { label: 'Company', val: selectedEmp.companyName },
                         { label: 'Supervisor', val: selectedEmp.supervisorName },
                         { label: 'School', val: selectedEmp.schoolName },
+                        { label: 'Campus', val: selectedEmp.campus || 'Not specified' },
                         { label: 'Course', val: selectedEmp.course },
                         { label: 'OJT Period', val: `${selectedEmp.startDate} → ${selectedEmp.endDate}` },
                         { label: 'Required Hours', val: `${selectedEmp.requiredHours} hrs` },
@@ -486,16 +489,13 @@ export function AdminEmployees() {
                   )
                 ) : (
                   <div className="space-y-3">
-                    {[
-                      { label: 'Full Name', field: 'name', placeholder: 'Juan Dela Cruz' },
-                      { label: 'Email', field: 'email', placeholder: 'email@example.com' },
-                      { label: 'Employee ID', field: 'employeeId', placeholder: 'OJT-2024-XXX (optional)' },
-                      { label: 'Department', field: 'department', placeholder: 'e.g. IT, HR, Finance' },
-                      { label: 'Company Name', field: 'companyName', placeholder: 'Company Name' },
-                      { label: 'Supervisor', field: 'supervisorName', placeholder: 'Mr./Ms. Supervisor' },
-                      { label: 'School', field: 'schoolName', placeholder: 'University Name' },
-                      { label: 'Course', field: 'course', placeholder: 'BS Information Technology' },
-                    ].map(({ label, field, placeholder }) => (
+                      {[
+                        { label: 'Full Name', field: 'name', placeholder: 'Juan Dela Cruz' },
+                        { label: 'Email', field: 'email', placeholder: 'email@example.com' },
+                        { label: 'Employee ID', field: 'employeeId', placeholder: 'OJT-2024-XXX (optional)' },
+                        { label: 'Company Name', field: 'companyName', placeholder: 'Company Name' },
+                        { label: 'Supervisor', field: 'supervisorName', placeholder: 'Mr./Ms. Supervisor' },
+                      ].map(({ label, field, placeholder }) => (
                       <div key={field}>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">{label}</label>
                         <input
@@ -506,6 +506,39 @@ export function AdminEmployees() {
                         />
                       </div>
                     ))}
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Campus</label>
+                      <select
+                        value={form.campus}
+                        onChange={(e) => upd('campus', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      >
+                        <option value="">Select Campus</option>
+                        {campusOptions.map((campus) => <option key={campus} value={campus}>{campus}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Department</label>
+                      <select
+                        value={form.department}
+                        onChange={(e) => upd('department', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      >
+                        <option value="">Select Department</option>
+                        {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 block mb-1">Course</label>
+                      <select
+                        value={form.course}
+                        onChange={(e) => upd('course', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      >
+                        <option value="">Select Course</option>
+                        {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
+                      </select>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date</label>

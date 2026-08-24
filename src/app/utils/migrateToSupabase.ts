@@ -68,6 +68,7 @@ export async function migrateLocalStorageToSupabase(): Promise<MigrationResult> 
         company_name: emp.companyName,
         supervisor_name: emp.supervisorName,
         school_name: emp.schoolName,
+        campus: emp.campus,
         course: emp.course,
         start_date: emp.startDate,
         end_date: emp.endDate,

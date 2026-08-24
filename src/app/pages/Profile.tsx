@@ -17,6 +17,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
+import { campusOptions, departmentOptions, courseOptions } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { readAsDataUrl } from './Announcements';
@@ -94,6 +95,9 @@ export function Profile() {
     name: employee?.name || '',
     email: employee?.email || '',
     supervisorName: employee?.supervisorName || '',
+    campus: employee?.campus || '',
+    department: employee?.department || '',
+    course: employee?.course || '',
   });
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
@@ -431,6 +435,39 @@ export function Profile() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium block mb-1">Campus</label>
+              <select
+                value={form.campus}
+                onChange={(e) => setForm((p) => ({ ...p, campus: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Campus</option>
+                {campusOptions.map((campus) => <option key={campus} value={campus}>{campus}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium block mb-1">Department</label>
+              <select
+                value={form.department}
+                onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Department</option>
+                {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium block mb-1">Course</label>
+              <select
+                value={form.course}
+                onChange={(e) => setForm((p) => ({ ...p, course: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Course</option>
+                {courseOptions.map((course) => <option key={course} value={course}>{course}</option>)}
+              </select>
+            </div>
           </div>
         ) : (
           <div>
@@ -438,6 +475,8 @@ export function Profile() {
             <InfoRow label="Email" value={employee.email} />
             <InfoRow label="Supervisor" value={employee.supervisorName} />
             <InfoRow label="Department" value={employee.department} />
+            <InfoRow label="Campus" value={employee.campus || 'Not specified'} />
+            <InfoRow label="Course" value={employee.course} />
             {employee.registrationAddress && (
               <div className="flex items-start gap-2 py-2 border-b border-gray-50">
                 <MapPin size={12} className="text-blue-400 shrink-0 mt-0.5" />
