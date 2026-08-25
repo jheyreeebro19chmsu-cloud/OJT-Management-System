@@ -465,7 +465,7 @@ export function Profile() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select Course</option>
-                {getCoursesForDepartment(form.department).map((course) => <option key={course} value={course}>{course}</option>)}
+                {getCoursesForDepartment(form.department, form.campus).map((course) => <option key={course} value={course}>{course}</option>)}
               </select>
             </div>
           </div>

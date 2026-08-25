@@ -53,7 +53,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
     department: '',
     companyName: '',
     instructorEmail: '',
-    schoolName: '',
+    schoolName: 'Carlos Hilado Memorial State University',
     course: '',
     photo: '',
   });
@@ -285,7 +285,7 @@ export default function RegisterScreen({ onCancel, onSuccess }: RegisterScreenPr
           <Input label="Company Name" value={form.companyName} onChange={v => updateForm('companyName', v)} placeholder="TechCorp Inc." />
           <Input label="Instructor Email" value={form.instructorEmail} onChange={v => updateForm('instructorEmail', v)} placeholder="instructor@example.com" />
         </>)}
-        {role === 'trainee' && step === 2 && (<><Input label="School Name" value={form.schoolName} onChange={v => updateForm('schoolName', v)} placeholder="State University" /><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BS Information Technology" /></>)}
+        {role === 'trainee' && step === 2 && (<><Input label="School Name" value={form.schoolName} onChange={() => undefined} placeholder="Carlos Hilado Memorial State University" editable={false} /><Input label="Course" value={form.course} onChange={v => updateForm('course', v)} placeholder="BS Information Technology" /></>)}
 
         {role === 'admin' && step === 0 && (
           <>

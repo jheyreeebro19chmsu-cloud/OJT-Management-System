@@ -105,7 +105,7 @@ export function Register() {
     requiredHours: 486,
   });
 
-  const selectedProgramOptions = getCoursesForDepartment(form.department);
+  const selectedProgramOptions = getCoursesForDepartment(form.department, form.campus);
 
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
