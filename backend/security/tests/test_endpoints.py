@@ -1,6 +1,7 @@
 from django.test import TestCase, Client
 import json
 from django.contrib.auth.models import User
+from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 import base64
 from ..models import Student, OJTInstructor, StudentOJTApplication, FaceRegistration
@@ -107,7 +108,7 @@ class ApplicationStatusEnrollTests(TestCase):
         # verify using the same base64 as registered image
         # Call verify_face directly with both registered and captured images
         req2 = factory.post(url_verify, data=json.dumps({'registered_image': payload, 'captured_image': payload}), content_type='application/json')
-        req2.META['HTTP_AUTHORIZATION'] = f'Bearer {access}'
+        req2.META['HTTP_AUTHORIZATION'] = f'Bearer {settings.SECURITY_API_KEY}'
         resp2 = views.verify_face(req2)
         status2 = getattr(resp2, 'status_code', 200)
         # If face_recognition not installed, endpoint returns 501; accept that

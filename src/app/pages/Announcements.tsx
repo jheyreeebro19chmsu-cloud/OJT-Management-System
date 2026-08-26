@@ -99,8 +99,8 @@ export function Announcements() {
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Task Board</h2>
-          <p className="text-sm text-gray-500">Manage your submissions and updates.</p>
+          <h2 className="text-xl font-bold text-gray-800">Announcements & Updates</h2>
+          <p className="text-sm text-gray-500">Notices, reminders, updates, and important information for your OJT.</p>
         </div>
         
         <div className="flex gap-2">
@@ -125,7 +125,7 @@ export function Announcements() {
             onClick={() => setIsPosting(true)}
             className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-xl text-gray-500 text-sm font-medium transition-colors border border-gray-200"
           >
-            Share an update or photo with the team...
+            Share a notice, reminder, update, or important information with the team...
           </button>
         ) : (
           <div className="space-y-3">

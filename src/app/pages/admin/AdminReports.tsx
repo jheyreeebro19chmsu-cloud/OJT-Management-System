@@ -86,6 +86,32 @@ export function AdminReports() {
 
   const activeEmployees = employees.filter((e) => e.active);
 
+  const exportCsv = () => {
+    const headers = ['Date', 'Trainee', 'Time In', 'Time Out', 'Hours', 'Status', 'Face Verified', 'Geofenced'];
+    const rows = filteredRecords.map((record) => {
+      const employee = employees.find((e) => e.id === record.employeeId);
+      return [
+        record.date,
+        employee?.name || 'Unknown',
+        record.timeIn || '',
+        record.timeOut || '',
+        record.totalHours?.toFixed(2) || '0.00',
+        record.status,
+        record.timeInFaceVerified && record.timeOutFaceVerified ? 'Yes' : 'No',
+        record.timeInGeofenced && record.timeOutGeofenced ? 'Yes' : 'No',
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `attendance-report-${selectedMonth}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -101,7 +127,10 @@ export function AdminReports() {
             <Printer size={15} />
             Print Report
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-colors"
+          >
             <Download size={15} />
             Export CSV
           </button>

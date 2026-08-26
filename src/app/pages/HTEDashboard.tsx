@@ -411,12 +411,12 @@ export function HTEDashboard() {
           </button>
 
           <button
-            onClick={() => navigate('/hte/registrations')}
+            onClick={() => navigate('/host/feedback')}
             className="bg-white hover:shadow-lg rounded-lg shadow p-6 text-left transition-all"
           >
             <BarChart3 className="w-8 h-8 text-purple-600 mb-3" />
-            <h4 className="font-bold text-gray-900 mb-1">Face Registrations</h4>
-            <p className="text-sm text-gray-600">Manage employee face data</p>
+            <h4 className="font-bold text-gray-900 mb-1">Evaluate Trainees</h4>
+            <p className="text-sm text-gray-600">Submit HTE performance feedback</p>
           </button>
         </div>
       </div>

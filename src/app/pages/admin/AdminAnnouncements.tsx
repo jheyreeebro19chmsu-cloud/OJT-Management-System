@@ -224,9 +224,9 @@ export function AdminAnnouncements() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Announcements</h2>
+          <h2 className="text-xl font-bold text-gray-800">Announcements & Notices</h2>
           <p className="text-sm text-gray-500">
-            {announcements.length} total • {announcements.filter((a) => !isExpired(a)).length} active
+            {announcements.length} total • {announcements.filter((a) => !isExpired(a)).length} active notices and updates
           </p>
         </div>
         <div className="flex gap-2">
@@ -242,7 +242,7 @@ export function AdminAnnouncements() {
             className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm no-print"
           >
             <Plus size={15} />
-            Post Announcement
+            Post Notice
           </button>
         </div>
       </div>
@@ -511,26 +511,18 @@ export function AdminAnnouncements() {
 
                 {/* Type */}
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Type</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['info', 'warning', 'success', 'urgent'] as Announcement['type'][]).map((type) => {
-                      const c = TYPE_CONFIG[type];
-                      return (
-                        <button
-                          key={type}
-                          onClick={() => upd('type', type)}
-                          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                            form.type === type
-                              ? `${c.bg} ${c.border} ${c.color} border-2`
-                              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className={form.type === type ? c.color : 'text-gray-400'}>{c.icon}</span>
-                          {c.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Announcement Type</label>
+                  <select
+                    value={form.type}
+                    onChange={(e) => upd('type', e.target.value as Announcement['type'])}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  >
+                    {(['info', 'warning', 'success', 'urgent'] as Announcement['type'][]).map((type) => (
+                      <option key={type} value={type}>
+                        {TYPE_CONFIG[type].label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Target Role */}

@@ -82,9 +82,13 @@ export function Profile() {
     getEmployeeEvaluation,
     getLatestHostFeedback,
     changeCurrentUserPassword,
+    getEmployeeRequiredDocuments,
+    submitRequiredDocument,
+    getRequiredDocumentSubmission,
   } = useApp();
   const employee = getCurrentEmployee();
   const records = employee ? getEmployeeRecords(employee.id) : [];
+  const requiredDocuments = employee ? getEmployeeRequiredDocuments(employee.id) : [];
   const evaluation = employee ? getEmployeeEvaluation(employee.id) : null;
   const hostFeedback = employee ? getLatestHostFeedback(employee.id) : null;
   const [editing, setEditing] = useState(false);
@@ -99,6 +103,8 @@ export function Profile() {
     department: employee?.department || '',
     course: employee?.course || '',
   });
+  const [documentNote, setDocumentNote] = useState<Record<string, string>>({});
+  const [documentFileName, setDocumentFileName] = useState<Record<string, string>>({});
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
   if (!employee) {
@@ -246,6 +252,76 @@ export function Profile() {
           </div>
         </div>
       </motion.div>
+
+      <Section title="Required Documents" icon={<Check />}> 
+        <div className="space-y-3">
+          {requiredDocuments.length === 0 ? (
+            <p className="text-xs text-gray-500">No required documents assigned yet.</p>
+          ) : (
+            requiredDocuments.map((doc) => {
+              const submission = getRequiredDocumentSubmission(doc.id, employee.id);
+              return (
+                <div key={doc.id} className="rounded-xl border border-violet-100 bg-violet-50 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-violet-900">{doc.title}</p>
+                      {doc.description && <p className="text-[11px] text-violet-700 mt-1">{doc.description}</p>}
+                    </div>
+                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${submission ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {submission ? 'Submitted' : 'Pending'}
+                    </span>
+                  </div>
+                  {doc.dueDate && <p className="text-[11px] text-gray-600">Due: {doc.dueDate}</p>}
+                  {submission ? (
+                    <div className="rounded-lg bg-white border border-violet-100 p-2 text-[11px] text-gray-700">
+                      <p className="font-semibold text-gray-800 mb-1">Submitted</p>
+                      {submission.note && <p>Note: {submission.note}</p>}
+                      {submission.fileName && <p>File: {submission.fileName}</p>}
+                      <p>Submitted on: {new Date(submission.submittedAt).toLocaleDateString()}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <textarea
+                        value={documentNote[doc.id] || ''}
+                        onChange={(e) => setDocumentNote((prev) => ({ ...prev, [doc.id]: e.target.value }))}
+                        rows={2}
+                        placeholder="Add description / notes for this document..."
+                        className="w-full px-3 py-2 border border-violet-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      />
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg border border-violet-200 bg-white text-violet-700 cursor-pointer">
+                          Attach file
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) setDocumentFileName((prev) => ({ ...prev, [doc.id]: file.name }));
+                            }}
+                          />
+                        </label>
+                        {documentFileName[doc.id] && <span className="text-[10px] text-gray-600">{documentFileName[doc.id]}</span>}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const note = documentNote[doc.id] || '';
+                            const fileName = documentFileName[doc.id] || '';
+                            submitRequiredDocument(doc.id, employee.id, { note, notes: note, fileName });
+                            toast.success('Document submitted.');
+                          }}
+                          className="ml-auto px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700"
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Section>
 
       {/* Evaluation Result (if finalized) */}
       {evaluation &&

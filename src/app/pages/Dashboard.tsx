@@ -244,7 +244,7 @@ export function Dashboard() {
               <p className="text-xs text-center text-gray-400">+{activeAnnouncements.length - 3} more announcements</p>
             )}
             <Link to="/app/announcements" className="block text-xs text-center text-blue-600 font-medium">
-              Open announcements & submit response
+              Open announcements, notices, and updates
             </Link>
           </motion.div>
         )}

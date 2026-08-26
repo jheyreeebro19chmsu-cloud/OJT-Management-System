@@ -14,6 +14,8 @@ import {
   Evaluation,
   Announcement,
   AnnouncementSubmission,
+  RequiredDocument,
+  RequiredDocumentSubmission,
   HostFeedback,
   HostSupervisor,
 } from '../types';
@@ -28,6 +30,8 @@ const STORAGE_KEYS = {
   EVALUATIONS: 'ojt_evaluations',
   ANNOUNCEMENTS: 'ojt_announcements',
   ANNOUNCEMENT_SUBMISSIONS: 'ojt_announcement_submissions',
+  REQUIRED_DOCUMENTS: 'ojt_required_documents',
+  REQUIRED_DOCUMENT_SUBMISSIONS: 'ojt_required_document_submissions',
   HOST_FEEDBACK: 'ojt_host_feedback',
   HOST_SUPERVISORS: 'ojt_host_supervisors',
   PASSWORDS: 'ojt_passwords',
@@ -258,6 +262,8 @@ interface AppContextType {
   evaluations: Evaluation[];
   announcements: Announcement[];
   announcementSubmissions: AnnouncementSubmission[];
+  requiredDocuments: RequiredDocument[];
+  requiredDocumentSubmissions: RequiredDocumentSubmission[];
   hostFeedback: HostFeedback[];
   hostSupervisors: HostSupervisor[];
   login: (email: string, password: string) => Promise<User | null>;
@@ -294,6 +300,19 @@ interface AppContextType {
   ) => AnnouncementSubmission;
   getAnnouncementSubmission: (announcementId: string, employeeId: string) => AnnouncementSubmission | null;
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
+  addRequiredDocument: (
+    employeeId: string,
+    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean }
+  ) => RequiredDocument;
+  updateRequiredDocument: (id: string, data: Partial<RequiredDocument>) => void;
+  deleteRequiredDocument: (id: string) => void;
+  getEmployeeRequiredDocuments: (employeeId: string) => RequiredDocument[];
+  submitRequiredDocument: (
+    documentId: string,
+    employeeId: string,
+    payload: { note?: string; notes?: string; fileName?: string; fileUrl?: string }
+  ) => RequiredDocumentSubmission;
+  getRequiredDocumentSubmission: (documentId: string, employeeId: string) => RequiredDocumentSubmission | null;
   // Host Feedback
   addHostFeedback: (data: Omit<HostFeedback, 'id' | 'overallScore' | 'submittedAt' | 'status'>) => HostFeedback;
   updateHostFeedback: (id: string, data: Partial<HostFeedback>) => void;
@@ -443,6 +462,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [announcementSubmissions, setAnnouncementSubmissions] = useState<AnnouncementSubmission[]>(() =>
     loadFromStorage<AnnouncementSubmission[]>(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, [])
   );
+  const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>(() =>
+    loadFromStorage<RequiredDocument[]>(STORAGE_KEYS.REQUIRED_DOCUMENTS, [])
+  );
+  const [requiredDocumentSubmissions, setRequiredDocumentSubmissions] = useState<RequiredDocumentSubmission[]>(() =>
+    loadFromStorage<RequiredDocumentSubmission[]>(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, [])
+  );
   const [hostSupervisors, setHostSupervisors] = useState<HostSupervisor[]>(() => {
     const stored = loadFromStorage<HostSupervisor[]>(STORAGE_KEYS.HOST_SUPERVISORS, []);
     if (stored.length === 0) {
@@ -583,6 +608,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, announcementSubmissions);
   }, [announcementSubmissions]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, requiredDocuments);
+  }, [requiredDocuments]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, requiredDocumentSubmissions);
+  }, [requiredDocumentSubmissions]);
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, hostSupervisors);
@@ -1256,6 +1289,76 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return 'pending';
   };
 
+  const addRequiredDocument = (
+    employeeId: string,
+    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean }
+  ): RequiredDocument => {
+    const notes = (data.notes ?? data.description ?? '').trim();
+    const newDoc: RequiredDocument = {
+      id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      employeeId,
+      title: data.title.trim(),
+      description: notes,
+      notes,
+      dueDate: data.dueDate || '',
+      required: data.required ?? true,
+      createdAt: new Date().toISOString(),
+    };
+
+    setRequiredDocuments((prev) => [newDoc, ...prev]);
+    return newDoc;
+  };
+
+  const updateRequiredDocument = (id: string, data: Partial<RequiredDocument>) => {
+    setRequiredDocuments((prev) => prev.map((doc) => (doc.id === id ? { ...doc, ...data } : doc)));
+  };
+
+  const deleteRequiredDocument = (id: string) => {
+    setRequiredDocuments((prev) => prev.filter((doc) => doc.id !== id));
+    setRequiredDocumentSubmissions((prev) => prev.filter((submission) => submission.documentId !== id));
+  };
+
+  const getEmployeeRequiredDocuments = (employeeId: string): RequiredDocument[] => {
+    return requiredDocuments
+      .filter((doc) => doc.employeeId === employeeId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
+  const submitRequiredDocument = (
+    documentId: string,
+    employeeId: string,
+    payload: { note?: string; notes?: string; fileName?: string; fileUrl?: string }
+  ): RequiredDocumentSubmission => {
+    const notes = (payload.notes ?? payload.note ?? '').trim();
+    const now = new Date().toISOString();
+    let saved: RequiredDocumentSubmission = {
+      id: `doc-sub-${Date.now()}`,
+      documentId,
+      employeeId,
+      submittedAt: now,
+      note: notes,
+      notes,
+      fileName: payload.fileName || '',
+      fileUrl: payload.fileUrl || '',
+      status: 'submitted',
+    };
+
+    setRequiredDocumentSubmissions((prev) => {
+      const existing = prev.find((s) => s.documentId === documentId && s.employeeId === employeeId);
+      if (existing) {
+        saved = { ...existing, note: notes, notes, fileName: payload.fileName || '', fileUrl: payload.fileUrl || '', submittedAt: now, status: 'submitted' };
+        return prev.map((s) => (s.id === existing.id ? saved : s));
+      }
+      return [saved, ...prev];
+    });
+
+    return saved;
+  };
+
+  const getRequiredDocumentSubmission = (documentId: string, employeeId: string): RequiredDocumentSubmission | null => {
+    return requiredDocumentSubmissions.find((s) => s.documentId === documentId && s.employeeId === employeeId) || null;
+  };
+
   // ── Host Feedback ─────────────────────────────────────────────────────────────
   const addHostFeedback = (
     data: Omit<HostFeedback, 'id' | 'overallScore' | 'submittedAt' | 'status'>
@@ -1317,6 +1420,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         evaluations,
         announcements,
         announcementSubmissions,
+        requiredDocuments,
+        requiredDocumentSubmissions,
         hostFeedback,
         hostSupervisors,
         login,
@@ -1346,6 +1451,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         submitAnnouncementResponse,
         getAnnouncementSubmission,
         getAnnouncementSubmissionStatus,
+        addRequiredDocument,
+        updateRequiredDocument,
+        deleteRequiredDocument,
+        getEmployeeRequiredDocuments,
+        submitRequiredDocument,
+        getRequiredDocumentSubmission,
         addHostFeedback,
         updateHostFeedback,
         deleteHostFeedback,

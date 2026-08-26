@@ -32,7 +32,17 @@ const BLANK_FORM = {
 };
 
 export function AdminEmployees() {
-  const { employees, timeRecords, registerEmployee, updateEmployee, deleteEmployee } = useApp();
+  const {
+    employees,
+    timeRecords,
+    registerEmployee,
+    updateEmployee,
+    deleteEmployee,
+    addRequiredDocument,
+    getEmployeeRequiredDocuments,
+    submitRequiredDocument,
+    getRequiredDocumentSubmission,
+  } = useApp();
   const [search, setSearch] = useState('');
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
@@ -40,14 +50,45 @@ export function AdminEmployees() {
   const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressValue, setAddressValue] = useState('');
+  const [docTitle, setDocTitle] = useState('');
+  const [docDescription, setDocDescription] = useState('');
+  const [docDueDate, setDocDueDate] = useState('');
 
-  const filtered = employees.filter(
-    (e) =>
-      e.active &&
-      (e.name.toLowerCase().includes(search.toLowerCase()) ||
-        e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
-        e.department.toLowerCase().includes(search.toLowerCase()))
-  );
+  const getEmployeeGroup = (emp: Employee) => {
+    const normalized = emp.position?.toLowerCase() || '';
+    if (normalized.includes('instructor')) return 'instructor';
+    if (normalized.includes('hte') || normalized.includes('host training')) return 'hte';
+    return 'student';
+  };
+
+  const filteredGroups = {
+    instructor: employees.filter(
+      (e) =>
+        e.active &&
+        getEmployeeGroup(e) === 'instructor' &&
+        (e.name.toLowerCase().includes(search.toLowerCase()) ||
+          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
+          e.department.toLowerCase().includes(search.toLowerCase()))
+    ),
+    hte: employees.filter(
+      (e) =>
+        e.active &&
+        getEmployeeGroup(e) === 'hte' &&
+        (e.name.toLowerCase().includes(search.toLowerCase()) ||
+          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
+          e.department.toLowerCase().includes(search.toLowerCase()))
+    ),
+    student: employees.filter(
+      (e) =>
+        e.active &&
+        getEmployeeGroup(e) === 'student' &&
+        (e.name.toLowerCase().includes(search.toLowerCase()) ||
+          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
+          e.department.toLowerCase().includes(search.toLowerCase()))
+    ),
+  };
+
+  const totalFiltered = Object.values(filteredGroups).reduce((sum, items) => sum + items.length, 0);
 
   const openView = (emp: Employee) => {
     setSelectedEmp(emp);
@@ -90,51 +131,48 @@ export function AdminEmployees() {
 
   const upd = (f: string, v: string | number) => setForm((p) => ({ ...p, [f]: v }));
 
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Employees</h2>
-          <p className="text-sm text-gray-500">{filtered.length} active trainees</p>
-        </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
-        >
-          <Plus size={15} />
-          Add Trainee
-        </button>
-      </div>
+  const groupConfig = {
+    instructor: {
+      title: 'Instructors',
+      emptyText: 'No instructors found',
+      accent: 'amber',
+      badge: 'bg-amber-100 text-amber-700',
+    },
+    hte: {
+      title: 'HTE',
+      emptyText: 'No HTE accounts found',
+      accent: 'emerald',
+      badge: 'bg-emerald-100 text-emerald-700',
+    },
+    student: {
+      title: 'Students',
+      emptyText: 'No students found',
+      accent: 'blue',
+      badge: 'bg-blue-100 text-blue-700',
+    },
+  } as const;
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, ID, or department..."
-          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        />
-      </div>
+  const renderEmployeeSection = (group: keyof typeof filteredGroups, countLabel: string) => {
+    const items = filteredGroups[group];
+    const config = groupConfig[group];
 
-      {/* Table / Cards */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Desktop Table Header */}
-        <div className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">
-          <span>Trainee</span>
-          <span>Department</span>
-          <span>OJT Progress</span>
-          <span>Status</span>
-          <span>Actions</span>
+    return (
+      <div key={group} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-gray-800">{config.title}</h3>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.badge}`}>{items.length}</span>
+          </div>
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">{countLabel}</span>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="text-center py-12">
-            <Users size={40} className="text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-500 font-medium">No trainees found</p>
+        {items.length === 0 ? (
+          <div className="text-center py-8">
+            <Users size={28} className="text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-500 font-medium">{config.emptyText}</p>
           </div>
         ) : (
-          filtered.map((emp, idx) => {
+          items.map((emp, idx) => {
             const stats = getEmpStats(emp.id);
             const progress = Math.min((stats.totalHours / emp.requiredHours) * 100, 100);
             return (
@@ -144,7 +182,6 @@ export function AdminEmployees() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
               >
-                {/* Desktop Row */}
                 <div className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
@@ -207,7 +244,6 @@ export function AdminEmployees() {
                   </div>
                 </div>
 
-                {/* Mobile Card */}
                 <div className="lg:hidden p-4 border-b border-gray-50">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
@@ -258,6 +294,54 @@ export function AdminEmployees() {
               </motion.div>
             );
           })
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Employees</h2>
+          <p className="text-sm text-gray-500">{totalFiltered} active accounts</p>
+        </div>
+        <button
+          onClick={openAdd}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
+        >
+          <Plus size={15} />
+          Add Employee
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {Object.entries(groupConfig).map(([key, config]) => (
+          <div key={key} className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">{config.title}</p>
+            <p className="text-lg font-bold text-gray-800">{filteredGroups[key as keyof typeof filteredGroups].length}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="relative">
+        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, ID, or department..."
+          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        />
+      </div>
+
+      <div className="space-y-5">
+        {totalFiltered === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 text-center py-12">
+            <Users size={40} className="text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500 font-medium">No employees found</p>
+          </div>
+        ) : (
+          (['instructor', 'hte', 'student'] as const).map((group) => renderEmployeeSection(group, groupConfig[group].title))
         )}
       </div>
 
@@ -448,6 +532,84 @@ export function AdminEmployees() {
                           <span className="font-medium text-gray-700">{val}</span>
                         </div>
                       ))}
+
+                      <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-violet-900">Required Documents</p>
+                          <span className="text-[10px] uppercase tracking-wide text-violet-600">
+                            {getEmployeeRequiredDocuments(selectedEmp.id).length} items
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {getEmployeeRequiredDocuments(selectedEmp.id).length === 0 ? (
+                            <p className="text-xs text-violet-700">No required documents assigned yet.</p>
+                          ) : (
+                            getEmployeeRequiredDocuments(selectedEmp.id).map((doc) => {
+                              const submission = getRequiredDocumentSubmission(doc.id, selectedEmp.id);
+                              return (
+                                <div key={doc.id} className="rounded-xl bg-white p-2.5 border border-violet-100">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-800">{doc.title}</p>
+                                      {doc.description && <p className="text-[11px] text-gray-500 mt-1">{doc.description}</p>}
+                                    </div>
+                                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${submission ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                      {submission ? 'Submitted' : 'Pending'}
+                                    </span>
+                                  </div>
+                                  {doc.dueDate && <p className="text-[11px] text-gray-500 mt-2">Due: {doc.dueDate}</p>}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="space-y-2 rounded-xl bg-white p-3 border border-violet-100">
+                          <input
+                            value={docTitle}
+                            onChange={(e) => setDocTitle(e.target.value)}
+                            placeholder="Document title"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          />
+                          <textarea
+                            value={docDescription}
+                            onChange={(e) => setDocDescription(e.target.value)}
+                            placeholder="Description / notes"
+                            rows={2}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          />
+                          <input
+                            type="date"
+                            value={docDueDate}
+                            onChange={(e) => setDocDueDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!docTitle.trim()) {
+                                toast.error('Document title is required.');
+                                return;
+                              }
+                              addRequiredDocument(selectedEmp.id, {
+                                title: docTitle.trim(),
+                                description: docDescription.trim(),
+                                notes: docDescription.trim(),
+                                dueDate: docDueDate || undefined,
+                                required: true,
+                              });
+                              setDocTitle('');
+                              setDocDescription('');
+                              setDocDueDate('');
+                              toast.success('Required document added.');
+                            }}
+                            className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
+                          >
+                            Add Required Document
+                          </button>
+                        </div>
+                      </div>
 
                       {selectedEmp.registrationAddress && (
                         <div className="flex gap-3 text-sm border-t border-gray-50 pt-2">

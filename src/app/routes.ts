@@ -16,6 +16,7 @@ const AdminHostFeedback = React.lazy(() => import('./pages/admin/AdminHostFeedba
 const Announcements = React.lazy(() => import('./pages/Announcements').then(m => ({ default: m.Announcements })));
 const Dashboard = React.lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const HTEDashboard = React.lazy(() => import('./pages/HTEDashboard').then(m => ({ default: m.HTEDashboard })));
+const HTERecords = React.lazy(() => import('./pages/HTERecords').then(m => ({ default: m.HTERecords })));
 const HTESettings = React.lazy(() => import('./pages/HTESettings').then(m => ({ default: m.HTESettings })));
 const InstructorQR = React.lazy(() => import('./pages/InstructorQR'));
 const Login = React.lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
@@ -137,6 +138,9 @@ export const router = createBrowserRouter([
     errorElement: routeErrorElement,
     children: [
       { index: true, element: withSuspense(HTEDashboard) },
+      { path: 'applications', element: withSuspense(HTERecords) },
+      { path: 'approvals', element: withSuspense(HTERecords) },
+      { path: 'registrations', element: withSuspense(HTERecords) },
       { path: 'settings', element: withSuspense(HTESettings) },
     ],
   },

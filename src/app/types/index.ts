@@ -147,3 +147,26 @@ export interface AnnouncementSubmission {
   photo?: string;
   submittedAt: string;
 }
+
+export interface RequiredDocument {
+  id: string;
+  employeeId: string;
+  title: string;
+  description?: string;
+  notes?: string;
+  dueDate?: string;
+  required: boolean;
+  createdAt: string;
+}
+
+export interface RequiredDocumentSubmission {
+  id: string;
+  documentId: string;
+  employeeId: string;
+  submittedAt: string;
+  note?: string;
+  notes?: string;
+  fileName?: string;
+  fileUrl?: string;
+  status: 'pending' | 'submitted';
+}
