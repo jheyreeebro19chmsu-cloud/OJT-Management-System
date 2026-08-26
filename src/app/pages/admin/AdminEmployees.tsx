@@ -303,7 +303,7 @@ export function AdminEmployees() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Employees</h2>
+          <h2 className="text-xl font-bold text-gray-800">OJT/Records</h2>
           <p className="text-sm text-gray-500">{totalFiltered} active accounts</p>
         </div>
         <button

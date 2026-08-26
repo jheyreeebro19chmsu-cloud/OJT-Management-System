@@ -23,7 +23,7 @@ import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/employees', label: 'Employees', icon: Users, end: false },
+  { to: '/admin/employees', label: 'OJT/Records', icon: Users, end: false },
   { to: '/admin/geofence', label: 'Geofence Zones', icon: MapPin, end: false },
   { to: '/admin/reports', label: 'Reports', icon: BarChart2, end: false },
   { to: '/admin/evaluations', label: 'Evaluations', icon: Star, end: false },
