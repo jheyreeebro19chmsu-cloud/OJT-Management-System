@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Camera, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Camera as CameraIcon, X } from 'lucide-react-native';
 
 interface FaceScannerProps {
@@ -14,7 +14,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   const [lastCaptureTime, setLastCaptureTime] = useState(0);
   const [brightness] = useState(128);
   const [lightingStatus] = useState<'dark' | 'good' | 'bright'>('good');
-  const cameraRef = React.useRef<React.ElementRef<typeof Camera> | null>(null);
+  const cameraRef = React.useRef<CameraView | null>(null);
 
   useEffect(() => {
     if (!permission) {
@@ -83,12 +83,15 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
   return (
     <View style={styles.container}>
-      <Camera
-        ref={(r) => (cameraRef.current = r)}
+      <View style={styles.cameraContainer}>
+        <CameraView
+        ref={(r) => {
+          cameraRef.current = r;
+        }}
         style={styles.camera}
-        type={Camera.Constants.Type.front}
-      >
-        <View style={styles.overlay}>
+        facing="front"
+        />
+        <View pointerEvents="box-none" style={styles.overlay}>
           <View
             style={[
               styles.lightingIndicator,
@@ -112,7 +115,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
             <View style={{ width: 48 }} />
           </View>
         </View>
-      </Camera>
+      </View>
 
       <View style={styles.footer}>
         <Text style={styles.hint}>Position your face inside the frame</Text>
@@ -126,6 +129,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  cameraContainer: {
+    flex: 1,
   },
   camera: {
     flex: 1,

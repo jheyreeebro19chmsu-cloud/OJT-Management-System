@@ -71,8 +71,8 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       // Radius of 300 meters
       setIsWithinGeofence(distance <= 300);
     } else {
-      // If no location set, we default to true for development or alert
-      setIsWithinGeofence(true); 
+      setIsWithinGeofence(false);
+      Alert.alert('Location unavailable', 'Your assigned OJT location is not configured. Contact your instructor.');
     }
   }
 
@@ -110,10 +110,13 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       // 1. First, attempt to sync with Django Backend (Primary Logic)
       try {
         const applicationId = profile.application_id || profile.id; // Fallback if not set
+        const latitude = currentLocation?.coords.latitude;
+        const longitude = currentLocation?.coords.longitude;
+        const accuracy = currentLocation?.coords.accuracy;
         if (scanType === 'in') {
-          await attendanceApi.timeIn(profile.id, applicationId);
+          await attendanceApi.timeIn(profile.id, applicationId, latitude, longitude, accuracy);
         } else {
-          await attendanceApi.timeOut(profile.id, applicationId);
+          await attendanceApi.timeOut(profile.id, applicationId, latitude, longitude, accuracy);
         }
       } catch (apiErr) {
         console.warn('Django API Sync failed, falling back to direct Supabase:', apiErr);

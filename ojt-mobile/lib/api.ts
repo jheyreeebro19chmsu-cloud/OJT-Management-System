@@ -102,11 +102,23 @@ export async function get(endpoint: string) {
 }
 
 export const attendanceApi = {
-  timeIn: (userId: string, applicationId: string) => 
-    post('/attendance/time-in/', { user_id: userId, application_id: applicationId }),
+  timeIn: (userId: string, applicationId: string, latitude?: number, longitude?: number, accuracy?: number) =>
+    post('/attendance/time-in/', {
+      user_id: userId,
+      application_id: applicationId,
+      lat: latitude,
+      lng: longitude,
+      accuracy,
+    }),
   
-  timeOut: (userId: string, applicationId: string) => 
-    post('/attendance/time-out/', { user_id: userId, application_id: applicationId }),
+  timeOut: (userId: string, applicationId: string, latitude?: number, longitude?: number, accuracy?: number) =>
+    post('/attendance/time-out/', {
+      user_id: userId,
+      application_id: applicationId,
+      lat: latitude,
+      lng: longitude,
+      accuracy,
+    }),
   
   verifyQr: (qrData: string) => 
     post('/auth/verify-qr/', { qr_data: qrData }),
