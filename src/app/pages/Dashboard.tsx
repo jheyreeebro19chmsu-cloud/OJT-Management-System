@@ -68,8 +68,10 @@ export function Dashboard() {
       const fetchHteRequests = async () => {
         const { data } = await supabase
           .from('hte_student_access')
-          .select('*, host_supervisors(*), employees(*)')
-          .eq('status', 'pending');
+          .select('*, host_supervisors(*), employees!inner(*)')
+          .eq('employees.instructor_id', currentUser?.id)
+          .in('status', ['pending', 'approved'])
+          .order('created_at', { ascending: false });
         if (data) setHteRequests(data);
       };
 
@@ -86,7 +88,7 @@ export function Dashboard() {
         .update({ status: 'approved', approved_at: new Date().toISOString() })
         .eq('id', request.id);
       if (error) throw error;
-      setHteRequests((prev) => prev.filter((r) => r.id !== request.id));
+      setHteRequests((prev) => prev.map((r) => (r.id === request.id ? { ...r, status: 'approved' } : r)));
       toast.success('HTE access approved');
     } catch (err: any) {
       toast.error(err.message);
@@ -357,7 +359,7 @@ export function Dashboard() {
       )}
 
       {/* Instructor: HTE Access Requests */}
-      {isAdmin && hteRequests.length > 0 && (
+      {isAdmin && hteRequests.some((req) => req.status === 'pending') && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
           <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
@@ -373,7 +375,7 @@ export function Dashboard() {
             </div>
 
             <div className="space-y-4">
-              {hteRequests.map((req) => (
+                {hteRequests.filter((req) => req.status === 'pending').map((req) => (
                 <div key={req.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
                   <div className="flex justify-between items-start">
                     <div>
@@ -404,6 +406,45 @@ export function Dashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Instructor: OJT assigned to an HTE */}
+      {isAdmin && hteRequests.some((req) => req.status === 'approved') && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                  <Building size={18} className="text-green-600" />
+                </div>
+                <h3 className="font-bold text-gray-800">OJT Assigned to HTE</h3>
+              </div>
+              <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">
+                {hteRequests.filter((req) => req.status === 'approved').length} Assigned
+              </span>
+            </div>
+            <div className="space-y-3">
+              {hteRequests
+                .filter((req) => req.status === 'approved')
+                .map((req) => (
+                  <div key={req.id} className="p-4 rounded-2xl bg-green-50 border border-green-100">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-gray-800">{req.employees?.name || 'Unknown OJT'}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {req.employees?.employeeId || req.employees?.employee_id || 'No student ID'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-green-700">{req.host_supervisors?.company_name || 'HTE'}</p>
+                        <p className="text-xs text-gray-500 mt-1">{req.host_supervisors?.name || 'HTE representative'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         </motion.div>

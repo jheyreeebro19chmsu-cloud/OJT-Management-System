@@ -75,32 +75,25 @@ export function Login() {
     }
   }, []);
 
-  // Compute background style object once per render (avoid passing a function to `style`)
-  let bgStyle: React.CSSProperties = {};
+  let backgroundImage = '/CHMSU.JPEG';
   try {
-    let bg = '/CHMSU.JPEG';
     const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
-    if (override) bg = override;
-    bgStyle = {
-      backgroundImage: bg ? `url('${bg}'), linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)` : 'linear-gradient(135deg, #042c54 0%, #075985 50%, #0ea5e9 100%)',
-      backgroundSize: 'cover, cover',
-      backgroundPosition: 'center center, center center',
-      backgroundRepeat: 'no-repeat, no-repeat',
-    } as React.CSSProperties;
+    if (override) backgroundImage = override;
   } catch {
-    bgStyle = {};
+    // Keep the default image when local storage is unavailable.
   }
 
   return (
     <div
-      className="relative min-h-screen flex flex-col items-center justify-center px-4 py-8"
-      style={bgStyle}
+      className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-sky-900 px-4 py-8"
     >
-      {/* Dark overlay for contrast over the background image */}
-        <div className="absolute inset-0 bg-black/20 pointer-events-none" />
-      {/* Decorative circles */}
-      <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400/10 rounded-full translate-x-1/3 translate-y-1/3 blur-3xl" />
+      <img
+        src={backgroundImage}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full object-cover saturate-125 contrast-110"
+      />
+      <div className="absolute inset-0 bg-slate-950/10 pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 30 }}
