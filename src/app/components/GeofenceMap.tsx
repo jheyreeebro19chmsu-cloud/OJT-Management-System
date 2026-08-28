@@ -183,6 +183,11 @@ export function GeofenceMap({
           Click the map to set the zone center
         </div>
       )}
+      {!picking && safeZones.length > 0 && (
+        <div className="absolute right-3 bottom-3 bg-white/95 rounded-xl px-3 py-1.5 text-xs text-gray-700 shadow border border-blue-100">
+          Radius: {safeZones.map((zone) => `${zone.name || 'Zone'} ${Math.round(zone.radius)}m`).join(' | ')}
+        </div>
+      )}
       {safeLiveUser && !picking && (
         <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-2 pointer-events-none">
           <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-sky-100">
@@ -232,7 +237,14 @@ function FitMapView({
     if (liveUser && !fittedLiveUserRef.current) {
       const points = [
         [liveUser.lat, liveUser.lng] as [number, number],
-        ...zones.map((zone) => [zone.lat, zone.lng] as [number, number]),
+        ...zones.flatMap((zone) => {
+          const bounds = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getNorthEast();
+          const southWest = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getSouthWest();
+          return [
+            [bounds.lat, bounds.lng] as [number, number],
+            [southWest.lat, southWest.lng] as [number, number],
+          ];
+        }),
       ].filter(([lat, lng]) => isValidCoord(lat, lng));
       if (points.length > 0) {
         try {
@@ -255,7 +267,10 @@ function FitMapView({
 
     if (!fittedZonesRef.current && zones.length > 0 && !liveUser) {
       const points = zones
-        .map((zone) => [zone.lat, zone.lng] as [number, number])
+        .flatMap((zone) => {
+          const zoneBounds = L.latLng(zone.lat, zone.lng).toBounds(zone.radius);
+          return [zoneBounds.getNorthEast(), zoneBounds.getSouthWest()].map((point) => [point.lat, point.lng] as [number, number]);
+        })
         .filter(([lat, lng]) => isValidCoord(lat, lng));
       if (points.length > 0) {
         try {

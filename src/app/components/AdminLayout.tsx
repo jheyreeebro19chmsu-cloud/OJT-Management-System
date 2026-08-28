@@ -265,6 +265,13 @@ export function AdminLayout() {
             </div>
           </div>
           <button
+            onClick={() => navigate('/admin/profile')}
+            className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm"
+          >
+            <Users size={14} />
+            Profile
+          </button>
+          <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm"
           >

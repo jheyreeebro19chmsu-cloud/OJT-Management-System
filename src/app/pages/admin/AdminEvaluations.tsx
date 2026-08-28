@@ -74,7 +74,16 @@ const TEXT_FIELDS = [
 type TextFieldKey = (typeof TEXT_FIELDS)[number]['key'];
 
 export function AdminEvaluations() {
-  const { employees, timeRecords, evaluations, addEvaluation, updateEvaluation, deleteEvaluation } = useApp();
+  const {
+    employees,
+    timeRecords,
+    evaluations,
+    addEvaluation,
+    updateEvaluation,
+    deleteEvaluation,
+    getEmployeeRequiredDocuments,
+    getEmployeeRequirementSummary,
+  } = useApp();
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState<EvaluationForm>(BLANK_FORM);
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
@@ -118,6 +127,13 @@ export function AdminEvaluations() {
 
   const handleSave = (status: Evaluation['status']) => {
     if (!selectedEmp) return;
+    if (status === 'final') {
+      const summary = getEmployeeRequirementSummary(selectedEmp.id);
+      if (summary.missing > 0 || summary.incomplete > 0) {
+        toast.error(`Upload all required documents before finalizing. ${summary.missing} missing, ${summary.incomplete} incomplete.`);
+        return;
+      }
+    }
     const scores = [
       form.attendanceScore,
       form.performanceScore,
@@ -223,6 +239,49 @@ export function AdminEvaluations() {
                 </div>
               );
             })()}
+          </div>
+        </div>
+
+        {(() => {
+          const requirementSummary = getEmployeeRequirementSummary(selectedEmp.id);
+          const requirementsReady = requirementSummary.missing === 0 && requirementSummary.incomplete === 0;
+          return (
+            <div className={`rounded-2xl border p-4 ${requirementsReady ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className={`font-bold text-sm ${requirementsReady ? 'text-green-800' : 'text-amber-800'}`}>OJT Requirements</p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {requirementsReady
+                      ? 'All required documents are uploaded and ready for evaluation.'
+                      : `${requirementSummary.complete} complete, ${requirementSummary.incomplete} incomplete, ${requirementSummary.missing} missing.`}
+                  </p>
+                </div>
+                <span className={`text-xs font-bold ${requirementsReady ? 'text-green-700' : 'text-amber-700'}`}>
+                  {getEmployeeRequiredDocuments(selectedEmp.id).length} required
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h3 className="font-bold text-gray-800 mb-3">Standard OJT Record</h3>
+          <div className="grid gap-2 sm:grid-cols-2 text-sm">
+            {[
+              ['Applicant / Student', selectedEmp.name],
+              ['Student ID', selectedEmp.employeeId],
+              ['School / Course', `${selectedEmp.schoolName || 'Not recorded'}${selectedEmp.course ? ` - ${selectedEmp.course}` : ''}`],
+              ['Establishment / Company', selectedEmp.companyName || 'Not recorded'],
+              ['Company Address', selectedEmp.companyAddress || selectedEmp.registrationAddress || 'Not recorded'],
+              ['Supervisor / Contact', selectedEmp.supervisorName || selectedEmp.contactPerson || 'Not recorded'],
+              ['OJT Period', `${selectedEmp.startDate || 'Not set'} to ${selectedEmp.endDate || 'Not set'}`],
+              ['Required Hours', `${selectedEmp.requiredHours} hours`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-gray-50 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+                <p className="text-xs font-medium text-gray-700 mt-0.5">{value}</p>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -339,7 +398,8 @@ export function AdminEvaluations() {
           </button>
           <button
             onClick={() => handleSave('final')}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-700 text-white rounded-xl font-semibold text-sm hover:bg-blue-800 transition-colors"
+            disabled={(() => { const summary = getEmployeeRequirementSummary(selectedEmp.id); return summary.missing > 0 || summary.incomplete > 0; })()}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-700 text-white rounded-xl font-semibold text-sm hover:bg-blue-800 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Check size={15} />
             Finalize Evaluation
