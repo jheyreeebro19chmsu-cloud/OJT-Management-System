@@ -171,8 +171,6 @@ export function FaceCapture({
 
     // Safety: ensure any previous stream is closed first
     stopCamera();
-    await delay(300);
-
     setState('requesting');
     setScanMessage('Requesting camera access...');
     try {
@@ -228,22 +226,16 @@ export function FaceCapture({
 
         await videoRef.current.play();
         console.log('FaceCapture: video playing');
-        // Essential delay for camera stabilization
-        await delay(500);
       }
 
       setState('scanning');
       setScanMessage('Position your face within the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
-      // Allow UX to breathe and let camera sensor adjust exposure (2.5 seconds)
-      await delay(2500);
       setState('analyzing');
       setScanMessage('Detecting face...');
       setProgress(40);
 
-      // Brief pause for biometric scanning alignment (1.0 second)
-      await delay(1000);
       setState('verifying');
       setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
       setProgress(80);
@@ -267,7 +259,7 @@ export function FaceCapture({
             setState('success');
             setScanMessage('Identity verified successfully!');
             stopCamera();
-            setTimeout(() => onSuccess(img), 1500);
+            onSuccess(img);
             return;
           }
           setProgress(100);
@@ -295,7 +287,7 @@ export function FaceCapture({
                   setState('success');
                   setScanMessage('Identity verified offline (client-side)');
                   stopCamera();
-                  setTimeout(() => onSuccess(img), 1500);
+                  onSuccess(img);
                   return;
                 }
                 setProgress(100);
@@ -313,7 +305,7 @@ export function FaceCapture({
               setState('success');
               setScanMessage('Backend unreachable. Proceeding with offline verification mode.');
               stopCamera();
-              setTimeout(() => onSuccess(img), 1500);
+                  onSuccess(img);
               return;
             }
           }
@@ -349,7 +341,7 @@ export function FaceCapture({
         setState('success');
         setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Face registered successfully!');
         stopCamera();
-        setTimeout(() => onSuccess(img), 1500);
+        onSuccess(img);
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'NotAllowedError') {

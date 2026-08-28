@@ -91,9 +91,9 @@ export function Login() {
         src={backgroundImage}
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover saturate-125 contrast-110"
+        className="absolute inset-0 h-full w-full object-cover saturate-150 contrast-125"
       />
-      <div className="absolute inset-0 bg-slate-950/10 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/15 via-slate-950/25 to-slate-950/45 pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 30 }}
@@ -124,8 +124,8 @@ export function Login() {
           <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-xl mb-4">
             <Clock size={36} className="text-blue-700" />
           </div>
-          <h1 className="text-white text-2xl font-bold">OJT Daily Time Record</h1>
-          <p className="text-blue-200 text-sm mt-1">On-the-Job Training Management System</p>
+          <h1 className="text-white text-2xl font-bold drop-shadow-md">OJT Daily Time Record</h1>
+          <p className="text-white/90 text-sm mt-1 drop-shadow">On-the-Job Training Management System</p>
         </div>
 
         {/* Card */}
@@ -134,7 +134,7 @@ export function Login() {
             Face-recognition features are currently disabled because the local face-api bundle is missing or blocked by the browser. Copy a local face-api.js to <span className="font-mono">public/vendor/face-api.js</span> or run the downloader in <span className="font-mono">scripts/</span> to enable biometric features.
           </div>
         )}
-        <div className="bg-white rounded-3xl shadow-2xl p-6">
+        <div className="bg-white rounded-3xl shadow-2xl ring-1 ring-black/10 p-6">
           <h2 className="text-gray-800 font-bold text-lg mb-1">Welcome back</h2>
           <p className="text-gray-500 text-sm mb-5">Sign in to your account</p>
 
@@ -222,7 +222,7 @@ export function Login() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="mt-4 p-4 bg-blue-50/80 border border-blue-100 rounded-2xl text-sm"
+                className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-2xl text-sm"
               >
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-bold text-blue-900 flex items-center gap-1.5">
@@ -240,7 +240,7 @@ export function Login() {
                   Please enter your email above to verify your registered home address and recover your password.
                 </p>
                 {matchedEmployee ? (
-                  <div className="space-y-2 bg-white/70 backdrop-blur-sm rounded-xl p-3 border border-blue-100/50">
+                  <div className="space-y-2 bg-white rounded-xl p-3 border border-blue-100">
                     <div className="text-xs">
                       <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">REGISTERED ADDRESS</span>
                       <span className="text-gray-800 font-medium">{matchedEmployee.registrationAddress || 'No address registered.'}</span>

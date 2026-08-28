@@ -42,6 +42,8 @@ export function AdminEmployees() {
     getEmployeeRequiredDocuments,
     submitRequiredDocument,
     getRequiredDocumentSubmission,
+    getRequirementStatus,
+    getEmployeeRequirementSummary,
   } = useApp();
   const [search, setSearch] = useState('');
   const [modalMode, setModalMode] = useState<ModalMode>(null);
@@ -526,6 +528,7 @@ export function AdminEmployees() {
                         { label: 'Course', val: selectedEmp.course },
                         { label: 'OJT Period', val: `${selectedEmp.startDate} → ${selectedEmp.endDate}` },
                         { label: 'Required Hours', val: `${selectedEmp.requiredHours} hrs` },
+                        { label: 'Requirements', val: (() => { const summary = getEmployeeRequirementSummary(selectedEmp.id); return `${summary.complete} complete, ${summary.incomplete} incomplete, ${summary.missing} missing`; })() },
                       ].map(({ label, val }) => (
                         <div key={label} className="flex gap-3 text-sm border-b border-gray-50 pb-2 last:border-0">
                           <span className="text-gray-400 w-28 shrink-0">{label}</span>
@@ -554,11 +557,16 @@ export function AdminEmployees() {
                                       <p className="text-sm font-semibold text-gray-800">{doc.title}</p>
                                       {doc.description && <p className="text-[11px] text-gray-500 mt-1">{doc.description}</p>}
                                     </div>
-                                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${submission ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                      {submission ? 'Submitted' : 'Pending'}
+                                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${getRequirementStatus(doc.id, selectedEmp.id) === 'complete' ? 'bg-green-100 text-green-700' : getRequirementStatus(doc.id, selectedEmp.id) === 'incomplete' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                      {getRequirementStatus(doc.id, selectedEmp.id)}
                                     </span>
                                   </div>
                                   {doc.dueDate && <p className="text-[11px] text-gray-500 mt-2">Due: {doc.dueDate}</p>}
+                                  {submission?.fileUrl && (
+                                    <a href={submission.fileUrl} download={submission.fileName || 'ojt-document'} className="mt-2 inline-flex text-[11px] font-semibold text-violet-700">
+                                      Download submitted file
+                                    </a>
+                                  )}
                                 </div>
                               );
                             })

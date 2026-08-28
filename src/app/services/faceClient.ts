@@ -18,7 +18,7 @@ export async function loadFaceModels(modelsPath = '/models') {
   }
 
   // Use local models first for instant loading without internet
-  const candidates = [modelsPath, 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model'];
+  const candidates = [modelsPath, 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model'];
 
   for (const base of candidates) {
     try {

@@ -329,6 +329,8 @@ export async function fetchSettings(): Promise<AppSettings | null> {
     lateThresholdMinutes: data.late_threshold_minutes,
     geofenceEnabled: data.geofence_enabled,
     facialRecognitionEnabled: data.facial_recognition_enabled,
+    academicYears: Array.isArray(data.academic_years) && data.academic_years.length > 0 ? data.academic_years : ['2025-2026'],
+    activeAcademicYear: data.active_academic_year || '2025-2026',
   };
 }
 
@@ -341,6 +343,8 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
     late_threshold_minutes: settings.lateThresholdMinutes,
     geofence_enabled: settings.geofenceEnabled,
     facial_recognition_enabled: settings.facialRecognitionEnabled,
+    academic_years: settings.academicYears,
+    active_academic_year: settings.activeAcademicYear,
   };
 
   // Try to update first, if no rows affected, insert

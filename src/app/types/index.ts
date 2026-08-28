@@ -64,6 +64,8 @@ export interface AppSettings {
   lateThresholdMinutes: number;
   geofenceEnabled: boolean;
   facialRecognitionEnabled: boolean;
+  academicYears: string[];
+  activeAcademicYear: string;
 }
 
 export interface User {
@@ -156,6 +158,7 @@ export interface RequiredDocument {
   notes?: string;
   dueDate?: string;
   required: boolean;
+  academicYear?: string;
   createdAt: string;
 }
 
@@ -170,3 +173,5 @@ export interface RequiredDocumentSubmission {
   fileUrl?: string;
   status: 'pending' | 'submitted';
 }
+
+export type RequirementStatus = 'missing' | 'incomplete' | 'complete';

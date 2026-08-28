@@ -11,6 +11,7 @@ import {
   Award,
   Star,
   KeyRound,
+  Download,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
@@ -85,6 +86,7 @@ export function Profile() {
     getEmployeeRequiredDocuments,
     submitRequiredDocument,
     getRequiredDocumentSubmission,
+    getRequirementStatus,
   } = useApp();
   const employee = getCurrentEmployee();
   const records = employee ? getEmployeeRecords(employee.id) : [];
@@ -105,6 +107,7 @@ export function Profile() {
   });
   const [documentNote, setDocumentNote] = useState<Record<string, string>>({});
   const [documentFileName, setDocumentFileName] = useState<Record<string, string>>({});
+  const [documentFileUrl, setDocumentFileUrl] = useState<Record<string, string>>({});
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
   if (!employee) {
@@ -267,8 +270,8 @@ export function Profile() {
                       <p className="text-sm font-semibold text-violet-900">{doc.title}</p>
                       {doc.description && <p className="text-[11px] text-violet-700 mt-1">{doc.description}</p>}
                     </div>
-                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${submission ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {submission ? 'Submitted' : 'Pending'}
+                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${getRequirementStatus(doc.id, employee.id) === 'complete' ? 'bg-green-100 text-green-700' : getRequirementStatus(doc.id, employee.id) === 'incomplete' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                      {getRequirementStatus(doc.id, employee.id)}
                     </span>
                   </div>
                   {doc.dueDate && <p className="text-[11px] text-gray-600">Due: {doc.dueDate}</p>}
@@ -277,6 +280,11 @@ export function Profile() {
                       <p className="font-semibold text-gray-800 mb-1">Submitted</p>
                       {submission.note && <p>Note: {submission.note}</p>}
                       {submission.fileName && <p>File: {submission.fileName}</p>}
+                      {submission.fileUrl && (
+                        <a href={submission.fileUrl} download={submission.fileName || 'ojt-document'} className="mt-2 inline-flex items-center gap-1 text-violet-700 font-semibold hover:text-violet-900">
+                          <Download size={12} /> Download file
+                        </a>
+                      )}
                       <p>Submitted on: {new Date(submission.submittedAt).toLocaleDateString()}</p>
                     </div>
                   ) : (
@@ -296,7 +304,12 @@ export function Profile() {
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (file) setDocumentFileName((prev) => ({ ...prev, [doc.id]: file.name }));
+                              if (file) {
+                                setDocumentFileName((prev) => ({ ...prev, [doc.id]: file.name }));
+                                const reader = new FileReader();
+                                reader.onload = () => setDocumentFileUrl((prev) => ({ ...prev, [doc.id]: String(reader.result || '') }));
+                                reader.readAsDataURL(file);
+                              }
                             }}
                           />
                         </label>
@@ -306,7 +319,12 @@ export function Profile() {
                           onClick={() => {
                             const note = documentNote[doc.id] || '';
                             const fileName = documentFileName[doc.id] || '';
-                            submitRequiredDocument(doc.id, employee.id, { note, notes: note, fileName });
+                            const fileUrl = documentFileUrl[doc.id] || '';
+                            if (!fileUrl) {
+                              toast.error('Please attach the required file.');
+                              return;
+                            }
+                            submitRequiredDocument(doc.id, employee.id, { note, notes: note, fileName, fileUrl });
                             toast.success('Document submitted.');
                           }}
                           className="ml-auto px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700"

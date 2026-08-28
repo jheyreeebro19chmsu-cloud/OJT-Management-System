@@ -16,6 +16,7 @@ import {
   AnnouncementSubmission,
   RequiredDocument,
   RequiredDocumentSubmission,
+  RequirementStatus,
   HostFeedback,
   HostSupervisor,
 } from '../types';
@@ -43,7 +44,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   lateThresholdMinutes: 15,
   geofenceEnabled: true,
   facialRecognitionEnabled: true,
+  academicYears: ['2025-2026', '2026-2027'],
+  activeAcademicYear: '2026-2027',
 };
+
+function getCurrentAcademicYear(): string {
+  const now = new Date();
+  const year = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${year}-${year + 1}`;
+}
 
 const DEFAULT_GEOFENCE: GeofenceZone[] = [
   {
@@ -302,11 +311,13 @@ interface AppContextType {
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
   addRequiredDocument: (
     employeeId: string,
-    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean }
+    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean; academicYear?: string }
   ) => RequiredDocument;
   updateRequiredDocument: (id: string, data: Partial<RequiredDocument>) => void;
   deleteRequiredDocument: (id: string) => void;
   getEmployeeRequiredDocuments: (employeeId: string) => RequiredDocument[];
+  getRequirementStatus: (documentId: string, employeeId: string) => RequirementStatus;
+  getEmployeeRequirementSummary: (employeeId: string) => { missing: number; incomplete: number; complete: number };
   submitRequiredDocument: (
     documentId: string,
     employeeId: string,
@@ -449,7 +460,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sanitized = sanitizeGeofenceZones(stored);
     return sanitized.length > 0 ? sanitized : DEFAULT_GEOFENCE;
   });
-  const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS));
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
+    const currentAcademicYear = getCurrentAcademicYear();
+    const academicYears = Array.from(new Set([...(stored.academicYears || DEFAULT_SETTINGS.academicYears), currentAcademicYear]));
+    return {
+      ...DEFAULT_SETTINGS,
+      ...stored,
+      academicYears,
+      activeAcademicYear: stored.activeAcademicYear || currentAcademicYear,
+    };
+  });
   const [evaluations, setEvaluations] = useState<Evaluation[]>(() => loadFromStorage(STORAGE_KEYS.EVALUATIONS, []));
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
     const stored = loadFromStorage<Announcement[]>(STORAGE_KEYS.ANNOUNCEMENTS, []);
@@ -1291,7 +1312,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addRequiredDocument = (
     employeeId: string,
-    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean }
+    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean; academicYear?: string }
   ): RequiredDocument => {
     const notes = (data.notes ?? data.description ?? '').trim();
     const newDoc: RequiredDocument = {
@@ -1302,6 +1323,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       notes,
       dueDate: data.dueDate || '',
       required: data.required ?? true,
+      academicYear: data.academicYear || settings.activeAcademicYear,
       createdAt: new Date().toISOString(),
     };
 
@@ -1320,8 +1342,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getEmployeeRequiredDocuments = (employeeId: string): RequiredDocument[] => {
     return requiredDocuments
-      .filter((doc) => doc.employeeId === employeeId)
+      .filter((doc) => doc.employeeId === employeeId && (!doc.academicYear || doc.academicYear === settings.activeAcademicYear))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
+  const getRequirementStatus = (documentId: string, employeeId: string): RequirementStatus => {
+    const submission = getRequiredDocumentSubmission(documentId, employeeId);
+    if (!submission) return 'missing';
+    return submission.fileUrl ? 'complete' : 'incomplete';
+  };
+
+  const getEmployeeRequirementSummary = (employeeId: string) => {
+    return getEmployeeRequiredDocuments(employeeId).reduce(
+      (summary, document) => {
+        summary[getRequirementStatus(document.id, employeeId)] += 1;
+        return summary;
+      },
+      { missing: 0, incomplete: 0, complete: 0 }
+    );
   };
 
   const submitRequiredDocument = (
@@ -1455,6 +1493,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateRequiredDocument,
         deleteRequiredDocument,
         getEmployeeRequiredDocuments,
+        getRequirementStatus,
+        getEmployeeRequirementSummary,
         submitRequiredDocument,
         getRequiredDocumentSubmission,
         addHostFeedback,

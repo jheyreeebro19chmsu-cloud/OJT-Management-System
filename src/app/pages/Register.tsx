@@ -317,8 +317,10 @@ export function Register() {
       const lookup = await fetch(getAbsoluteUrl(`/api/auth/get-instructor-by-email/?email=${encodeURIComponent(
         form.instructorEmail
       )}`));
-      if (!lookup.ok) throw new Error('Instructor lookup failed');
-      const lookupData = await lookup.json();
+      const lookupData = await lookup.json().catch(() => ({}));
+      if (!lookup.ok) {
+        throw new Error(lookupData?.error || `Instructor lookup failed (${lookup.status})`);
+      }
       const instructorId = lookupData?.instructor?.id || lookupData?.id || lookupData?.user?.id;
       if (!instructorId) throw new Error('Instructor not found');
 
