@@ -255,7 +255,6 @@ function FitMapView({
             map.fitBounds(points, {
               padding: [48, 48],
               maxZoom: 16,
-              minZoom: 15,
             });
           }
           fittedLiveUserRef.current = true;
@@ -281,7 +280,6 @@ function FitMapView({
             map.fitBounds(points, {
               padding: [80, 80],
               maxZoom: 16,
-              minZoom: 15,
             });
           }
           fittedZonesRef.current = true;
