@@ -137,6 +137,10 @@ export function EmployeeLayout() {
                 <div className="text-xs text-blue-200 leading-tight">OJT System</div>
                 <div className="text-sm font-bold leading-tight">{employee?.name || 'Daily Time Record'}</div>
               </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-700/60 border border-blue-400/40 text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                <span>AY {useApp().settings?.activeAcademicYear || '2026-2027'}</span>
+              </div>
             </div>
             <button
               onClick={handleLogout}

@@ -52,7 +52,13 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
                 <Home className="text-white" size={20} />
               </div>
               <div>
-                <h1 className="text-gray-900 font-bold">HTE Manager</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-gray-900 font-bold">HTE Manager</h1>
+                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-xs font-bold shadow-sm" title="Active Academic Environment">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                    <span>AY {useApp().settings?.activeAcademicYear || '2026-2027'}</span>
+                  </div>
+                </div>
                 <p className="text-xs text-gray-500">{hteCompany}</p>
               </div>
             </div>
