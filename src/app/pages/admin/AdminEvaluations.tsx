@@ -1,4 +1,4 @@
-import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer } from 'lucide-react';
+import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
@@ -6,13 +6,12 @@ import { toast } from 'sonner';
 import { useApp } from '../../store/AppContext';
 import { Employee, Evaluation } from '../../types';
 
-
-const GRADE_CONFIG: Record<Evaluation['grade'], { color: string; bg: string; min: number }> = {
-  Excellent: { color: 'text-green-700', bg: 'bg-green-100', min: 90 },
-  'Very Good': { color: 'text-blue-700', bg: 'bg-blue-100', min: 80 },
-  Good: { color: 'text-sky-700', bg: 'bg-sky-100', min: 70 },
-  Satisfactory: { color: 'text-yellow-700', bg: 'bg-yellow-100', min: 60 },
-  'Needs Improvement': { color: 'text-red-700', bg: 'bg-red-100', min: 0 },
+const GRADE_CONFIG: Record<Evaluation['grade'], { color: string; bg: string; border: string; min: number; label: string }> = {
+  Excellent: { color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', min: 90, label: 'Excellent / Outstanding (90-100%)' },
+  'Very Good': { color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', min: 80, label: 'Very Good / Above Average (80-89%)' },
+  Good: { color: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-200', min: 70, label: 'Good / Average (70-79%)' },
+  Satisfactory: { color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', min: 60, label: 'Satisfactory / Fair (60-69%)' },
+  'Needs Improvement': { color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', min: 0, label: 'Needs Improvement / Poor (<60%)' },
 };
 
 function getGrade(score: number): Evaluation['grade'] {
@@ -23,15 +22,52 @@ function getGrade(score: number): Evaluation['grade'] {
   return 'Needs Improvement';
 }
 
-const CRITERIA = [
-  { key: 'attendanceScore', label: 'Attendance & Punctuality', desc: 'Regularity and timeliness of attendance' },
-  { key: 'performanceScore', label: 'Job Performance', desc: 'Quality and quantity of work output' },
-  { key: 'attitudeScore', label: 'Attitude & Conduct', desc: 'Professional behavior and work ethic' },
-  { key: 'punctualityScore', label: 'Time Management', desc: 'Ability to manage tasks within deadlines' },
-  { key: 'communicationScore', label: 'Communication Skills', desc: 'Verbal and written communication' },
+const EVALUATION_SECTIONS = [
+  {
+    id: 'sec1',
+    title: 'Section I: Job Performance & Technical Skills',
+    weight: '30%',
+    key: 'performanceScore',
+    subCriteria: [
+      'Quality & Accuracy of Work Output',
+      'Technical & Practical Skill Application',
+      'Task Productivity & Completion Efficiency',
+    ],
+  },
+  {
+    id: 'sec2',
+    title: 'Section II: Work Habits, Conduct & Punctuality',
+    weight: '30%',
+    key: 'attendanceScore',
+    subCriteria: [
+      'Regularity of Attendance & Punctuality',
+      'Dependability & Responsibility towards assigned tasks',
+      'Compliance with Company Rules, Safety & Ethics',
+    ],
+  },
+  {
+    id: 'sec3',
+    title: 'Section III: Interpersonal & Communication Skills',
+    weight: '20%',
+    key: 'communicationScore',
+    subCriteria: [
+      'Teamwork & Cooperation with Co-workers/Supervisors',
+      'Verbal & Written Communication Ability',
+      'Professional Demeanor, Courtesy & Respect',
+    ],
+  },
+  {
+    id: 'sec4',
+    title: 'Section IV: Time Management & Problem Solving',
+    weight: '20%',
+    key: 'punctualityScore',
+    subCriteria: [
+      'Time Management & Deadline Adherence',
+      'Initiative, Resourcefulness & Self-Motivation',
+      'Critical Thinking & Analytical Problem Solving',
+    ],
+  },
 ] as const;
-
-type CriteriaKey = (typeof CRITERIA)[number]['key'];
 
 type EvaluationForm = Pick<
   Evaluation,
@@ -47,31 +83,16 @@ type EvaluationForm = Pick<
 >;
 
 const BLANK_FORM: EvaluationForm = {
-  attendanceScore: 80,
-  performanceScore: 80,
-  attitudeScore: 80,
-  punctualityScore: 80,
-  communicationScore: 80,
+  attendanceScore: 85,
+  performanceScore: 85,
+  attitudeScore: 85,
+  punctualityScore: 85,
+  communicationScore: 85,
   strengths: '',
   areasForImprovement: '',
   recommendations: '',
   status: 'draft' as Evaluation['status'],
 };
-
-const TEXT_FIELDS = [
-  {
-    key: 'strengths',
-    label: 'Strengths & Achievements',
-    placeholder: "Describe the trainee's key strengths and notable achievements during the OJT period...",
-  },
-  {
-    key: 'areasForImprovement',
-    label: 'Areas for Improvement',
-    placeholder: 'What areas does the trainee need to work on...',
-  },
-  { key: 'recommendations', label: 'Recommendations', placeholder: 'Your overall recommendation for the trainee...' },
-] as const;
-type TextFieldKey = (typeof TEXT_FIELDS)[number]['key'];
 
 export function AdminEvaluations() {
   const {
@@ -112,8 +133,8 @@ export function AdminEvaluations() {
       const recs = timeRecords.filter((r) => r.employeeId === emp.id);
       const lateCount = recs.filter((r) => r.status === 'late').length;
       const totalDays = recs.length;
-      const autoAttendance = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 40)) : 80;
-      const autoOnTime = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 60)) : 80;
+      const autoAttendance = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 40)) : 85;
+      const autoOnTime = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 60)) : 85;
       setEditEvalId(null);
       setForm({ ...BLANK_FORM, attendanceScore: autoAttendance, punctualityScore: autoOnTime });
     }
@@ -193,336 +214,479 @@ export function AdminEvaluations() {
   const grade = getGrade(overallScore);
   const gradeConfig = GRADE_CONFIG[grade];
 
+  // ── True Evaluation Form Screen (Create / Edit) ───────────────────────────
   if (viewMode === 'form' && selectedEmp) {
     return (
-      <div className="space-y-5 max-w-2xl">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <button onClick={() => setViewMode('list')} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
+      <div className="space-y-6 max-w-3xl mx-auto pb-12">
+        {/* Navigation Header */}
+        <div className="flex items-center justify-between no-print">
+          <button
+            onClick={() => setViewMode('list')}
+            className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white rounded-xl border border-slate-200 shadow-sm transition-all"
+          >
+            <X size={16} />
+            Cancel & Return
           </button>
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">OJT Evaluation Form</h2>
-            <p className="text-sm text-gray-500">
-              {selectedEmp.name} • {selectedEmp.employeeId}
-            </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSave('draft')}
+              className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-all flex items-center gap-1.5"
+            >
+              <Save size={15} />
+              Save Draft
+            </button>
+            <button
+              onClick={() => handleSave('final')}
+              disabled={(() => { const summary = getEmployeeRequirementSummary(selectedEmp.id); return summary.missing > 0 || summary.incomplete > 0; })()}
+              className="px-5 py-2 bg-blue-700 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-200"
+            >
+              <Check size={16} />
+              Finalize & Issue Form
+            </button>
           </div>
         </div>
 
-        {/* Trainee overview */}
-        <div className="bg-blue-50 rounded-2xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-blue-200 rounded-xl flex items-center justify-center overflow-hidden">
-              {selectedEmp.photo ? (
-                <img
-                  src={selectedEmp.photo}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}
+        {/* Official Printable Evaluation Sheet */}
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+          {/* Institutional Header */}
+          <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
+            <div className="flex flex-col items-center justify-center gap-2">
+              <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
+                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+              </div>
+              <div>
+                <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
+                  Carlos Hilado Memorial State University
+                </h1>
+                <p className="text-xs text-slate-300 font-medium tracking-wider uppercase">
+                  Office of On-the-Job Training & Student Internship Program
+                </p>
+                <div className="mt-2 inline-block px-4 py-1 bg-blue-600/40 border border-blue-400/30 rounded-full text-xs font-bold tracking-widest text-sky-200 uppercase">
+                  Official Trainee Performance Evaluation Form
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {/* Student & Host Establishment Particulars */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1.5 flex items-center gap-1.5">
+                <UserCircleIcon className="w-4 h-4 text-blue-600" />
+                Trainee & Establishment Details
+              </h3>
+
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block">Student Name:</span>
+                  <span className="font-bold text-slate-800 text-sm">{selectedEmp.name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Student ID / Employee ID:</span>
+                  <span className="font-mono font-bold text-slate-800">{selectedEmp.employeeId}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">School & Course:</span>
+                  <span className="font-medium text-slate-700">{selectedEmp.schoolName} ({selectedEmp.course || 'N/A'})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Campus & Department:</span>
+                  <span className="font-medium text-slate-700">{selectedEmp.campus || 'Main Campus'} • {selectedEmp.department || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Host Training Establishment (HTE):</span>
+                  <span className="font-bold text-blue-900">{selectedEmp.companyName || 'Not recorded'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Training Supervisor:</span>
+                  <span className="font-medium text-slate-800">{selectedEmp.supervisorName || selectedEmp.contactPerson || 'OJT Supervisor'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
+                  <span className="font-bold text-slate-800">{selectedEmp.requiredHours} Hours</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Rendered Training Period:</span>
+                  <span className="font-medium text-slate-700">{selectedEmp.startDate || 'Start Date'} to {selectedEmp.endDate || 'Present'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Rating Scale Legend */}
+            <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 text-xs text-blue-900 space-y-1">
+              <p className="font-bold uppercase tracking-wider text-[11px] text-blue-800">Rating Scale Standard:</p>
+              <div className="grid grid-cols-5 gap-1.5 text-[11px] text-center font-medium">
+                <span className="bg-emerald-100 text-emerald-800 p-1 rounded font-bold">90-100%: Excellent</span>
+                <span className="bg-blue-100 text-blue-800 p-1 rounded font-bold">80-89%: Very Good</span>
+                <span className="bg-sky-100 text-sky-800 p-1 rounded font-bold">70-79%: Good</span>
+                <span className="bg-amber-100 text-amber-800 p-1 rounded font-bold">60-69%: Fair</span>
+                <span className="bg-rose-100 text-rose-800 p-1 rounded font-bold">&lt;60%: Unsatisfactory</span>
+              </div>
+            </div>
+
+            {/* Performance Criteria Rating Matrix */}
+            <div className="space-y-5">
+              <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2 flex items-center justify-between">
+                <span>Evaluation Competency Criteria</span>
+                <span className="text-xs text-slate-400 font-normal">Score Range: 0 to 100%</span>
+              </h3>
+
+              {EVALUATION_SECTIONS.map((sec) => {
+                const currentScore = form[sec.key as keyof EvaluationForm] as number;
+                return (
+                  <div key={sec.id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-white hover:border-blue-200 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-sm">{sec.title}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">Weight Component: {sec.weight}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">Score:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={currentScore}
+                          onChange={(e) => upd(sec.key, Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                          className="w-16 px-2 py-1 border border-slate-300 rounded-lg text-center font-bold text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <span className="font-bold text-slate-600">%</span>
+                      </div>
+                    </div>
+
+                    <div className="pl-3 border-l-2 border-slate-200 space-y-1 text-xs text-slate-600">
+                      {sec.subCriteria.map((sub, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full shrink-0" />
+                          <span>{sub}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Interactive Slider */}
+                    <div className="pt-1">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={currentScore}
+                        onChange={(e) => upd(sec.key, parseInt(e.target.value))}
+                        className="w-full accent-blue-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Final Overall Grade Summary Card */}
+            <div className={`rounded-xl p-5 border-2 ${gradeConfig.bg} ${gradeConfig.border} flex items-center justify-between shadow-sm`}>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Overall Weighted Score</p>
+                <p className="text-4xl font-extrabold text-slate-900 mt-1">{overallScore}%</p>
+                <p className="text-xs text-slate-500 mt-1">Calculated across all evaluation competency areas</p>
+              </div>
+              <div className="text-right">
+                <div className="inline-block p-2 rounded-full bg-white shadow-sm mb-1">
+                  <Award size={28} className={gradeConfig.color} />
+                </div>
+                <p className={`text-lg font-extrabold ${gradeConfig.color}`}>{grade}</p>
+                <p className="text-xs font-medium text-slate-600">{gradeConfig.label}</p>
+              </div>
+            </div>
+
+            {/* Written Assessment & Remarks */}
+            <div className="space-y-4 pt-2">
+              <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2">
+                Qualitative Assessment & Feedback
+              </h3>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  1. Major Strengths & Notable Achievements *
+                </label>
+                <textarea
+                  value={form.strengths}
+                  onChange={(e) => upd('strengths', e.target.value)}
+                  placeholder="Detail key competencies, exceptional performance, and work contributions..."
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50/50 resize-none"
                 />
-              ) : (
-                <span className="text-blue-700 font-bold text-lg">{selectedEmp.name.charAt(0)}</span>
-              )}
-            </div>
-            <div className="flex-1">
-              <p className="font-bold text-blue-900">{selectedEmp.name}</p>
-              <p className="text-blue-600 text-sm">{selectedEmp.course}</p>
-              <p className="text-blue-500 text-xs">{selectedEmp.schoolName}</p>
-            </div>
-            {(() => {
-              const s = getEmpStats(selectedEmp.id);
-              return (
-                <div className="text-right text-xs text-blue-700">
-                  <p className="font-bold">{s.totalHours.toFixed(0)}h</p>
-                  <p>{s.present} present</p>
-                  <p>{s.late} late</p>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+              </div>
 
-        {(() => {
-          const requirementSummary = getEmployeeRequirementSummary(selectedEmp.id);
-          const requirementsReady = requirementSummary.missing === 0 && requirementSummary.incomplete === 0;
-          return (
-            <div className={`rounded-2xl border p-4 ${requirementsReady ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className={`font-bold text-sm ${requirementsReady ? 'text-green-800' : 'text-amber-800'}`}>OJT Requirements</p>
-                  <p className="text-xs text-gray-600 mt-1">
-                    {requirementsReady
-                      ? 'All required documents are uploaded and ready for evaluation.'
-                      : `${requirementSummary.complete} complete, ${requirementSummary.incomplete} incomplete, ${requirementSummary.missing} missing.`}
-                  </p>
-                </div>
-                <span className={`text-xs font-bold ${requirementsReady ? 'text-green-700' : 'text-amber-700'}`}>
-                  {getEmployeeRequiredDocuments(selectedEmp.id).length} required
-                </span>
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  2. Areas Needing Growth & Technical Improvement
+                </label>
+                <textarea
+                  value={form.areasForImprovement}
+                  onChange={(e) => upd('areasForImprovement', e.target.value)}
+                  placeholder="Identify skills or work habits that require further development..."
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50/50 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  3. Overall Recommendation & Remarks
+                </label>
+                <textarea
+                  value={form.recommendations}
+                  onChange={(e) => upd('recommendations', e.target.value)}
+                  placeholder="Provide recommendations for future professional growth or employment..."
+                  rows={2}
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50/50 resize-none"
+                />
               </div>
             </div>
-          );
-        })()}
 
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h3 className="font-bold text-gray-800 mb-3">Standard OJT Record</h3>
-          <div className="grid gap-2 sm:grid-cols-2 text-sm">
-            {[
-              ['Applicant / Student', selectedEmp.name],
-              ['Student ID', selectedEmp.employeeId],
-              ['School / Course', `${selectedEmp.schoolName || 'Not recorded'}${selectedEmp.course ? ` - ${selectedEmp.course}` : ''}`],
-              ['Establishment / Company', selectedEmp.companyName || 'Not recorded'],
-              ['Company Address', selectedEmp.companyAddress || selectedEmp.registrationAddress || 'Not recorded'],
-              ['Supervisor / Contact', selectedEmp.supervisorName || selectedEmp.contactPerson || 'Not recorded'],
-              ['OJT Period', `${selectedEmp.startDate || 'Not set'} to ${selectedEmp.endDate || 'Not set'}`],
-              ['Required Hours', `${selectedEmp.requiredHours} hours`],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl bg-gray-50 px-3 py-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-                <p className="text-xs font-medium text-gray-700 mt-0.5">{value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Scoring criteria */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-5">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2">
-            <Star size={16} className="text-yellow-500" />
-            Performance Criteria
-          </h3>
-          {CRITERIA.map(({ key, label, desc }) => (
-            <div key={key}>
-              <div className="flex items-center justify-between mb-1">
-                <div>
-                  <p className="text-sm font-semibold text-gray-700">{label}</p>
-                  <p className="text-xs text-gray-400">{desc}</p>
+            {/* Signature Blocks */}
+            <div className="pt-6 border-t border-slate-200 grid grid-cols-2 gap-8 text-center text-xs">
+              <div>
+                <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                  <span className="font-bold text-slate-800 text-sm uppercase">{selectedEmp.supervisorName || 'OJT SUPERVISOR'}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${
-                      form[key] >= 90
-                        ? 'bg-green-100 text-green-700'
-                        : form[key] >= 80
-                          ? 'bg-blue-100 text-blue-700'
-                          : form[key] >= 70
-                            ? 'bg-sky-100 text-sky-700'
-                            : form[key] >= 60
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-red-100 text-red-700'
-                    }`}
-                  >
-                    {form[key]}%
-                  </span>
+                <p className="font-semibold text-slate-600">HTE Training Supervisor / Evaluator</p>
+                <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+              </div>
+
+              <div>
+                <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                  <span className="font-bold text-slate-800 text-sm uppercase">OJT INSTRUCTOR</span>
                 </div>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                value={form[key]}
-                onChange={(e) => upd(key, parseInt(e.target.value))}
-                className="w-full accent-blue-600"
-              />
-              <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-                <span>0</span>
-                <span>50</span>
-                <span>100</span>
+                <p className="font-semibold text-slate-600">CHMSU OJT Coordinator / Instructor</p>
+                <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
               </div>
             </div>
-          ))}
-        </div>
-
-        {/* Overall Score */}
-        <div
-          className={`rounded-2xl p-5 border-2 ${gradeConfig.bg} border-current`}
-          style={{ borderColor: 'transparent' }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Overall Score</p>
-              <p className="text-4xl font-bold text-gray-800 mt-1">{overallScore}%</p>
-            </div>
-            <div className="text-center">
-              <Award size={32} className={gradeConfig.color} />
-              <p className={`text-lg font-bold mt-1 ${gradeConfig.color}`}>{grade}</p>
-            </div>
           </div>
-          {/* Grade bar */}
-          <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <motion.div
-              className={`h-full rounded-full ${
-                overallScore >= 90
-                  ? 'bg-green-500'
-                  : overallScore >= 80
-                    ? 'bg-blue-500'
-                    : overallScore >= 70
-                      ? 'bg-sky-500'
-                      : overallScore >= 60
-                        ? 'bg-yellow-500'
-                        : 'bg-red-500'
-              }`}
-              initial={{ width: 0 }}
-              animate={{ width: `${overallScore}%` }}
-              transition={{ duration: 0.5 }}
-            />
-          </div>
-        </div>
-
-        {/* Written Evaluation */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-          <h3 className="font-bold text-gray-800">Written Evaluation</h3>
-          {TEXT_FIELDS.map(({ key, label, placeholder }) => (
-            <div key={key}>
-              <label className="text-xs font-semibold text-gray-600 block mb-1.5">{label}</label>
-              <textarea
-                value={form[key as TextFieldKey]}
-                onChange={(e) => upd(key, e.target.value)}
-                placeholder={placeholder}
-                rows={3}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 resize-none"
-              />
-            </div>
-          ))}
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 no-print">
           <button
             onClick={() => handleSave('draft')}
-            className="flex-1 flex items-center justify-center gap-2 py-3 border border-gray-200 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
+            className="flex-1 py-3 border border-slate-300 bg-white text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm"
           >
-            <Save size={15} />
-            Save as Draft
+            <Save size={16} />
+            Save Draft Evaluation
           </button>
           <button
             onClick={() => handleSave('final')}
             disabled={(() => { const summary = getEmployeeRequirementSummary(selectedEmp.id); return summary.missing > 0 || summary.incomplete > 0; })()}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-700 text-white rounded-xl font-semibold text-sm hover:bg-blue-800 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 py-3 bg-blue-700 text-white rounded-xl font-bold text-sm hover:bg-blue-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-200"
           >
-            <Check size={15} />
-            Finalize Evaluation
+            <Check size={16} />
+            Finalize Official Evaluation
           </button>
         </div>
       </div>
     );
   }
 
+  // ── True Evaluation Form Screen (View / Printable Sheet) ─────────────────
   if (viewMode === 'view' && selectedEmp) {
     const ev = evaluations.find((e) => e.employeeId === selectedEmp.id);
     if (!ev) return null;
     const gc = GRADE_CONFIG[ev.grade];
+
     return (
-      <div className="space-y-5 max-w-2xl">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setViewMode('list')} className="text-gray-400 hover:text-gray-600">
-            <X size={20} />
+      <div className="space-y-6 max-w-3xl mx-auto pb-12">
+        {/* Navigation & Print Action Bar */}
+        <div className="flex items-center justify-between no-print">
+          <button
+            onClick={() => setViewMode('list')}
+            className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white rounded-xl border border-slate-200 shadow-sm"
+          >
+            <X size={16} />
+            Back to List
           </button>
-          <div className="flex-1">
-            <h2 className="text-xl font-bold text-gray-800">Evaluation Result</h2>
-            <p className="text-sm text-gray-500">{selectedEmp.name}</p>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.print()}
+              className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <Printer size={15} />
+              Print Official Hard Copy
+            </button>
+            <button
+              onClick={() => openNewEval(selectedEmp)}
+              className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-all flex items-center gap-1.5"
+            >
+              <Edit2 size={15} />
+              Edit Evaluation
+            </button>
           </div>
-          <span
-            className={`text-xs px-3 py-1 rounded-full font-semibold ${ev.status === 'final' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}
-          >
-            {ev.status === 'final' ? 'Finalized' : 'Draft'}
-          </span>
         </div>
 
-        {/* Overall grade */}
-        <div className={`rounded-2xl p-6 text-center ${gc.bg}`}>
-          <Award size={40} className={`mx-auto mb-2 ${gc.color}`} />
-          <p className={`text-3xl font-bold ${gc.color}`}>{ev.grade}</p>
-          <p className="text-gray-600 text-lg mt-1">{ev.overallScore}% Overall Score</p>
-          <p className="text-xs text-gray-500 mt-2">
-            Evaluated on{' '}
-            {new Date(ev.evaluatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-          </p>
-        </div>
-
-        {/* Score breakdown */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
-          <h3 className="font-bold text-gray-800">Score Breakdown</h3>
-          {CRITERIA.map(({ key, label }) => {
-            const score = ev[key];
-            return (
-              <div key={key}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-600">{label}</span>
-                  <span className="font-semibold text-gray-800">{score}%</span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${score >= 90 ? 'bg-green-500' : score >= 80 ? 'bg-blue-500' : score >= 70 ? 'bg-sky-500' : score >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                    style={{ width: `${score}%` }}
-                  />
+        {/* Printable Sheet Card */}
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden printable-sheet">
+          {/* Institutional Header */}
+          <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
+            <div className="flex flex-col items-center justify-center gap-2">
+              <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
+                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+              </div>
+              <div>
+                <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
+                  Carlos Hilado Memorial State University
+                </h1>
+                <p className="text-xs text-slate-300 font-medium tracking-wider uppercase">
+                  Office of On-the-Job Training & Student Internship Program
+                </p>
+                <div className="mt-2 inline-block px-4 py-1 bg-blue-600/40 border border-blue-400/30 rounded-full text-xs font-bold tracking-widest text-sky-200 uppercase">
+                  Official Trainee Performance Evaluation Report
                 </div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          </div>
 
-        {/* Written evaluation */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-          {[
-            { label: 'Strengths & Achievements', val: ev.strengths },
-            { label: 'Areas for Improvement', val: ev.areasForImprovement },
-            { label: 'Recommendations', val: ev.recommendations },
-          ].map(({ label, val }) =>
-            val ? (
-              <div key={label}>
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{label}</p>
-                <p className="text-sm text-gray-700 leading-relaxed">{val}</p>
+          <div className="p-6 space-y-6">
+            {/* Particulars Header */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block">Student Name:</span>
+                  <span className="font-bold text-slate-800 text-sm">{selectedEmp.name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Student ID / Employee ID:</span>
+                  <span className="font-mono font-bold text-slate-800">{selectedEmp.employeeId}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">School & Course:</span>
+                  <span className="font-medium text-slate-700">{selectedEmp.schoolName} ({selectedEmp.course || 'N/A'})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Host Training Establishment:</span>
+                  <span className="font-bold text-blue-900">{selectedEmp.companyName || 'Not recorded'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Evaluation Date:</span>
+                  <span className="font-medium text-slate-700">
+                    {new Date(ev.evaluatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Evaluation Status:</span>
+                  <span className={`inline-block font-bold px-2 py-0.5 rounded text-[11px] uppercase ${ev.status === 'final' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {ev.status === 'final' ? 'Official / Finalized' : 'Draft Copy'}
+                  </span>
+                </div>
               </div>
-            ) : null
-          )}
-        </div>
+            </div>
 
-        <div className="flex gap-3 no-print">
-          <button
-            onClick={() => window.print()}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-800 text-white rounded-xl font-semibold text-sm hover:bg-gray-900 transition-colors"
-          >
-            <Printer size={15} />
-            Print Hard Copy
-          </button>
-          <button
-            onClick={() => openNewEval(selectedEmp)}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-700 text-white rounded-xl font-semibold text-sm hover:bg-blue-800"
-          >
-            <Edit2 size={15} />
-            Edit Evaluation
-          </button>
-          <button
-            onClick={() => {
-              handleDelete(ev.id);
-              setViewMode('list');
-            }}
-            className="px-4 py-3 bg-red-50 text-red-600 rounded-xl text-sm hover:bg-red-100 transition-colors"
-          >
-            <Trash2 size={15} />
-          </button>
+            {/* Score Breakdown Table */}
+            <div className="space-y-3">
+              <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2">
+                Competency Assessment Breakdown
+              </h3>
+              <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <th className="p-3">Evaluation Competency Domain</th>
+                      <th className="p-3 text-center w-24">Weight</th>
+                      <th className="p-3 text-center w-24">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {EVALUATION_SECTIONS.map((sec) => (
+                      <tr key={sec.id} className="hover:bg-slate-50/50">
+                        <td className="p-3 font-medium text-slate-800">{sec.title}</td>
+                        <td className="p-3 text-center text-slate-500">{sec.weight}</td>
+                        <td className="p-3 text-center font-bold text-slate-900">
+                          {ev[sec.key as keyof Evaluation]}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Overall Grade Card */}
+            <div className={`rounded-xl p-5 border-2 ${gc.bg} ${gc.border} flex items-center justify-between`}>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Overall Final Rating</p>
+                <p className="text-4xl font-extrabold text-slate-900 mt-1">{ev.overallScore}%</p>
+              </div>
+              <div className="text-right">
+                <p className={`text-xl font-extrabold ${gc.color}`}>{ev.grade}</p>
+                <p className="text-xs font-semibold text-slate-600">{gc.label}</p>
+              </div>
+            </div>
+
+            {/* Written Assessment Remarks */}
+            <div className="space-y-3 pt-2 text-xs">
+              <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2">
+                Evaluator Feedback & Qualitative Remarks
+              </h3>
+
+              {ev.strengths && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                  <p className="font-bold text-slate-700">1. Major Strengths & Achievements:</p>
+                  <p className="text-slate-600 leading-relaxed whitespace-pre-line">{ev.strengths}</p>
+                </div>
+              )}
+
+              {ev.areasForImprovement && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                  <p className="font-bold text-slate-700">2. Areas for Growth & Improvement:</p>
+                  <p className="text-slate-600 leading-relaxed whitespace-pre-line">{ev.areasForImprovement}</p>
+                </div>
+              )}
+
+              {ev.recommendations && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                  <p className="font-bold text-slate-700">3. Final Recommendations:</p>
+                  <p className="text-slate-600 leading-relaxed whitespace-pre-line">{ev.recommendations}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Official Signatures */}
+            <div className="pt-8 border-t border-slate-200 grid grid-cols-2 gap-8 text-center text-xs">
+              <div>
+                <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                  <span className="font-bold text-slate-800 text-sm uppercase">{selectedEmp.supervisorName || 'OJT SUPERVISOR'}</span>
+                </div>
+                <p className="font-semibold text-slate-600">HTE Training Supervisor / Evaluator</p>
+                <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+              </div>
+
+              <div>
+                <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                  <span className="font-bold text-slate-800 text-sm uppercase">OJT INSTRUCTOR</span>
+                </div>
+                <p className="font-semibold text-slate-600">CHMSU OJT Coordinator / Instructor</p>
+                <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // List view
+  // ── List View (Trainees Roster) ──────────────────────────────────────────
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold text-gray-800">OJT Evaluations</h2>
-        <p className="text-sm text-gray-500">Evaluate trainees at the end of their OJT period</p>
+        <h2 className="text-xl font-bold text-gray-800">OJT Trainee Performance Evaluations</h2>
+        <p className="text-sm text-gray-500">Official evaluation management for OJT trainees and intern performance reports</p>
       </div>
 
-      <div className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3">
-        <AlertCircle size={16} className="text-blue-600 shrink-0 mt-0.5" />
-        <div className="text-sm text-blue-700">
-          <p className="font-semibold mb-0.5">End-of-OJT Evaluation</p>
-          <p className="text-xs text-blue-600">
-            Evaluate each trainee's performance at the end of their OJT period. Finalized evaluations are visible to the
-            trainee in their profile.
+      <div className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3 border border-blue-100 shadow-sm">
+        <AlertCircle size={18} className="text-blue-600 shrink-0 mt-0.5" />
+        <div className="text-sm text-blue-800">
+          <p className="font-bold mb-0.5">End-of-OJT Performance Evaluation</p>
+          <p className="text-xs text-blue-600 leading-relaxed">
+            Conduct formal performance evaluations for each trainee upon completion of required OJT hours.
+            Finalized evaluation reports generate official university grade sheets printable for student records.
           </p>
         </div>
       </div>
@@ -539,10 +703,10 @@ export function AdminEvaluations() {
               key={emp.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4"
+              className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:border-blue-200 transition-all"
             >
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-inner">
                   {emp.photo ? (
                     <img
                       src={emp.photo}
@@ -551,73 +715,81 @@ export function AdminEvaluations() {
                       style={{ transform: 'scaleX(-1)' }}
                     />
                   ) : (
-                    <span className="text-blue-700 font-bold text-lg">{emp.name.charAt(0)}</span>
+                    <span className="text-blue-700 font-bold text-xl">{emp.name.charAt(0)}</span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-semibold text-gray-800">{emp.name}</p>
-                      <p className="text-xs text-gray-500">{emp.course}</p>
-                      <p className="text-xs text-gray-400">{emp.schoolName}</p>
+                      <p className="font-bold text-slate-800 text-base">{emp.name}</p>
+                      <p className="text-xs text-slate-500 font-medium">{emp.course} • {emp.schoolName}</p>
+                      <p className="text-xs text-blue-600 font-semibold mt-0.5">{emp.companyName || 'Host Training Establishment'}</p>
                     </div>
                     {ev && gc && (
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${gc.bg} ${gc.color}`}>
-                        {ev.grade}
-                      </span>
+                      <div className="text-right">
+                        <span className={`inline-block text-xs font-extrabold px-3 py-1 rounded-full border ${gc.bg} ${gc.color} ${gc.border}`}>
+                          {ev.grade} ({ev.overallScore}%)
+                        </span>
+                        <p className="text-[10px] text-slate-400 mt-1 uppercase font-semibold">
+                          {ev.status === 'final' ? 'Official' : 'Draft'}
+                        </p>
+                      </div>
                     )}
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <div className="bg-gray-50 rounded-lg p-1.5 text-center">
-                      <p className="font-bold text-gray-700">{stats.totalHours.toFixed(0)}h</p>
-                      <p className="text-gray-400">Hours</p>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 text-center">
+                      <p className="font-bold text-slate-800">{stats.totalHours.toFixed(0)} / {emp.requiredHours}h</p>
+                      <p className="text-slate-400 text-[10px]">Rendered Hours</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-1.5 text-center">
-                      <p className="font-bold text-green-700">{stats.present}</p>
-                      <p className="text-gray-400">Present</p>
+                    <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 text-center">
+                      <p className="font-bold text-emerald-700">{stats.present} Days</p>
+                      <p className="text-slate-400 text-[10px]">Present</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-1.5 text-center">
-                      <p className="font-bold text-orange-700">{stats.late}</p>
-                      <p className="text-gray-400">Late</p>
+                    <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 text-center">
+                      <p className="font-bold text-amber-700">{stats.late} Days</p>
+                      <p className="text-slate-400 text-[10px]">Late</p>
                     </div>
                   </div>
-                  <div className="mt-2">
-                    <div className="flex justify-between text-xs text-gray-400 mb-1">
-                      <span>OJT Progress</span>
-                      <span>{Math.round(progress)}%</span>
+
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1 font-medium">
+                      <span>OJT Required Hours Progress</span>
+                      <span className="font-bold text-slate-700">{Math.round(progress)}%</span>
                     </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                      <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="mt-3 flex gap-2">
+
+              <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
                 {ev ? (
                   <>
                     <button
                       onClick={() => viewEval(emp)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-medium hover:bg-gray-200 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
                     >
-                      <Award size={13} />
-                      View Evaluation
+                      <FileText size={14} />
+                      View Official Form
                     </button>
                     <button
                       onClick={() => openNewEval(emp)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-700 text-white rounded-xl text-xs font-medium hover:bg-blue-800 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 text-white rounded-xl text-xs font-bold hover:bg-blue-800 transition-colors"
                     >
-                      <Edit2 size={13} />
-                      Edit
+                      <Edit2 size={14} />
+                      Edit Evaluation
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={() => openNewEval(emp)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-bold hover:bg-blue-800 transition-colors shadow-sm"
                   >
-                    <Star size={14} />
-                    Create Evaluation
-                    <ChevronRight size={13} />
+                    <Star size={15} />
+                    Evaluate Trainee Performance
+                    <ChevronRight size={14} />
                   </button>
                 )}
               </div>
@@ -626,5 +798,13 @@ export function AdminEvaluations() {
         })}
       </div>
     </div>
+  );
+}
+
+function UserCircleIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
   );
 }

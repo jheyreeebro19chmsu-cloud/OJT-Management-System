@@ -212,12 +212,12 @@ export function AdminLayout() {
       <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0 no-print">
         <div className="p-5 border-b border-blue-800">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow">
-              <Clock size={18} className="text-white" />
+            <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+              <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div>
-              <div className="text-white font-bold text-sm leading-tight">OJT DTR</div>
-              <div className="text-blue-300 text-xs">Admin Panel</div>
+              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
+              <div className="text-blue-300 text-xs font-semibold">Admin Panel</div>
             </div>
           </div>
         </div>
@@ -305,12 +305,12 @@ export function AdminLayout() {
             >
               <div className="p-5 border-b border-blue-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center">
-                    <Clock size={18} className="text-white" />
+                  <div className="w-9 h-9 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+                    <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
                   </div>
                   <div>
-                    <div className="text-white font-bold text-sm">OJT DTR</div>
-                    <div className="text-blue-300 text-xs">Admin Panel</div>
+                    <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
+                    <div className="text-blue-300 text-xs font-semibold">Admin Panel</div>
                   </div>
                 </div>
                 <button onClick={() => setSidebarOpen(false)} className="text-blue-300 hover:text-white">
