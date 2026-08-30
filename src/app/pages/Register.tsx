@@ -1674,7 +1674,7 @@ export function Register() {
                         </div>
                       </div>
 
-                      {form.country === 'PH' && form.region && (
+                      {form.country === 'PH' && (
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
@@ -1685,14 +1685,16 @@ export function Register() {
                                 update('city', '');
                                 update('barangay', '');
                               }}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                              disabled={!form.region}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <option value="">Select Province</option>
-                              {PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
-                                <option key={p.name} value={p.name}>
-                                  {p.name}
-                                </option>
-                              ))}
+                              <option value="">{form.region ? 'Select Province' : 'Select Region First'}</option>
+                              {form.region &&
+                                PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
+                                  <option key={p.name} value={p.name}>
+                                    {p.name}
+                                  </option>
+                                ))}
                             </select>
                           </div>
                           <div>
@@ -1707,16 +1709,18 @@ export function Register() {
                                 const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
                                 setRegistrationAddress(fullAddr);
                               }}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                              disabled={!form.province}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <option value="">Select City</option>
-                              {PH_ADDRESS_DATA.find((r) => r.name === form.region)
-                                ?.provinces.find((p) => p.name === form.province)
-                                ?.cities.map((c) => (
-                                  <option key={c} value={c}>
-                                    {c}
-                                  </option>
-                                ))}
+                              <option value="">{form.province ? 'Select City' : 'Select Province First'}</option>
+                              {form.province &&
+                                PH_ADDRESS_DATA.find((r) => r.name === form.region)
+                                  ?.provinces.find((p) => p.name === form.province)
+                                  ?.cities.map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
                             </select>
                           </div>
                         </div>
@@ -1823,16 +1827,10 @@ export function Register() {
                                 <div className="h-52">
                                   <GeofenceMap
                                     zones={[]}
-                                    picking={pickingLocation}
+                                    picking={false}
                                     pickedCoords={registrationLocation}
-                                    onPick={(lat, lng) => {
-                                      setRegistrationLocation({ lat, lng });
-                                      setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-                                      setLocationStatus('captured');
-                                      setPickingLocation(false);
-                                    }}
                                     liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
-                                    className="h-52"
+                                    className="h-52 pointer-events-none"
                                   />
                                 </div>
 

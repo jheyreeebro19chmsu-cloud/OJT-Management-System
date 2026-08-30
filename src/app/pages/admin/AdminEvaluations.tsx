@@ -1,4 +1,4 @@
-import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2 } from 'lucide-react';
+import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
@@ -230,6 +230,45 @@ export function AdminEvaluations() {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => window.print()}
+              className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Print Evaluation Sheet"
+            >
+              <Printer size={15} />
+              Print Sheet
+            </button>
+            <button
+              onClick={() => {
+                const ev = evaluations.find((e) => e.employeeId === selectedEmp.id);
+                const csvData = [
+                  ['Trainee Name', 'Employee ID', 'Company', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
+                  [
+                    selectedEmp.name,
+                    selectedEmp.employeeId,
+                    selectedEmp.companyName,
+                    `${ev?.overallScore || form.performanceScore}%`,
+                    ev?.grade || grade,
+                    ev?.evaluatedAt || new Date().toISOString(),
+                    ev?.status || 'draft',
+                  ],
+                ];
+                const csvContent = 'data:text/csv;charset=utf-8,' + csvData.map((e) => e.join(',')).join('\n');
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement('a');
+                link.setAttribute('href', encodedUri);
+                link.setAttribute('download', `Evaluation_${selectedEmp.name.replace(/\s+/g, '_')}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                toast.success('CSV exported successfully!');
+              }}
+              className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Export Evaluation CSV"
+            >
+              <Download size={15} />
+              Export CSV
+            </button>
+            <button
               onClick={() => handleSave('draft')}
               className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-all flex items-center gap-1.5"
             >
@@ -253,7 +292,7 @@ export function AdminEvaluations() {
           <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
             <div className="flex flex-col items-center justify-center gap-2">
               <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
-                <img src="/CHMSU-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
               <div>
                 <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
@@ -528,7 +567,7 @@ export function AdminEvaluations() {
           <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
             <div className="flex flex-col items-center justify-center gap-2">
               <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
-                <img src="/CHMSU-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
               <div>
                 <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
@@ -675,9 +714,44 @@ export function AdminEvaluations() {
   // ── List View (Trainees Roster) ──────────────────────────────────────────
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-bold text-gray-800">OJT Trainee Performance Evaluations</h2>
-        <p className="text-sm text-gray-500">Official evaluation management for OJT trainees and intern performance reports</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">OJT Trainee Performance Evaluations</h2>
+          <p className="text-sm text-gray-500">Official evaluation management for OJT trainees and intern performance reports</p>
+        </div>
+        <button
+          onClick={() => {
+            const csvRows = [
+              ['Trainee Name', 'Employee ID', 'Company', 'Department', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
+            ];
+            activeEmployees.forEach((emp) => {
+              const ev = evaluations.find((e) => e.employeeId === emp.id);
+              csvRows.push([
+                emp.name,
+                emp.employeeId,
+                emp.companyName,
+                emp.department,
+                ev ? `${ev.overallScore}%` : 'N/A',
+                ev ? ev.grade : 'Not Evaluated',
+                ev ? ev.evaluatedAt : 'N/A',
+                ev ? ev.status : 'Pending',
+              ]);
+            });
+            const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.map((e) => e.join(',')).join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', `OJT_Evaluations_Summary_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            toast.success('Evaluations summary CSV exported!');
+          }}
+          className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+        >
+          <Download size={14} />
+          Export All CSV
+        </button>
       </div>
 
       <div className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3 border border-blue-100 shadow-sm">
