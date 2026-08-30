@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { GeofenceMap } from '../components/GeofenceMap';
 import { useNavigate, Link } from 'react-router-dom';
@@ -148,6 +148,28 @@ export function Register() {
   const citiesList = form.country && form.country !== 'other' && form.region && form.region !== 'other'
     ? City.getCitiesOfState(form.country, form.region)
     : [];
+
+  const phProvincesList = useMemo(() => {
+    if (form.region) {
+      const regObj = PH_ADDRESS_DATA.find((r) => r.name === form.region);
+      if (regObj) return regObj.provinces;
+    }
+    return PH_ADDRESS_DATA.flatMap((r) => r.provinces);
+  }, [form.region]);
+
+  const phCitiesList = useMemo(() => {
+    if (form.province) {
+      for (const r of PH_ADDRESS_DATA) {
+        const p = r.provinces.find((prov) => prov.name === form.province);
+        if (p) return p.cities;
+      }
+    }
+    if (form.region) {
+      const regObj = PH_ADDRESS_DATA.find((r) => r.name === form.region);
+      if (regObj) return regObj.provinces.flatMap((p) => p.cities);
+    }
+    return PH_ADDRESS_DATA.flatMap((r) => r.provinces.flatMap((p) => p.cities));
+  }, [form.region, form.province]);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 
@@ -1681,20 +1703,23 @@ export function Register() {
                             <select
                               value={form.province}
                               onChange={(e) => {
-                                update('province', e.target.value);
+                                const selectedProv = e.target.value;
+                                update('province', selectedProv);
                                 update('city', '');
                                 update('barangay', '');
+                                if (selectedProv && !form.region) {
+                                  const parentRegion = PH_ADDRESS_DATA.find((r) => r.provinces.some((p) => p.name === selectedProv));
+                                  if (parentRegion) update('region', parentRegion.name);
+                                }
                               }}
-                              disabled={!form.region}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                             >
-                              <option value="">{form.region ? 'Select Province' : 'Select Region First'}</option>
-                              {form.region &&
-                                PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
-                                  <option key={p.name} value={p.name}>
-                                    {p.name}
-                                  </option>
-                                ))}
+                              <option value="">Select Province</option>
+                              {phProvincesList.map((p) => (
+                                <option key={p.name} value={p.name}>
+                                  {p.name}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div>
@@ -1704,23 +1729,30 @@ export function Register() {
                             <select
                               value={form.city}
                               onChange={(e) => {
-                                update('city', e.target.value);
+                                const selectedCity = e.target.value;
+                                update('city', selectedCity);
                                 update('barangay', '');
-                                const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
-                                setRegistrationAddress(fullAddr);
+                                if (selectedCity) {
+                                  for (const r of PH_ADDRESS_DATA) {
+                                    const parentProv = r.provinces.find((p) => p.cities.includes(selectedCity));
+                                    if (parentProv) {
+                                      if (!form.province) update('province', parentProv.name);
+                                      if (!form.region) update('region', r.name);
+                                      const fullAddr = `${selectedCity}, ${parentProv.name}, ${r.name}, Philippines`;
+                                      setRegistrationAddress(fullAddr);
+                                      break;
+                                    }
+                                  }
+                                }
                               }}
-                              disabled={!form.province}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                             >
-                              <option value="">{form.province ? 'Select City' : 'Select Province First'}</option>
-                              {form.province &&
-                                PH_ADDRESS_DATA.find((r) => r.name === form.region)
-                                  ?.provinces.find((p) => p.name === form.province)
-                                  ?.cities.map((c) => (
-                                    <option key={c} value={c}>
-                                      {c}
-                                    </option>
-                                  ))}
+                              <option value="">Select City</option>
+                              {phCitiesList.map((c) => (
+                                <option key={c} value={c}>
+                                  {c}
+                                </option>
+                              ))}
                             </select>
                           </div>
                         </div>
