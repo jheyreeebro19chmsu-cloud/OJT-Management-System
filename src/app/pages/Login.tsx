@@ -131,8 +131,8 @@ export function Login() {
 
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-xl mb-4">
-            <Clock size={36} className="text-blue-700" />
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-xl mb-4 p-1.5">
+            <img src="/CHMSU-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-white text-2xl font-bold drop-shadow-md">OJT Daily Time Record</h1>
           <p className="text-white/90 text-sm mt-1 drop-shadow">On-the-Job Training Management System</p>
