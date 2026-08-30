@@ -283,7 +283,6 @@ export function validateRegistrationData(
     employeeId: { type: 'text', maxLength: 50 },
     
     // Other optional fields
-    instructorEmail: { type: 'email', maxLength: 254 },
     username: { type: 'text', maxLength: 150 },
   };
   

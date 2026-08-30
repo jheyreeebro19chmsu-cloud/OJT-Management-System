@@ -97,7 +97,6 @@ export function Register() {
     schoolName: '',
     campus: '',
     course: '',
-    instructorEmail: '',
     supervisorName: '',
     // Employment
     employeeId: '',
@@ -121,7 +120,6 @@ export function Register() {
   const [photo, setPhoto] = useState<string | undefined>();
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
-  const [requestingInstructorOtp, setRequestingInstructorOtp] = useState(false);
   const [oauthPending, setOauthPending] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
@@ -300,72 +298,6 @@ export function Register() {
       alert('Failed to send code: ' + (err.message || 'Unknown error'));
     } finally {
       setOtpVerifying(false);
-    }
-  };
-
-  const handleRequestOtpInstructor = async () => {
-    if (!form.email) {
-      alert('Please enter your email first');
-      return;
-    }
-    if (!form.instructorEmail) {
-      alert('Please enter your instructor email');
-      return;
-    }
-
-    setRequestingInstructorOtp(true);
-    try {
-      const lookup = await fetch(getAbsoluteUrl(`/api/auth/get-instructor-by-email/?email=${encodeURIComponent(
-        form.instructorEmail
-      )}`));
-      const lookupData = await lookup.json().catch(() => ({}));
-      if (!lookup.ok) {
-        throw new Error(lookupData?.error || `Instructor lookup failed (${lookup.status})`);
-      }
-      const instructorId = lookupData?.instructor?.id || lookupData?.id || lookupData?.user?.id;
-      if (!instructorId) throw new Error('Instructor not found');
-
-      const parts = (form.name || '').trim().split(/\s+/);
-      const first_name = form.firstName || parts[0] || '';
-      const last_name = form.lastName || parts.slice(1).join(' ') || '';
-
-      const payload: any = {
-        instructor_id: instructorId,
-        email: form.email,
-        first_name,
-        last_name,
-        role: 'trainee',
-      };
-
-        // Include registration location for trainees if available
-      if (registrationLocation) {
-        payload.gps_latitude = registrationLocation.lat;
-        payload.gps_longitude = registrationLocation.lng;
-      }
-      if (form.companyName) payload.company_name = form.companyName;
-      if (form.schoolName) payload.school_name = form.schoolName;
-      if (form.campus) payload.campus = form.campus;
-      if (form.course) payload.course = form.course;
-
-      const req = await fetch(getAbsoluteUrl('/api/auth/request-trainee-otp-registration/'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!req.ok) {
-        const txt = await req.text().catch(() => 'Request failed');
-        throw new Error(txt || 'Request failed');
-      }
-
-      setOtpRequested(true);
-      setOtpMessage('Registration request sent to instructor. Waiting for approval.');
-      toast.success('Request sent to instructor. They will generate the OTP.');
-    } catch (err: any) {
-      console.error('Instructor OTP request error:', err);
-      toast.error(err?.message || 'Failed to send request to instructor');
-    } finally {
-      setRequestingInstructorOtp(false);
     }
   };
 
@@ -1851,31 +1783,6 @@ export function Register() {
                           placeholder="Mr./Ms. Supervisor"
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Instructor Email (optional)</label>
-                        <input
-                          value={form.instructorEmail}
-                          onChange={(e) => update('instructorEmail', e.target.value)}
-                          placeholder="instructor@example.com"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
-                        <div className="mt-2 flex gap-2">
-                          <button
-                            onClick={handleRequestOtpInstructor}
-                            disabled={requestingInstructorOtp}
-                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            {requestingInstructorOtp ? 'Requesting...' : 'Request OTP'}
-                          </button>
-                          <button
-                            onClick={handleRequestOtp}
-                            disabled={otpVerifying}
-                            className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            {otpVerifying ? 'Sending...' : 'Send OTP to my email'}
-                          </button>
-                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
