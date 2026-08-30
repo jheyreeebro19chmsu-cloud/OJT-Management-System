@@ -75,7 +75,8 @@ export function Login() {
     }
   }, []);
 
-  let backgroundImage = '/CHMSU.JPEG';
+  const defaultBackgroundImage = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlW_CmtgncO5nHio9TJ4B774KYiHLGcInY7wxgBybI_DU6t8pOLsmsrkZq&s=10';
+  let backgroundImage = defaultBackgroundImage;
   try {
     const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
     if (override) backgroundImage = override;
@@ -91,9 +92,9 @@ export function Login() {
         src={backgroundImage}
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover saturate-150 contrast-125"
+        className="absolute inset-0 h-full w-full object-cover scale-105 saturate-125 contrast-125 brightness-110 blur-[1px]"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/15 via-slate-950/25 to-slate-950/45 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 via-slate-900/20 to-slate-950/70 pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 30 }}
@@ -134,7 +135,7 @@ export function Login() {
             Face-recognition features are currently disabled because the local face-api bundle is missing or blocked by the browser. Copy a local face-api.js to <span className="font-mono">public/vendor/face-api.js</span> or run the downloader in <span className="font-mono">scripts/</span> to enable biometric features.
           </div>
         )}
-        <div className="bg-white rounded-3xl shadow-2xl ring-1 ring-black/10 p-6">
+        <div className="bg-white/88 backdrop-blur-sm rounded-3xl shadow-2xl ring-1 ring-black/10 p-6">
           <h2 className="text-gray-800 font-bold text-lg mb-1">Welcome back</h2>
           <p className="text-gray-500 text-sm mb-5">Sign in to your account</p>
 
