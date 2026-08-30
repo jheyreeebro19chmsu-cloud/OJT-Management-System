@@ -37,7 +37,7 @@ const navItems = [
 ];
 
 export function AdminLayout() {
-  const { logout, announcements, currentUser, getCurrentEmployee } = useApp();
+  const { logout, announcements, currentUser, getCurrentEmployee, settings } = useApp();
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -370,7 +370,7 @@ export function AdminLayout() {
               <h1 className="text-gray-800 font-semibold text-base">OJT Daily Time Record — Admin</h1>
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-xs font-bold shadow-sm" title="Active System Academic Environment">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                <span>AY {settings.activeAcademicYear}</span>
+                <span>AY {settings?.activeAcademicYear || '2025-2026'}</span>
               </div>
             </div>
             <div className="hidden lg:flex items-center gap-2">
