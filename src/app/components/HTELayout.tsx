@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 
 interface HTELayoutProps {
   children: React.ReactNode;
@@ -25,9 +26,13 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
   const avatarSource = employee?.photo || currentUser?.photo || hteUser?.photo || '';
   const avatarName = employee?.name || currentUser?.name || hteUser?.name || 'HTE User';
 
+  const [showLogoutModal, setShowLogoutModal] = React.useState(false);
+
   const handleLogout = () => {
-    const confirmed = window.confirm('Are you sure you want to logout?');
-    if (!confirmed) return;
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
     // Clear JWT tokens from localStorage
     localStorage.removeItem('ojt_jwt_access_token');
     localStorage.removeItem('ojt_jwt_refresh_token');
@@ -86,6 +91,12 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</main>
+
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 
 
 const navItems = [
@@ -26,6 +27,8 @@ export function EmployeeLayout() {
     }
   }, [currentUser, navigate]);
 
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   if (!currentUser) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
@@ -37,8 +40,10 @@ export function EmployeeLayout() {
   }
 
   const handleLogout = () => {
-    const confirmed = window.confirm('Are you sure you want to logout?');
-    if (!confirmed) return;
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
     logout();
     navigate('/');
   };
@@ -185,6 +190,12 @@ export function EmployeeLayout() {
           </div>
         </nav>
       </div>
+
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+      />
     </div>
   );
 }

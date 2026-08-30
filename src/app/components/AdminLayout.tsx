@@ -20,6 +20,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
+import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 
 
 const navItems = [
@@ -41,6 +42,7 @@ export function AdminLayout() {
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState<number>(0);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Determine whether the current user is an instructor
   const isInstructor = Boolean(
@@ -195,8 +197,10 @@ export function AdminLayout() {
   }, [fetchPendingCount, isInstructor, employee]);
 
   const handleLogout = () => {
-    const confirmed = window.confirm('Are you sure you want to logout?');
-    if (!confirmed) return;
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
     logout();
     navigate('/');
   };
@@ -399,6 +403,12 @@ export function AdminLayout() {
           <Outlet />
         </main>
       </div>
+
+      <LogoutConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+      />
     </div>
   );
 }
