@@ -249,8 +249,9 @@ if (req.url.startsWith('/api/employees')) {
   }
 
   // ====== STATIC FILE SERVING ======
-  // Decode URL to handle spaces/special characters
-  let filePath = path.join(DIST_DIR, decodeURIComponent(req.url.split('?')[0]));
+  const reqUrlClean = req.url.split('?')[0];
+  const decodedPath = decodeURIComponent(reqUrlClean);
+  let filePath = path.join(DIST_DIR, decodedPath);
 
   // Only allow GET/HEAD requests for static files
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -258,6 +259,12 @@ if (req.url.startsWith('/api/employees')) {
     res.setHeader('Content-Type', 'text/plain');
     res.end('Method Not Allowed');
     return;
+  }
+
+  // SPA Route Fallback: If URL has no file extension (e.g. /admin, /login, /register, /hte, /employee), directly serve index.html
+  const hasExtension = path.extname(decodedPath) !== '';
+  if (!hasExtension) {
+    filePath = path.join(DIST_DIR, 'index.html');
   }
 
   // Check if path is a directory, default to index.html
