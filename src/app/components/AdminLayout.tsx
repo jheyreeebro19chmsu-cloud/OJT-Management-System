@@ -345,9 +345,35 @@ export function AdminLayout() {
                 ))}
               </nav>
               <div className="p-3 border-t border-blue-800">
+                <div className="flex items-center gap-2 px-3 py-2 mb-2">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+                    {(() => {
+                      const url = getPhotoUrl(employee?.photo as any);
+                      return url ? (
+                        <img src={url} alt={employee?.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                      ) : (
+                        <span className="text-blue-900 text-xs font-bold">AD</span>
+                      );
+                    })()}
+                  </div>
+                  <div>
+                    <div className="text-white text-xs font-medium">OJT Instructor</div>
+                    <div className="text-blue-400 text-xs">admin@ojt.com</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setSidebarOpen(false);
+                    navigate('/admin/profile');
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
+                >
+                  <Users size={14} />
+                  Profile
+                </button>
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
                 >
                   <LogOut size={14} />
                   Logout
@@ -368,9 +394,9 @@ export function AdminLayout() {
             </button>
             <div className="flex-1 flex items-center gap-3">
               <h1 className="text-gray-800 font-semibold text-base">OJT Daily Time Record — Admin</h1>
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-xs font-bold shadow-sm" title="Active System Academic Environment">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-xs font-bold shadow-sm" title="Active System Academic Environment">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                <span>AY {settings?.activeAcademicYear || '2025-2026'}</span>
+                <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
               </div>
             </div>
             <div className="hidden lg:flex items-center gap-2">

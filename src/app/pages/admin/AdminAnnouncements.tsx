@@ -116,7 +116,7 @@ export function AdminAnnouncements() {
       deadlineAt: ann.deadlineAt ? ann.deadlineAt.slice(0, 16) : '',
       comments: ann.comments || '',
       requiresSubmission: Boolean(ann.requiresSubmission),
-      expiresAt: ann.expiresAt ? ann.expiresAt.split('T')[0] : '',
+      expiresAt: ann.expiresAt ? ann.expiresAt.slice(0, 16) : '',
     });
     setEditId(ann.id);
     setShowForm(true);
@@ -139,6 +139,8 @@ export function AdminAnnouncements() {
 
     // Using dynamic API_BASE from configuration
 
+    let postedSuccessfully = false;
+
     if (API_BASE) {
       // Upload to Django backend via multipart/form-data using authAPI
       try {
@@ -159,37 +161,25 @@ export function AdminAnnouncements() {
         if (respData && respData.success) {
           const created = {
             id: `ann-${respData.announcement_id}`,
-            title: form.title,
-            content: form.content,
+            ...data,
             photo: respData.image_url || form.photo,
-            type: form.type,
-            targetRole: form.targetRole,
-            isPinned: form.isPinned,
-            reminder: form.reminder,
-            deadlineAt: form.deadlineAt ? new Date(form.deadlineAt).toISOString() : undefined,
-            comments: form.comments,
-            requiresSubmission: form.requiresSubmission,
-            createdAt: new Date().toISOString(),
-            createdBy: currentUser?.name || 'OJT Instructor',
-            createdByRole: (currentUser?.role === 'host' ? 'host' : 'admin') as 'admin' | 'host',
           } as Announcement;
-          // Add to local state
           addAnnouncement(created as any);
-          toast.success('Announcement posted!');
-        } else {
-          toast.error('Failed to post announcement to server.');
+          toast.success('Announcement posted to server!');
+          postedSuccessfully = true;
         }
       } catch (err) {
-        console.error(err);
-        toast.error('Failed to post announcement to server.');
+        console.warn('Django announcement endpoint error, storing via AppContext/Supabase:', err);
       }
-    } else {
+    }
+
+    if (!postedSuccessfully) {
       if (editId) {
         updateAnnouncement(editId, data);
         toast.success('Announcement updated!');
       } else {
         addAnnouncement(data);
-        toast.success('Announcement posted!');
+        toast.success('Announcement posted successfully!');
       }
     }
 
@@ -543,9 +533,9 @@ export function AdminAnnouncements() {
 
                 {/* Expiry */}
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Expiry Date (optional)</label>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Expiry Date & Time (optional)</label>
                   <input
-                    type="date"
+                    type="datetime-local"
                     value={form.expiresAt}
                     onChange={(e) => upd('expiresAt', e.target.value)}
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
