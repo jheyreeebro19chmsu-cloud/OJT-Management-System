@@ -2,6 +2,9 @@ import { LogOut, Settings, User, Home } from 'lucide-react';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { useApp } from '../store/AppContext';
+import { getPhotoUrl } from '../services/config';
+
 interface HTELayoutProps {
   children: React.ReactNode;
   hteCompany?: string;
@@ -9,6 +12,8 @@ interface HTELayoutProps {
 
 export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutProps) {
   const navigate = useNavigate();
+  const { currentUser, getCurrentEmployee } = useApp();
+  const employee = getCurrentEmployee();
   const hteUser = React.useMemo(() => {
     try {
       const stored = localStorage.getItem('ojt_hte_user');
@@ -17,8 +22,12 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
       return null;
     }
   }, []);
+  const avatarSource = employee?.photo || currentUser?.photo || hteUser?.photo || '';
+  const avatarName = employee?.name || currentUser?.name || hteUser?.name || 'HTE User';
 
   const handleLogout = () => {
+    const confirmed = window.confirm('Are you sure you want to logout?');
+    if (!confirmed) return;
     // Clear JWT tokens from localStorage
     localStorage.removeItem('ojt_jwt_access_token');
     localStorage.removeItem('ojt_jwt_refresh_token');
@@ -57,8 +66,8 @@ export function HTELayout({ children, hteCompany = 'HTE Dashboard' }: HTELayoutP
                 className="w-10 h-10 hover:bg-gray-100 rounded-full transition-all overflow-hidden flex items-center justify-center border border-gray-200"
                 title="Profile"
               >
-                {hteUser?.photo ? (
-                  <img src={hteUser.photo} alt={hteUser.name} className="w-full h-full object-cover" />
+                {avatarSource ? (
+                  <img src={getPhotoUrl(avatarSource)} alt={avatarName} className="w-full h-full object-cover" />
                 ) : (
                   <User size={20} className="text-gray-600" />
                 )}

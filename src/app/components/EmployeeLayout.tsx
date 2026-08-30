@@ -37,6 +37,8 @@ export function EmployeeLayout() {
   }
 
   const handleLogout = () => {
+    const confirmed = window.confirm('Are you sure you want to logout?');
+    if (!confirmed) return;
     logout();
     navigate('/');
   };

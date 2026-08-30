@@ -52,6 +52,12 @@ function normalizeProfile(data: any) {
   };
 }
 
+function getCurrentAcademicYear(): string {
+  const now = new Date();
+  const year = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${year}-${year + 1}`;
+}
+
 // Try to set a global default font for React Native Text and TextInput
 try {
   const anyText = (Text as any);
@@ -95,7 +101,31 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  
+  const [showAcademicYearEditor, setShowAcademicYearEditor] = useState(false);
+  const [newAcademicYear, setNewAcademicYear] = useState('');
+  const [academicYears, setAcademicYears] = useState<string[]>(() => {
+    const current = getCurrentAcademicYear();
+    return [current, current.includes('2025') ? '2026-2027' : '2025-2026'];
+  });
+  const [activeAcademicYear, setActiveAcademicYear] = useState<string>(() => getCurrentAcademicYear());
+
+  const handleAddAcademicYear = () => {
+    const value = newAcademicYear.trim();
+    if (!/^\d{4}-\d{4}$/.test(value)) {
+      Alert.alert('Invalid format', 'Use the format YYYY-YYYY.');
+      return;
+    }
+    if (academicYears.includes(value)) {
+      Alert.alert('Already exists', 'That academic year already exists in this system.');
+      return;
+    }
+    const nextYears = [...academicYears, value];
+    setAcademicYears(nextYears);
+    setActiveAcademicYear(value);
+    setNewAcademicYear('');
+    setShowAcademicYearEditor(false);
+    Alert.alert('Academic year created', `${value} is now the active academic environment.`);
+  };
 
   // Watch for email changes and fetch school logo
   useEffect(() => {
@@ -424,6 +454,11 @@ export default function App() {
                     <Text style={styles.userName}>{profile.name || 'User'}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {profile?.role && ['admin', 'hte', 'instructor'].includes(profile.role) ? (
+                      <TouchableOpacity onPress={() => setShowAcademicYearEditor(true)} style={styles.academicPill}>
+                        <Text style={styles.academicPillText}>{activeAcademicYear}</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     {profile?.photo ? (
                       <Image source={{ uri: profile.photo }} style={{ width: 48, height: 48, borderRadius: 24, marginRight: 12 }} />
                     ) : null}
@@ -496,6 +531,13 @@ export default function App() {
                       <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Instructor Dashboard</Text>
                       </View>
+
+                      <TouchableOpacity style={styles.academicCard} onPress={() => setShowAcademicYearEditor(true)}>
+                        <Text style={styles.academicCardLabel}>Academic Year</Text>
+                        <Text style={styles.academicCardValue}>{activeAcademicYear}</Text>
+                        <Text style={styles.academicCardHint}>Tap to create a new academic environment</Text>
+                      </TouchableOpacity>
+
                       <View style={styles.instructorStats}>
                         <StatBox label="Active Trainees" value="24" color="#dbeafe" textColor="#1e40af" />
                         <StatBox label="New Requests" value="5" color="#fef3c7" textColor="#92400e" />
@@ -583,6 +625,50 @@ export default function App() {
             </ScrollView>
           )}
         </View>
+        {showAcademicYearEditor && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <Text style={styles.modalTitle}>Academic Year Management</Text>
+              <Text style={styles.modalSubtitle}>Create a new academic environment in the system and set the current year.</Text>
+
+              <Text style={styles.label}>Active Academic Year</Text>
+              <View style={styles.academicSelectorBox}>
+                <Text style={styles.academicSelectorText}>{activeAcademicYear}</Text>
+              </View>
+
+              <Text style={styles.label}>Add New Year</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="2026-2027"
+                value={newAcademicYear}
+                onChangeText={setNewAcademicYear}
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.sectionSubtitle}>Available years</Text>
+              <View style={styles.yearList}>
+                {academicYears.map((year) => (
+                  <TouchableOpacity
+                    key={year}
+                    style={[styles.yearChip, year === activeAcademicYear && styles.yearChipActive]}
+                    onPress={() => setActiveAcademicYear(year)}
+                  >
+                    <Text style={[styles.yearChipText, year === activeAcademicYear && styles.yearChipTextActive]}>{year}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowAcademicYearEditor(false)}>
+                  <Text style={styles.secondaryButtonText}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.primaryButton} onPress={handleAddAcademicYear}>
+                  <Text style={styles.primaryButtonText}>Create Year</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
         <StatusBar style="auto" />
         </KeyboardAvoidingView>
     </AppWrapper>
@@ -734,6 +820,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff1f2',
     borderRadius: 16,
   },
+  academicPill: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  academicPillText: {
+    color: '#1d4ed8',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   dashContent: {
     padding: 24,
     paddingTop: 32,
@@ -802,6 +902,135 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 22,
+  },
+  academicCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  academicCardLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  academicCardValue: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginTop: 8,
+  },
+  academicCardHint: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#475569',
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 30,
+  },
+  modalSheet: {
+    width: '88%',
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    padding: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.15,
+    shadowRadius: 30,
+    elevation: 12,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 8,
+    marginBottom: 18,
+    lineHeight: 20,
+  },
+  academicSelectorBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    marginBottom: 16,
+  },
+  academicSelectorText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  yearList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+    marginBottom: 18,
+  },
+  yearChip: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  yearChipActive: {
+    backgroundColor: '#dbeafe',
+    borderColor: '#93c5fd',
+  },
+  yearChipText: {
+    color: '#334155',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  yearChipTextActive: {
+    color: '#1d4ed8',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 10,
+  },
+  primaryButton: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#0f172a',
+    fontWeight: '700',
   },
   sectionHeader: {
     marginBottom: 20,

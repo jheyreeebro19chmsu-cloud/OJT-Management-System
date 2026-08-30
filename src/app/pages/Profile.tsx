@@ -182,8 +182,12 @@ export function Profile() {
             <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center overflow-hidden">
               {avatarPreview ? (
                 <img src={avatarPreview} alt="avatar preview" className="w-full h-full object-cover" />
-              ) : employee.photo ? (
-                <img src={getPhotoUrl(employee.photo)} alt={employee.name} className="w-full h-full object-cover" />
+              ) : employee.photo || currentUser?.photo ? (
+                <img
+                  src={getPhotoUrl(employee.photo || currentUser?.photo || '')}
+                  alt={employee.name}
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <User size={28} className="text-blue-300" />
               )}

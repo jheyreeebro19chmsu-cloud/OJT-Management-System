@@ -91,7 +91,7 @@ export function GeofenceMap({
 
   return (
     <div className={`relative ${className} min-h-[200px]`}>
-      <MapContainer center={defaultCenter} zoom={13} scrollWheelZoom className="absolute inset-0 z-0">
+      <MapContainer center={defaultCenter} zoom={16} scrollWheelZoom className="absolute inset-0 z-0">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -101,7 +101,7 @@ export function GeofenceMap({
           <React.Fragment key={zone.id}>
             <Circle
               center={[zone.lat, zone.lng]}
-              radius={zone.radius}
+              radius={Number(zone.radius) || 100}
               pathOptions={{
                 color: zone.active ? '#2563eb' : '#94a3b8',
                 fillColor: zone.active ? '#3b82f6' : '#94a3b8',
@@ -250,11 +250,12 @@ function FitMapView({
         try {
           const targetZoom = liveUser.accuracy && liveUser.accuracy > 200 ? 14 : 17;
           if (points.length === 1) {
-            map.setView(points[0], targetZoom);
+            map.setView(points[0], 16);
           } else {
             map.fitBounds(points, {
               padding: [48, 48],
-              maxZoom: targetZoom,
+              maxZoom: 16,
+              minZoom: 15,
             });
           }
           fittedLiveUserRef.current = true;
@@ -277,7 +278,11 @@ function FitMapView({
           if (points.length === 1) {
             map.setView(points[0], 16);
           } else {
-            map.fitBounds(points, { padding: [80, 80] });
+            map.fitBounds(points, {
+              padding: [80, 80],
+              maxZoom: 16,
+              minZoom: 15,
+            });
           }
           fittedZonesRef.current = true;
         } catch {

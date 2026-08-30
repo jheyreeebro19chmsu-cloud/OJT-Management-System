@@ -6,6 +6,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import { getSchoolLogo } from '../utils/schoolLogos';
 
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
 
 
 export function Login() {
@@ -33,7 +35,14 @@ export function Login() {
     if (user) {
       if (user.role === 'admin') navigate('/admin');
       else if (user.role === 'hte') {
-        localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+        const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));
+        const enrichedUser = {
+          ...user,
+          photo: employee?.photo || user.photo,
+          faceRegistered: employee?.faceRegistered ?? user.faceRegistered ?? false,
+          employeeId: employee?.employeeId || user.employeeId || employee?.id || user.id,
+        };
+        localStorage.setItem('ojt_hte_user', JSON.stringify(enrichedUser));
         navigate('/hte');
       } else if (user.role === 'host') navigate('/host/feedback');
       else navigate('/app');

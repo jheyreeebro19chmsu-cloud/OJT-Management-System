@@ -74,6 +74,8 @@ export interface User {
   role: 'employee' | 'admin' | 'host' | 'hte';
   employeeId?: string;
   email?: string;
+  photo?: string;
+  faceRegistered?: boolean;
 }
 
 export interface Evaluation {

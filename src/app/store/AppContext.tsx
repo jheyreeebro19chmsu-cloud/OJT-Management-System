@@ -699,6 +699,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
               role,
               employeeId: matchedEmp.id,
               email: normalizeEmail(matchedEmp.email),
+              photo: matchedEmp.photo,
+              faceRegistered: matchedEmp.faceRegistered,
             };
             setCurrentUser(user);
             setPasswordForEmail(matchedEmp.email, password);
@@ -724,6 +726,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             role,
             employeeId: role === 'employee' ? userId : undefined,
             email: authData.user.email ? normalizeEmail(authData.user.email) : normalizeEmail(targetEmail),
+            photo: matchedEmp?.photo,
+            faceRegistered: matchedEmp?.faceRegistered,
           };
           setCurrentUser(user);
           return user;
@@ -755,7 +759,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         const role: User['role'] =
           emp.position === 'OJT Instructor' ? 'admin' : emp.position === 'HTE Representative' ? 'hte' : 'employee';
-        const user: User = { id: emp.id, name: emp.name, role, employeeId: emp.id, email: normalizeEmail(emp.email) };
+        const user: User = {
+          id: emp.id,
+          name: emp.name,
+          role,
+          employeeId: emp.id,
+          email: normalizeEmail(emp.email),
+          photo: emp.photo,
+          faceRegistered: emp.faceRegistered,
+        };
         setCurrentUser(user);
         return user;
       }
@@ -766,7 +778,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (host) {
       const storedPassword = passwords[normalizedId];
       if (password === storedPassword) {
-        const user: User = { id: host.id, name: host.name, role: 'host', email: normalizeEmail(host.email) };
+        const user: User = {
+          id: host.id,
+          name: host.name,
+          role: 'host',
+          email: normalizeEmail(host.email),
+          photo: undefined,
+          faceRegistered: false,
+        };
         setCurrentUser(user);
         return user;
       }
@@ -1068,7 +1087,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateEmployee = (id: string, data: Partial<Employee>) => {
-    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
+    const updatedEmployees = employees.map((e) => (e.id === id ? { ...e, ...data } : e));
+    setEmployees(updatedEmployees);
+
+    const updatedEmployee = updatedEmployees.find((e) => e.id === id);
+    if (updatedEmployee && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: updatedEmployee.name || prev.name,
+              email: updatedEmployee.email || prev.email,
+              photo: updatedEmployee.photo || prev.photo,
+              faceRegistered: updatedEmployee.faceRegistered ?? prev.faceRegistered ?? false,
+            }
+          : prev
+      );
+    }
 
     if (useSupabase) {
       supabaseService.updateEmployee(id, data);
