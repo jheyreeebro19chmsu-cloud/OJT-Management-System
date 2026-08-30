@@ -285,10 +285,40 @@ export function Register() {
           'position',
         ];
 
+        const limit25Fields = [
+          'firstName',
+          'lastName',
+          'middleInitial',
+          'name',
+          'companyName',
+          'contactPerson',
+          'supervisorName',
+          'street',
+          'barangay',
+          'barangayManual',
+          'city',
+          'cityManual',
+          'province',
+          'provinceManual',
+          'region',
+          'regionManual',
+          'schoolName',
+          'department',
+          'course',
+          'campus',
+          'position',
+          'contactPhone',
+          'employeeId',
+        ];
+
         if (field === 'middleInitial') {
-          formattedValue = formattedValue.toUpperCase();
+          formattedValue = formattedValue.toUpperCase().slice(0, 5);
         } else if (titleCaseFields.includes(field)) {
           formattedValue = formattedValue.replace(/(^\w|\s\w|-\w)/g, (match) => match.toUpperCase());
+        }
+
+        if (limit25Fields.includes(field)) {
+          formattedValue = formattedValue.slice(0, 25);
         }
       }
 
