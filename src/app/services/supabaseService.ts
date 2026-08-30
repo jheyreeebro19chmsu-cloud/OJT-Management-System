@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback } from '../types';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
 
@@ -53,6 +53,7 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     registration_lat: employee.registrationLocation?.lat,
     registration_lng: employee.registrationLocation?.lng,
     registration_address: employee.registrationAddress,
+    academic_year: employee.academicYear,
   };
 
   if (employee.id) {
@@ -63,7 +64,6 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
 
   if (error) {
     console.error('Error creating employee:', error);
-    // Surface Supabase error to caller
     throw new Error(error.message || JSON.stringify(error));
   }
 
@@ -89,6 +89,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.photo !== undefined) supabaseUpdates.photo = updates.photo;
   if (updates.faceRegistered !== undefined) supabaseUpdates.face_registered = updates.faceRegistered;
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
+  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
   if (updates.registrationLocation !== undefined) {
     supabaseUpdates.registration_lat = updates.registrationLocation?.lat;
     supabaseUpdates.registration_lng = updates.registrationLocation?.lng;
@@ -110,7 +111,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
 export async function deleteEmployee(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  // Soft delete - just set active to false
+  // Soft delete - set active to false
   const { error } = await supabase.from('employees').update({ active: false }).eq('id', id);
 
   if (error) {
@@ -157,6 +158,7 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     total_hours: record.totalHours,
     status: record.status,
     notes: record.notes,
+    academic_year: record.academicYear,
   };
 
   const { data, error } = await supabase.from('time_records').insert([supabaseRecord]).select().single();
@@ -192,6 +194,7 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (updates.totalHours !== undefined) supabaseUpdates.total_hours = updates.totalHours;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
+  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
 
   const { error } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id);
 
@@ -260,35 +263,6 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   return true;
 }
 
-// Migration helper: update any employees/announcements that still use 'Administrator' position/name
-export async function migrateAdministratorPosition(): Promise<number> {
-  if (!isSupabaseConfigured()) return 0;
-  try {
-    // Update employee positions in a single query where possible
-    const { error: updateErr } = await supabase
-      .from('employees')
-      .update({ position: 'OJT Instructor' })
-      .eq('position', 'Administrator');
-    if (updateErr) {
-      console.error('Error migrating employee positions:', updateErr);
-    }
-
-    // Update announcements createdBy field if present
-    const { error: annErr } = await supabase
-      .from('announcements')
-      .update({ created_by: 'OJT Instructor' })
-      .eq('created_by', 'Administrator');
-    if (annErr) {
-      console.error('Error migrating announcements created_by:', annErr);
-    }
-
-    return 1; // return non-zero to indicate attempt (caller can check logs)
-  } catch (e) {
-    console.error('migrateAdministratorPosition failed:', e);
-    return 0;
-  }
-}
-
 export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
@@ -302,6 +276,29 @@ export async function deleteGeofenceZone(id: string): Promise<boolean> {
   return true;
 }
 
+// Migration helper: update any employees/announcements that still use 'Administrator' position/name
+export async function migrateAdministratorPosition(): Promise<number> {
+  if (!isSupabaseConfigured()) return 0;
+  try {
+    const { error: updateErr } = await supabase
+      .from('employees')
+      .update({ position: 'OJT Instructor' })
+      .eq('position', 'Administrator');
+    if (updateErr) console.error('Error migrating employee positions:', updateErr);
+
+    const { error: annErr } = await supabase
+      .from('announcements')
+      .update({ created_by: 'OJT Instructor' })
+      .eq('created_by', 'Administrator');
+    if (annErr) console.error('Error migrating announcements created_by:', annErr);
+
+    return 1;
+  } catch (e) {
+    console.error('migrateAdministratorPosition failed:', e);
+    return 0;
+  }
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 export async function fetchSettings(): Promise<AppSettings | null> {
@@ -310,18 +307,12 @@ export async function fetchSettings(): Promise<AppSettings | null> {
   const { data, error } = await supabase.from('app_settings').select('*').maybeSingle();
 
   if (error) {
-    if (error.code === 'PGRST116') {
-      // No settings found, return null to use defaults
-      return null;
-    }
+    if (error.code === 'PGRST116') return null;
     console.error('Error fetching settings:', error);
     return null;
   }
 
-  if (!data) {
-    // No settings row present
-    return null;
-  }
+  if (!data) return null;
 
   return {
     workStartTime: data.work_start_time,
@@ -347,11 +338,9 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
     active_academic_year: settings.activeAcademicYear,
   };
 
-  // Try to update first, if no rows affected, insert
   const { error: updateError, count } = await supabase.from('app_settings').update(supabaseSettings).eq('id', 1);
 
   if (updateError || count === 0) {
-    // Insert new settings
     const { error: insertError } = await supabase.from('app_settings').insert([{ id: 1, ...supabaseSettings }]);
 
     if (insertError) {
@@ -391,6 +380,7 @@ export async function fetchEvaluations(): Promise<Evaluation[]> {
     recommendations: evaluation.recommendations,
     evaluatedAt: evaluation.evaluated_at,
     status: evaluation.status,
+    academicYear: evaluation.academic_year,
   }));
 }
 
@@ -412,6 +402,7 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     recommendations: evaluation.recommendations,
     evaluated_at: evaluation.evaluatedAt,
     status: evaluation.status,
+    academic_year: evaluation.academicYear,
   };
 
   const { data, error } = await supabase.from('evaluations').insert([supabaseEval]).select().single();
@@ -437,6 +428,7 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     recommendations: data.recommendations,
     evaluatedAt: data.evaluated_at,
     status: data.status,
+    academicYear: data.academic_year,
   };
 }
 
@@ -456,6 +448,7 @@ export async function updateEvaluation(id: string, updates: Partial<Evaluation>)
   if (updates.areasForImprovement !== undefined) supabaseUpdates.areas_for_improvement = updates.areasForImprovement;
   if (updates.recommendations !== undefined) supabaseUpdates.recommendations = updates.recommendations;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
+  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
 
   const { error } = await supabase.from('evaluations').update(supabaseUpdates).eq('id', id);
 
@@ -502,6 +495,7 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
     createdAt: ann.created_at,
     expiresAt: ann.expires_at,
     createdBy: ann.created_by,
+    academicYear: ann.academic_year,
   }));
 }
 
@@ -517,6 +511,7 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     created_at: announcement.createdAt,
     expires_at: announcement.expiresAt,
     created_by: announcement.createdBy,
+    academic_year: announcement.academicYear,
   };
 
   const { data, error } = await supabase.from('announcements').insert([supabaseAnn]).select().single();
@@ -536,6 +531,7 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     createdAt: data.created_at,
     expiresAt: data.expires_at,
     createdBy: data.created_by,
+    academicYear: data.academic_year,
   };
 }
 
@@ -549,6 +545,7 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
   if (updates.targetRole !== undefined) supabaseUpdates.target_role = updates.targetRole;
   if (updates.isPinned !== undefined) supabaseUpdates.is_pinned = updates.isPinned;
   if (updates.expiresAt !== undefined) supabaseUpdates.expires_at = updates.expiresAt;
+  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
 
   const { error } = await supabase.from('announcements').update(supabaseUpdates).eq('id', id);
 
@@ -573,6 +570,89 @@ export async function deleteAnnouncement(id: string): Promise<boolean> {
   return true;
 }
 
+// ─── Host Feedback ────────────────────────────────────────────────────────────
+
+export async function fetchHostFeedback(): Promise<HostFeedback[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabase.from('host_feedback').select('*').order('submitted_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching host feedback:', error);
+    return [];
+  }
+
+  return (data || []).map((hf: any) => ({
+    id: hf.id,
+    employeeId: hf.employee_id,
+    hostName: hf.host_name,
+    hostCompany: hf.host_company,
+    hostPosition: hf.host_position,
+    hostEmail: hf.host_email,
+    attendanceScore: hf.attendance_score,
+    performanceScore: hf.performance_score,
+    attitudeScore: hf.attitude_score,
+    communicationScore: hf.communication_score,
+    teamworkScore: hf.teamwork_score,
+    overallScore: hf.overall_score,
+    strengths: hf.strengths,
+    areasForImprovement: hf.areas_for_improvement,
+    recommendation: hf.recommendation,
+    submittedAt: hf.submitted_at,
+    status: hf.status,
+  }));
+}
+
+export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Promise<HostFeedback | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const supabaseHf = {
+    employee_id: feedback.employeeId,
+    host_name: feedback.hostName,
+    host_company: feedback.hostCompany,
+    host_position: feedback.hostPosition,
+    host_email: feedback.hostEmail,
+    attendance_score: feedback.attendanceScore,
+    performance_score: feedback.performanceScore,
+    attitude_score: feedback.attitudeScore,
+    communication_score: feedback.communicationScore,
+    teamwork_score: feedback.teamworkScore,
+    overall_score: feedback.overallScore,
+    strengths: feedback.strengths,
+    areas_for_improvement: feedback.areasForImprovement,
+    recommendation: feedback.recommendation,
+    submitted_at: feedback.submittedAt,
+    status: feedback.status,
+  };
+
+  const { data, error } = await supabase.from('host_feedback').insert([supabaseHf]).select().single();
+
+  if (error) {
+    console.error('Error creating host feedback:', error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    employeeId: data.employee_id,
+    hostName: data.host_name,
+    hostCompany: data.host_company,
+    hostPosition: data.host_position,
+    hostEmail: data.host_email,
+    attendanceScore: data.attendance_score,
+    performanceScore: data.performance_score,
+    attitudeScore: data.attitude_score,
+    communicationScore: data.communication_score,
+    teamworkScore: data.teamwork_score,
+    overallScore: data.overall_score,
+    strengths: data.strengths,
+    areasForImprovement: data.areas_for_improvement,
+    recommendation: data.recommendation,
+    submittedAt: data.submitted_at,
+    status: data.status,
+  };
+}
+
 // ─── Transform Helpers ───────────────────────────────────────────────────────
 
 function transformSupabaseEmployee(data: any): Employee {
@@ -595,6 +675,7 @@ function transformSupabaseEmployee(data: any): Employee {
     faceRegistered: data.face_registered,
     createdAt: data.created_at,
     active: data.active,
+    academicYear: data.academic_year,
     registrationLocation:
       data.registration_lat && data.registration_lng
         ? { lat: data.registration_lat, lng: data.registration_lng }
@@ -622,5 +703,6 @@ function transformSupabaseTimeRecord(data: any): TimeRecord {
     totalHours: data.total_hours,
     status: data.status,
     notes: data.notes,
+    academicYear: data.academic_year,
   };
 }

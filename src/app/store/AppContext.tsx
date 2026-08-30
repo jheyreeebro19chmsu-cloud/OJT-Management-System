@@ -552,6 +552,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseSettings,
             supabaseEvaluations,
             supabaseAnnouncements,
+            supabaseHostFeedback,
           ] = await Promise.all([
             supabaseService.fetchEmployees(),
             supabaseService.fetchTimeRecords(),
@@ -559,6 +560,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchSettings(),
             supabaseService.fetchEvaluations(),
             supabaseService.fetchAnnouncements(),
+            supabaseService.fetchHostFeedback(),
           ]);
 
           if (!isMounted) return;
@@ -570,6 +572,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (supabaseSettings) setSettings(supabaseSettings);
           if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+          if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
         } catch (error) {
           console.error('Error loading data from Supabase:', error);
         } finally {
@@ -586,6 +589,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isMounted = false;
     };
   }, []);
+
+  // Real-time Supabase Broadcast Subscription across all 3 roles (Instructor, Employee/Trainee, HTE)
+  useEffect(() => {
+    if (!useSupabase) return;
+
+    const channel = supabase
+      .channel('public-realtime-system-binding')
+      .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
+        try {
+          const [
+            supabaseEmployees,
+            supabaseRecords,
+            supabaseZones,
+            supabaseSettings,
+            supabaseEvaluations,
+            supabaseAnnouncements,
+            supabaseHostFeedback,
+          ] = await Promise.all([
+            supabaseService.fetchEmployees(),
+            supabaseService.fetchTimeRecords(),
+            supabaseService.fetchGeofenceZones(),
+            supabaseService.fetchSettings(),
+            supabaseService.fetchEvaluations(),
+            supabaseService.fetchAnnouncements(),
+            supabaseService.fetchHostFeedback(),
+          ]);
+
+          if (supabaseEmployees.length > 0) setEmployees(supabaseEmployees);
+          if (supabaseRecords.length > 0) setTimeRecords(supabaseRecords);
+          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+          if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
+          if (supabaseSettings) setSettings(supabaseSettings);
+          if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
+          if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+          if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
+        } catch (err) {
+          console.error('Supabase real-time sync error:', err);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [useSupabase]);
 
   // Save to localStorage only when not using Supabase
   useEffect(() => {
@@ -1450,7 +1498,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: 'submitted',
     };
 
-    setHostFeedback((prev) => [newFeedback, ...prev]);
+    if (useSupabase) {
+      supabaseService.createHostFeedback(newFeedback).then((created) => {
+        if (created) {
+          setHostFeedback((prev) => [created, ...prev]);
+        }
+      });
+    } else {
+      setHostFeedback((prev) => [newFeedback, ...prev]);
+    }
+
     return newFeedback;
   };
 
