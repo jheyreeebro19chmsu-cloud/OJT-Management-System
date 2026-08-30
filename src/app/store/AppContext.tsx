@@ -917,6 +917,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const newEmp: Employee = {
       ...cleanData,
+      academicYear: cleanData.academicYear || settings.activeAcademicYear,
       id: generateId('emp'),
       createdAt: new Date().toISOString().split('T')[0],
     };

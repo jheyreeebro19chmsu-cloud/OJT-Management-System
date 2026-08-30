@@ -27,6 +27,7 @@ export interface Employee {
   companyAddress?: string;
   contactPerson?: string;
   contactPhone?: string;
+  academicYear?: string;
 }
 
 export interface TimeRecord {
@@ -46,6 +47,7 @@ export interface TimeRecord {
   totalHours?: number;
   status: 'present' | 'late' | 'absent' | 'half-day' | 'overtime';
   notes?: string;
+  academicYear?: string;
 }
 
 export interface GeofenceZone {
@@ -94,6 +96,7 @@ export interface Evaluation {
   recommendations: string;
   evaluatedAt: string;
   status: 'draft' | 'final';
+  academicYear?: string;
 }
 
 export interface HostSupervisor {
@@ -141,6 +144,7 @@ export interface Announcement {
   expiresAt?: string;
   createdBy: string;
   createdByRole?: 'admin' | 'host' | 'employee';
+  academicYear?: string;
 }
 
 export interface AnnouncementSubmission {
