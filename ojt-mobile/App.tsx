@@ -454,11 +454,9 @@ export default function App() {
                     <Text style={styles.userName}>{profile.name || 'User'}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {profile?.role && ['admin', 'hte', 'instructor'].includes(profile.role) ? (
-                      <TouchableOpacity onPress={() => setShowAcademicYearEditor(true)} style={styles.academicPill}>
-                        <Text style={styles.academicPillText}>{activeAcademicYear}</Text>
-                      </TouchableOpacity>
-                    ) : null}
+                    <TouchableOpacity onPress={() => setShowAcademicYearEditor(true)} style={styles.academicPill}>
+                      <Text style={styles.academicPillText}>{activeAcademicYear}</Text>
+                    </TouchableOpacity>
                     {profile?.photo ? (
                       <Image source={{ uri: profile.photo }} style={{ width: 48, height: 48, borderRadius: 24, marginRight: 12 }} />
                     ) : null}
