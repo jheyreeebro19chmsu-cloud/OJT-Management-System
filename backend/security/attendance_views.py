@@ -14,6 +14,8 @@ from .models import (
 )
 from .utils import calculate_distance, safe_float
 
+GEOFENCE_RADIUS_METERS = 100.0
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def verify_qr(request: HttpRequest) -> JsonResponse:
@@ -108,9 +110,9 @@ def time_in(request: HttpRequest) -> JsonResponse:
         geofence_passed = True
         if application.gps_latitude is not None and application.gps_longitude is not None:
             dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
-            if (dist + (accuracy or 0.0)) > float(application.geofence_radius or 0.0):
+            if (dist + (accuracy or 0.0)) > GEOFENCE_RADIUS_METERS:
                 geofence_passed = False
-                return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': application.geofence_radius}, status=403)
+                return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': GEOFENCE_RADIUS_METERS}, status=403)
 
         existing = TimeRecord.objects.filter(student=student, application=application, date=now.date(), session=session, time_out__isnull=True).first()
         if existing:
@@ -190,9 +192,9 @@ def time_out(request: HttpRequest) -> JsonResponse:
         # Check geofence before allowing time out
         if application.gps_latitude is not None and application.gps_longitude is not None:
             dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
-            if (dist + (accuracy or 0.0)) > float(application.geofence_radius or 0.0):
+            if (dist + (accuracy or 0.0)) > GEOFENCE_RADIUS_METERS:
                 geofence_passed = False
-                return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': application.geofence_radius}, status=403)
+                return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': GEOFENCE_RADIUS_METERS}, status=403)
 
         if session:
             time_record = TimeRecord.objects.filter(student=student, application=application, date=today, session=session, time_out__isnull=True).first()

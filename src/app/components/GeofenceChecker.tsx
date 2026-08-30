@@ -12,6 +12,7 @@ import {
   getCurrentLocation,
   isGeolocationPositionError,
   isWithinGeofence,
+  GEOFENCE_RADIUS_METERS,
 } from '../utils/geo';
 
 type GeoState = 'idle' | 'checking' | 'inside' | 'outside' | 'denied' | 'error' | 'demo';
@@ -58,7 +59,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         address: employee.registrationAddress || '',
         lat: employee.registrationLocation.lat,
         lng: employee.registrationLocation.lng,
-        radius: 300, // Standard 300m radius for personal zones
+        radius: GEOFENCE_RADIUS_METERS,
         active: true,
       });
     }

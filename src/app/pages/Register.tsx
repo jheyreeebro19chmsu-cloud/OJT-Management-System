@@ -460,7 +460,6 @@ export function Register() {
         supervisorName: form.supervisorName,
         position: form.position,
         employeeId: form.employeeId,
-        instructorEmail: form.instructorEmail,
         username: form.username,
       };
       
@@ -474,14 +473,6 @@ export function Register() {
       return;
     }
     
-    // Trainee: send pending registration request to instructor
-    if (role === 'trainee') {
-      // Use existing helper to request OTP registration (creates pending request)
-      await handleRequestOtpInstructor();
-      // After request is sent, stop further processing; UI will indicate pending status via otpRequested state
-      setIsSubmitting(false);
-      return;
-    }
     // HTE flow (existing logic remains unchanged)
     if (role === 'hte') {
       if (!form.email && !form.username) {

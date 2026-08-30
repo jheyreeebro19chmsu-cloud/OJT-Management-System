@@ -24,6 +24,13 @@ if "testserver" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("testserver")
 
 SECURITY_API_KEY = (os.environ.get("DJANGO_SECURITY_API_KEY") or "").strip()
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or "").strip()
+SUPABASE_ANON_KEY = (
+    os.environ.get("SUPABASE_ANON_KEY")
+    or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+    or ""
+).strip()
+SUPABASE_SERVICE_ROLE_KEY = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
 FACE_RECOGNITION_TOLERANCE = float(os.environ.get("FACE_RECOGNITION_TOLERANCE", "0.6"))
 
 if os.environ.get("DJANGO_USE_HTTPS", "").strip() in ("1", "true", "yes"):
@@ -227,15 +234,6 @@ if os.environ.get('DJANGO_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true'):
 # on the host to force-enable CORS for all origins (temporary/debug only).
 if os.environ.get('DJANGO_FORCE_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true', 'yes'):
     CORS_ALLOW_ALL_ORIGINS = True
-
-# ---------------------------------------------
-# TEMPORARY HOTFIX — Force CORS during rollback
-# This forces the backend to allow all origins to unblock the
-# frontend while you apply a safer, environment-based fix.
-# Remove this block as soon as you confirm registration works
-# and instead set `DJANGO_CORS_ORIGINS` or `DJANGO_FORCE_ALLOW_ALL_ORIGINS`.
-# ---------------------------------------------
-CORS_ALLOW_ALL_ORIGINS = True
 
 DEFAULT_GEOFENCE_ZONES = [
     {

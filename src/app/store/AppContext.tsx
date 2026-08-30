@@ -20,6 +20,7 @@ import {
   HostFeedback,
   HostSupervisor,
 } from '../types';
+import { GEOFENCE_RADIUS_METERS } from '../utils/geo';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -61,7 +62,7 @@ const DEFAULT_GEOFENCE: GeofenceZone[] = [
     address: 'Ayala Avenue, Makati City, Metro Manila',
     lat: 14.5547,
     lng: 121.0244,
-    radius: 300,
+    radius: GEOFENCE_RADIUS_METERS,
     active: true,
   },
 ];
@@ -356,7 +357,7 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
   const raw = input as Partial<GeofenceZone>;
   const lat = Number(raw.lat);
   const lng = Number(raw.lng);
-  const radius = Number(raw.radius);
+  const radius = GEOFENCE_RADIUS_METERS;
   const valid =
     isFiniteCoord(lat) &&
     isFiniteCoord(lng) &&

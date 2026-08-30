@@ -14,7 +14,7 @@ import requests
 
 def main():
     supabase_url = os.environ.get('SUPABASE_URL') or os.environ.get('VITE_SUPABASE_URL')
-    service_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+    service_key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if not supabase_url or not service_key:
         print('Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment')

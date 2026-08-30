@@ -32,7 +32,6 @@ export function AdminSettings() {
   const [loadingOtps, setLoadingOtps] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newAcademicYear, setNewAcademicYear] = useState('');
 
   const upd = (f: string, v: string | number | boolean | string[]) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -44,21 +43,6 @@ export function AdminSettings() {
   const handleReset = () => {
     setForm(settings);
     toast.info('Changes discarded.');
-  };
-
-  const handleAddAcademicYear = () => {
-    const academicYear = newAcademicYear.trim();
-    if (!/^\d{4}-\d{4}$/.test(academicYear)) {
-      toast.error('Use the format YYYY-YYYY.');
-      return;
-    }
-    if (form.academicYears.includes(academicYear)) {
-      toast.error('That academic year already exists.');
-      return;
-    }
-    upd('academicYears', [...form.academicYears, academicYear]);
-    upd('activeAcademicYear', academicYear);
-    setNewAcademicYear('');
   };
 
   const probeSecurityBackend = async () => {
@@ -320,50 +304,6 @@ export function AdminSettings() {
         <h2 className="text-xl font-bold text-gray-800">System Settings</h2>
         <p className="text-sm text-gray-500">Configure attendance rules and verification requirements</p>
       </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center">
-            <Calendar size={18} className="text-blue-700" />
-          </div>
-          <div>
-            <h3 className="font-bold text-gray-800">Academic Year</h3>
-            <p className="text-xs text-gray-500">Only administrators can manage academic years.</p>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <select
-            value={form.activeAcademicYear}
-            onChange={(e) => upd('activeAcademicYear', e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {form.academicYears.map((academicYear) => (
-              <option key={academicYear} value={academicYear}>{academicYear}</option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <input
-              value={newAcademicYear}
-              onChange={(e) => setNewAcademicYear(e.target.value)}
-              placeholder="2026-2027"
-              aria-label="New academic year"
-              className="w-full sm:w-32 px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="button"
-              onClick={handleAddAcademicYear}
-              className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">Active academic year: <strong>{form.activeAcademicYear}</strong></p>
-      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 15 }}

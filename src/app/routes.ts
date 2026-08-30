@@ -8,6 +8,7 @@ const AdminEmployees = React.lazy(() => import('./pages/admin/AdminEmployees').t
 const AdminGeofence = React.lazy(() => import('./pages/admin/AdminGeofence').then(m => ({ default: m.AdminGeofence })));
 const AdminReports = React.lazy(() => import('./pages/admin/AdminReports').then(m => ({ default: m.AdminReports })));
 const AdminSettings = React.lazy(() => import('./pages/admin/AdminSettings').then(m => ({ default: m.AdminSettings })));
+const AcademicYearManagement = React.lazy(() => import('./pages/admin/AcademicYearManagement').then(m => ({ default: m.AcademicYearManagement })));
 const AccountProfile = React.lazy(() => import('./pages/AccountProfile').then(m => ({ default: m.AccountProfile })));
 const InstructorPendingRequests = React.lazy(() => import('./pages/InstructorPendingRequests').then(m => ({ default: m.default })));
 const AdminEvaluations = React.lazy(() => import('./pages/admin/AdminEvaluations').then(m => ({ default: m.AdminEvaluations })));
@@ -130,6 +131,7 @@ export const router = createBrowserRouter([
       { path: 'evaluations', element: withSuspense(AdminEvaluations) },
       { path: 'host-feedback', element: withSuspense(AdminHostFeedback) },
       { path: 'announcements', element: withSuspense(AdminAnnouncements) },
+      { path: 'academic-years', element: withSuspense(AcademicYearManagement) },
       { path: 'settings', element: withSuspense(AdminSettings) },
       { path: 'profile', element: withSuspense(() => React.createElement(AccountProfile, { role: 'admin' })) },
       { path: 'pending-requests', element: withSuspense(InstructorPendingRequests) },

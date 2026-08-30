@@ -17,6 +17,7 @@ import React, { useState } from 'react';
 import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
 import { GeofenceZone } from '../../types';
+import { GEOFENCE_RADIUS_METERS } from '../../utils/geo';
 
 
 
@@ -25,7 +26,7 @@ const BLANK_ZONE = {
   address: '',
   lat: 14.5547,
   lng: 121.0244,
-  radius: 300,
+  radius: GEOFENCE_RADIUS_METERS,
   active: true,
 };
 
@@ -50,7 +51,7 @@ export function AdminGeofence() {
       address: zone.address,
       lat: zone.lat,
       lng: zone.lng,
-      radius: zone.radius,
+      radius: GEOFENCE_RADIUS_METERS,
       active: zone.active,
     });
   };
@@ -328,22 +329,9 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-600 block mb-1">
-          Radius: <span className="text-blue-600">{form.radius}m</span>
+          Radius: <span className="text-blue-600">{GEOFENCE_RADIUS_METERS}m</span>
         </label>
-        <input
-          type="range"
-          min="50"
-          max="1000"
-          step="50"
-          value={form.radius}
-          onChange={(e) => upd('radius', parseInt(e.target.value))}
-          className="w-full accent-blue-600"
-        />
-        <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-          <span>50m</span>
-          <span>500m</span>
-          <span>1km</span>
-        </div>
+        <p className="text-xs text-gray-500">The attendance boundary is permanently fixed at 100 meters.</p>
       </div>
       <div className="flex items-center justify-between bg-gray-50 rounded-xl p-3">
         <span className="text-sm font-medium text-gray-700">Active Zone</span>
