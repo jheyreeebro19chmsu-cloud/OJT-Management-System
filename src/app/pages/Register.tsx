@@ -12,6 +12,9 @@ import {
   Loader,
   UserCircle,
   X,
+  Eye,
+  EyeOff,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -250,7 +253,41 @@ export function Register() {
 
   const update = (field: string, value: string | number) => {
     setForm((p) => {
-      const newForm = { ...p, [field]: value };
+      let formattedValue = value;
+
+      // Auto-capitalize first letter of each word for text/name/address fields ("capslock then back to normal")
+      if (typeof formattedValue === 'string') {
+        const titleCaseFields = [
+          'firstName',
+          'lastName',
+          'name',
+          'companyName',
+          'contactPerson',
+          'supervisorName',
+          'street',
+          'barangay',
+          'barangayManual',
+          'city',
+          'cityManual',
+          'province',
+          'provinceManual',
+          'region',
+          'regionManual',
+          'schoolName',
+          'department',
+          'course',
+          'campus',
+          'position',
+        ];
+
+        if (field === 'middleInitial') {
+          formattedValue = formattedValue.toUpperCase();
+        } else if (titleCaseFields.includes(field)) {
+          formattedValue = formattedValue.replace(/(^\w|\s\w|-\w)/g, (match) => match.toUpperCase());
+        }
+      }
+
+      const newForm = { ...p, [field]: formattedValue };
 
       // If user entered email and username is empty, auto-fill username with email
       if (field === 'email' && typeof value === 'string' && (!newForm.username || newForm.username.trim() === '')) {
@@ -664,7 +701,7 @@ export function Register() {
     if (role === 'hte') {
       if (step === 0) {
         if (!form.companyName?.trim()) errors.push('Company Name');
-        // Allow proceeding without captured location (some devices/browsers block geolocation)
+        if (!hasValidPassword) errors.push('Valid password (8+ chars, upper, lower, special, and matching)');
       }
       if (step === 1) {
         if (hasEmail && emailExists) errors.push('Email already in use');
@@ -1131,57 +1168,130 @@ export function Register() {
                           </div>
                         )}
 
-                        <div className="mt-2">
-                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">
-                            Capture Precise Location
+                        {/* Location Pinning Box */}
+                        <div className="mt-3 pt-3 border-t border-blue-100/60">
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 flex items-center justify-between">
+                            <span>Capture Precise Location</span>
+                            {registrationLocation && (
+                              <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                                {registrationLocation.lat.toFixed(4)}, {registrationLocation.lng.toFixed(4)}
+                              </span>
+                            )}
                           </label>
                           <button
                             type="button"
                             onClick={captureLocation}
-                            className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all ${locationStatus === 'captured' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'}`}
+                            className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                              locationStatus === 'captured'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 shadow-sm'
+                                : 'bg-blue-600 text-white shadow-md shadow-blue-200 hover:bg-blue-700'
+                            }`}
                           >
                             {locationStatus === 'capturing' ? (
                               <Loader className="animate-spin" size={16} />
                             ) : (
                               <MapPin size={16} />
                             )}
-                            {locationStatus === 'captured' ? 'Location Secured' : 'Pin Precise Company Location'}
-                          <div className="mt-4">
+                            {locationStatus === 'captured' ? 'Location Secured (Re-capture)' : 'Pin Precise Company Location'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Account Security Card */}
+                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3.5 mt-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 bg-slate-200 rounded-md flex items-center justify-center">
+                            <Lock size={13} className="text-slate-700" />
+                          </div>
+                          <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider">Account Credentials</h3>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
                             <div className="relative">
                               <input
                                 type={showPassword ? 'text' : 'password'}
                                 value={form.password}
                                 onChange={(e) => update('password', e.target.value)}
-                                placeholder="Min 8 characters"
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                                placeholder="Min 8 chars"
+                                className="w-full pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                               />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                              >
+                                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                              </button>
                             </div>
                           </div>
-                          <div className="mt-2">
+
+                          <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
-                            <input
-                              type={showPassword ? 'text' : 'password'}
-                              value={form.confirmPassword}
-                              onChange={(e) => update('confirmPassword', e.target.value)}
-                              placeholder="Repeat password"
-                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
-                            />
+                            <div className="relative">
+                              <input
+                                type={showPassword ? 'text' : 'password'}
+                                value={form.confirmPassword}
+                                onChange={(e) => update('confirmPassword', e.target.value)}
+                                placeholder="Repeat password"
+                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
+                                  form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
+                                }`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                              >
+                                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 px-1">
-                            <input
-                              type="checkbox"
-                              id="show-pw"
-                              checked={showPassword}
-                              onChange={() => setShowPassword(!showPassword)}
-                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">
-                              Show passwords
-                            </label>
-                          </div>
-                          </button>
                         </div>
+
+                        {/* Password strength checklist */}
+                        {form.password && (
+                          <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-200">
+                            <p className="font-semibold text-slate-700 mb-0.5">Password Strength Checklist:</p>
+                            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                              <div className="flex items-center gap-1">
+                                <span className={/[A-Z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                  {/[A-Z]/.test(form.password) ? "✓" : "○"}
+                                </span>
+                                <span className={/[A-Z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Uppercase letter</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={/[a-z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                  {/[a-z]/.test(form.password) ? "✓" : "○"}
+                                </span>
+                                <span className={/[a-z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Lowercase letter</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                  {/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "✓" : "○"}
+                                </span>
+                                <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Special character</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={form.password.length >= 8 ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                  {form.password.length >= 8 ? "✓" : "○"}
+                                </span>
+                                <span className={form.password.length >= 8 ? "text-green-700 font-medium" : "text-gray-500"}>At least 8 chars</span>
+                              </div>
+                              {form.confirmPassword && (
+                                <div className="flex items-center gap-1 col-span-2 border-t border-slate-100 pt-1 mt-1">
+                                  <span className={form.password === form.confirmPassword ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
+                                    {form.password === form.confirmPassword ? "✓" : "✗"}
+                                  </span>
+                                  <span className={form.password === form.confirmPassword ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                                    {form.password === form.confirmPassword ? "Passwords match" : "Passwords do not match"}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>
