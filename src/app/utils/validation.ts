@@ -248,12 +248,19 @@ export function validateRegistrationData(
   formData: Record<string, any>,
   role: string
 ): Record<string, any> {
+  const isHTE = role === 'hte';
+  const isNameProvided = Boolean(
+    (formData.name && String(formData.name).trim()) ||
+    (formData.contactPerson && String(formData.contactPerson).trim()) ||
+    (formData.firstName && String(formData.firstName).trim() && formData.lastName && String(formData.lastName).trim())
+  );
+
   const fieldRules: Record<string, Parameters<typeof validateAndSanitizeField>[2]> = {
     email: { required: true, type: 'email', maxLength: 254 },
-    firstName: { required: true, type: 'text', maxLength: 100, maxSentences: 3 },
-    lastName: { required: true, type: 'text', maxLength: 100, maxSentences: 3 },
+    firstName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 100, maxSentences: 3 },
+    lastName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 100, maxSentences: 3 },
     middleInitial: { type: 'text', maxLength: 10 },
-    name: { type: 'text', maxLength: 255, maxSentences: 3 },
+    name: { required: false, type: 'text', maxLength: 255, maxSentences: 3 },
     password: { required: true, minLength: 8, maxLength: 128 },
     confirmPassword: { required: true, minLength: 8, maxLength: 128 },
     
@@ -266,10 +273,10 @@ export function validateRegistrationData(
     region: { type: 'text', maxLength: 100, maxSentences: 3 },
     
     // Company/HTE fields
-    companyName: { type: 'text', maxLength: 255, maxSentences: 5 },
+    companyName: { required: isHTE, type: 'text', maxLength: 255, maxSentences: 5 },
     companyAddress: { type: 'text', maxLength: 500, maxSentences: 10 },
-    contactPerson: { type: 'text', maxLength: 200, maxSentences: 3 },
-    contactPhone: { type: 'phone', maxLength: 20 },
+    contactPerson: { required: isHTE, type: 'text', maxLength: 200, maxSentences: 3 },
+    contactPhone: { required: isHTE, type: 'phone', maxLength: 20 },
     
     // School/Academic fields
     schoolName: { type: 'text', maxLength: 255, maxSentences: 5 },

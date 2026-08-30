@@ -549,7 +549,7 @@ export function Register() {
     const computedAddress = registrationAddress || buildAddrFromForm() || undefined;
 
     // Compose full name from parts if form.name is empty
-    const composedName = form.name ||
+    const composedName = form.name || form.contactPerson ||
       [form.firstName, form.middleInitial, form.lastName].filter(Boolean).join(' ') ||
       (form.email ? form.email.split('@')[0] : 'User');
 
