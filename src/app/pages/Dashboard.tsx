@@ -1,5 +1,9 @@
 import {
+  BarChart3,
+  Users,
   Clock,
+  CheckCircle2,
+  AlertCircle,
   CheckCircle,
   AlertTriangle,
   TrendingUp,
@@ -12,10 +16,14 @@ import {
   Megaphone,
   User,
   Building,
+  Loader,
+  Plus,
+  Link as LinkIcon,
+  Search,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { sendWelcomeEmail } from '../lib/resend';
@@ -40,10 +48,22 @@ const ANN_ICON: Record<Announcement['type'], React.ReactNode> = {
 };
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const { currentUser, getCurrentEmployee, getTodayRecord, getEmployeeRecords, settings, getActiveAnnouncements } =
     useApp();
   const employee = getCurrentEmployee();
   const isAdmin = currentUser?.role === 'admin';
+  
+  // HTE/Instructor Dashboard Metrics
+  const [metrics, setMetrics] = useState<any>(null);
+  const [recentRecords, setRecentRecords] = useState<any[]>([]);
+  const [linkedStudents, setLinkedStudents] = useState<any[]>([]);
+  const [searchId, setSearchId] = useState('');
+  const [isLinking, setIsLinking] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  
+  // Original Dashboard State (for non-admin/students)
   const displayName = employee?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
   const displayId = employee?.employeeId || (isAdmin ? 'ADMIN' : '');
   const todayRecord = employee ? getTodayRecord(employee.id) : null;
@@ -54,6 +74,132 @@ export function Dashboard() {
   const [hteRequests, setHteRequests] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
+  // Load instructor dashboard metrics
+  useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+
+    const loadInstructorMetrics = async () => {
+      setLoading(true);
+      setDashboardError(null);
+
+      try {
+        // Get all students assigned to this instructor
+        const { data: students } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('instructor_id', currentUser?.id);
+
+        // Calculate metrics
+        const totalApplications = students?.length || 0;
+        const approved = students?.filter((s: any) => s.application_status === 'approved').length || 0;
+        const pending = students?.filter((s: any) => s.application_status === 'pending').length || 0;
+        const rejected = students?.filter((s: any) => s.application_status === 'rejected').length || 0;
+        const completed = students?.filter((s: any) => s.application_status === 'completed').length || 0;
+        const cancelled = students?.filter((s: any) => s.application_status === 'cancelled').length || 0;
+
+        // Get time records
+        const { data: timeRecords } = await supabase
+          .from('time_records')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        // Calculate hours
+        let totalRenderedHours = 0;
+        let totalRequiredHours = 0;
+        if (students) {
+          totalRequiredHours = students.reduce((sum: number, s: any) => sum + (s.required_hours || 486), 0);
+          // Calculate from time records
+          if (timeRecords) {
+            totalRenderedHours = timeRecords.reduce((sum: number, r: any) => sum + (r.hours_rendered || 0), 0);
+          }
+        }
+
+        setMetrics({
+          total_applications: totalApplications,
+          status_counts: {
+            pending,
+            approved,
+            rejected,
+            completed,
+            cancelled,
+          },
+          total_required_hours: totalRequiredHours,
+          total_rendered_hours: totalRenderedHours,
+          total_remaining_hours: Math.max(0, totalRequiredHours - totalRenderedHours),
+          unique_students: totalApplications,
+        });
+
+        // Format recent records for display
+        const formattedRecords = (timeRecords || []).map((r: any) => ({
+          id: r.id,
+          student_name: r.employee_name || 'Unknown',
+          date: r.created_at,
+          hours_rendered: r.hours_rendered || 0,
+          is_approved: r.is_approved || false,
+        }));
+        setRecentRecords(formattedRecords);
+      } catch (error: any) {
+        console.error('Error loading instructor metrics:', error);
+        setDashboardError(error.message || 'Failed to load dashboard metrics');
+      }
+
+      setLoading(false);
+      fetchLinkedStudents();
+    };
+
+    loadInstructorMetrics();
+  }, [isAdmin, currentUser?.id]);
+
+  const fetchLinkedStudents = async () => {
+    if (!isAdmin) return;
+
+    try {
+      const { data } = await supabase
+        .from('hte_student_access')
+        .select('*, employees(*)')
+        .eq('instructor_id', currentUser?.id);
+
+      if (data) setLinkedStudents(data);
+    } catch (error) {
+      console.error('Error fetching linked students:', error);
+    }
+  };
+
+  const handleLinkStudent = async () => {
+    if (!searchId.trim()) return;
+    setIsLinking(true);
+
+    try {
+      const { data: student } = await supabase.from('employees').select('id').eq('id', searchId).single();
+
+      if (!student) {
+        toast.error('Student ID not found');
+        return;
+      }
+
+      const { error } = await supabase.from('hte_student_access').insert({
+        instructor_id: currentUser?.id,
+        student_id: student.id,
+        status: 'pending',
+      });
+
+      if (error) throw error;
+
+      toast.success('Student linked successfully');
+      setSearchId('');
+      fetchLinkedStudents();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to link student');
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  // Fetch pending apps and HTE requests for non-HTE display
   useEffect(() => {
     if (isAdmin) {
       const fetchPending = async () => {
@@ -164,7 +310,7 @@ export function Dashboard() {
   const hoursProgress = requiredHours > 0 ? Math.min((totalHoursRendered / requiredHours) * 100, 100) : 0;
   const presentDays = allRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
   const lateDays = allRecords.filter((r) => r.status === 'late').length;
-  const recentRecords = allRecords.slice(0, 5);
+  const recentRecordsEmployee = allRecords.slice(0, 5);
 
   const greeting = () => {
     const h = currentTime.getHours();
@@ -199,6 +345,228 @@ export function Dashboard() {
     return { label: 'Absent', color: 'text-red-700 bg-red-100' };
   };
 
+  // ── INSTRUCTOR DASHBOARD (HTE-style) ──
+  if (isAdmin) {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <Loader className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (dashboardError) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+            <div>
+              <h3 className="font-semibold text-red-900">Error Loading Dashboard</h3>
+              <p className="text-red-700 text-sm mt-1">{dashboardError}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-8">
+        {/* Page Header */}
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900">Dashboard</h2>
+          <p className="text-gray-600 mt-1">Monitor student attendance, hours, and approvals</p>
+        </div>
+
+        {/* Metrics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+                <Users className="text-blue-600" size={24} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Total Students</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics?.total_applications || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
+                <CheckCircle2 className="text-green-600" size={24} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Approved</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics?.status_counts.approved || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center">
+                <Clock className="text-amber-600" size={24} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Pending</p>
+                <p className="text-2xl font-bold text-gray-900">{metrics?.status_counts.pending || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center">
+                <Users className="text-purple-600" size={24} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">HTE Linked</p>
+                <p className="text-2xl font-bold text-gray-900">{linkedStudents.length || 0}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Hours Summary */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow p-6 text-white">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-blue-100 text-sm font-medium">Total Required Hours</p>
+                <p className="text-4xl font-bold mt-2">{metrics?.total_required_hours || 0}</p>
+              </div>
+              <Clock className="w-12 h-12 text-blue-300 opacity-30" />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow p-6 text-white">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-green-100 text-sm font-medium">Total Rendered Hours</p>
+                <p className="text-4xl font-bold mt-2">{metrics?.total_rendered_hours || 0}</p>
+              </div>
+              <BarChart3 className="w-12 h-12 text-green-300 opacity-30" />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg shadow p-6 text-white">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-orange-100 text-sm font-medium">Remaining Hours</p>
+                <p className="text-4xl font-bold mt-2">{metrics?.total_remaining_hours || 0}</p>
+              </div>
+              <AlertCircle className="w-12 h-12 text-orange-300 opacity-30" />
+            </div>
+          </div>
+        </div>
+
+        {/* Status Distribution */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Student Status Distribution</h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {[
+              { label: 'Pending', count: metrics?.status_counts.pending, color: 'bg-yellow-100 text-yellow-800' },
+              { label: 'Approved', count: metrics?.status_counts.approved, color: 'bg-green-100 text-green-800' },
+              { label: 'Rejected', count: metrics?.status_counts.rejected, color: 'bg-red-100 text-red-800' },
+              { label: 'Completed', count: metrics?.status_counts.completed, color: 'bg-blue-100 text-blue-800' },
+              { label: 'Cancelled', count: metrics?.status_counts.cancelled, color: 'bg-gray-100 text-gray-800' },
+            ].map((status) => (
+              <div key={status.label} className={`p-4 rounded-lg ${status.color}`}>
+                <p className="text-sm font-semibold">{status.count}</p>
+                <p className="text-xs mt-1">{status.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Linked Students Status */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-6">HTE Linked Students</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {linkedStudents.map((link) => (
+              <div key={link.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-gray-800">{link.employees?.name}</p>
+                    <p className="text-xs text-gray-500">{link.employees?.course}</p>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
+                      link.status === 'approved'
+                        ? 'bg-green-100 text-green-700'
+                        : link.status === 'rejected'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {link.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {linkedStudents.length === 0 && (
+              <div className="col-span-full py-10 text-center text-gray-400">
+                <Users size={32} className="mx-auto mb-2 opacity-20" />
+                <p>No HTE students linked yet.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Recent Time Records */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900">Recent Time Records</h3>
+            <p className="text-sm text-gray-600 mt-1">Last entries from your students</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-xs font-semibold text-gray-600 uppercase">
+                  <th className="px-6 py-3">Student Name</th>
+                  <th className="px-6 py-3">Date</th>
+                  <th className="px-6 py-3">Hours</th>
+                  <th className="px-6 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {recentRecords.length > 0 ? (
+                  recentRecords.map((record) => (
+                    <tr key={record.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-900 font-medium">{record.student_name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{new Date(record.date).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{record.hours_rendered.toFixed(2)}h</td>
+                      <td className="px-6 py-4 text-sm">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            record.is_approved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                        >
+                          {record.is_approved ? 'Approved' : 'Pending'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                      No time records yet
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── NON-INSTRUCTOR DASHBOARD ──
   return (
     <div className="space-y-4">
       {/* Announcements */}
