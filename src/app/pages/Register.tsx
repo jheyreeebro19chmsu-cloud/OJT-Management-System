@@ -36,6 +36,7 @@ import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
 import { getAbsoluteUrl } from '../services/config';
+import { validateRegistrationData, validateSentenceLimit } from '../utils/validation';
 
 // Fix Leaflet marker icon using a method that's safer for production builds
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -498,6 +499,49 @@ export function Register() {
         return;
       }
     }
+    
+    // ── Validate and sanitize form data to prevent dirty data ──
+    try {
+      // Call validation which will throw on errors
+      const validationFormData = {
+        email: form.email,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        middleInitial: form.middleInitial,
+        name: form.name,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+        street: form.street,
+        barangay: form.barangay,
+        barangayManual: form.barangayManual,
+        city: form.city,
+        province: form.province,
+        region: form.region,
+        companyName: form.companyName,
+        companyAddress: form.companyAddress,
+        contactPerson: form.contactPerson,
+        contactPhone: form.contactPhone,
+        schoolName: form.schoolName,
+        campus: form.campus,
+        course: form.course,
+        department: form.department,
+        supervisorName: form.supervisorName,
+        position: form.position,
+        employeeId: form.employeeId,
+        instructorEmail: form.instructorEmail,
+        username: form.username,
+      };
+      
+      // This will throw if validation fails
+      validateRegistrationData(validationFormData, role || 'trainee');
+    } catch (validationErr) {
+      const msg = (validationErr as any)?.message || String(validationErr);
+      setSubmitError(msg);
+      toast.error('Validation error: ' + msg);
+      setIsSubmitting(false);
+      return;
+    }
+    
     // Trainee: send pending registration request to instructor
     if (role === 'trainee') {
       // Use existing helper to request OTP registration (creates pending request)

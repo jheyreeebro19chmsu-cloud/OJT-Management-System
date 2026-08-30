@@ -20,6 +20,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     UserRole, Student, OJTInstructor, HTE, OTPVerification, TraineeOTPRequest
 )
+from .validation import validate_registration_data, sanitize_string, sanitize_email
 import requests
 import time
 
@@ -113,15 +114,47 @@ def verify_otp(request: HttpRequest) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def register_student(request: HttpRequest) -> JsonResponse:
-    """Register a new student."""
+    """Register a new student with input validation and sanitization."""
+    logger = logging.getLogger(__name__)
     try:
         data = json.loads(request.body)
-        # captured_image accepted for students (optional)
+        
+        # Extract and sanitize basic fields
+        email = sanitize_email(data.get('email', ''))
+        password = data.get('password', '').strip()
+        first_name = sanitize_string(data.get('first_name', ''))
+        last_name = sanitize_string(data.get('last_name', ''))
+        age = data.get('age', '')
+        address = sanitize_string(data.get('address', ''))
         captured_image = data.get('captured_image')
-        email, password = data.get('email', '').strip(), data.get('password', '').strip()
-        first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
+        
+        # Validate required fields
         if not all([email, password, first_name, last_name]):
             return JsonResponse({'error': 'Required fields missing'}, status=400)
+        
+        # Validate with full sanitization
+        form_data = {
+            'email': email,
+            'first_name': first_name,
+            'last_name': last_name,
+            'password': password,
+            'age': age,
+            'address': address,
+        }
+        
+        sanitized, error = validate_registration_data(form_data, 'student')
+        if error:
+            logger.warning(f'Student registration validation error: {error}')
+            return JsonResponse({'error': error}, status=400)
+        
+        # Use sanitized values
+        email = sanitized['email']
+        first_name = sanitized['first_name']
+        last_name = sanitized['last_name']
+        password = sanitized['password']
+        age = sanitized.get('age')
+        address = sanitized.get('address')
+        
         if User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         if not OTPVerification.objects.filter(email=email, is_verified=True).exists():
@@ -129,7 +162,7 @@ def register_student(request: HttpRequest) -> JsonResponse:
         with transaction.atomic():
             user = User.objects.create_user(username=email, email=email, password=password, first_name=first_name, last_name=last_name)
             UserRole.objects.create(user=user, role='student', is_verified=True)
-            Student.objects.create(user=user, age=data.get('age'), address=data.get('address', '').strip())
+            Student.objects.create(user=user, age=age, address=address)
             # optional: register face immediately if provided
             if captured_image:
                 try:
@@ -202,13 +235,47 @@ def register_student(request: HttpRequest) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def register_instructor(request: HttpRequest) -> JsonResponse:
-    """Register a new OJT instructor."""
+    """Register a new OJT instructor with input validation and sanitization."""
+    logger = logging.getLogger(__name__)
     try:
         data = json.loads(request.body)
-        email, password = data.get('email', '').strip(), data.get('password', '').strip()
-        first_name, last_name = data.get('first_name', '').strip(), data.get('last_name', '').strip()
+        
+        # Extract and sanitize fields
+        email = sanitize_email(data.get('email', ''))
+        password = data.get('password', '').strip()
+        first_name = sanitize_string(data.get('first_name', ''))
+        last_name = sanitize_string(data.get('last_name', ''))
+        course = sanitize_string(data.get('course', ''))
+        department = sanitize_string(data.get('department', ''))
+        institution = sanitize_string(data.get('institution', ''))
+        
+        # Validate required fields
         if not all([email, password, first_name, last_name]):
             return JsonResponse({'error': 'Required fields missing'}, status=400)
+        
+        # Validate with full sanitization
+        form_data = {
+            'email': email,
+            'first_name': first_name,
+            'last_name': last_name,
+            'password': password,
+            'course': course,
+            'department': department,
+        }
+        
+        sanitized, error = validate_registration_data(form_data, 'instructor')
+        if error:
+            logger.warning(f'Instructor registration validation error: {error}')
+            return JsonResponse({'error': error}, status=400)
+        
+        # Use sanitized values
+        email = sanitized['email']
+        first_name = sanitized['first_name']
+        last_name = sanitized['last_name']
+        password = sanitized['password']
+        course = sanitized.get('course', '')
+        department = sanitized.get('department', '')
+        
         if User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Email already registered'}, status=400)
         if not OTPVerification.objects.filter(email=email, is_verified=True).exists():
@@ -216,7 +283,7 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
         with transaction.atomic():
             user = User.objects.create_user(username=email, email=email, password=password, first_name=first_name, last_name=last_name)
             UserRole.objects.create(user=user, role='instructor', is_verified=True)
-            instructor = OJTInstructor.objects.create(user=user, course=data.get('course', ''), department=data.get('department', ''), institution=data.get('institution', ''))
+            instructor = OJTInstructor.objects.create(user=user, course=course, department=department, institution=institution)
             qr_data = f"instructor_{instructor.id}_{instructor.user.email}"
             qr = qrcode.QRCode(version=1, box_size=10, border=5)
             qr.add_data(qr_data)
@@ -241,9 +308,9 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def register_hte(request: HttpRequest) -> JsonResponse:
-    """Register a new HTE."""
+    """Register a new HTE with input validation and sanitization."""
+    logger = logging.getLogger(__name__)
     try:
-        logger = logging.getLogger(__name__)
         # Log raw request body (useful for debugging malformed payloads)
         try:
             logger.info('register_hte raw body: %s', request.body)
@@ -256,12 +323,50 @@ def register_hte(request: HttpRequest) -> JsonResponse:
         # Diagnostic trigger: if client includes `_diag: true` in payload, return parsed body for debugging
         if data.get('_diag'):
             return JsonResponse({'success': True, 'diagnostic': True, 'parsed': {k: (v[:200] + '...') if isinstance(v, str) and len(v) > 200 else v for k, v in data.items()}}, status=200)
-        email = data.get('email', '').strip()
+        
+        # Extract and sanitize fields
+        email = sanitize_email(data.get('email', ''))
+        password = data.get('password', '').strip()
+        first_name = sanitize_string(data.get('first_name', ''))
+        last_name = sanitize_string(data.get('last_name', ''))
+        company_name = sanitize_string(data.get('company_name', ''))
+        company_address = sanitize_string(data.get('company_address', ''))
+        contact_person = sanitize_string(data.get('contact_person', ''))
+        contact_phone = sanitize_string(data.get('contact_phone', ''))
+        barangay = sanitize_string(data.get('barangay', ''))
+        
         if not email or User.objects.filter(email__iexact=email).exists():
             return JsonResponse({'error': 'Invalid or duplicate email'}, status=400)
+        
+        # Validate with full sanitization
+        form_data = {
+            'email': email,
+            'first_name': first_name,
+            'last_name': last_name,
+            'password': password,
+            'company_name': company_name,
+            'company_address': company_address,
+            'contact_person': contact_person,
+            'contact_phone': contact_phone,
+        }
+        
+        sanitized, error = validate_registration_data(form_data, 'hte')
+        if error:
+            logger.warning(f'HTE registration validation error: {error}')
+            return JsonResponse({'error': error}, status=400)
+        
+        # Use sanitized values
+        email = sanitized['email']
+        first_name = sanitized['first_name']
+        last_name = sanitized['last_name']
+        password = sanitized.get('password', '')
+        company_name = sanitized.get('company_name', '')
+        company_address = sanitized.get('company_address', '')
+        contact_person = sanitized.get('contact_person', '')
+        contact_phone = sanitized.get('contact_phone', '')
+        
         with transaction.atomic():
             # Use password from request if provided, otherwise generate a secure random password
-            password = data.get('password', '').strip()
             if password:
                 if len(password) < 8:
                     return JsonResponse({'error': 'Password must be at least 8 characters'}, status=400)
@@ -270,15 +375,15 @@ def register_hte(request: HttpRequest) -> JsonResponse:
                 # Fallback to random password generation
                 from django.utils.crypto import get_random_string
                 user_password = get_random_string(12)
-            user = User.objects.create_user(username=email, email=email, password=user_password, first_name=data.get('first_name', ''), last_name=data.get('last_name', ''))
+            user = User.objects.create_user(username=email, email=email, password=user_password, first_name=first_name, last_name=last_name)
             UserRole.objects.create(user=user, role='hte', is_verified=True)
             HTE.objects.create(
                 user=user,
-                company_name=data.get('company_name', ''),
-                company_address=data.get('company_address', ''),
-                barangay=data.get('barangay', '').strip(),
-                contact_person=data.get('contact_person', ''),
-                contact_phone=data.get('contact_phone', ''),
+                company_name=company_name,
+                company_address=company_address,
+                barangay=barangay,
+                contact_person=contact_person,
+                contact_phone=contact_phone,
             )
             # Note: face registration for HTE is intentionally disabled.
         # After creating user and HTE record

@@ -1,4 +1,5 @@
 import json
+import logging
 from django.conf import settings
 from django.core.mail import send_mail
 from django.http import JsonResponse, HttpRequest
@@ -13,6 +14,7 @@ from .models import (
 from .models import OTPVerification, OTPAuditLog
 from django.db import models
 from .api_auth import require_jwt
+from .validation import validate_registration_data, sanitize_string
 
 def send_application_status_email(email: str, student_name: str, status: str, company_name: str = "") -> bool:
     """Send application status update email."""
@@ -45,13 +47,16 @@ OJT Management System
 @csrf_exempt
 @require_http_methods(["POST"])
 def submit_ojt_application(request: HttpRequest) -> JsonResponse:
-    """Submit OJT application from student."""
+    """Submit OJT application from student with input validation and sanitization."""
+    logger = logging.getLogger(__name__)
     try:
         data = json.loads(request.body)
+        
+        # Extract and sanitize fields
         user_id = data.get('user_id')
         instructor_id = data.get('instructor_id')
-        company_name = data.get('company_name', '').strip()
-        company_address = data.get('company_address', '').strip()
+        company_name = sanitize_string(data.get('company_name', ''))
+        company_address = sanitize_string(data.get('company_address', ''))
         gps_lat = data.get('gps_latitude')
         gps_lng = data.get('gps_longitude')
         geofence_radius = data.get('geofence_radius', 100)
@@ -61,6 +66,21 @@ def submit_ojt_application(request: HttpRequest) -> JsonResponse:
         
         if not all([user_id, instructor_id, company_name, company_address, gps_lat, gps_lng, start_date, end_date, required_hours]):
             return JsonResponse({'error': 'Missing required fields'}, status=400)
+        
+        # Validate with full sanitization
+        form_data = {
+            'company_name': company_name,
+            'company_address': company_address,
+        }
+        
+        sanitized, error = validate_registration_data(form_data, 'student')
+        if error:
+            logger.warning(f'Application submission validation error: {error}')
+            return JsonResponse({'error': error}, status=400)
+        
+        # Use sanitized values
+        company_name = sanitized.get('company_name', '')
+        company_address = sanitized.get('company_address', '')
         
         try:
             student = Student.objects.get(user_id=user_id)
@@ -96,7 +116,7 @@ def submit_ojt_application(request: HttpRequest) -> JsonResponse:
             company_address=company_address,
             gps_latitude=float(gps_lat),
             gps_longitude=float(gps_lng),
-            geofence_radius=float(geofence_radius),
+            geofence_radius=100.0,
             start_date=start_date,
             end_date=end_date,
             required_hours=int(required_hours),
