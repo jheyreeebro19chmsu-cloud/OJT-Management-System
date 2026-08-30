@@ -13,9 +13,10 @@ import {
   SafeAreaView,
   Image,
   ImageBackground,
+  LinearGradient,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { User, LogOut, Camera as CameraIcon, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key, Building } from 'lucide-react-native';
+import { User, LogOut, Camera as CameraIcon, QrCode, ClipboardList, Bell, Plus, Clock, Check, Key, Building, Star, ChevronRight, Award } from 'lucide-react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
 import { setAuthToken, getApiBaseUrl, faceApi } from './lib/api';
@@ -31,6 +32,9 @@ import InstructorDashboard from './screens/InstructorDashboard';
 import { getSchoolLogo } from './utils/schoolLogos';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
+import AnnouncementsScreen from './screens/AnnouncementsScreen';
+import ProfileScreen from './screens/ProfileScreen';
+import EvaluationScreen from './screens/EvaluationScreen';
 
 function normalizeRole(position?: string | null) {
   const value = String(position || '').trim();
@@ -58,24 +62,7 @@ function getCurrentAcademicYear(): string {
   return `${year}-${year + 1}`;
 }
 
-// Try to set a global default font for React Native Text and TextInput
-try {
-  const anyText = (Text as any);
-  if (!anyText.defaultProps) anyText.defaultProps = {};
-  const prevTextStyle = anyText.defaultProps.style;
-  anyText.defaultProps.style = prevTextStyle
-    ? [{ fontFamily: 'Times New Roman' }, ...(Array.isArray(prevTextStyle) ? prevTextStyle : [prevTextStyle])]
-    : { fontFamily: 'Times New Roman' };
-
-  const anyTextInput = (TextInput as any);
-  if (!anyTextInput.defaultProps) anyTextInput.defaultProps = {};
-  const prevInputStyle = anyTextInput.defaultProps.style;
-  anyTextInput.defaultProps.style = prevInputStyle
-    ? [{ fontFamily: 'Times New Roman' }, ...(Array.isArray(prevInputStyle) ? prevInputStyle : [prevInputStyle])]
-    : { fontFamily: 'Times New Roman' };
-} catch (e) {
-  console.debug('Could not set default font for Text/TextInput', e);
-}
+// Font defaults removed — use system font for clean modern look
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -103,6 +90,10 @@ export default function App() {
   const [scanned, setScanned] = useState(false);
   const [showAcademicYearEditor, setShowAcademicYearEditor] = useState(false);
   const [newAcademicYear, setNewAcademicYear] = useState('');
+  // New screens
+  const [showAnnouncements, setShowAnnouncements] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showEvaluation, setShowEvaluation] = useState(false);
   const [academicYears, setAcademicYears] = useState<string[]>(() => {
     const current = getCurrentAcademicYear();
     return [current, current.includes('2025') ? '2026-2027' : '2025-2026'];
@@ -414,6 +405,24 @@ export default function App() {
                   }
                 }}
               />
+            ) : showAnnouncements ? (
+              <AnnouncementsScreen
+                profile={profile}
+                activeAcademicYear={activeAcademicYear}
+                onBack={() => setShowAnnouncements(false)}
+              />
+            ) : showProfile ? (
+              <ProfileScreen
+                profile={profile}
+                session={session}
+                onBack={() => setShowProfile(false)}
+              />
+            ) : showEvaluation ? (
+              <EvaluationScreen
+                profile={profile}
+                session={session}
+                onBack={() => setShowEvaluation(false)}
+              />
             ) : showTrainees ? (
               <InstructorTraineesScreen
                 onBack={() => setShowTrainees(false)}
@@ -502,7 +511,6 @@ export default function App() {
                         <Text style={styles.sectionTitle}>Quick Actions</Text>
                         <Text style={styles.sectionSubtitle}>Manage your daily records</Text>
                       </View>
-
                       <View style={styles.actionGrid}>
                         <ActionBtn 
                           icon={<Clock color="#2563eb" size={24} />} 
@@ -517,10 +525,30 @@ export default function App() {
                           color="#f5f3ff"
                         />
                         <ActionBtn 
-                          icon={<Building color="#0891b2" size={24} />} 
+                          icon={<Bell color="#0891b2" size={24} />} 
+                          label="Notices" 
+                          onPress={() => setShowAnnouncements(true)} 
+                          color="#ecfeff"
+                        />
+                      </View>
+                      <View style={styles.actionGrid}>
+                        <ActionBtn 
+                          icon={<Star color="#d97706" size={24} />} 
+                          label="Evaluation" 
+                          onPress={() => setShowEvaluation(true)} 
+                          color="#fffbeb"
+                        />
+                        <ActionBtn 
+                          icon={<User color="#16a34a" size={24} />} 
+                          label="Profile" 
+                          onPress={() => setShowProfile(true)} 
+                          color="#f0fdf4"
+                        />
+                        <ActionBtn 
+                          icon={<Building color="#7c3aed" size={24} />} 
                           label="HTE Link" 
                           onPress={() => setShowHTELink(true)} 
-                          color="#ecfeff"
+                          color="#f5f3ff"
                         />
                       </View>
                     </>
@@ -541,13 +569,33 @@ export default function App() {
                         <StatBox label="New Requests" value="5" color="#fef3c7" textColor="#92400e" />
                       </View>
                       
+                      <TouchableOpacity style={styles.premiumActionCard} onPress={() => setShowAnnouncements(true)}>
+                        <View style={[styles.actionIconContainer, { backgroundColor: '#ecfeff' }]}>
+                          <Bell color="#0891b2" size={20} />
+                        </View>
+                        <View style={styles.actionTextContainer}>
+                          <Text style={styles.actionCardTitle}>Announcements</Text>
+                          <Text style={styles.actionCardDesc}>Post updates & broadcast to all trainees</Text>
+                        </View>
+                      </TouchableOpacity>
+
                       <TouchableOpacity style={styles.premiumActionCard} onPress={() => setShowTrainees(true)}>
                         <View style={[styles.actionIconContainer, { backgroundColor: '#eff6ff' }]}>
                           <Plus color="#2563eb" size={20} />
                         </View>
                         <View style={styles.actionTextContainer}>
-                          <Text style={styles.actionCardTitle}>Post Announcement</Text>
-                          <Text style={styles.actionCardDesc}>Broadcast updates to all students</Text>
+                          <Text style={styles.actionCardTitle}>Manage Trainees</Text>
+                          <Text style={styles.actionCardDesc}>View and manage enrolled trainees</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity style={styles.premiumActionCard} onPress={() => setShowEvaluation(true)}>
+                        <View style={[styles.actionIconContainer, { backgroundColor: '#fffbeb' }]}>
+                          <Star color="#d97706" size={20} />
+                        </View>
+                        <View style={styles.actionTextContainer}>
+                          <Text style={styles.actionCardTitle}>View Evaluations</Text>
+                          <Text style={styles.actionCardDesc}>See all trainee evaluation results</Text>
                         </View>
                       </TouchableOpacity>
                       {/* Instructor QR Card - visible and easy to scan by trainees */}
@@ -584,39 +632,40 @@ export default function App() {
             )
           ) : (
             <ScrollView contentContainerStyle={styles.scrollContainer}>
-              <View style={styles.header}>
-                <Text style={styles.title}>OJT System</Text>
-                <Text style={styles.subtitle}>Mobile Connect</Text>
-              </View>
-
-              {/* University Logo Display */}
-              {schoolLogo && (
-                <View style={styles.logoContainer}>
+              {/* Hero Header */}
+              <View style={styles.loginHero}>
+                <View style={styles.loginLogoWrap}>
                   <Image
-                    source={{ uri: schoolLogo }}
-                    style={styles.schoolLogo}
+                    source={require('./assets/icon.png')}
+                    style={styles.loginLogo}
                     resizeMode="contain"
                   />
                 </View>
-              )}
+                <Text style={styles.title}>OJT Daily Time Record</Text>
+                <Text style={styles.subtitle}>On-the-Job Training Management System</Text>
+                {schoolLogo && (
+                  <Image source={{ uri: schoolLogo }} style={styles.schoolLogo} resizeMode="contain" />
+                )}
+              </View>
 
               <View style={styles.loginCard}>
                 <Text style={styles.loginTitle}>Sign In</Text>
+                <Text style={styles.loginSubtitle}>Welcome back! Please enter your credentials.</Text>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Email</Text>
-                  <TextInput style={styles.input} placeholder="your@email.com" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+                  <Text style={styles.label}>Email Address</Text>
+                  <TextInput style={styles.input} placeholder="your@email.com" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholderTextColor="#94a3b8" />
                 </View>
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Password</Text>
-                  <TextInput style={styles.input} placeholder="••••••••" value={password} onChangeText={setPassword} secureTextEntry />
+                  <TextInput style={styles.input} placeholder="••••••••" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#94a3b8" />
                 </View>
                 <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={authLoading}>
-                  {authLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginButtonText}>Login</Text>}
+                  {authLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginButtonText}>Sign In</Text>}
                 </TouchableOpacity>
                 <View style={styles.registerLinkContainer}>
                   <Text style={styles.registerText}>Don't have an account? </Text>
                   <TouchableOpacity onPress={() => setView('register')}>
-                    <Text style={styles.registerLink}>Register</Text>
+                    <Text style={styles.registerLink}>Register here</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -698,32 +747,51 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingTop: 48,
   },
-  header: {
-    marginBottom: 40,
+  loginHero: {
     alignItems: 'center',
+    marginBottom: 32,
   },
+  loginLogoWrap: {
+    width: 88,
+    height: 88,
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  loginLogo: { width: 68, height: 68, borderRadius: 20 },
   title: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: '900',
-    color: '#1e293b',
+    color: '#fff',
+    textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
-    color: '#64748b',
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 4,
+    textAlign: 'center',
   },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingHorizontal: 16,
+  loginSubtitle: {
+    fontSize: 13,
+    color: '#94a3b8',
+    marginBottom: 20,
+    marginTop: -22,
   },
   schoolLogo: {
-    width: 64,
-    height: 64,
+    width: 48,
+    height: 48,
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 8,
+    borderRadius: 14,
+    marginTop: 10,
   },
   loginCard: {
     backgroundColor: '#fff',
@@ -737,9 +805,9 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     fontSize: 24,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 32,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginBottom: 6,
   },
   inputGroup: {
     marginBottom: 20,
