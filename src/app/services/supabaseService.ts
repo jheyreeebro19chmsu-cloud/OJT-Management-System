@@ -226,13 +226,19 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
     lng: zone.lng,
     radius: zone.radius,
     active: zone.active,
+    academicYear: zone.academic_year,
   }));
 }
 
 export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'>): Promise<GeofenceZone | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const { data, error } = await supabase.from('geofence_zones').insert([zone]).select().single();
+  const payload = {
+    ...zone,
+    academic_year: zone.academicYear,
+  };
+
+  const { data, error } = await supabase.from('geofence_zones').insert([payload]).select().single();
 
   if (error) {
     console.error('Error creating geofence zone:', error);
@@ -247,6 +253,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'>): Promis
     lng: data.lng,
     radius: data.radius,
     active: data.active,
+    academicYear: data.academic_year,
   };
 }
 
@@ -600,6 +607,7 @@ export async function fetchHostFeedback(): Promise<HostFeedback[]> {
     recommendation: hf.recommendation,
     submittedAt: hf.submitted_at,
     status: hf.status,
+    academicYear: hf.academic_year,
   }));
 }
 
@@ -623,6 +631,7 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
     recommendation: feedback.recommendation,
     submitted_at: feedback.submittedAt,
     status: feedback.status,
+    academic_year: feedback.academicYear,
   };
 
   const { data, error } = await supabase.from('host_feedback').insert([supabaseHf]).select().single();
@@ -650,6 +659,7 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
     recommendation: data.recommendation,
     submittedAt: data.submitted_at,
     status: data.status,
+    academicYear: data.academic_year,
   };
 }
 

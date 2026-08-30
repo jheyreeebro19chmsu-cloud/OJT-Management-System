@@ -58,12 +58,15 @@ export function AcademicYearManagement() {
     toast.success('Academic environment settings saved successfully.');
   };
 
+  const { geofenceZones } = useApp();
+
   // Helper stats per academic environment
   const getEnvStats = (year: string) => {
     const envTrainees = employees.filter((e) => e.academicYear === year || (!e.academicYear && year === form.academicYears[0]));
     const envRecords = timeRecords.filter((r) => r.academicYear === year || (!r.academicYear && year === form.academicYears[0]));
     const envEvals = evaluations.filter((ev) => ev.academicYear === year || (!ev.academicYear && year === form.academicYears[0]));
-    return { trainees: envTrainees.length, records: envRecords.length, evals: envEvals.length };
+    const envGeofences = geofenceZones.filter((z) => !z.academicYear || z.academicYear === year);
+    return { trainees: envTrainees.length, records: envRecords.length, evals: envEvals.length, geofences: envGeofences.length };
   };
 
   const activeStats = getEnvStats(form.activeAcademicYear);

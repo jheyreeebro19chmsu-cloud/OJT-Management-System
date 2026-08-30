@@ -1168,10 +1168,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addTimeRecord = (record: Omit<TimeRecord, 'id'>): TimeRecord => {
-    const newRecord: TimeRecord = { ...record, id: `rec-${Date.now()}` };
+    const recordWithAY = { ...record, academicYear: record.academicYear || settings.activeAcademicYear };
+    const newRecord: TimeRecord = { ...recordWithAY, id: `rec-${Date.now()}` };
 
     if (useSupabase) {
-      supabaseService.createTimeRecord(record).then((created) => {
+      supabaseService.createTimeRecord(recordWithAY).then((created) => {
         if (created) {
           setTimeRecords((prev) => [created, ...prev]);
         }
@@ -1210,11 +1211,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addGeofenceZone = (zone: Omit<GeofenceZone, 'id'>) => {
-    const newZone = sanitizeGeofenceZone({ ...zone, id: `zone-${Date.now()}` });
+    const zoneWithAY = { ...zone, academicYear: (zone as any).academicYear || settings.activeAcademicYear };
+    const newZone = sanitizeGeofenceZone({ ...zoneWithAY, id: `zone-${Date.now()}` });
     if (!newZone) return;
 
     if (useSupabase) {
-      supabaseService.createGeofenceZone(zone).then((created) => {
+      supabaseService.createGeofenceZone(zoneWithAY).then((created) => {
         const sanitizedCreated = sanitizeGeofenceZone(created);
         if (sanitizedCreated) {
           setGeofenceZones((prev) => [...prev, sanitizedCreated]);
@@ -1306,10 +1308,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Announcements ────────────────────────────────────────────────────────────
   const addAnnouncement = (data: Omit<Announcement, 'id'>): Announcement => {
-    const newAnn: Announcement = { ...data, id: `ann-${Date.now()}` };
+    const dataWithAY = { ...data, academicYear: data.academicYear || settings.activeAcademicYear };
+    const newAnn: Announcement = { ...dataWithAY, id: `ann-${Date.now()}` };
 
     if (useSupabase) {
-      supabaseService.createAnnouncement(data).then((created) => {
+      supabaseService.createAnnouncement(dataWithAY).then((created) => {
         if (created) {
           setAnnouncements((prev) => [created, ...prev]);
         }
@@ -1492,6 +1495,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const newFeedback: HostFeedback = {
       ...data,
+      academicYear: (data as any).academicYear || settings.activeAcademicYear,
       id: `hf-${Date.now()}`,
       overallScore,
       submittedAt: new Date().toISOString(),
@@ -1541,20 +1545,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // Dynamic filtering based on active Academic Year
+  const activeAY = settings.activeAcademicYear;
+  const filteredEmployees = employees.filter(
+    (e) => e.position === 'OJT Instructor' || e.academicYear === activeAY || (!e.academicYear && activeAY === settings.academicYears[0])
+  );
+  const activeEmpIds = new Set(filteredEmployees.map((e) => e.id));
+  const filteredTimeRecords = timeRecords.filter((r) => activeEmpIds.has(r.employeeId));
+  const filteredGeofenceZones = geofenceZones.filter((z) => !z.academicYear || z.academicYear === activeAY);
+  const filteredEvaluations = evaluations.filter((ev) => ev.academicYear === activeAY || (!ev.academicYear && activeAY === settings.academicYears[0]));
+  const filteredAnnouncements = announcements.filter((a) => !a.academicYear || a.academicYear === activeAY);
+  const filteredHostFeedback = hostFeedback.filter((hf) => hf.academicYear === activeAY || (!hf.academicYear && activeAY === settings.academicYears[0]));
+
   return (
     <AppContext.Provider
       value={{
         currentUser,
-        employees,
-        timeRecords,
-        geofenceZones,
+        employees: filteredEmployees,
+        timeRecords: filteredTimeRecords,
+        geofenceZones: filteredGeofenceZones,
         settings,
-        evaluations,
-        announcements,
+        evaluations: filteredEvaluations,
+        announcements: filteredAnnouncements,
         announcementSubmissions,
         requiredDocuments,
         requiredDocumentSubmissions,
-        hostFeedback,
+        hostFeedback: filteredHostFeedback,
         hostSupervisors,
         login,
         logout,

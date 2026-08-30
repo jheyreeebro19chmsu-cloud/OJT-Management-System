@@ -58,6 +58,7 @@ export interface GeofenceZone {
   lng: number;
   radius: number;
   active: boolean;
+  academicYear?: string;
 }
 
 export interface AppSettings {
@@ -126,6 +127,7 @@ export interface HostFeedback {
   recommendation: 'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended';
   submittedAt: string;
   status: 'submitted' | 'reviewed' | 'archived';
+  academicYear?: string;
 }
 
 export interface Announcement {
