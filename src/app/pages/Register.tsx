@@ -731,35 +731,33 @@ export function Register() {
     // Role-specific and Step-specific Validation
     if (role === 'admin') {
       if (step === 0) {
-        if (hasEmail && emailExists) errors.push('Email already in use');
+        if (!hasName) errors.push('Please enter your full name');
+        if (!hasEmail) errors.push('Please enter your email');
+        if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
     }
 
     if (role === 'trainee') {
       if (step === 0) {
-        if (hasEmail && emailExists) errors.push('Email already in use');
-        // Location capture is no longer required for trainees
+        if (!hasName) errors.push('Please enter your First Name and Last Name');
+        if (!hasEmail) errors.push('Please enter your Email Address');
+        if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
       if (step === 1) {
-        if (!form.companyName?.trim()) errors.push('Company Name');
-        if (!form.startDate) errors.push('Start Date');
-        if (!form.endDate) errors.push('End Date');
-        if (!form.requiredHours) errors.push('OJT Hours');
+        // Company fields are optional for initial trainee enrollment
       }
       if (step === 2) {
-        // No required fields for step 2
+        // School fields are optional with defaults
       }
     }
 
     if (role === 'hte') {
       if (step === 0) {
         if (!form.companyName?.trim()) errors.push('Company Name');
-        if (!hasValidPassword) errors.push('Valid password (8+ chars, upper, lower, special, and matching)');
+        if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
       if (step === 1) {
-        if (hasEmail && emailExists) errors.push('Email already in use');
-        // Username is optional for HTE; auto-filled from email when possible
-        // if (!form.username?.trim()) errors.push('Username');
+        if (!hasEmail) errors.push('Please enter your contact email');
       }
     }
 

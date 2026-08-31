@@ -951,12 +951,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { password, ...employeeData } = data;
     
     // Check if email already exists locally (in memory state)
-    const emailExistsLocally =
-      employees.some((e) => e.email.toLowerCase() === employeeData.email.toLowerCase()) ||
-      hostSupervisors.some((h) => h.email.toLowerCase() === employeeData.email.toLowerCase());
-      
-    if (emailExistsLocally) {
-      return { success: false, message: 'Email address already registered.' };
+    const existingLocalEmp = employees.find((e) => e.email.toLowerCase() === employeeData.email.toLowerCase());
+    if (existingLocalEmp) {
+      const updatedData: Employee = {
+        ...existingLocalEmp,
+        ...employeeData,
+        name: employeeData.name || existingLocalEmp.name,
+        companyName: employeeData.companyName || existingLocalEmp.companyName || 'N/A',
+        supervisorName: employeeData.supervisorName || existingLocalEmp.supervisorName || 'N/A',
+        schoolName: employeeData.schoolName || existingLocalEmp.schoolName || 'Carlos Hilado Memorial State University',
+        campus: employeeData.campus || existingLocalEmp.campus || 'Talisay Campus',
+        course: employeeData.course || existingLocalEmp.course || 'N/A',
+        department: employeeData.department || existingLocalEmp.department || 'College of Computer Studies',
+        startDate: employeeData.startDate || existingLocalEmp.startDate || new Date().toISOString().split('T')[0],
+        endDate: employeeData.endDate || existingLocalEmp.endDate || new Date().toISOString().split('T')[0],
+        requiredHours: employeeData.requiredHours ?? existingLocalEmp.requiredHours ?? 486,
+        photo: employeeData.photo || existingLocalEmp.photo,
+        faceRegistered: employeeData.faceRegistered ?? existingLocalEmp.faceRegistered,
+        active: true,
+      };
+      if (password) {
+        setPasswordForEmail(employeeData.email, password);
+      }
+      setEmployees((prev) => [updatedData, ...prev.filter((e) => e.id !== existingLocalEmp.id)]);
+      return {
+        success: true,
+        message: 'Account profile updated with your registration details and face recognition.',
+        employee: updatedData,
+      };
     }
 
     // Set robust default values for non-trainee roles to avoid violating NOT NULL database constraints
