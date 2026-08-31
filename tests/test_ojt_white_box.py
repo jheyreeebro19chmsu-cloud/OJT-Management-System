@@ -73,7 +73,8 @@ def get_grade(score: float) -> str:
 
 def compute_weighted_score(performance: float, attendance: float, communication: float, punctuality: float) -> int:
     """Computes the 4-section weighted evaluation percentage (30% + 30% + 20% + 20%)."""
-    return round(performance * 0.30 + attendance * 0.30 + communication * 0.20 + punctuality * 0.20)
+    val = performance * 0.30 + attendance * 0.30 + communication * 0.20 + punctuality * 0.20
+    return math.floor(val + 0.5)
 
 
 def normalize_email(email: str) -> str:
