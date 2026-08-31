@@ -302,7 +302,7 @@ export function Register() {
     setForm((p) => {
       let formattedValue = value;
 
-      // Auto-capitalize first letter of each word for text/name/address fields ("capslock then back to normal")
+      // Auto-capitalize first letter of each word for text/name/manual address fields
       if (typeof formattedValue === 'string') {
         const titleCaseFields = [
           'firstName',
@@ -314,41 +314,19 @@ export function Register() {
           'street',
           'barangay',
           'barangayManual',
-          'city',
           'cityManual',
-          'province',
           'provinceManual',
-          'region',
           'regionManual',
-          'schoolName',
-          'department',
-          'course',
-          'campus',
           'position',
         ];
 
+        // Only limit short personal input fields, NEVER dropdown selections or long names
         const limit25Fields = [
           'firstName',
           'lastName',
           'middleInitial',
-          'name',
-          'companyName',
           'contactPerson',
           'supervisorName',
-          'street',
-          'barangay',
-          'barangayManual',
-          'city',
-          'cityManual',
-          'province',
-          'provinceManual',
-          'region',
-          'regionManual',
-          'schoolName',
-          'department',
-          'course',
-          'campus',
-          'position',
           'contactPhone',
           'employeeId',
         ];
