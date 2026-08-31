@@ -34,7 +34,7 @@ export function Login() {
     const user = await login(email, password);
     if (user) {
       if (user.role === 'admin') navigate('/admin');
-      else if (user.role === 'hte') {
+      else if (user.role === 'hte' || user.role === 'host') {
         const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));
         const enrichedUser = {
           ...user,
@@ -44,7 +44,7 @@ export function Login() {
         };
         localStorage.setItem('ojt_hte_user', JSON.stringify(enrichedUser));
         navigate('/hte');
-      } else if (user.role === 'host') navigate('/host/feedback');
+      }
       else navigate('/app');
     } else {
       setError('Invalid email or password. Please try again.');

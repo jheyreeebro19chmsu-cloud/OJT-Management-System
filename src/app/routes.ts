@@ -3,6 +3,7 @@ import { createBrowserRouter, isRouteErrorResponse, useRouteError } from 'react-
 
 import { AdminLayout } from './components/AdminLayout';
 import { EmployeeLayout } from './components/EmployeeLayout';
+import { HTELayout } from './components/HTELayout';
 const AdminDashboard = React.lazy(() => import('./pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const AdminEmployees = React.lazy(() => import('./pages/admin/AdminEmployees').then(m => ({ default: m.AdminEmployees })));
 const AdminGeofence = React.lazy(() => import('./pages/admin/AdminGeofence').then(m => ({ default: m.AdminGeofence })));
@@ -18,6 +19,9 @@ const AdminHostFeedback = React.lazy(() => import('./pages/admin/AdminHostFeedba
 const Announcements = React.lazy(() => import('./pages/Announcements').then(m => ({ default: m.Announcements })));
 const Dashboard = React.lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const HTEDashboard = React.lazy(() => import('./pages/HTEDashboard').then(m => ({ default: m.HTEDashboard })));
+const HTETrainees = React.lazy(() => import('./pages/HTETrainees').then(m => ({ default: m.HTETrainees })));
+const HTEEvaluations = React.lazy(() => import('./pages/HTEEvaluations').then(m => ({ default: m.HTEEvaluations })));
+const HTEAnnouncements = React.lazy(() => import('./pages/HTEAnnouncements').then(m => ({ default: m.HTEAnnouncements })));
 const HTERecords = React.lazy(() => import('./pages/HTERecords').then(m => ({ default: m.HTERecords })));
 const HTESettings = React.lazy(() => import('./pages/HTESettings').then(m => ({ default: m.HTESettings })));
 const InstructorQR = React.lazy(() => import('./pages/InstructorQR'));
@@ -102,7 +106,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/host/feedback',
-    element: withSuspense(HostFeedback),
+    element: withSuspense(() => React.createElement(HTELayout, null, React.createElement(HTEEvaluations))),
     errorElement: routeErrorElement,
   },
   {
@@ -139,9 +143,14 @@ export const router = createBrowserRouter([
   },
   {
     path: '/hte',
+    Component: HTELayout,
     errorElement: routeErrorElement,
     children: [
       { index: true, element: withSuspense(HTEDashboard) },
+      { path: 'trainees', element: withSuspense(HTETrainees) },
+      { path: 'records', element: withSuspense(HTERecords) },
+      { path: 'evaluations', element: withSuspense(HTEEvaluations) },
+      { path: 'announcements', element: withSuspense(HTEAnnouncements) },
       { path: 'applications', element: withSuspense(HTERecords) },
       { path: 'approvals', element: withSuspense(HTERecords) },
       { path: 'registrations', element: withSuspense(HTERecords) },

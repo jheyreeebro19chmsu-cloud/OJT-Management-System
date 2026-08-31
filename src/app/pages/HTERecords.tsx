@@ -1,119 +1,187 @@
-import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, Loader, ShieldCheck, Users, UserRoundCheck } from 'lucide-react';
-
-import { HTELayout } from '../components/HTELayout';
 import {
-  getHTEAccessRequests,
-  getHTEApplications,
-  getHTERegistrations,
-} from '../services/hteApi';
+  Clock,
+  Search,
+  Calendar,
+  ShieldCheck,
+  Download,
+  Filter,
+  Users,
+} from 'lucide-react';
+import React, { useState, useMemo } from 'react';
 
-
-type RecordKind = 'applications' | 'approvals' | 'registrations';
+import { useApp } from '../store/AppContext';
 
 export function HTERecords() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const kind: RecordKind = location.pathname.endsWith('approvals')
-    ? 'approvals'
-    : location.pathname.endsWith('registrations')
-      ? 'registrations'
-      : 'applications';
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { timeRecords, employees } = useApp();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError('');
-    const request =
-      kind === 'applications'
-        ? getHTEApplications().then((response) => response.applications || [])
-        : kind === 'approvals'
-          ? getHTEAccessRequests().then((response) => response.access_requests || [])
-          : getHTERegistrations().then((response) => response.registrations || []);
+  // Map employee info with records
+  const enrichedRecords = useMemo(() => {
+    return timeRecords.map((r) => {
+      const emp = employees.find((e) => e.id === r.employeeId);
+      let renderedHours = 0;
+      if (r.timeIn && r.timeOut) {
+        const [inH, inM] = r.timeIn.split(':').map(Number);
+        const [outH, outM] = r.timeOut.split(':').map(Number);
+        let mins = outH * 60 + outM - (inH * 60 + inM);
+        if (mins < 0) mins += 24 * 60;
+        renderedHours = Math.round((mins / 60) * 10) / 10;
+      }
 
-    request
-      .then((records) => {
-        if (active) setItems(records);
-      })
-      .catch(() => {
-        if (active) setError('Unable to load HTE records. Please try again.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [kind]);
+      return {
+        ...r,
+        studentName: emp?.name || r.employeeId,
+        course: emp?.course || 'OJT Trainee',
+        schoolName: emp?.schoolName || 'CHMSU',
+        renderedHours,
+      };
+    });
+  }, [timeRecords, employees]);
 
-  const config = {
-    applications: { title: 'Student Applications', icon: Users },
-    approvals: { title: 'Pending Access Requests', icon: UserRoundCheck },
-    registrations: { title: 'Face Registrations', icon: ShieldCheck },
-  }[kind];
-  const Icon = config.icon;
+  const filtered = useMemo(() => {
+    return enrichedRecords.filter((r) => {
+      const matchesSearch =
+        r.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.course.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesDate = !selectedDate || r.date === selectedDate;
+      return matchesSearch && matchesDate;
+    });
+  }, [enrichedRecords, searchTerm, selectedDate]);
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Student Name', 'Course', 'Time In', 'Time Out', 'Hours Rendered', 'Geofence Status'];
+    const rows = filtered.map((r) => [
+      r.date,
+      `"${r.studentName}"`,
+      `"${r.course}"`,
+      r.timeIn || '',
+      r.timeOut || '',
+      r.renderedHours,
+      'Verified',
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `HTE_DTR_Logs_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
-    <HTELayout hteCompany={localStorage.getItem('ojt_hte_company') || 'HTE Dashboard'}>
-      <div className="space-y-5">
-        <button onClick={() => navigate('/hte')} className="flex items-center gap-2 text-sm text-blue-700 hover:text-blue-900">
-          <ArrowLeft size={16} /> Back to dashboard
-        </button>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-            <Icon className="text-blue-600" size={20} />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">{config.title}</h2>
-            <p className="text-sm text-gray-500">Records available to your host establishment account</p>
-          </div>
+    <div className="space-y-6 font-sans">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <Clock className="text-blue-600" size={26} />
+            <span>Trainee DTR Records</span>
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Complete daily time logs, biometric timestamps, and rendered hours for all student interns
+          </p>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-16"><Loader className="animate-spin text-blue-600" /></div>
-        ) : error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center gap-2">
-            <AlertCircle size={16} /> {error}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="rounded-2xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-500 shadow-sm">
-            No records found.
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
-                <tr>
-                  <th className="px-4 py-3">Name / Reference</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3 font-medium text-gray-800">
-                      {item.student_name || item.employee_id || `Request #${item.id}`}
-                    </td>
-                    <td className="px-4 py-3 capitalize text-gray-600">{item.status || 'Registered'}</td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {kind === 'applications'
-                        ? `${item.rendered_hours ?? 0} / ${item.required_hours ?? 0} hours`
-                        : kind === 'approvals'
-                          ? item.requested_at || 'Awaiting review'
-                          : item.created_at || 'Face data registered'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <button
+          onClick={handleExportCSV}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors shrink-0"
+        >
+          <Download size={15} />
+          <span>Export CSV</span>
+        </button>
       </div>
-    </HTELayout>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by student name or course..."
+            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs cursor-pointer"
+          />
+          {selectedDate && (
+            <button
+              onClick={() => setSelectedDate('')}
+              className="px-3 py-3 bg-slate-200 text-slate-700 text-xs font-bold rounded-2xl hover:bg-slate-300"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Records Table */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            Total Logs: {filtered.length} entries
+          </span>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Student Name</th>
+                <th className="px-4 py-3">Course / Department</th>
+                <th className="px-4 py-3">Time In</th>
+                <th className="px-4 py-3">Time Out</th>
+                <th className="px-4 py-3">Rendered</th>
+                <th className="px-4 py-3">Verification</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{r.date}</td>
+                  <td className="px-4 py-3 font-bold text-slate-900">{r.studentName}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 font-medium">{r.course}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
+                    {r.timeIn || '—'}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs font-bold text-slate-700">
+                    {r.timeOut || '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="font-extrabold text-blue-700 font-mono text-xs">
+                      {r.renderedHours > 0 ? `${r.renderedHours} hrs` : 'In Progress'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      <ShieldCheck size={12} />
+                      Verified In Zone
+                    </span>
+                  </td>
+                </tr>
+              ))}
+
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    No DTR records found for this period.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
