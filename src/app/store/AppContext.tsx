@@ -990,7 +990,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
             .maybeSingle();
 
           if (existingEmp) {
-            return { success: false, message: 'Email address already registered in Supabase.' };
+            // Update the existing record with new details instead of rejecting
+            const updatedData = { ...cleanData, id: existingEmp.id };
+            if (password) setPasswordForEmail(cleanData.email, password);
+            setEmployees((prev) => [updatedData, ...prev.filter((e) => e.id !== existingEmp.id)]);
+            return {
+              success: true,
+              message: 'Account profile updated with your registration details and face recognition.',
+              employee: updatedData,
+            };
           }
         } catch (checkErr) {
           // RLS or network error — skip uniqueness pre-check; signUp will catch duplicates
@@ -1011,10 +1019,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
 
           if (authError) {
-            // Check if this is a duplicate-email error from Supabase auth
+            // If user already exists in auth, allow them to complete registration by updating local profile
             if (authError.message?.toLowerCase().includes('already registered') ||
                 authError.message?.toLowerCase().includes('user already exists')) {
-              return { success: false, message: 'Email address already registered. Please log in instead.' };
+              setPasswordForEmail(cleanData.email, password);
+              const updatedData = { ...newEmp };
+              setEmployees((prev) => [updatedData, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase())]);
+              return {
+                success: true,
+                message: 'Account registered and updated successfully. You can now log in with your credentials.',
+                employee: updatedData,
+              };
             }
             console.warn('Supabase signUp failed, falling back to local create:', authError);
             // Local fallback: persist password and create the employee locally so the user can sign up immediately

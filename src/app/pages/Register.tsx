@@ -616,41 +616,51 @@ export function Register() {
 
     if (!result.success) {
       const msg = result.message || '';
-      // If email already exists locally, update the existing record instead of blocking the user.
-      if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already in use')) {
+      // If email already exists, update/save the record instead of blocking the user
+      if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already in use') || msg.toLowerCase().includes('user already exists')) {
         const emailToFind = (form.email || form.username || '').toLowerCase();
         const existing = employees.find((e) => e.email.toLowerCase() === emailToFind);
+        const empToUpdateId = existing ? existing.id : empId;
+        const updatedPayload = {
+          id: empToUpdateId,
+          name: composedName,
+          firstName: form.firstName,
+          lastName: form.lastName,
+          middleInitial: form.middleInitial,
+          email: form.email,
+          department: form.department,
+          position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
+          companyName: form.companyName,
+          companyAddress: form.companyAddress,
+          contactPerson: form.contactPerson,
+          contactPhone: form.contactPhone,
+          schoolName: form.schoolName,
+          campus: form.campus,
+          course: form.course,
+          startDate: form.startDate,
+          endDate: form.endDate,
+          requiredHours: Number(form.requiredHours) || 300,
+          registrationLocation: registrationLocation || undefined,
+          registrationAddress: computedAddress,
+          photo: photo || (existing ? existing.photo : undefined),
+          faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
+          active: true,
+        };
+
         if (existing) {
-          // Update the existing employee with latest submitted data
-          updateEmployee(existing.id, {
-            name: form.name || existing.name,
-            firstName: form.firstName || existing.firstName,
-            lastName: form.lastName || existing.lastName,
-            middleInitial: form.middleInitial || existing.middleInitial,
-            email: form.email || existing.email,
-            department: form.department || existing.department,
-            position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-            companyName: form.companyName || existing.companyName,
-            companyAddress: form.companyAddress || existing.companyAddress,
-            contactPerson: form.contactPerson || existing.contactPerson,
-            contactPhone: form.contactPhone || existing.contactPhone,
-            schoolName: form.schoolName || existing.schoolName,
-            campus: form.campus || existing.campus,
-            course: form.course || existing.course,
-            startDate: form.startDate || existing.startDate,
-            endDate: form.endDate || existing.endDate,
-            requiredHours: Number(form.requiredHours) || existing.requiredHours,
-            registrationLocation: registrationLocation || existing.registrationLocation,
-            registrationAddress: computedAddress || existing.registrationAddress,
-            photo: photo || existing.photo,
-            faceRegistered: faceRegistered || existing.faceRegistered,
-            active: true,
-          });
-          toast.success('Updated existing account and completed registration. Please log in.');
-          setIsSubmitting(false);
-          navigate('/login');
-          return;
+          updateEmployee(existing.id, updatedPayload);
+        } else {
+          setEmployees((prev) => [updatedPayload as any, ...prev]);
         }
+
+        if (form.password) {
+          setPasswordForEmail(form.email, form.password);
+        }
+
+        toast.success('Registration completed! Profile updated with your biometric face and details. Please log in.');
+        setIsSubmitting(false);
+        navigate('/login');
+        return;
       }
 
       toast.error(msg || 'Registration failed. Please check your inputs.');
