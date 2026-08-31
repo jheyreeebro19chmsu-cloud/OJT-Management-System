@@ -137,53 +137,33 @@ export function AdminAnnouncements() {
       createdByRole: (currentUser?.role === 'host' ? 'host' : 'admin') as 'admin' | 'host',
     };
 
-    // Using dynamic API_BASE from configuration
+    if (editId) {
+      updateAnnouncement(editId, data);
+      toast.success('Announcement updated!');
+    } else {
+      addAnnouncement(data);
+      toast.success('Announcement posted successfully!');
+    }
 
-    let postedSuccessfully = false;
+    setShowForm(false);
 
-    if (API_BASE) {
-      // Upload to Django backend via multipart/form-data using authAPI
+    // Optional background sync with Django backend
+    if (API_BASE && !editId) {
       try {
         const formData = new FormData();
         formData.append('user_id', String(currentUser?.id || ''));
         formData.append('title', form.title);
         formData.append('content', form.content);
-
-        // If photo is a data URL, convert to Blob
         if (form.photo && form.photo.startsWith('data:')) {
           const res = await fetch(form.photo);
           const blob = await res.blob();
           formData.append('image', blob, `announcement_${Date.now()}.jpg`);
         }
-
-        const resp = await authAPI.postAnnouncement(Number(currentUser?.id || 0), formData);
-        const respData = resp.data;
-        if (respData && respData.success) {
-          const created = {
-            id: `ann-${respData.announcement_id}`,
-            ...data,
-            photo: respData.image_url || form.photo,
-          } as Announcement;
-          addAnnouncement(created as any);
-          toast.success('Announcement posted to server!');
-          postedSuccessfully = true;
-        }
-      } catch (err) {
-        console.warn('Django announcement endpoint error, storing via AppContext/Supabase:', err);
+        authAPI.postAnnouncement(Number(currentUser?.id || 0), formData).catch(() => {});
+      } catch {
+        // ignore background sync errors
       }
     }
-
-    if (!postedSuccessfully) {
-      if (editId) {
-        updateAnnouncement(editId, data);
-        toast.success('Announcement updated!');
-      } else {
-        addAnnouncement(data);
-        toast.success('Announcement posted successfully!');
-      }
-    }
-
-    setShowForm(false);
   };
 
   const handleDelete = (id: string) => {

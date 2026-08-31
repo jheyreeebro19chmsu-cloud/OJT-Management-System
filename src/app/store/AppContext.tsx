@@ -1311,14 +1311,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const dataWithAY = { ...data, academicYear: data.academicYear || settings.activeAcademicYear };
     const newAnn: Announcement = { ...dataWithAY, id: `ann-${Date.now()}` };
 
+    setAnnouncements((prev) => [newAnn, ...prev]);
+
     if (useSupabase) {
       supabaseService.createAnnouncement(dataWithAY).then((created) => {
         if (created) {
-          setAnnouncements((prev) => [created, ...prev]);
+          setAnnouncements((prev) => prev.map((a) => (a.id === newAnn.id ? created : a)));
         }
       });
-    } else {
-      setAnnouncements((prev) => [...prev, newAnn]);
     }
 
     return newAnn;
