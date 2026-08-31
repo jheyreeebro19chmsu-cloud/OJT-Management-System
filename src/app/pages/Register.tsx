@@ -108,7 +108,9 @@ export function Register() {
     requiredHours: 486,
   });
 
-  const selectedProgramOptions = getCoursesForDepartment(form.department, form.campus);
+  const selectedProgramOptions = useMemo(() => {
+    return getCoursesForDepartment(form.department, form.campus);
+  }, [form.department, form.campus]);
 
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
@@ -151,7 +153,12 @@ export function Register() {
 
   const phProvincesList = useMemo(() => {
     if (form.region) {
-      const regObj = PH_ADDRESS_DATA.find((r) => r.name === form.region);
+      const regObj = PH_ADDRESS_DATA.find(
+        (r) =>
+          r.name.toLowerCase() === form.region.toLowerCase() ||
+          r.name.toLowerCase().includes(form.region.toLowerCase()) ||
+          form.region.toLowerCase().includes(r.name.toLowerCase())
+      );
       if (regObj) return regObj.provinces;
     }
     return PH_ADDRESS_DATA.flatMap((r) => r.provinces);
@@ -160,12 +167,22 @@ export function Register() {
   const phCitiesList = useMemo(() => {
     if (form.province) {
       for (const r of PH_ADDRESS_DATA) {
-        const p = r.provinces.find((prov) => prov.name === form.province);
+        const p = r.provinces.find(
+          (prov) =>
+            prov.name.toLowerCase() === form.province.toLowerCase() ||
+            prov.name.toLowerCase().includes(form.province.toLowerCase()) ||
+            form.province.toLowerCase().includes(prov.name.toLowerCase())
+        );
         if (p) return p.cities;
       }
     }
     if (form.region) {
-      const regObj = PH_ADDRESS_DATA.find((r) => r.name === form.region);
+      const regObj = PH_ADDRESS_DATA.find(
+        (r) =>
+          r.name.toLowerCase() === form.region.toLowerCase() ||
+          r.name.toLowerCase().includes(form.region.toLowerCase()) ||
+          form.region.toLowerCase().includes(r.name.toLowerCase())
+      );
       if (regObj) return regObj.provinces.flatMap((p) => p.cities);
     }
     return PH_ADDRESS_DATA.flatMap((r) => r.provinces.flatMap((p) => p.cities));
@@ -263,8 +280,11 @@ export function Register() {
   };
 
   useEffect(() => {
+    // Automatically start live GPS tracking on mount
+    if ('geolocation' in navigator) {
+      startLiveTracking();
+    }
     return () => {
-      // cleanup watcher
       if (watchIdRef.current !== null && 'geolocation' in navigator) {
         navigator.geolocation.clearWatch(watchIdRef.current as number);
         watchIdRef.current = null;
@@ -1852,7 +1872,7 @@ export function Register() {
                             {showLocationMap && (
                               <motion.div
                                 initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 200, opacity: 1 }}
+                                animate={{ height: 210, opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
                                 className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
                               >
@@ -1866,33 +1886,24 @@ export function Register() {
                                   />
                                 </div>
 
-                                <div className="absolute top-3 right-3 z-[1100] pointer-events-auto flex items-center gap-2">
-                                  {!liveTracking ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => startLiveTracking()}
-                                      className="px-3 py-1.5 bg-white border border-gray-200 text-sky-700 text-xs font-bold rounded-lg hover:bg-sky-50 transition-colors"
-                                    >
-                                      Start Live
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => stopLiveTracking()}
-                                      className="px-3 py-1.5 bg-white border border-red-200 text-red-700 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors"
-                                    >
-                                      Stop Live
-                                    </button>
-                                  )}
-                                  <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-sky-100">
-                                    <span className="font-semibold text-sky-700">{liveTracking ? 'Live' : 'Idle'}</span>
+                                <div className="absolute top-3 right-3 z-[1100] pointer-events-none flex items-center gap-2">
+                                  <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-emerald-100 flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                    <span className="font-bold text-emerald-700">Live GPS</span>
                                     {registrationLocation && (
-                                      <span className="text-gray-500 ml-2">{registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}</span>
+                                      <span className="text-gray-600 font-mono text-[11px] ml-1">
+                                        {registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}
+                                      </span>
                                     )}
                                   </div>
                                 </div>
 
-                                <div className="absolute inset-0 z-[1000] pointer-events-none border-2 border-purple-500/20 rounded-2xl" />
+                                <div className="absolute bottom-3 left-3 z-[1100] pointer-events-none">
+                                  <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[11px] text-gray-600 shadow border border-gray-100 flex items-center gap-1.5">
+                                    <MapPin size={12} className="text-blue-600" />
+                                    <span>Viewing mode only (Real-time GPS locked)</span>
+                                  </div>
+                                </div>
                               </motion.div>
                             )}
                           </AnimatePresence>
@@ -2044,6 +2055,21 @@ export function Register() {
                     >
                       <option value="Carlos Hilado Memorial State University">
                         Carlos Hilado Memorial State University
+                      </option>
+                      <option value="Technological University of the Philippines - Visayas">
+                        Technological University of the Philippines - Visayas
+                      </option>
+                      <option value="University of St. La Salle">
+                        University of St. La Salle
+                      </option>
+                      <option value="STI West Negros University">
+                        STI West Negros University
+                      </option>
+                      <option value="University of Negros Occidental - Recoletos">
+                        University of Negros Occidental - Recoletos
+                      </option>
+                      <option value="Other School / University">
+                        Other School / University
                       </option>
                     </select>
                   </div>
