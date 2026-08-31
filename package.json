@@ -8,6 +8,8 @@
     "build": "vite build",
     "dev": "vite",
     "start": "node server.js",
+    "test": "node scripts/white-box-test.mjs",
+    "test:white-box": "node scripts/white-box-test.mjs",
     "download-models": "node scripts/download-face-models.cjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\""
