@@ -147,7 +147,11 @@ export const campusCourseOptions: Record<string, Record<string, readonly string[
 };
 
 export function getCoursesForDepartment(department: string, campus?: string): readonly string[] {
-  if (campus && !campusCourseOptions[campus]) return [];
-  if (campus) return campusCourseOptions[campus][department] || [];
-  return talisayCourses[department] || courseOptions;
+  if (campus && campusCourseOptions[campus] && department && campusCourseOptions[campus][department]?.length) {
+    return campusCourseOptions[campus][department];
+  }
+  if (department && talisayCourses[department]?.length) {
+    return talisayCourses[department];
+  }
+  return courseOptions;
 }

@@ -97,7 +97,7 @@ export function Register() {
     contactPerson: '',
     contactPhone: '',
     // School/Instructor Information
-    schoolName: '',
+    schoolName: 'Carlos Hilado Memorial State University',
     campus: '',
     course: '',
     supervisorName: '',
@@ -2038,11 +2038,10 @@ export function Register() {
                   <div>
                     <label className="text-xs font-semibold text-gray-600 block mb-1">School *</label>
                     <select
-                      value={form.schoolName}
+                      value={form.schoolName || 'Carlos Hilado Memorial State University'}
                       onChange={(e) => update('schoolName', e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                     >
-                      <option value="">Select School</option>
                       <option value="Carlos Hilado Memorial State University">
                         Carlos Hilado Memorial State University
                       </option>
@@ -2053,10 +2052,13 @@ export function Register() {
                     <select
                       value={form.department}
                       onChange={(e) => {
-                        update('department', e.target.value);
-                        update('course', '');
+                        const newDept = e.target.value;
+                        update('department', newDept);
+                        if (!form.schoolName) {
+                          update('schoolName', 'Carlos Hilado Memorial State University');
+                        }
                       }}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                     >
                       <option value="">Select Department</option>
                       {departmentOptions.map((department) => (
@@ -2070,8 +2072,14 @@ export function Register() {
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Campus *</label>
                     <select
                       value={form.campus}
-                      onChange={(e) => update('campus', e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      onChange={(e) => {
+                        const newCampus = e.target.value;
+                        update('campus', newCampus);
+                        if (!form.schoolName) {
+                          update('schoolName', 'Carlos Hilado Memorial State University');
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                     >
                       <option value="">Select Campus</option>
                       {campusOptions.map((campus) => (
@@ -2085,8 +2093,21 @@ export function Register() {
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Program *</label>
                     <select
                       value={form.course}
-                      onChange={(e) => update('course', e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      onChange={(e) => {
+                        const selectedCourse = e.target.value;
+                        update('course', selectedCourse);
+                        if (selectedCourse && !form.department) {
+                          // Auto-select department matching this course
+                          for (const dept of departmentOptions) {
+                            const courses = getCoursesForDepartment(dept);
+                            if (courses.includes(selectedCourse)) {
+                              update('department', dept);
+                              break;
+                            }
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                     >
                       <option value="">Select Program</option>
                       {selectedProgramOptions.map((program) => (
