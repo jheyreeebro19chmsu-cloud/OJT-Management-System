@@ -152,41 +152,29 @@ export function Register() {
     : [];
 
   const phProvincesList = useMemo(() => {
-    if (form.region) {
-      const regObj = PH_ADDRESS_DATA.find(
-        (r) =>
-          r.name.toLowerCase() === form.region.toLowerCase() ||
-          r.name.toLowerCase().includes(form.region.toLowerCase()) ||
-          form.region.toLowerCase().includes(r.name.toLowerCase())
-      );
-      if (regObj) return regObj.provinces;
-    }
-    return PH_ADDRESS_DATA.flatMap((r) => r.provinces);
+    if (!form.region) return [];
+    const regObj = PH_ADDRESS_DATA.find(
+      (r) =>
+        r.name.toLowerCase() === form.region.toLowerCase() ||
+        r.name.toLowerCase().includes(form.region.toLowerCase()) ||
+        form.region.toLowerCase().includes(r.name.toLowerCase())
+    );
+    return regObj ? regObj.provinces : [];
   }, [form.region]);
 
   const phCitiesList = useMemo(() => {
-    if (form.province) {
-      for (const r of PH_ADDRESS_DATA) {
-        const p = r.provinces.find(
-          (prov) =>
-            prov.name.toLowerCase() === form.province.toLowerCase() ||
-            prov.name.toLowerCase().includes(form.province.toLowerCase()) ||
-            form.province.toLowerCase().includes(prov.name.toLowerCase())
-        );
-        if (p) return p.cities;
-      }
-    }
-    if (form.region) {
-      const regObj = PH_ADDRESS_DATA.find(
-        (r) =>
-          r.name.toLowerCase() === form.region.toLowerCase() ||
-          r.name.toLowerCase().includes(form.region.toLowerCase()) ||
-          form.region.toLowerCase().includes(r.name.toLowerCase())
+    if (!form.province) return [];
+    for (const r of PH_ADDRESS_DATA) {
+      const p = r.provinces.find(
+        (prov) =>
+          prov.name.toLowerCase() === form.province.toLowerCase() ||
+          prov.name.toLowerCase().includes(form.province.toLowerCase()) ||
+          form.province.toLowerCase().includes(prov.name.toLowerCase())
       );
-      if (regObj) return regObj.provinces.flatMap((p) => p.cities);
+      if (p) return p.cities;
     }
-    return PH_ADDRESS_DATA.flatMap((r) => r.provinces.flatMap((p) => p.cities));
-  }, [form.region, form.province]);
+    return [];
+  }, [form.province]);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 
@@ -1700,19 +1688,18 @@ export function Register() {
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
                             <select
                               value={form.province}
+                              disabled={!form.region}
                               onChange={(e) => {
                                 const selectedProv = e.target.value;
                                 update('province', selectedProv);
                                 update('city', '');
                                 update('barangay', '');
-                                if (selectedProv && !form.region) {
-                                  const parentRegion = PH_ADDRESS_DATA.find((r) => r.provinces.some((p) => p.name === selectedProv));
-                                  if (parentRegion) update('region', parentRegion.name);
-                                }
                               }}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+                              className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${
+                                !form.region ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                              }`}
                             >
-                              <option value="">Select Province</option>
+                              <option value="">{form.region ? 'Select Province' : 'Select Region First'}</option>
                               {phProvincesList.map((p) => (
                                 <option key={p.name} value={p.name}>
                                   {p.name}
@@ -1726,26 +1713,27 @@ export function Register() {
                             </label>
                             <select
                               value={form.city}
+                              disabled={!form.province}
                               onChange={(e) => {
                                 const selectedCity = e.target.value;
                                 update('city', selectedCity);
                                 update('barangay', '');
-                                if (selectedCity) {
-                                  for (const r of PH_ADDRESS_DATA) {
-                                    const parentProv = r.provinces.find((p) => p.cities.includes(selectedCity));
-                                    if (parentProv) {
-                                      if (!form.province) update('province', parentProv.name);
-                                      if (!form.region) update('region', r.name);
-                                      const fullAddr = `${selectedCity}, ${parentProv.name}, ${r.name}, Philippines`;
-                                      setRegistrationAddress(fullAddr);
-                                      break;
-                                    }
-                                  }
+                                if (selectedCity && form.province && form.region) {
+                                  const fullAddr = `${selectedCity}, ${form.province}, ${form.region}, Philippines`;
+                                  setRegistrationAddress(fullAddr);
                                 }
                               }}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+                              className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${
+                                !form.province ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                              }`}
                             >
-                              <option value="">Select City</option>
+                              <option value="">
+                                {!form.region
+                                  ? 'Select Region First'
+                                  : !form.province
+                                  ? 'Select Province First'
+                                  : 'Select City/Municipality'}
+                              </option>
                               {phCitiesList.map((c) => (
                                 <option key={c} value={c}>
                                   {c}
