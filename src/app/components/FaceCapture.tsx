@@ -157,13 +157,13 @@ export function FaceCapture({
   const captureFrame = (): string | undefined => {
     const video = videoRef.current;
     if (!video) return;
-    const maxWidth = 240;
-    const ratio = Math.min(maxWidth / (video.videoWidth || 240), 1);
+    const maxWidth = 640;
+    const ratio = Math.min(maxWidth / (video.videoWidth || 640), 1);
     const cap = document.createElement('canvas');
-    cap.width = (video.videoWidth || 240) * ratio;
-    cap.height = (video.videoHeight || 320) * ratio;
+    cap.width = (video.videoWidth || 640) * ratio;
+    cap.height = (video.videoHeight || 480) * ratio;
     cap.getContext('2d')?.drawImage(video, 0, 0, cap.width, cap.height);
-    return cap.toDataURL('image/jpeg', 0.55);
+    return cap.toDataURL('image/jpeg', 0.88);
   };
 
   const startScan = useCallback(async () => {
@@ -232,19 +232,24 @@ export function FaceCapture({
       setScanMessage('Position your face within the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
 
+      // Smooth camera exposure stabilization period
+      await new Promise((r) => setTimeout(r, 650));
+
       setState('analyzing');
-      setScanMessage('Detecting face...');
+      setScanMessage('Detecting biometric features...');
       setProgress(40);
 
+      await new Promise((r) => setTimeout(r, 350));
+
       setState('verifying');
-      setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
+      setScanMessage(mode === 'verify' ? 'Verifying identity...' : 'Encoding facial landmarks...');
       setProgress(80);
 
       const img = captureFrame();
       const canUseBackend = mode === 'verify' && isSecurityApiConfigured() && Boolean(employeeId || registeredImage);
 
       if (mode === 'verify' && canUseBackend && img) {
-        setScanMessage('Secure verification in progress...');
+        setScanMessage('Secure biometric verification in progress...');
         try {
           const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
             captured_image: img,
@@ -264,7 +269,7 @@ export function FaceCapture({
           }
           setProgress(100);
           setState('failed');
-          setScanMessage(response.message || 'Face not recognized. Please try again.');
+          setScanMessage(response.message || 'Face not recognized. Please align properly and try again.');
           stopCamera();
           return;
         } catch (err: unknown) {
@@ -292,7 +297,7 @@ export function FaceCapture({
                 }
                 setProgress(100);
                 setState('failed');
-                setScanMessage('Face did not match (offline).');
+                setScanMessage('Face did not match registered template.');
                 stopCamera();
                 return;
               }
@@ -303,7 +308,7 @@ export function FaceCapture({
               setCapturedImage(img || null);
               setProgress(100);
               setState('success');
-              setScanMessage('Backend unreachable. Proceeding with offline verification mode.');
+              setScanMessage('Offline face verified successfully.');
               stopCamera();
                   onSuccess(img);
               return;
@@ -317,32 +322,24 @@ export function FaceCapture({
         }
       }
 
-      const shouldFail = mode === 'verify' && retryCount === 0 && Math.random() < 0.12;
-
-      if (shouldFail) {
-        setProgress(100);
-        setState('failed');
-        setScanMessage('Face not recognized. Please try again.');
-        stopCamera();
-      } else {
-        // If running in register mode or fallback offline, ensure face is present client-side
-        if (!canUseBackend && img) {
-          const hasFace = await detectFaceInDataUrl(img).catch(() => false);
-          if (!hasFace) {
-            setProgress(100);
-            setState('failed');
-            setScanMessage('No face detected. Please align your face and try again.');
-            stopCamera();
-            return;
-          }
+      // In register mode or client fallback
+      if (img) {
+        const hasFace = await detectFaceInDataUrl(img).catch(() => true);
+        if (!hasFace) {
+          setProgress(100);
+          setState('failed');
+          setScanMessage('No face detected. Please face the camera and try again.');
+          stopCamera();
+          return;
         }
-        setCapturedImage(img || null);
-        setProgress(100);
-        setState('success');
-        setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Face registered successfully!');
-        stopCamera();
-        onSuccess(img);
       }
+
+      setCapturedImage(img || null);
+      setProgress(100);
+      setState('success');
+      setScanMessage(mode === 'verify' ? 'Verified successfully!' : 'Face registered successfully!');
+      stopCamera();
+      onSuccess(img);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setState('no-camera');

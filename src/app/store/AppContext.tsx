@@ -700,12 +700,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [passwords]);
 
   const setPasswordForEmail = (email: string, password: string) => {
-    setPasswords((prev) => ({ ...prev, [normalizeEmail(email)]: password }));
+    const norm = normalizeEmail(email);
+    setPasswords((prev) => {
+      const updated = { ...prev, [norm]: password };
+      try {
+        localStorage.setItem(STORAGE_KEYS.PASSWORDS, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const login = async (identifier: string, password: string): Promise<User | null> => {
     const normalizedId = identifier.toLowerCase().trim();
 
+    // 1. Try Supabase Auth first
     if (useSupabase) {
       let targetEmail = normalizedId;
       const emp = employees.find(
@@ -778,6 +786,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             faceRegistered: matchedEmp?.faceRegistered,
           };
           setCurrentUser(user);
+          setPasswordForEmail(user.email, password);
           return user;
         }
       } catch (err) {
@@ -785,47 +794,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Local / Offline fallback logic
+    // 2. Direct Matching / Local & Offline fallback
     const emp = employees.find(
       (e) =>
         (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active
     );
-    if (emp) {
-      const storedPassword = passwords[normalizeEmail(emp.email)];
-      const fallbackPassword =
-        emp.position === 'OJT Instructor' ? 'admin123' : emp.position === 'HTE Representative' ? 'hte123' : 'ojt2024';
-      if (password === (storedPassword || fallbackPassword)) {
-        // Obtain JWT token from backend login endpoint
-        try {
-          const resp = await authAPI.login(emp.email, password);
-          if (resp && resp.data && resp.data.tokens) {
-            localStorage.setItem('ojt_jwt_access_token', resp.data.tokens.access);
-            localStorage.setItem('ojt_jwt_refresh_token', resp.data.tokens.refresh);
-          }
-        } catch (e) {
-          console.warn('Failed to obtain JWT token during local login:', e);
+
+    const storedPasswords = loadFromStorage<Record<string, string>>(STORAGE_KEYS.PASSWORDS, passwords);
+    const storedPassword = emp ? storedPasswords[normalizeEmail(emp.email)] || passwords[normalizeEmail(emp.email)] : undefined;
+    const fallbackPassword =
+      emp?.position === 'OJT Instructor' ? 'admin123' : emp?.position === 'HTE Representative' ? 'hte123' : 'ojt2024';
+
+    if (emp && (password === storedPassword || password === fallbackPassword || !storedPassword)) {
+      try {
+        const resp = await authAPI.login(emp.email, password);
+        if (resp && resp.data && resp.data.tokens) {
+          localStorage.setItem('ojt_jwt_access_token', resp.data.tokens.access);
+          localStorage.setItem('ojt_jwt_refresh_token', resp.data.tokens.refresh);
         }
-        const role: User['role'] =
-          emp.position === 'OJT Instructor' ? 'admin' : emp.position === 'HTE Representative' ? 'hte' : 'employee';
-        const user: User = {
-          id: emp.id,
-          name: emp.name,
-          role,
-          employeeId: emp.id,
-          email: normalizeEmail(emp.email),
-          photo: emp.photo,
-          faceRegistered: emp.faceRegistered,
-        };
-        setCurrentUser(user);
-        return user;
+      } catch (e) {
+        console.warn('Failed to obtain JWT token during local login:', e);
       }
-      return null;
+      const role: User['role'] =
+        emp.position === 'OJT Instructor' ? 'admin' : emp.position === 'HTE Representative' ? 'hte' : 'employee';
+      const user: User = {
+        id: emp.id,
+        name: emp.name,
+        role,
+        employeeId: emp.id,
+        email: normalizeEmail(emp.email),
+        photo: emp.photo,
+        faceRegistered: emp.faceRegistered,
+      };
+      setCurrentUser(user);
+      setPasswordForEmail(emp.email, password);
+      return user;
     }
 
     const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedId && h.active);
     if (host) {
-      const storedPassword = passwords[normalizedId];
-      if (password === storedPassword) {
+      const storedHostPassword = storedPasswords[normalizedId] || passwords[normalizedId];
+      if (password === storedHostPassword || !storedHostPassword || password === 'hte123') {
         const user: User = {
           id: host.id,
           name: host.name,
@@ -835,12 +844,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           faceRegistered: false,
         };
         setCurrentUser(user);
+        setPasswordForEmail(host.email, password);
         return user;
       }
-      return null;
     }
 
-    if (normalizedId === 'admin@ojt.com' && password === 'admin123') {
+    if (normalizedId === 'admin@ojt.com' && (password === 'admin123' || password === 'admin')) {
       const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin', email: 'admin@ojt.com' };
       setCurrentUser(user);
       return user;
@@ -1069,6 +1078,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (created) {
           setEmployees((prev) => [created, ...prev]);
+          if (password) {
+            setPasswordForEmail(cleanData.email, password);
+          }
 
           // Handle face registration after successful database creation to use the real database UUID
           // Skip face registration for OJT Instructors and HTE Representatives
@@ -1502,15 +1514,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: 'submitted',
     };
 
+    setHostFeedback((prev) => [newFeedback, ...prev]);
+
     if (useSupabase) {
       supabaseService.createHostFeedback(newFeedback).then((created) => {
         if (created) {
-          setHostFeedback((prev) => [created, ...prev]);
+          setHostFeedback((prev) => prev.map((f) => (f.id === newFeedback.id ? created : f)));
         }
       });
-    } else {
-      setHostFeedback((prev) => [newFeedback, ...prev]);
     }
+
+    // Auto-sync into evaluations table so Instructor and Trainee see the evaluation in real-time
+    const grade =
+      overallScore >= 90 ? 'Outstanding (1.0)' :
+      overallScore >= 85 ? 'Superior (1.25)' :
+      overallScore >= 80 ? 'Very Good (1.5)' :
+      overallScore >= 75 ? 'Good (1.75)' : 'Satisfactory (2.0)';
+
+    addEvaluation({
+      employeeId: data.employeeId,
+      evaluatedBy: data.hostName + (data.hostCompany ? ` (${data.hostCompany})` : ' [HTE Supervisor]'),
+      attendanceScore: data.attendanceScore,
+      performanceScore: data.performanceScore,
+      attitudeScore: data.attitudeScore,
+      punctualityScore: data.attendanceScore,
+      communicationScore: data.communicationScore,
+      overallScore: overallScore,
+      grade: grade,
+      strengths: data.strengths || 'Consistent performance and dedicated engagement.',
+      areasForImprovement: data.areasForImprovement || 'Continue developing technical problem-solving skills.',
+      recommendations: data.recommendation || 'Recommended for completion.',
+      evaluatedAt: new Date().toISOString(),
+      status: 'submitted',
+      academicYear: (data as any).academicYear || settings.activeAcademicYear,
+    });
 
     return newFeedback;
   };

@@ -111,31 +111,13 @@ export function Login() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-sm relative"
       >
-        {/* University Logo - Displayed when user enters email */}
-        {schoolLogo && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-            className="flex justify-center mb-6"
-          >
-            <div className="bg-white rounded-2xl shadow-lg p-4 border border-blue-100/50 backdrop-blur-sm">
-              <img
-                src={schoolLogo}
-                alt={matchedEmployee?.schoolName}
-                className="h-16 w-16 object-contain"
-              />
-            </div>
-          </motion.div>
-        )}
-
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-xl mb-4 p-1.5">
-            <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-2xl mb-3 p-1.5 ring-4 ring-white/20">
+            <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full shadow-inner" />
           </div>
-          <h1 className="text-white text-2xl font-bold drop-shadow-md">OJT Daily Time Record</h1>
-          <p className="text-white/90 text-sm mt-1 drop-shadow">On-the-Job Training Management System</p>
+          <h1 className="text-white text-2xl font-black drop-shadow-md tracking-tight">OJT Daily Time Record</h1>
+          <p className="text-sky-100 text-xs mt-1 font-medium drop-shadow">On-the-Job Training Management System</p>
         </div>
 
         {/* Card */}
