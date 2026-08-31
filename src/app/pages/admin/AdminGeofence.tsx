@@ -53,7 +53,7 @@ export function AdminGeofence() {
       address: zone.address,
       lat: zone.lat,
       lng: zone.lng,
-      radius: GEOFENCE_RADIUS_METERS,
+      radius: zone.radius || GEOFENCE_RADIUS_METERS,
       active: zone.active,
     });
   };
@@ -346,12 +346,55 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
           />
         </div>
       </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-600 block mb-1">
-          Radius: <span className="text-blue-600">{GEOFENCE_RADIUS_METERS}m</span>
-        </label>
-        <p className="text-xs text-gray-500">The attendance boundary is permanently fixed at 100 meters.</p>
+      <div className="space-y-2 p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-gray-800">
+            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 50} meters</span>
+          </label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={10}
+              max={500}
+              value={form.radius || 50}
+              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 50))}
+              className="w-16 px-2 py-1 bg-white border border-gray-300 rounded-lg text-center font-bold text-xs text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <span className="text-xs text-gray-500 font-bold">m</span>
+          </div>
+        </div>
+
+        <input
+          type="range"
+          min={20}
+          max={300}
+          step={5}
+          value={form.radius || 50}
+          onChange={(e) => upd('radius', parseInt(e.target.value) || 50)}
+          className="w-full accent-blue-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
+        />
+
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          {[30, 50, 75, 100, 150, 200].map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => upd('radius', preset)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                (form.radius || 50) === preset
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              {preset}m {preset === 50 ? '(Default)' : ''}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-500 mt-1">
+          Default radius for trainees is 50 meters. You can adjust this for larger or smaller facilities.
+        </p>
       </div>
+
       <div className="flex items-center justify-between bg-gray-50 rounded-xl p-3">
         <span className="text-sm font-medium text-gray-700">Active Zone</span>
         <button onClick={() => upd('active', !form.active)} className="relative">
@@ -364,8 +407,8 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       </div>
 
       <div className="bg-yellow-50 rounded-xl p-3 text-xs text-yellow-700">
-        <p className="font-semibold mb-1">💡 Tip: Get Coordinates</p>
-        <p>Go to Google Maps, right-click any location, and copy the coordinates shown at the top.</p>
+        <p className="font-semibold mb-1">💡 Tip: Set Coordinates on Map</p>
+        <p>You can click anywhere on the visualization map above to instantly set the latitude and longitude.</p>
       </div>
     </div>
   );
