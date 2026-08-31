@@ -35,6 +35,8 @@ export function AdminGeofence() {
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_ZONE);
+  const [focusCoords, setFocusCoords] = useState<{ lat: number; lng: number } | undefined>();
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
 
   const upd = (f: string, v: string | number | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -128,6 +130,7 @@ export function AdminGeofence() {
           zones={geofenceZones}
           picking={Boolean(showAdd || editId)}
           pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : undefined}
+          focusCoords={focusCoords}
           onPick={(lat, lng) => {
             upd('lat', lat);
             upd('lng', lng);
@@ -150,10 +153,18 @@ export function AdminGeofence() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+              onClick={() => {
+                if (editId !== zone.id) {
+                  setSelectedZoneId(zone.id);
+                  setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
+                }
+              }}
+              className={`bg-white rounded-2xl shadow-sm border transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${
+                selectedZoneId === zone.id ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/20' : 'border-gray-100'
+              } overflow-hidden`}
             >
               {editId === zone.id ? (
-                <div className="p-5">
+                <div className="p-5" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-between mb-4">
                     <h4 className="font-bold text-gray-800">Edit Zone</h4>
                     <button onClick={() => setEditId(null)} className="text-gray-400 hover:text-gray-600">
@@ -187,7 +198,7 @@ export function AdminGeofence() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-gray-800 text-sm">{zone.name}</h4>
+                          <h4 className="font-bold text-gray-800 text-sm hover:text-blue-600 transition-colors">{zone.name}</h4>
                           {zone.active ? (
                             <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1">
                               <CheckCircle size={10} /> Active
@@ -195,32 +206,40 @@ export function AdminGeofence() {
                           ) : (
                             <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactive</span>
                           )}
+                          {selectedZoneId === zone.id && (
+                            <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-semibold">
+                              Viewing on Map
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">{zone.address}</p>
-                        <div className="flex gap-3 mt-2 text-xs text-gray-500">
-                          <span>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                          <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg font-medium">
                             📍 {zone.lat.toFixed(4)}, {zone.lng.toFixed(4)}
                           </span>
                           <span>⭕ {zone.radius}m radius</span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => handleToggle(zone)}
                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        title="Toggle Active"
                       >
                         {zone.active ? <ToggleRight size={16} className="text-blue-500" /> : <ToggleLeft size={16} />}
                       </button>
                       <button
                         onClick={() => handleEdit(zone)}
                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        title="Edit Zone"
                       >
                         <Edit2 size={14} />
                       </button>
                       <button
                         onClick={() => handleDelete(zone.id)}
                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        title="Delete Zone"
                       >
                         <Trash2 size={14} />
                       </button>

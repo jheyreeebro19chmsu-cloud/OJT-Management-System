@@ -184,7 +184,10 @@ export function AdminEmployees() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
               >
-                <div className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                <div
+                  onClick={() => openView(emp)}
+                  className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors"
+                >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
                       {emp.photo ? (
@@ -199,7 +202,7 @@ export function AdminEmployees() {
                       )}
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-800 text-sm">{emp.name}</p>
+                      <p className="font-semibold text-gray-800 text-sm hover:text-blue-700 transition-colors">{emp.name}</p>
                       <p className="text-xs text-gray-400">
                         {emp.employeeId} • {emp.email}
                       </p>
@@ -232,21 +235,32 @@ export function AdminEmployees() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => openView(emp)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openView(emp);
+                      }}
                       className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                      title="View Profile"
                     >
                       <Eye size={14} />
                     </button>
                     <button
-                      onClick={() => handleDelete(emp.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(emp.id);
+                      }}
                       className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      title="Delete Employee"
                     >
                       <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
 
-                <div className="lg:hidden p-4 border-b border-gray-50">
+                <div
+                  onClick={() => openView(emp)}
+                  className="lg:hidden p-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors"
+                >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
                       {emp.photo ? (
@@ -263,20 +277,28 @@ export function AdminEmployees() {
                     <div className="flex-1">
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-semibold text-gray-800 text-sm">{emp.name}</p>
+                          <p className="font-semibold text-gray-800 text-sm hover:text-blue-700">{emp.name}</p>
                           <p className="text-xs text-gray-400">{emp.employeeId}</p>
                           <p className="text-xs text-gray-500 mt-0.5">{emp.department}</p>
                         </div>
                         <div className="flex gap-1">
                           <button
-                            onClick={() => openView(emp)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openView(emp);
+                            }}
                             className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                            title="View Profile"
                           >
                             <Eye size={14} />
                           </button>
                           <button
-                            onClick={() => handleDelete(emp.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(emp.id);
+                            }}
                             className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
+                            title="Delete Employee"
                           >
                             <Trash2 size={14} />
                           </button>

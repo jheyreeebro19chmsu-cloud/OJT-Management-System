@@ -12,6 +12,8 @@ export interface GeofenceMapProps {
   picking?: boolean;
   pickedCoords?: { lat: number; lng: number };
   onPick?: (lat: number, lng: number) => void;
+  /** Center map on selected zone */
+  focusCoords?: { lat: number; lng: number };
   /** Employee / trainee live GPS — shows position vs geofences */
   liveUser?: { lat: number; lng: number; accuracy?: number } | null;
   /** e.g. h-64 (admin) or h-72 min-h-[220px] (time record) */
@@ -23,6 +25,7 @@ export function GeofenceMap({
   picking = false,
   pickedCoords,
   onPick,
+  focusCoords,
   liveUser = null,
   className = 'h-64',
 }: GeofenceMapProps) {
@@ -171,6 +174,7 @@ export function GeofenceMap({
         )}
 
         <MapClickHandler picking={picking} onPick={onPick} />
+        <MapFlyTo coords={focusCoords} />
         <FitMapView
           zones={safeZones}
           liveUser={safeLiveUser}
@@ -213,6 +217,16 @@ function MapClickHandler({ picking, onPick }: { picking: boolean; onPick?: (lat:
       onPick(event.latlng.lat, event.latlng.lng);
     },
   });
+  return null;
+}
+
+function MapFlyTo({ coords }: { coords?: { lat: number; lng: number } }) {
+  const map = useMap();
+  useEffect(() => {
+    if (coords && isValidCoord(coords.lat, coords.lng)) {
+      map.flyTo([coords.lat, coords.lng], 17, { duration: 1.2 });
+    }
+  }, [coords, map]);
   return null;
 }
 
