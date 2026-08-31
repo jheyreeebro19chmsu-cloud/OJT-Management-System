@@ -248,35 +248,41 @@ function FitMapView({
   const map = useMap();
 
   useEffect(() => {
-    if (liveUser && !fittedLiveUserRef.current) {
-      const points = [
-        [liveUser.lat, liveUser.lng] as [number, number],
-        ...zones.flatMap((zone) => {
-          const bounds = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getNorthEast();
-          const southWest = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getSouthWest();
-          return [
-            [bounds.lat, bounds.lng] as [number, number],
-            [southWest.lat, southWest.lng] as [number, number],
-          ];
-        }),
-      ].filter(([lat, lng]) => isValidCoord(lat, lng));
-      if (points.length > 0) {
-        try {
-          const targetZoom = liveUser.accuracy && liveUser.accuracy > 200 ? 14 : 17;
-          if (points.length === 1) {
-            map.setView(points[0], 16);
-          } else {
-            map.fitBounds(points, {
-              padding: [48, 48],
-              maxZoom: 16,
-            });
-          }
-          fittedLiveUserRef.current = true;
-        } catch {
-          // Keep map usable even if a malformed coordinate slips through.
-        }
+    if (liveUser && isValidCoord(liveUser.lat, liveUser.lng)) {
+      if (zones.length === 0) {
+        // In registration / single live GPS tracking mode, constantly center to live GPS
+        map.setView([liveUser.lat, liveUser.lng], 16, { animate: true });
+        return;
       }
-      return;
+      if (!fittedLiveUserRef.current) {
+        const points = [
+          [liveUser.lat, liveUser.lng] as [number, number],
+          ...zones.flatMap((zone) => {
+            const bounds = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getNorthEast();
+            const southWest = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getSouthWest();
+            return [
+              [bounds.lat, bounds.lng] as [number, number],
+              [southWest.lat, southWest.lng] as [number, number],
+            ];
+          }),
+        ].filter(([lat, lng]) => isValidCoord(lat, lng));
+        if (points.length > 0) {
+          try {
+            if (points.length === 1) {
+              map.setView(points[0], 16);
+            } else {
+              map.fitBounds(points, {
+                padding: [48, 48],
+                maxZoom: 16,
+              });
+            }
+            fittedLiveUserRef.current = true;
+          } catch {
+            // Keep map usable even if a malformed coordinate slips through.
+          }
+        }
+        return;
+      }
     }
 
     if (!fittedZonesRef.current && zones.length > 0 && !liveUser) {

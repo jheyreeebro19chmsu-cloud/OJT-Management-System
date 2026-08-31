@@ -257,40 +257,41 @@ export function validateRegistrationData(
 
   const fieldRules: Record<string, Parameters<typeof validateAndSanitizeField>[2]> = {
     email: { required: true, type: 'email', maxLength: 254 },
-    firstName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 25, maxSentences: 3 },
-    lastName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 25, maxSentences: 3 },
-    middleInitial: { type: 'text', maxLength: 5 },
-    name: { required: false, type: 'text', maxLength: 25, maxSentences: 3 },
+    // Personal Name fields
+    firstName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 100, maxSentences: 0 },
+    lastName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 100, maxSentences: 0 },
+    middleInitial: { type: 'text', maxLength: 20, maxSentences: 0 },
+    name: { required: false, type: 'text', maxLength: 150, maxSentences: 0 },
     password: { required: true, minLength: 8, maxLength: 128 },
     confirmPassword: { required: true, minLength: 8, maxLength: 128 },
     
-    // Address fields
-    street: { type: 'text', maxLength: 25, maxSentences: 5 },
-    barangay: { type: 'text', maxLength: 25, maxSentences: 3 },
-    barangayManual: { type: 'text', maxLength: 25, maxSentences: 3 },
-    city: { type: 'text', maxLength: 25, maxSentences: 3 },
-    province: { type: 'text', maxLength: 25, maxSentences: 3 },
-    region: { type: 'text', maxLength: 25, maxSentences: 3 },
+    // Address fields (accommodates full official Philippine names and street details)
+    street: { type: 'text', maxLength: 300, maxSentences: 0 },
+    barangay: { type: 'text', maxLength: 200, maxSentences: 0 },
+    barangayManual: { type: 'text', maxLength: 200, maxSentences: 0 },
+    city: { type: 'text', maxLength: 200, maxSentences: 0 },
+    province: { type: 'text', maxLength: 200, maxSentences: 0 },
+    region: { type: 'text', maxLength: 200, maxSentences: 0 },
     
     // Company/HTE fields
-    companyName: { required: isHTE, type: 'text', maxLength: 25, maxSentences: 5 },
-    companyAddress: { type: 'text', maxLength: 500, maxSentences: 10 },
-    contactPerson: { required: isHTE, type: 'text', maxLength: 25, maxSentences: 3 },
-    contactPhone: { required: isHTE, type: 'phone', maxLength: 25 },
+    companyName: { required: isHTE, type: 'text', maxLength: 250, maxSentences: 0 },
+    companyAddress: { type: 'text', maxLength: 500, maxSentences: 0 },
+    contactPerson: { required: isHTE, type: 'text', maxLength: 150, maxSentences: 0 },
+    contactPhone: { required: isHTE, type: 'phone', maxLength: 50 },
     
     // School/Academic fields
-    schoolName: { type: 'text', maxLength: 25, maxSentences: 5 },
-    campus: { type: 'text', maxLength: 25, maxSentences: 3 },
-    course: { type: 'text', maxLength: 25, maxSentences: 3 },
-    department: { type: 'text', maxLength: 25, maxSentences: 3 },
+    schoolName: { type: 'text', maxLength: 250, maxSentences: 0 },
+    campus: { type: 'text', maxLength: 200, maxSentences: 0 },
+    course: { type: 'text', maxLength: 250, maxSentences: 0 },
+    department: { type: 'text', maxLength: 250, maxSentences: 0 },
     
     // Employment fields
-    supervisorName: { type: 'text', maxLength: 25, maxSentences: 3 },
-    position: { type: 'text', maxLength: 25, maxSentences: 3 },
-    employeeId: { type: 'text', maxLength: 25 },
+    supervisorName: { type: 'text', maxLength: 150, maxSentences: 0 },
+    position: { type: 'text', maxLength: 150, maxSentences: 0 },
+    employeeId: { type: 'text', maxLength: 100, maxSentences: 0 },
     
     // Other optional fields
-    username: { type: 'text', maxLength: 150 },
+    username: { type: 'text', maxLength: 150, maxSentences: 0 },
   };
   
   return validateAndSanitizeForm(formData, fieldRules);
