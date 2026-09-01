@@ -12,6 +12,7 @@ import {
   Star,
   KeyRound,
   Download,
+  CheckCircle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
@@ -709,6 +710,36 @@ export function Profile() {
             Update Password
           </button>
         </div>
+      </motion.div>
+
+      {/* Permanent Registered Location & Geofence */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
+        <Section title="Permanent Geofence & Location" icon={<MapPin size={15} className="text-blue-700" />}>
+          <InfoRow
+            label="Registered Address"
+            value={employee.registrationAddress || 'Assigned Establishment Location'}
+          />
+          <InfoRow
+            label="GPS Coordinates"
+            value={
+              employee.registrationLocation?.lat && employee.registrationLocation?.lng
+                ? `${employee.registrationLocation.lat.toFixed(6)}, ${employee.registrationLocation.lng.toFixed(6)}`
+                : 'Locked upon registration'
+            }
+          />
+          <InfoRow
+            label="Geofence Radius"
+            value="50 meters (Permanent Radius)"
+          />
+          <InfoRow
+            label="Enrollment Status"
+            value={
+              <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs">
+                <CheckCircle size={12} /> Active ({employee.academicYear || settings.activeAcademicYear})
+              </span>
+            }
+          />
+        </Section>
       </motion.div>
 
       {/* Company Info */}

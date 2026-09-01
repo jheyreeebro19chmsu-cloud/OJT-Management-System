@@ -20,14 +20,9 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // If the device reports an accuracy, we tighten the acceptance criteria.
-  // We consider the user inside only if the *worst‑case* distance (distance + accuracy)
-  // is still within the allowed radius. This prevents false positives when GPS
-  // jitter is large relative to the geofence size.
-  const buffer = typeof accuracyMeters === 'number' ? Math.min(5, accuracyMeters) : 5; // 5 m default drift
-  const effectiveRadius = radiusMeters - buffer;
-  if (effectiveRadius <= 0) return false; // guard against overly small zones
-  return distance <= effectiveRadius;
+  // Pure distance check against zone radius with a minor allowance for mobile device accuracy jitter
+  const maxAllowedDistance = radiusMeters + (typeof accuracyMeters === 'number' && accuracyMeters <= 30 ? Math.min(5, accuracyMeters * 0.1) : 0);
+  return distance <= maxAllowedDistance;
 }
 
 export function formatDistance(meters: number): string {
