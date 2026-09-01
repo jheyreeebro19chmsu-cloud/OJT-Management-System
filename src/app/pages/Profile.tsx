@@ -113,6 +113,7 @@ export function Profile() {
     active: true,
     academicYear: (currentUser as any)?.academicYear || settings.activeAcademicYear,
     approvalStatus: 'approved',
+    createdAt: new Date().toISOString().split('T')[0],
   };
   const records = getEmployeeRecords(employee.id);
   const requiredDocuments = getEmployeeRequiredDocuments(employee.id);
