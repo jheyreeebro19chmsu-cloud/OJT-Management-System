@@ -331,6 +331,8 @@ interface AppContextType {
   deleteHostFeedback: (id: string) => void;
   getEmployeeHostFeedback: (employeeId: string) => HostFeedback[];
   getLatestHostFeedback: (employeeId: string) => HostFeedback | null;
+  approveEmployee: (id: string) => void;
+  rejectEmployee: (id: string) => void;
   setPasswordForEmail: (email: string, password: string) => void;
 }
 
@@ -797,7 +799,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 2. Direct Matching / Local & Offline fallback
     const emp = employees.find(
       (e) =>
-        (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active
+        normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)
     );
 
     const storedPasswords = loadFromStorage<Record<string, string>>(STORAGE_KEYS.PASSWORDS, passwords);
@@ -806,6 +808,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       emp?.position === 'OJT Instructor' ? 'admin123' : emp?.position === 'HTE Representative' ? 'hte123' : 'ojt2024';
 
     if (emp && (password === storedPassword || password === fallbackPassword || !storedPassword)) {
+      if (emp.active === false || emp.approvalStatus === 'pending') {
+        return {
+          id: emp.id,
+          name: emp.name,
+          role: 'employee',
+          pendingApproval: true,
+          academicYear: emp.academicYear || settings.activeAcademicYear,
+        } as any;
+      }
       try {
         const resp = await authAPI.login(emp.email, password);
         if (resp && resp.data && resp.data.tokens) {
@@ -1613,6 +1624,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return list.length > 0 ? list[0] : null;
   };
 
+  const approveEmployee = (id: string) => {
+    updateEmployee(id, { active: true, approvalStatus: 'approved' });
+  };
+
+  const rejectEmployee = (id: string) => {
+    deleteEmployee(id);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1657,6 +1676,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         registerEmployee,
         updateEmployee,
         deleteEmployee,
+        approveEmployee,
+        rejectEmployee,
         addTimeRecord,
         updateTimeRecord,
         getTodayRecord,

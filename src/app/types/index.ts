@@ -28,6 +28,7 @@ export interface Employee {
   contactPerson?: string;
   contactPhone?: string;
   academicYear?: string;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
 }
 
 export interface TimeRecord {

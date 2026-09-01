@@ -31,8 +31,13 @@ export function Login() {
 
     // Local login
     await new Promise((r) => setTimeout(r, 800));
-    const user = await login(email, password);
+    const user = (await login(email, password)) as any;
     if (user) {
+      if (user.pendingApproval) {
+        setError(`Your enrollment is pending approval by your OJT Instructor for A.Y. ${user.academicYear || 'Current'}. Please check back once approved.`);
+        setLoading(false);
+        return;
+      }
       if (user.role === 'admin') navigate('/admin');
       else if (user.role === 'hte' || user.role === 'host') {
         const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));

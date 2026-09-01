@@ -38,6 +38,9 @@ export function AdminEmployees() {
     registerEmployee,
     updateEmployee,
     deleteEmployee,
+    approveEmployee,
+    rejectEmployee,
+    settings,
     addRequiredDocument,
     getEmployeeRequiredDocuments,
     submitRequiredDocument,
@@ -64,9 +67,24 @@ export function AdminEmployees() {
   };
 
   const filteredGroups = {
+    pending: employees.filter(
+      (e) =>
+        (!e.active || e.approvalStatus === 'pending') &&
+        (e.name.toLowerCase().includes(search.toLowerCase()) ||
+          e.email.toLowerCase().includes(search.toLowerCase()) ||
+          (e.department || '').toLowerCase().includes(search.toLowerCase()))
+    ),
+    student: employees.filter(
+      (e) =>
+        (e.active && e.approvalStatus !== 'pending') &&
+        getEmployeeGroup(e) === 'student' &&
+        (e.name.toLowerCase().includes(search.toLowerCase()) ||
+          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
+          e.department.toLowerCase().includes(search.toLowerCase()))
+    ),
     instructor: employees.filter(
       (e) =>
-        e.active &&
+        (e.active && e.approvalStatus !== 'pending') &&
         getEmployeeGroup(e) === 'instructor' &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
@@ -74,16 +92,8 @@ export function AdminEmployees() {
     ),
     hte: employees.filter(
       (e) =>
-        e.active &&
+        (e.active && e.approvalStatus !== 'pending') &&
         getEmployeeGroup(e) === 'hte' &&
-        (e.name.toLowerCase().includes(search.toLowerCase()) ||
-          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
-          e.department.toLowerCase().includes(search.toLowerCase()))
-    ),
-    student: employees.filter(
-      (e) =>
-        e.active &&
-        getEmployeeGroup(e) === 'student' &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
           e.department.toLowerCase().includes(search.toLowerCase()))
@@ -115,12 +125,25 @@ export function AdminEmployees() {
       requiredHours: Number(form.requiredHours),
       faceRegistered: false,
       active: true,
+      approvalStatus: 'approved',
     });
     closeModal();
   };
 
   const handleDelete = (id: string) => {
     if (confirm('Deactivate this employee?')) deleteEmployee(id);
+  };
+
+  const handleApprove = (emp: Employee) => {
+    approveEmployee(emp.id);
+    toast.success(`${emp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
+  };
+
+  const handleReject = (emp: Employee) => {
+    if (confirm(`Decline registration request for ${emp.name}?`)) {
+      rejectEmployee(emp.id);
+      toast.info(`Registration for ${emp.name} declined.`);
+    }
   };
 
   const getEmpStats = (empId: string) => {
@@ -134,35 +157,45 @@ export function AdminEmployees() {
   const upd = (f: string, v: string | number) => setForm((p) => ({ ...p, [f]: v }));
 
   const groupConfig = {
+    pending: {
+      title: 'Pending Approvals',
+      emptyText: 'No pending student enrollments awaiting approval',
+      accent: 'amber',
+      badge: 'bg-amber-100 text-amber-800 font-bold',
+    },
+    student: {
+      title: 'Active Trainees',
+      emptyText: 'No active trainees found for this academic year',
+      accent: 'blue',
+      badge: 'bg-blue-100 text-blue-700',
+    },
     instructor: {
       title: 'Instructors',
       emptyText: 'No instructors found',
-      accent: 'amber',
-      badge: 'bg-amber-100 text-amber-700',
+      accent: 'purple',
+      badge: 'bg-purple-100 text-purple-700',
     },
     hte: {
-      title: 'HTE',
+      title: 'HTE Supervisors',
       emptyText: 'No HTE accounts found',
       accent: 'emerald',
       badge: 'bg-emerald-100 text-emerald-700',
-    },
-    student: {
-      title: 'Students',
-      emptyText: 'No students found',
-      accent: 'blue',
-      badge: 'bg-blue-100 text-blue-700',
     },
   } as const;
 
   const renderEmployeeSection = (group: keyof typeof filteredGroups, countLabel: string) => {
     const items = filteredGroups[group];
     const config = groupConfig[group];
+    const isPendingGroup = group === 'pending';
+
+    // Hide pending section entirely if empty, unless it's the only search result
+    if (isPendingGroup && items.length === 0 && search === '') return null;
 
     return (
-      <div key={group} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-100">
+      <div key={group} className={`bg-white rounded-2xl shadow-sm border ${isPendingGroup ? 'border-amber-200 ring-2 ring-amber-400/20' : 'border-gray-100'} overflow-hidden`}>
+        <div className={`flex items-center justify-between px-5 py-3 ${isPendingGroup ? 'bg-amber-50/80 border-b border-amber-100' : 'bg-gray-50 border-b border-gray-100'}`}>
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-gray-800">{config.title}</h3>
+            <h3 className={`text-sm font-semibold ${isPendingGroup ? 'text-amber-900' : 'text-gray-800'}`}>{config.title}</h3>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.badge}`}>{items.length}</span>
           </div>
           <span className="text-[11px] uppercase tracking-wide text-gray-400">{countLabel}</span>
@@ -186,7 +219,7 @@ export function AdminEmployees() {
               >
                 <div
                   onClick={() => openView(emp)}
-                  className="hidden lg:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors"
+                  className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[2fr_1.5fr_1.5fr_auto]' : 'grid-cols-[2fr_1fr_1fr_1fr_auto]'} gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors`}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
@@ -206,54 +239,97 @@ export function AdminEmployees() {
                       <p className="text-xs text-gray-400">
                         {emp.employeeId} • {emp.email}
                       </p>
+                      {emp.academicYear && (
+                        <span className="inline-block mt-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
+                          A.Y. {emp.academicYear}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-700">{emp.department}</p>
-                    <p className="text-xs text-gray-400">{emp.position}</p>
+                    <p className="text-sm text-gray-700">{emp.department || 'General'}</p>
+                    <p className="text-xs text-gray-400">{emp.course || emp.position}</p>
                   </div>
-                  <div>
-                    <div className="flex justify-between text-xs text-gray-500 mb-1">
-                      <span>{stats.totalHours.toFixed(0)}h</span>
-                      <span>{Math.round(progress)}%</span>
+                  {!isPendingGroup ? (
+                    <div>
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>{stats.totalHours.toFixed(0)}h</span>
+                        <span>{Math.round(progress)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">{emp.requiredHours}h required</p>
                     </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                  ) : (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700">{emp.companyName || 'No Company Yet'}</p>
+                      <p className="text-[11px] text-gray-400 truncate max-w-[200px]">{emp.registrationAddress || 'Live GPS Centered'}</p>
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">{emp.requiredHours}h required</p>
-                  </div>
+                  )}
+                  {!isPendingGroup && (
+                    <div className="flex items-center gap-2">
+                      {emp.faceRegistered ? (
+                        <span className="text-xs flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                          <Camera size={10} /> Enrolled
+                        </span>
+                      ) : (
+                        <span className="text-xs flex items-center gap-1 text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
+                          <XCircle size={10} /> Not enrolled
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
-                    {emp.faceRegistered ? (
-                      <span className="text-xs flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                        <Camera size={10} /> Enrolled
-                      </span>
+                    {isPendingGroup ? (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleApprove(emp);
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+                          title="Accept & Enroll Trainee"
+                        >
+                          <CheckCircle size={13} />
+                          Accept & Enroll
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleReject(emp);
+                          }}
+                          className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all"
+                          title="Decline Request"
+                        >
+                          <XCircle size={13} />
+                          Decline
+                        </button>
+                      </>
                     ) : (
-                      <span className="text-xs flex items-center gap-1 text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
-                        <XCircle size={10} /> Not enrolled
-                      </span>
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openView(emp);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          title="View Profile"
+                        >
+                          <Eye size={14} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(emp.id);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          title="Delete Employee"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
                     )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openView(emp);
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                      title="View Profile"
-                    >
-                      <Eye size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(emp.id);
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                      title="Delete Employee"
-                    >
-                      <Trash2 size={14} />
-                    </button>
                   </div>
                 </div>
 
@@ -278,40 +354,67 @@ export function AdminEmployees() {
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="font-semibold text-gray-800 text-sm hover:text-blue-700">{emp.name}</p>
-                          <p className="text-xs text-gray-400">{emp.employeeId}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{emp.department}</p>
+                          <p className="text-xs text-gray-400">{emp.employeeId || emp.email}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{emp.department} • {emp.course}</p>
                         </div>
                         <div className="flex gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openView(emp);
-                            }}
-                            className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
-                            title="View Profile"
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(emp.id);
-                            }}
-                            className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                            title="Delete Employee"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {isPendingGroup ? (
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleApprove(emp);
+                                }}
+                                className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReject(emp);
+                                }}
+                                className="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-xs"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openView(emp);
+                                }}
+                                className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                                title="View Profile"
+                              >
+                                <Eye size={14} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(emp.id);
+                                }}
+                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
+                                title="Delete Employee"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
-                      <div className="mt-2">
-                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                      {!isPendingGroup && (
+                        <div className="mt-2">
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {stats.totalHours.toFixed(0)} / {emp.requiredHours}h ({Math.round(progress)}%)
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {stats.totalHours.toFixed(0)} / {emp.requiredHours}h ({Math.round(progress)}%)
-                        </p>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -328,7 +431,9 @@ export function AdminEmployees() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-800">OJT/Records</h2>
-          <p className="text-sm text-gray-500">{totalFiltered} active accounts</p>
+          <p className="text-sm text-gray-500">
+            {filteredGroups.student.length} Active Trainees • Current Academic Year: <span className="font-semibold text-blue-700">A.Y. {settings.activeAcademicYear}</span>
+          </p>
         </div>
         <button
           onClick={openAdd}
@@ -339,11 +444,13 @@ export function AdminEmployees() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(groupConfig).map(([key, config]) => (
-          <div key={key} className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+          <div key={key} className={`rounded-xl border ${key === 'pending' && filteredGroups.pending.length > 0 ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200 bg-white'} px-3 py-2`}>
             <p className="text-[11px] uppercase tracking-wide text-gray-400">{config.title}</p>
-            <p className="text-lg font-bold text-gray-800">{filteredGroups[key as keyof typeof filteredGroups].length}</p>
+            <p className={`text-lg font-bold ${key === 'pending' && filteredGroups.pending.length > 0 ? 'text-amber-700' : 'text-gray-800'}`}>
+              {filteredGroups[key as keyof typeof filteredGroups].length}
+            </p>
           </div>
         ))}
       </div>
@@ -365,7 +472,7 @@ export function AdminEmployees() {
             <p className="text-gray-500 font-medium">No employees found</p>
           </div>
         ) : (
-          (['instructor', 'hte', 'student'] as const).map((group) => renderEmployeeSection(group, groupConfig[group].title))
+          (['pending', 'student', 'instructor', 'hte'] as const).map((group) => renderEmployeeSection(group, groupConfig[group].title))
         )}
       </div>
 

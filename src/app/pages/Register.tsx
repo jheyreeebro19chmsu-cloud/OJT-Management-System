@@ -58,7 +58,7 @@ type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
 export function Register() {
-  const { registerEmployee, updateEmployee, employees, hostSupervisors } = useApp();
+  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
@@ -684,8 +684,11 @@ export function Register() {
       // For admin, show the success screen with QR code
       setRegistrationComplete(true);
       toast.success('Registration successful! Please save your QR code.');
+    } else if (role === 'hte') {
+      toast.success('Registration successful! Please log in with your HTE credentials.');
+      navigate('/login');
     } else {
-      toast.success('Registration successful! Please log in.');
+      toast.success(`Registration submitted! Your enrollment is pending approval by the OJT Instructor for A.Y. ${settings.activeAcademicYear}.`);
       navigate('/login');
     }
   };
