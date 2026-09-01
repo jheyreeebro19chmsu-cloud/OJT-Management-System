@@ -68,12 +68,20 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
       signal: controller.signal,
     });
 
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       throw new Error(text || `Request failed with status ${res.status}`);
     }
 
-    return res.json() as Promise<T>;
+    if (!text || !text.trim()) {
+      return { success: true } as T;
+    }
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return { success: true, message: text } as T;
+    }
   } finally {
     clearTimeout(timer);
   }

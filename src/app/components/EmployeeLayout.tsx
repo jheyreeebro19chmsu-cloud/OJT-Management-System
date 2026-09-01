@@ -17,7 +17,7 @@ const navItems = [
 ];
 
 export function EmployeeLayout() {
-  const { currentUser, logout, getCurrentEmployee } = useApp();
+  const { currentUser, logout, getCurrentEmployee, settings } = useApp();
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
 
@@ -48,34 +48,38 @@ export function EmployeeLayout() {
     navigate('/');
   };
 
+  const avatarUrl = employee?.photo || currentUser?.photo || '';
+  const displayName = employee?.name || currentUser?.name || 'Trainee';
+  const displayId = employee?.employeeId || currentUser?.employeeId || 'OJT-STUDENT';
+  const displayEmail = employee?.email || currentUser?.email || '';
+
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden">
+    <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0 no-print">
-        <div className="p-5 border-b border-blue-800">
+      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0 no-print border-r border-blue-800 shadow-xl">
+        {/* Brand Header */}
+        <div className="p-5 border-b border-blue-800 bg-blue-950/40">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-sky-400 rounded-xl flex items-center justify-center shadow overflow-hidden">
-              {employee?.photo ? (
-                <img
-                  src={getPhotoUrl(employee.photo)}
-                  alt={employee.name}
-                  className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}
-                />
-              ) : (
-                <Clock size={18} className="text-white" />
-              )}
+            <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+              <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
-            <div>
-              <div className="text-white font-bold text-sm leading-tight truncate max-w-[120px]">
-                {employee?.name || 'OJT DTR'}
-              </div>
-              <div className="text-blue-300 text-[10px] uppercase tracking-wider font-bold">
-                {employee?.employeeId || 'Employee Panel'}
-              </div>
+            <div className="min-w-0">
+              <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT DTR</div>
+              <div className="text-blue-300 text-xs font-semibold">Trainee Panel</div>
             </div>
           </div>
+
+          {/* Academic Year Environment Indicator */}
+          <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+            </div>
+            <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
+          </div>
         </div>
+
+        {/* Navigation Items */}
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
@@ -105,10 +109,37 @@ export function EmployeeLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-3 border-t border-blue-800">
+
+        {/* User Profile Footer */}
+        <div className="p-3 border-t border-blue-800 bg-blue-950/30">
+          <div className="flex items-center gap-2 px-3 py-2 mb-2">
+            <div className="w-8 h-8 bg-sky-400 rounded-full flex items-center justify-center overflow-hidden border border-white/20 shadow-inner shrink-0">
+              {avatarUrl ? (
+                <img
+                  src={getPhotoUrl(avatarUrl)}
+                  alt={displayName}
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
+              ) : (
+                <Clock size={16} className="text-white" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-white text-xs font-bold truncate">{displayName}</div>
+              <div className="text-blue-300 text-[10px] truncate">{displayId}</div>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/app/profile')}
+            className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
+          >
+            <User size={14} />
+            Profile
+          </button>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm"
+            className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
           >
             <LogOut size={14} />
             Logout
@@ -118,37 +149,46 @@ export function EmployeeLayout() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10 no-print">
+        <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10 no-print border-b border-blue-700/50">
           <div className="max-w-md lg:max-w-none mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center shadow overflow-hidden">
-                {employee?.photo ? (
+              <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+              </div>
+              <div>
+                <div className="text-xs text-blue-200 leading-tight">CHMSU OJT DTR</div>
+                <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{displayName}</div>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-700/60 border border-blue-400/40 text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div
+                onClick={() => navigate('/app/profile')}
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm"
+                title="View Profile"
+              >
+                {avatarUrl ? (
                   <img
-                    src={getPhotoUrl(employee.photo)}
-                    alt={employee.name}
+                    src={getPhotoUrl(avatarUrl)}
+                    alt={displayName}
                     className="w-full h-full object-cover"
                     style={{ transform: 'scaleX(-1)' }}
                   />
                 ) : (
-                  <Clock size={16} className="text-white" />
+                  <User size={16} className="text-white p-1" />
                 )}
               </div>
-              <div>
-                <div className="text-xs text-blue-200 leading-tight">OJT System</div>
-                <div className="text-sm font-bold leading-tight">{employee?.name || 'Daily Time Record'}</div>
-              </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-700/60 border border-blue-400/40 text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                <span>AY {useApp().settings?.activeAcademicYear || '2026-2027'}</span>
-              </div>
+              <button
+                onClick={handleLogout}
+                className="lg:hidden flex items-center gap-1.5 text-blue-200 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-blue-700 font-medium"
+              >
+                <LogOut size={14} />
+                Logout
+              </button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="lg:hidden flex items-center gap-1.5 text-blue-200 hover:text-white transition-colors text-xs py-1.5 px-3 rounded-lg hover:bg-blue-700"
-            >
-              <LogOut size={14} />
-              Logout
-            </button>
           </div>
         </header>
 
@@ -160,31 +200,31 @@ export function EmployeeLayout() {
         </main>
 
         {/* Bottom Navigation (mobile only) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-20 no-print">
-          <div className="max-w-md mx-auto px-2 py-1 grid grid-cols-5">
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-200/80 shadow-2xl z-20 no-print">
+          <div className="max-w-md mx-auto px-2 py-1.5 grid grid-cols-5">
             {navItems.map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={end}
                 className={({ isActive }) =>
-                  `flex flex-col items-center gap-0.5 py-2 px-1 rounded-xl transition-all ${
+                  `flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-xl transition-all ${
                     isActive ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'
                   }`
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-blue-100' : ''}`}>
-                      <Icon size={20} />
+                    <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-blue-50 text-blue-700' : ''}`}>
+                      <Icon size={19} />
                       {isActive && (
                         <motion.div
                           layoutId="nav-indicator-mobile"
-                          className="absolute inset-0 bg-blue-100 rounded-xl -z-10"
+                          className="absolute inset-0 bg-blue-100/70 rounded-xl -z-10"
                         />
                       )}
                     </div>
-                    <span className={`text-[10px] font-medium ${isActive ? 'text-blue-700' : 'text-gray-400'}`}>
+                    <span className={`text-[10px] font-bold ${isActive ? 'text-blue-700' : 'text-gray-500'}`}>
                       {label}
                     </span>
                   </>
