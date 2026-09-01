@@ -19,6 +19,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
+import type { Employee } from '../types';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';

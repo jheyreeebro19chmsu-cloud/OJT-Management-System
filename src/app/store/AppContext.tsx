@@ -1352,6 +1352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         active: true,
         academicYear: (currentUser as any).academicYear || settings.activeAcademicYear,
         approvalStatus: 'approved',
+        createdAt: new Date().toISOString().split('T')[0],
       };
       return fallbackEmp;
     }
