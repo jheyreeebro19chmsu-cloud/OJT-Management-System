@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
@@ -51,6 +51,7 @@ export function AdminEmployees() {
   const [search, setSearch] = useState('');
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{ studentName: string; studentId: string; title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
   const [form, setForm] = useState(BLANK_FORM);
   const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
@@ -691,10 +692,44 @@ export function AdminEmployees() {
                                     </span>
                                   </div>
                                   {doc.dueDate && <p className="text-[11px] text-gray-500 mt-2">Due: {doc.dueDate}</p>}
-                                  {submission?.fileUrl && (
-                                    <a href={submission.fileUrl} download={submission.fileName || 'ojt-document'} className="mt-2 inline-flex text-[11px] font-semibold text-violet-700">
-                                      Download submitted file
-                                    </a>
+                                  {submission && (
+                                    <div className="mt-2 border-t border-violet-50 pt-2 space-y-1.5">
+                                      {submission.note && (
+                                        <p className="text-[11px] text-gray-500 italic">Note: {submission.note}</p>
+                                      )}
+                                      {submission.fileName && (
+                                        <p className="text-[11px] font-medium text-slate-700">📎 {submission.fileName}</p>
+                                      )}
+                                      <p className="text-[10px] text-gray-400">Submitted: {new Date(submission.submittedAt).toLocaleDateString()}</p>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {submission.fileUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPreviewInstructorDoc({
+                                              studentName: selectedEmp.name,
+                                              studentId: selectedEmp.employeeId,
+                                              title: doc.title,
+                                              fileName: submission.fileName,
+                                              fileUrl: submission.fileUrl,
+                                              note: submission.note,
+                                              date: new Date(submission.submittedAt).toLocaleDateString(),
+                                            })}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-600 text-white rounded-lg text-[11px] font-semibold hover:bg-violet-700 transition-all"
+                                          >
+                                            <Eye size={11} /> View
+                                          </button>
+                                        )}
+                                        {submission.fileUrl && (
+                                          <a
+                                            href={submission.fileUrl}
+                                            download={submission.fileName || 'ojt-document'}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-violet-200 text-violet-700 rounded-lg text-[11px] font-semibold hover:bg-violet-50 transition-all"
+                                          >
+                                            <Download size={11} /> Download
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -896,6 +931,105 @@ export function AdminEmployees() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Instructor Document Preview & Print Modal */}
+      {previewInstructorDoc && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Print header – visible only on print */}
+            <div className="hidden print:block p-6 border-b border-gray-200 text-center">
+              <p className="text-xs uppercase tracking-widest text-gray-500 mb-1">Carlos Hilado Memorial State University</p>
+              <h2 className="text-lg font-bold text-gray-900">{previewInstructorDoc.title}</h2>
+              <p className="text-sm text-gray-600 mt-1">OJT Management System – Official Document</p>
+            </div>
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 print:hidden">
+              <div>
+                <h3 className="font-bold text-gray-900">{previewInstructorDoc.title}</h3>
+                <p className="text-xs text-gray-500">{previewInstructorDoc.fileName || 'Attached Document'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm"
+                >
+                  <Printer size={13} /> Print
+                </button>
+                {previewInstructorDoc.fileUrl && (
+                  <a
+                    href={previewInstructorDoc.fileUrl}
+                    download={previewInstructorDoc.fileName || 'ojt-document'}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-all shadow-sm"
+                  >
+                    <Download size={13} /> Save
+                  </a>
+                )}
+                <button
+                  onClick={() => setPreviewInstructorDoc(null)}
+                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Student info strip */}
+            <div className="px-6 py-3 bg-violet-50 border-b border-violet-100 print:bg-white">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-700">
+                <span><strong>Student Name:</strong> {previewInstructorDoc.studentName}</span>
+                <span><strong>Student ID:</strong> {previewInstructorDoc.studentId}</span>
+                <span><strong>Document:</strong> {previewInstructorDoc.title}</span>
+                <span><strong>Date Submitted:</strong> {previewInstructorDoc.date}</span>
+                {previewInstructorDoc.note && (
+                  <span className="col-span-2"><strong>Note:</strong> {previewInstructorDoc.note}</span>
+                )}
+              </div>
+            </div>
+
+            {/* File preview */}
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+              {previewInstructorDoc.fileUrl ? (
+                previewInstructorDoc.fileUrl.startsWith('data:image/') || previewInstructorDoc.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                  <div className="flex justify-center">
+                    <img
+                      src={previewInstructorDoc.fileUrl}
+                      alt="Document preview"
+                      className="max-h-[500px] object-contain rounded-xl shadow border border-gray-200"
+                    />
+                  </div>
+                ) : (
+                  <iframe
+                    src={previewInstructorDoc.fileUrl}
+                    className="w-full h-[480px] rounded-xl border border-gray-200 bg-white"
+                    title="Document Preview"
+                  />
+                )
+              ) : (
+                <div className="flex flex-col items-center justify-center h-48 text-gray-400 gap-3">
+                  <FileText size={40} />
+                  <p className="text-sm">No file preview available</p>
+                </div>
+              )}
+            </div>
+
+            {/* Signature block – print only */}
+            <div className="hidden print:block px-6 py-4 border-t border-gray-200 mt-4">
+              <div className="flex justify-between mt-8">
+                <div className="text-center">
+                  <div className="border-t border-gray-400 w-40 mx-auto mb-1" />
+                  <p className="text-xs text-gray-600">OJT Coordinator Signature</p>
+                </div>
+                <div className="text-center">
+                  <div className="border-t border-gray-400 w-40 mx-auto mb-1" />
+                  <p className="text-xs text-gray-600">Date Received</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

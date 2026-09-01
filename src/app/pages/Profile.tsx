@@ -13,6 +13,8 @@ import {
   KeyRound,
   Download,
   CheckCircle,
+  Eye,
+  Printer,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
@@ -121,6 +123,7 @@ export function Profile() {
   const hostFeedback = getLatestHostFeedback(employee.id);
   const [editing, setEditing] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [previewDocModal, setPreviewDocModal] = useState<{ title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const [faceCaptureOpen, setFaceCaptureOpen] = useState(false);
@@ -328,16 +331,40 @@ export function Profile() {
                   </div>
                   {doc.dueDate && <p className="text-[11px] text-gray-600">Due: {doc.dueDate}</p>}
                   {submission ? (
-                    <div className="rounded-lg bg-white border border-violet-100 p-2 text-[11px] text-gray-700">
-                      <p className="font-semibold text-gray-800 mb-1">Submitted</p>
-                      {submission.note && <p>Note: {submission.note}</p>}
-                      {submission.fileName && <p>File: {submission.fileName}</p>}
-                      {submission.fileUrl && (
-                        <a href={submission.fileUrl} download={submission.fileName || 'ojt-document'} className="mt-2 inline-flex items-center gap-1 text-violet-700 font-semibold hover:text-violet-900">
-                          <Download size={12} /> Download file
-                        </a>
-                      )}
-                      <p>Submitted on: {new Date(submission.submittedAt).toLocaleDateString()}</p>
+                    <div className="rounded-lg bg-white border border-violet-100 p-2.5 text-[11px] text-gray-700 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-gray-800">Submitted Document</p>
+                        <p className="text-[10px] text-gray-400">{new Date(submission.submittedAt).toLocaleDateString()}</p>
+                      </div>
+                      {submission.note && <p className="text-gray-600">Note: {submission.note}</p>}
+                      {submission.fileName && <p className="font-medium text-slate-800">File: {submission.fileName}</p>}
+                      
+                      <div className="flex items-center gap-2 pt-1">
+                        {submission.fileUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDocModal({
+                              title: doc.title,
+                              fileName: submission.fileName,
+                              fileUrl: submission.fileUrl,
+                              note: submission.note,
+                              date: new Date(submission.submittedAt).toLocaleDateString(),
+                            })}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-sm"
+                          >
+                            <Eye size={12} /> View Document
+                          </button>
+                        )}
+                        {submission.fileUrl && (
+                          <a
+                            href={submission.fileUrl}
+                            download={submission.fileName || 'ojt-document'}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-violet-200 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-50 transition-all"
+                          >
+                            <Download size={12} /> Download
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -760,6 +787,65 @@ export function Profile() {
           />
         </Section>
       </motion.div>
+
+      {/* Individual Document Preview & Print Modal */}
+      {previewDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
+          <div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">{previewDocModal.title}</h3>
+                <p className="text-xs text-gray-500">{previewDocModal.fileName || 'Attached Document'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm"
+                >
+                  <Printer size={14} /> Print Document
+                </button>
+                <button
+                  onClick={() => setPreviewDocModal(null)}
+                  className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 p-2 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                <div className="flex justify-between text-xs text-slate-600">
+                  <span><strong>Student Name:</strong> {employee.name}</span>
+                  <span><strong>Student ID:</strong> {employee.employeeId}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-600">
+                  <span><strong>Department:</strong> {employee.department}</span>
+                  <span><strong>Date Submitted:</strong> {previewDocModal.date}</span>
+                </div>
+                {previewDocModal.note && (
+                  <p className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <strong>Submission Note:</strong> {previewDocModal.note}
+                  </p>
+                )}
+              </div>
+
+              {previewDocModal.fileUrl ? (
+                previewDocModal.fileUrl.startsWith('data:image/') || previewDocModal.fileUrl.match(/\.(jpeg|jpg|gif|png)$/i) ? (
+                  <div className="flex justify-center bg-black/5 p-2 rounded-xl border border-slate-200">
+                    <img src={previewDocModal.fileUrl} alt="Document preview" className="max-h-[500px] object-contain rounded-lg shadow-sm" />
+                  </div>
+                ) : (
+                  <iframe src={previewDocModal.fileUrl} className="w-full h-96 rounded-xl border border-slate-200 bg-white" title="Document PDF Preview" />
+                )
+              ) : (
+                <p className="text-center py-10 text-xs text-gray-500">No media preview available for this document.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

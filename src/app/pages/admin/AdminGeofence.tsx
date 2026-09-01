@@ -10,6 +10,8 @@ import {
   ToggleRight,
   Navigation,
   Info,
+  MoreVertical,
+  User,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
@@ -31,12 +33,22 @@ const BLANK_ZONE = {
 };
 
 export function AdminGeofence() {
-  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone } = useApp();
+  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_ZONE);
   const [focusCoords, setFocusCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  const getZoneOwner = (zone: any): string => {
+    if (zone.id?.startsWith('personal-')) {
+      const empId = zone.id.replace('personal-', '');
+      const emp = (employees as any[]).find((e: any) => e.id === empId);
+      return emp ? emp.name : 'Trainee (Unknown)';
+    }
+    return 'Carlos Hilado Memorial State University';
+  };
 
   const upd = (f: string, v: string | number | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -219,30 +231,57 @@ export function AdminGeofence() {
                           </span>
                           <span>⭕ {zone.radius}m radius</span>
                         </div>
+                        {/* Owner badge */}
+                        <div className="flex items-center gap-1 mt-2">
+                          <User size={10} className="text-purple-500" />
+                          <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-medium">
+                            Owner: {getZoneOwner(zone)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+
+                    {/* 3-Dots Action Menu */}
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => handleToggle(zone)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                        title="Toggle Active"
+                        onClick={() => setOpenMenuId(openMenuId === zone.id ? null : zone.id)}
+                        className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all"
+                        title="More options"
                       >
-                        {zone.active ? <ToggleRight size={16} className="text-blue-500" /> : <ToggleLeft size={16} />}
+                        <MoreVertical size={16} />
                       </button>
-                      <button
-                        onClick={() => handleEdit(zone)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                        title="Edit Zone"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(zone.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                        title="Delete Zone"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+
+                      {openMenuId === zone.id && (
+                        <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 w-52 min-w-max">
+                          {/* Owner info in dropdown */}
+                          <div className="px-4 py-2 border-b border-gray-50 mb-1">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Zone Owner</p>
+                            <p className="text-xs font-semibold text-gray-700 truncate">{getZoneOwner(zone)}</p>
+                          </div>
+
+                          <button
+                            onClick={() => { handleToggle(zone); setOpenMenuId(null); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                          >
+                            {zone.active ? <ToggleRight size={15} className="text-blue-500" /> : <ToggleLeft size={15} />}
+                            {zone.active ? 'Deactivate Zone' : 'Activate Zone'}
+                          </button>
+
+                          <button
+                            onClick={() => { handleEdit(zone); setOpenMenuId(null); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                          >
+                            <Edit2 size={15} /> Edit Zone
+                          </button>
+
+                          <button
+                            onClick={() => { handleDelete(zone.id); setOpenMenuId(null); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 size={15} /> Delete Zone
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
