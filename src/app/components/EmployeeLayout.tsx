@@ -1,6 +1,6 @@
 import { Home, Clock, FileText, User, LogOut, Bell } from 'lucide-react';
 import { motion } from 'motion/react';
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';

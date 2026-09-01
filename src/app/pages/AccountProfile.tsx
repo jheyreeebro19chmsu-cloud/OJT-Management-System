@@ -83,13 +83,14 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
 
   // Construct readable address
   const address = (() => {
-    if (employee?.street || employee?.barangay || employee?.city) {
+    const empAny = employee as any;
+    if (empAny?.street || empAny?.barangay || empAny?.city) {
       const parts = [
-        employee.street,
-        employee.barangay,
-        employee.city,
-        employee.province,
-        employee.region,
+        empAny.street,
+        empAny.barangay,
+        empAny.city,
+        empAny.province,
+        empAny.region,
       ].filter(Boolean);
       if (parts.length > 0) return parts.join(', ');
     }

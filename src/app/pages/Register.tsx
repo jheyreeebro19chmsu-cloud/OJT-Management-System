@@ -649,12 +649,6 @@ export function Register() {
 
         if (existing) {
           updateEmployee(existing.id, updatedPayload);
-        } else {
-          setEmployees((prev) => [updatedPayload as any, ...prev]);
-        }
-
-        if (form.password) {
-          setPasswordForEmail(form.email, form.password);
         }
 
         toast.success('Registration completed! Profile updated with your biometric face and details. Please log in.');

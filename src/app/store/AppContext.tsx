@@ -1013,7 +1013,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
           if (existingEmp) {
             // Update the existing record with new details instead of rejecting
-            const updatedData = { ...cleanData, id: existingEmp.id };
+            const updatedData: Employee = {
+              ...cleanData,
+              id: existingEmp.id,
+              academicYear: cleanData.academicYear || settings.activeAcademicYear,
+              createdAt: new Date().toISOString().split('T')[0],
+            };
             if (password) setPasswordForEmail(cleanData.email, password);
             setEmployees((prev) => [updatedData, ...prev.filter((e) => e.id !== existingEmp.id)]);
             return {
@@ -1562,11 +1567,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     // Auto-sync into evaluations table so Instructor and Trainee see the evaluation in real-time
-    const grade =
-      overallScore >= 90 ? 'Outstanding (1.0)' :
-      overallScore >= 85 ? 'Superior (1.25)' :
-      overallScore >= 80 ? 'Very Good (1.5)' :
-      overallScore >= 75 ? 'Good (1.75)' : 'Satisfactory (2.0)';
+    const grade: 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Needs Improvement' =
+      overallScore >= 90 ? 'Excellent' :
+      overallScore >= 80 ? 'Very Good' :
+      overallScore >= 70 ? 'Good' :
+      overallScore >= 60 ? 'Satisfactory' : 'Needs Improvement';
 
     addEvaluation({
       employeeId: data.employeeId,
@@ -1582,7 +1587,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       areasForImprovement: data.areasForImprovement || 'Continue developing technical problem-solving skills.',
       recommendations: data.recommendation || 'Recommended for completion.',
       evaluatedAt: new Date().toISOString(),
-      status: 'submitted',
+      status: 'final',
       academicYear: (data as any).academicYear || settings.activeAcademicYear,
     });
 
