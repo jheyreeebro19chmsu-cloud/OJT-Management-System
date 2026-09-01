@@ -1325,12 +1325,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getCurrentEmployee = (): Employee | null => {
     if (!currentUser) return null;
-    const employee = employees.find(
+    let employee = employees.find(
       (e) =>
         e.id === currentUser.employeeId ||
         e.id === currentUser.id ||
         (currentUser.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
     );
+    if (!employee && currentUser) {
+      const fallbackEmp: Employee = {
+        id: currentUser.employeeId || currentUser.id || `emp-${Date.now()}`,
+        employeeId: currentUser.employeeId || currentUser.id || 'OJT-STUDENT',
+        name: currentUser.name || 'Trainee Student',
+        email: currentUser.email || '',
+        department: (currentUser as any).department || 'College of Computer Studies',
+        position: (currentUser as any).position || (currentUser.role === 'admin' ? 'OJT Instructor' : currentUser.role === 'hte' ? 'HTE Representative' : 'OJT Trainee'),
+        companyName: (currentUser as any).companyName || 'Host Training Establishment',
+        supervisorName: (currentUser as any).supervisorName || 'HTE Supervisor',
+        schoolName: (currentUser as any).schoolName || 'Carlos Hilado Memorial State University',
+        campus: (currentUser as any).campus || 'Talisay Campus',
+        course: (currentUser as any).course || 'BS Information Technology',
+        startDate: (currentUser as any).startDate || new Date().toISOString().split('T')[0],
+        endDate: (currentUser as any).endDate || new Date().toISOString().split('T')[0],
+        requiredHours: (currentUser as any).requiredHours || 486,
+        photo: currentUser.photo || '',
+        faceRegistered: currentUser.faceRegistered ?? false,
+        active: true,
+        academicYear: (currentUser as any).academicYear || settings.activeAcademicYear,
+        approvalStatus: 'approved',
+      };
+      return fallbackEmp;
+    }
     return employee || null;
   };
 

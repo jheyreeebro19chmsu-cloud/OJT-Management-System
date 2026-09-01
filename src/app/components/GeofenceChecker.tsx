@@ -51,11 +51,11 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         z.radius > 0
     );
 
-    // Add employee's custom registration location if it exists
+    // Add employee's custom registration location if it exists at the top priority
     if (employee?.registrationLocation?.lat && employee?.registrationLocation?.lng) {
-      zones.push({
+      zones.unshift({
         id: `personal-${employee.id}`,
-        name: employee.registrationAddress || 'Your Registered Location',
+        name: employee.registrationAddress || 'Registered Establishment Premises',
         address: employee.registrationAddress || '',
         lat: employee.registrationLocation.lat,
         lng: employee.registrationLocation.lng,
@@ -85,6 +85,32 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       const position = await getCurrentLocation();
       const { latitude, longitude, accuracy } = position.coords;
       const coords = { lat: latitude, lng: longitude };
+
+      // 1. Immediate priority check: Evaluate trainee's permanent registered location
+      const personalZone = activeZones.find((z) => z.id.startsWith('personal-'));
+      if (personalZone) {
+        const isInsidePersonal = isWithinGeofence(
+          latitude,
+          longitude,
+          personalZone.lat,
+          personalZone.lng,
+          personalZone.radius,
+          accuracy
+        );
+        if (isInsidePersonal) {
+          const personalDist = calculateDistance(latitude, longitude, personalZone.lat, personalZone.lng);
+          setResult({
+            state: 'inside',
+            distance: personalDist,
+            zoneName: personalZone.name,
+            coords: { ...coords, accuracy },
+            accuracy,
+            verifiedBy: 'local',
+          });
+          onResult(true, coords);
+          return;
+        }
+      }
 
       let closestZone = activeZones[0];
       let minDistance = calculateDistance(latitude, longitude, closestZone.lat, closestZone.lng);

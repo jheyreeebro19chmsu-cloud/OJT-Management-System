@@ -2093,7 +2093,6 @@ export function Register() {
                         const selectedCourse = e.target.value;
                         update('course', selectedCourse);
                         if (selectedCourse && !form.department) {
-                          // Auto-select department matching this course
                           for (const dept of departmentOptions) {
                             const courses = getCoursesForDepartment(dept);
                             if (courses.includes(selectedCourse)) {
@@ -2112,6 +2111,79 @@ export function Register() {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Required OJT Documents Section */}
+                  <div className="pt-3 border-t border-gray-100 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-blue-600" />
+                        <span>Required OJT Documents (Optional during Registration)</span>
+                      </label>
+                      <span className="text-[10px] text-gray-400 font-medium">PDF / JPG / PNG</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                        <label className="text-[11px] font-bold text-gray-700 block mb-1">1. Endorsement Letter</label>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              toast.success(`Attached ${file.name}`);
+                            }
+                          }}
+                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                        <label className="text-[11px] font-bold text-gray-700 block mb-1">2. Parental Consent Form</label>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              toast.success(`Attached ${file.name}`);
+                            }
+                          }}
+                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                        <label className="text-[11px] font-bold text-gray-700 block mb-1">3. Medical Certificate</label>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              toast.success(`Attached ${file.name}`);
+                            }
+                          }}
+                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                        <label className="text-[11px] font-bold text-gray-700 block mb-1">4. Student Bio-data / Resume</label>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              toast.success(`Attached ${file.name}`);
+                            }
+                          }}
+                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </motion.div>
