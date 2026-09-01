@@ -23,6 +23,7 @@ import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { readAsDataUrl } from './Announcements';
 import AvatarEditor from '../components/AvatarEditor';
+import { FaceCapture } from '../components/FaceCapture';
 
 
 const GRADE_CONFIG = {
@@ -97,6 +98,7 @@ export function Profile() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
+  const [faceCaptureOpen, setFaceCaptureOpen] = useState(false);
   const [form, setForm] = useState({
     name: employee?.name || '',
     email: employee?.email || '',
@@ -109,6 +111,28 @@ export function Profile() {
   const [documentFileName, setDocumentFileName] = useState<Record<string, string>>({});
   const [documentFileUrl, setDocumentFileUrl] = useState<Record<string, string>>({});
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
+
+  const handleProfileFaceSuccess = async (img?: string) => {
+    if (!img || !employee) return;
+    setFaceCaptureOpen(false);
+    setAvatarPreview(img);
+    try {
+      if (isSecurityApiConfigured()) {
+        const resp = await registerFace({ employee_id: String(employee.id), image: img });
+        if (resp.success && resp.image_url) {
+          updateEmployee(employee.id, { photo: resp.image_url, faceRegistered: true });
+          toast.success('Face registered and profile picture updated!');
+          return;
+        }
+      }
+      updateEmployee(employee.id, { photo: img, faceRegistered: true });
+      toast.success('Face registered and profile picture updated!');
+    } catch (err: any) {
+      console.error('Face registration error:', err);
+      updateEmployee(employee.id, { photo: img, faceRegistered: true });
+      toast.success('Profile photo updated with face scan!');
+    }
+  };
 
   if (!employee) {
     return (
@@ -167,10 +191,35 @@ export function Profile() {
     }
   };
 
-  
-
   return (
     <div className="space-y-4">
+      {/* Live Face Scanner Modal */}
+      {faceCaptureOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-800 text-base">Facial Recognition Enrollment</h3>
+              <button
+                onClick={() => setFaceCaptureOpen(false)}
+                className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Align your face inside the circle to enroll your biometrics and automatically update your official profile photo.
+            </p>
+            <FaceCapture
+              mode="register"
+              employeeName={employee.name}
+              onSuccess={handleProfileFaceSuccess}
+              onCancel={() => setFaceCaptureOpen(false)}
+              autoStart
+            />
+          </div>
+        </div>
+      )}
+
       {/* Profile Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -179,7 +228,7 @@ export function Profile() {
       >
         <div className="flex items-start gap-4">
           <div className="relative">
-            <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center overflow-hidden">
+            <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center overflow-hidden border-2 border-white/20 shadow-inner">
               {avatarPreview ? (
                 <img src={avatarPreview} alt="avatar preview" className="w-full h-full object-cover" />
               ) : employee.photo || currentUser?.photo ? (
@@ -187,6 +236,7 @@ export function Profile() {
                   src={getPhotoUrl(employee.photo || currentUser?.photo || '')}
                   alt={employee.name}
                   className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
                 />
               ) : (
                 <User size={28} className="text-blue-300" />
@@ -197,7 +247,11 @@ export function Profile() {
                 <Camera size={9} className="text-white" />
               </div>
             )}
-            <button onClick={() => setShowAvatarEditor(true)} className="absolute -top-1 -right-1 bg-white rounded-full p-1 border border-gray-200">
+            <button
+              onClick={() => setShowAvatarEditor(true)}
+              className="absolute -top-1 -right-1 bg-white rounded-full p-1 border border-gray-200 shadow hover:bg-gray-50"
+              title="Upload photo"
+            >
               <Edit2 size={12} className="text-slate-600" />
             </button>
           </div>
@@ -212,15 +266,21 @@ export function Profile() {
               {employee.position} • {employee.department}
             </p>
             {employee.faceRegistered ? (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-green-300">
+              <button
+                onClick={() => setFaceCaptureOpen(true)}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-green-300 hover:text-green-100 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition-colors border border-green-400/30"
+              >
                 <Camera size={12} />
-                Facial Recognition Enrolled
-              </div>
+                <span>Face Enrolled (Click to Retake)</span>
+              </button>
             ) : (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-red-300">
+              <button
+                onClick={() => setFaceCaptureOpen(true)}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-200 hover:text-white bg-amber-500/30 hover:bg-amber-500/50 px-2.5 py-1 rounded-lg transition-colors border border-amber-300/30 font-semibold"
+              >
                 <Camera size={12} />
-                Face Not Registered
-              </div>
+                <span>Scan Face & Set Profile Pic</span>
+              </button>
             )}
           </div>
         </div>

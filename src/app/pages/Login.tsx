@@ -38,8 +38,9 @@ export function Login() {
         setLoading(false);
         return;
       }
-      if (user.role === 'admin') navigate('/admin');
-      else if (user.role === 'hte' || user.role === 'host') {
+      if (user.role === 'admin') {
+        navigate('/admin');
+      } else if (user.role === 'hte' || user.role === 'host') {
         const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));
         const enrichedUser = {
           ...user,
@@ -49,8 +50,17 @@ export function Login() {
         };
         localStorage.setItem('ojt_hte_user', JSON.stringify(enrichedUser));
         navigate('/hte');
+      } else {
+        const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));
+        const enrichedUser = {
+          ...user,
+          photo: employee?.photo || user.photo,
+          faceRegistered: employee?.faceRegistered ?? user.faceRegistered ?? false,
+          employeeId: employee?.employeeId || user.employeeId || employee?.id || user.id,
+        };
+        localStorage.setItem('ojt_user', JSON.stringify(enrichedUser));
+        navigate('/app');
       }
-      else navigate('/app');
     } else {
       setError('Invalid email or password. Please try again.');
     }
