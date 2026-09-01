@@ -89,6 +89,7 @@ export function Profile() {
     submitRequiredDocument,
     getRequiredDocumentSubmission,
     getRequirementStatus,
+    settings,
   } = useApp();
   const employee = getCurrentEmployee();
   const records = employee ? getEmployeeRecords(employee.id) : [];
