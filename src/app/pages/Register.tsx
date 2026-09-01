@@ -212,9 +212,9 @@ export function Register() {
     }
   }, []);
 
-  // Automatically capture location for non‑trainee roles (admin, hte) when role is known
+  // Automatically capture real-time GPS location for all roles (trainees, admin, hte)
   useEffect(() => {
-    if (role && role !== 'trainee' && locationStatus === 'idle') {
+    if (role && locationStatus === 'idle') {
       captureLocation();
     }
   }, [role, locationStatus]);
@@ -223,13 +223,12 @@ export function Register() {
     setLocationStatus('capturing');
     try {
       const position = await getCurrentLocation();
-      const { latitude, longitude } = position.coords;
-      setRegistrationLocation({ lat: latitude, lng: longitude, accuracy: position.coords.accuracy });
+      const { latitude, longitude, accuracy } = position.coords;
+      setRegistrationLocation({ lat: latitude, lng: longitude, accuracy });
       setLocationStatus('captured');
-      toast.success('Device GPS location updated!');
+      toast.success('Live GPS coordinates locked for attendance geofencing!');
     } catch (err: unknown) {
-      console.warn('Geolocation failed, falling back to default campus location:', err);
-      // Fallback to default campus location so registration is never blocked or showing errors
+      console.warn('Geolocation fallback:', err);
       setRegistrationLocation((prev) => prev || DEFAULT_CAMPUS_LOCATION);
       setLocationStatus('captured');
     }

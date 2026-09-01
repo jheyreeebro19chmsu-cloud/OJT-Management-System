@@ -221,8 +221,16 @@ export function AdminLayout() {
             </div>
             <div>
               <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
-              <div className="text-blue-300 text-xs font-semibold">Admin Panel</div>
+              <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
             </div>
+          </div>
+          {/* Academic Year Environment Indicator */}
+          <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+            </div>
+            <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
           </div>
         </div>
 
@@ -307,19 +315,28 @@ export function AdminLayout() {
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className="lg:hidden fixed left-0 top-0 bottom-0 w-60 bg-blue-900 flex flex-col z-40 no-print"
             >
-              <div className="p-5 border-b border-blue-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-                    <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+              <div className="p-5 border-b border-blue-800 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+                      <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                    </div>
+                    <div>
+                      <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
+                      <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
-                    <div className="text-blue-300 text-xs font-semibold">Admin Panel</div>
-                  </div>
+                  <button onClick={() => setSidebarOpen(false)} className="text-blue-300 hover:text-white">
+                    <X size={20} />
+                  </button>
                 </div>
-                <button onClick={() => setSidebarOpen(false)} className="text-blue-300 hover:text-white">
-                  <X size={20} />
-                </button>
+                <div className="flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+                  </div>
+                  <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
+                </div>
               </div>
               <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
                 {navItems.map(({ to, label, icon: Icon, end }) => (
