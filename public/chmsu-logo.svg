@@ -1,113 +1,106 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <path id="topArc" d="M 90 256 A 166 166 0 0 1 422 256"/>
-    <path id="bottomArc" d="M 422 256 A 166 166 0 0 1 90 256"/>
-    <linearGradient id="bgGrad" x1="96" y1="84" x2="420" y2="420" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0E5547"/>
-      <stop offset="1" stop-color="#093A32"/>
+    <path id="outerTop" d="M 102 256 A 154 154 0 0 1 410 256"/>
+    <path id="outerBottom" d="M 410 256 A 154 154 0 0 1 102 256"/>
+    <linearGradient id="greenBg" x1="80" y1="60" x2="440" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D5C49"/>
+      <stop offset="1" stop-color="#083E32"/>
     </linearGradient>
-    <linearGradient id="sunGrad" x1="156" y1="114" x2="354" y2="292" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FDEB6B"/>
-      <stop offset="1" stop-color="#F4BC1E"/>
+    <linearGradient id="sunGrad" x1="160" y1="110" x2="330" y2="265" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FEEA6C"/>
+      <stop offset="1" stop-color="#F5BA1E"/>
     </linearGradient>
-    <linearGradient id="flameGrad" x1="214" y1="176" x2="290" y2="304" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FF5B2C"/>
-      <stop offset="1" stop-color="#C71910"/>
+    <linearGradient id="flameGrad" x1="220" y1="155" x2="287" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF5D2A"/>
+      <stop offset="1" stop-color="#C91812"/>
     </linearGradient>
-    <linearGradient id="metalGrad" x1="164" y1="216" x2="350" y2="330" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#E2E6E7"/>
-      <stop offset="1" stop-color="#7C8B8B"/>
+    <linearGradient id="bookGrad" x1="145" y1="310" x2="355" y2="415" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF9"/>
+      <stop offset="1" stop-color="#D2D9D5"/>
     </linearGradient>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="3" stdDeviation="8" flood-color="#000000" flood-opacity="0.18"/>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.18"/>
     </filter>
   </defs>
 
-  <circle cx="256" cy="256" r="226" fill="url(#bgGrad)"/>
-  <circle cx="256" cy="256" r="210" stroke="#E9F8F2" stroke-width="8" opacity="0.9"/>
-  <circle cx="256" cy="256" r="188" stroke="#E9F8F2" stroke-width="4" opacity="0.7"/>
+  <circle cx="256" cy="256" r="228" fill="url(#greenBg)"/>
+  <circle cx="256" cy="256" r="211" fill="none" stroke="#EAF9F2" stroke-width="7" opacity="0.9"/>
+  <circle cx="256" cy="256" r="186" fill="none" stroke="#EAF9F2" stroke-width="4" opacity="0.65"/>
 
-  <g opacity="0.3">
-    <path d="M74 146C80 144 90 144 100 145C126 149 145 162 161 177" stroke="#D7F5E7" stroke-width="7" stroke-linecap="round"/>
-    <path d="M438 146C432 144 422 144 412 145C386 149 367 162 351 177" stroke="#D7F5E7" stroke-width="7" stroke-linecap="round"/>
-    <path d="M74 366C80 368 90 368 100 367C126 363 145 350 161 335" stroke="#D7F5E7" stroke-width="7" stroke-linecap="round"/>
-    <path d="M438 366C432 368 422 368 412 367C386 363 367 350 351 335" stroke="#D7F5E7" stroke-width="7" stroke-linecap="round"/>
+  <g opacity="0.26" stroke="#EAF9F2" stroke-width="6" stroke-linecap="round">
+    <path d="M84 151C115 178 146 193 181 202"/>
+    <path d="M428 151C397 178 366 193 331 202"/>
+    <path d="M84 364C115 337 146 322 181 313"/>
+    <path d="M428 364C397 337 366 322 331 313"/>
   </g>
 
-  <g filter="url(#softShadow)">
-    <path d="M90 150C118 171 151 188 176 196C154 211 129 216 101 214C88 220 76 233 68 248C55 226 57 205 72 182C79 171 84 164 90 150Z" fill="#EAF9F4" opacity="0.9"/>
-    <path d="M422 150C394 171 361 188 336 196C358 211 383 216 411 214C424 220 436 233 444 248C457 226 455 205 440 182C433 171 428 164 422 150Z" fill="#EAF9F4" opacity="0.9"/>
+  <g opacity="0.22">
+    <path d="M97 96L125 127L97 145L113 169L144 171L144 198L176 188L180 221L206 201L231 216L221 187L255 186L255 157L289 157L289 186L323 187L313 216L339 201L364 221L368 188L400 198L400 171L431 169L447 145L419 127L447 96L431 110L400 98L400 73L364 84L339 60L313 73L289 48L255 62L255 92L221 92L206 60L180 73L176 48L144 60L144 98L113 110L97 96Z" fill="#F6F8F5"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M123 152C164 171 200 192 226 199C204 212 177 218 146 218C122 234 103 244 89 258C77 237 77 205 97 173C103 166 111 159 123 152Z" fill="#EAF8F2" opacity="0.9"/>
+    <path d="M389 152C348 171 312 192 286 199C308 212 335 218 366 218C390 234 409 244 423 258C435 237 435 205 415 173C409 166 401 159 389 152Z" fill="#EAF8F2" opacity="0.9"/>
   </g>
 
   <g>
-    <path d="M95 108L126 140L95 156L111 178L143 180L143 207L176 196L180 231L207 211L236 227L224 194L257 194L257 160L291 160L291 194L324 194L312 227L339 211L366 231L370 196L403 207L403 180L435 178L451 156L420 140L451 108L420 121L403 93L403 122L370 111L366 78L339 94L324 61L291 75L291 108L257 108L257 75L224 61L236 94L207 78L180 111L176 78L143 93L143 122L111 111L95 108Z" fill="#F5F7F3" opacity="0.14"/>
-  </g>
-
-  <g>
-    <path d="M111 211C120 164 154 118 175 98C194 120 208 147 208 179V193C208 209 207 224 204 238C186 223 170 219 146 219C129 219 118 216 111 211Z" fill="#F4C328"/>
-    <path d="M158 114C188 126 214 164 228 206C241 244 243 275 236 305C220 290 207 283 187 277C172 287 156 292 129 296C126 250 126 215 152 173C155 150 160 128 158 114Z" fill="url(#sunGrad)"/>
-    <path d="M193 130C220 147 236 189 241 222C256 210 271 201 286 195C282 235 266 271 236 298C204 325 164 333 136 326C146 291 162 263 146 222C134 192 158 157 193 130Z" fill="#F9D83C" opacity="0.95"/>
-
+    <path d="M149 126C170 133 190 146 205 166C198 183 190 198 182 211C166 197 151 174 149 126Z" fill="#F3D23A"/>
+    <path d="M208 117C233 128 258 160 268 197C280 241 279 272 268 300C253 286 238 278 219 272C206 283 188 289 161 292C158 248 163 210 185 169C191 156 199 138 208 117Z" fill="url(#sunGrad)"/>
+    <path d="M221 129C248 145 266 179 272 209C282 201 292 194 302 189C298 227 282 260 255 286C224 315 183 329 155 326C169 293 186 267 173 223C166 199 182 166 221 129Z" fill="#F9D041"/>
     <g opacity="0.8">
-      <circle cx="168" cy="165" r="10" fill="#F5DC4B"/>
-      <circle cx="214" cy="140" r="10" fill="#F5DC4B"/>
-      <circle cx="252" cy="160" r="10" fill="#F5DC4B"/>
-      <circle cx="287" cy="200" r="10" fill="#F5DC4B"/>
-      <circle cx="298" cy="246" r="10" fill="#F5DC4B"/>
-      <circle cx="266" cy="290" r="10" fill="#F5DC4B"/>
-      <circle cx="222" cy="308" r="10" fill="#F5DC4B"/>
-      <circle cx="177" cy="286" r="10" fill="#F5DC4B"/>
-      <circle cx="145" cy="244" r="10" fill="#F5DC4B"/>
-      <circle cx="150" cy="195" r="10" fill="#F5DC4B"/>
+      <circle cx="163" cy="164" r="8" fill="#F5D44D"/>
+      <circle cx="196" cy="136" r="8" fill="#F5D44D"/>
+      <circle cx="236" cy="150" r="8" fill="#F5D44D"/>
+      <circle cx="277" cy="188" r="8" fill="#F5D44D"/>
+      <circle cx="289" cy="240" r="8" fill="#F5D44D"/>
+      <circle cx="262" cy="285" r="8" fill="#F5D44D"/>
+      <circle cx="214" cy="306" r="8" fill="#F5D44D"/>
+      <circle cx="170" cy="285" r="8" fill="#F5D44D"/>
+      <circle cx="142" cy="240" r="8" fill="#F5D44D"/>
+      <circle cx="149" cy="196" r="8" fill="#F5D44D"/>
     </g>
   </g>
 
   <g>
-    <circle cx="256" cy="246" r="102" fill="none" stroke="#F7F9F8" stroke-width="10" opacity="0.25"/>
-    <circle cx="256" cy="246" r="72" fill="none" stroke="#F7F9F8" stroke-width="8" opacity="0.25"/>
-    <circle cx="256" cy="246" r="53" fill="none" stroke="#F7F9F8" stroke-width="6" opacity="0.2"/>
+    <path d="M200 221C210 202 228 192 256 192C284 192 302 202 312 221L307 230C295 224 278 222 256 222C234 222 217 224 205 230L200 221Z" fill="#BAC7C2"/>
+    <path d="M196 221C196 191 220 167 256 167C292 167 316 191 316 221V232H196V221Z" fill="#D9DFDF"/>
+    <path d="M204 234H308V276C308 300 284 318 256 318C228 318 204 300 204 276V234Z" fill="#9FB0AF"/>
+    <path d="M214 241H298V274C298 288 280 296 256 296C232 296 214 288 214 274V241Z" fill="#7A8B8A"/>
+    <path d="M220 230H203L177 314C170 329 171 344 177 351C183 359 194 360 203 356C215 349 223 338 229 322L220 230Z" fill="#E7ECEA"/>
+    <path d="M292 230H309L335 314C342 329 341 344 335 351C329 359 318 360 309 356C297 349 289 338 283 322L292 230Z" fill="#E7ECEA"/>
   </g>
 
   <g>
-    <path d="M200 214C212 197 230 188 256 188C282 188 300 197 312 214L308 224C297 220 282 220 256 220C230 220 215 220 204 224L200 214Z" fill="#B9C4C3"/>
-    <path d="M196 214C196 185 221 162 256 162C291 162 316 185 316 214V227H196V214Z" fill="url(#metalGrad)"/>
-    <path d="M200 226H312V286C312 312 286 332 256 332C226 332 200 312 200 286V226Z" fill="#A7B2B4"/>
-    <path d="M214 233H298V284C298 296 286 304 256 304C226 304 214 296 214 284V233Z" fill="#7E8E8D"/>
-    <path d="M218 230L205 230L175 318C167 334 166 349 174 356C180 362 190 362 198 358C209 351 217 340 223 325L218 230Z" fill="#DDDEDF"/>
-    <path d="M294 230L307 230L337 318C345 334 346 349 338 356C332 362 322 362 314 358C303 351 295 340 289 325L294 230Z" fill="#DDDEDF"/>
+    <path d="M256 236C238 255 230 274 228 298C225 317 232 335 244 347C251 354 256 360 256 360C256 360 261 354 268 347C280 335 287 317 284 298C282 274 274 255 256 236Z" fill="#F07A2A" opacity="0.75"/>
+    <path d="M256 216C241 232 233 249 230 269C228 287 234 309 247 330C253 338 256 344 256 344C256 344 259 338 265 330C278 309 284 287 282 269C279 249 271 232 256 216Z" fill="url(#flameGrad)"/>
+    <path d="M236 261C219 282 208 300 201 317C194 337 203 347 216 353C214 344 217 336 227 328C237 318 245 306 245 286C245 276 242 269 236 261Z" fill="#F9B400" opacity="0.9"/>
+    <path d="M276 261C293 282 304 300 311 317C318 337 309 347 296 353C298 344 295 336 285 328C275 318 267 306 267 286C267 276 270 269 276 261Z" fill="#F9B400" opacity="0.9"/>
   </g>
 
   <g>
-    <path d="M256 238C237 255 228 274 226 296C223 319 230 337 245 350C252 356 256 361 256 361C256 361 260 356 267 350C282 337 289 319 286 296C284 274 275 255 256 238Z" fill="#EE7F2B" opacity="0.75"/>
-    <path d="M256 216C241 232 233 249 231 268C229 287 235 310 250 331C255 338 256 344 256 344C256 344 257 338 262 331C277 310 283 287 281 268C279 249 271 232 256 216Z" fill="url(#flameGrad)"/>
-    <path d="M236 260C220 283 210 299 203 317C196 338 204 349 218 354C217 344 221 335 231 327C240 318 248 306 248 286C248 278 243 269 236 260Z" fill="#FFB000" opacity="0.9"/>
-    <path d="M276 260C292 283 302 299 309 317C316 338 308 349 294 354C295 344 291 335 281 327C272 318 264 306 264 286C264 278 269 269 276 260Z" fill="#FFB000" opacity="0.9"/>
+    <path d="M177 335C194 327 212 323 232 323H280C300 323 318 327 335 335L316 401H196L177 335Z" fill="#F3F8F8"/>
+    <path d="M198 354L197 402H315L314 354H198Z" fill="#D9E5E4"/>
+    <path d="M236 210H276V256H236V210Z" fill="#2B3C45"/>
   </g>
 
   <g>
-    <path d="M192 338C208 328 227 323 248 323H264C285 323 304 328 320 338L300 402H212L192 338Z" fill="#F1F6F6"/>
-    <path d="M211 364L210 405H302L301 364H211Z" fill="#D9E4E4"/>
-    <path d="M242 206H270V252H242V206Z" fill="#3A4E56"/>
-    <path d="M220 323H292L278 386H234L220 323Z" fill="#EEF3F2"/>
+    <path d="M133 350C161 334 176 314 181 279C149 296 126 321 133 350Z" fill="#EFF9F5" opacity="0.96"/>
+    <path d="M379 350C351 334 336 314 331 279C363 296 386 321 379 350Z" fill="#EFF9F5" opacity="0.96"/>
   </g>
 
   <g>
-    <path d="M130 350C161 333 174 312 177 277C146 295 123 322 130 350Z" fill="#F1F8F4" opacity="0.95"/>
-    <path d="M382 350C351 333 338 312 335 277C366 295 389 322 382 350Z" fill="#F1F8F4" opacity="0.95"/>
-  </g>
-
-  <g>
-    <text fill="#F7F9F6" font-size="34" font-weight="700" letter-spacing="2" font-family="Georgia, 'Times New Roman', serif" text-anchor="middle">
-      <textPath href="#topArc" startOffset="50%">CARLOS HILADO MEMORIAL STATE UNIVERSITY</textPath>
+    <text fill="#F4F9F7" font-size="33" font-weight="700" letter-spacing="2" font-family="Georgia, 'Times New Roman', serif" text-anchor="middle">
+      <textPath href="#outerTop" startOffset="50%">CARLOS HILADO MEMORIAL STATE UNIVERSITY</textPath>
     </text>
-    <text fill="#F7F9F6" font-size="26" font-weight="700" letter-spacing="2" font-family="Georgia, 'Times New Roman', serif" text-anchor="middle">
-      <textPath href="#bottomArc" startOffset="50%">NEGROS OCCIDENTAL  PHILIPPINES</textPath>
+    <text fill="#F4F9F7" font-size="22" font-weight="700" letter-spacing="2" font-family="Georgia, 'Times New Roman', serif" text-anchor="middle">
+      <textPath href="#outerBottom" startOffset="50%">NEGROS OCCIDENTAL  PHILIPPINES</textPath>
     </text>
   </g>
 
   <g>
-    <path d="M168 318L256 354L344 318L344 404C344 410 340 415 334 415H178C172 415 168 410 168 404V318Z" fill="#F2F7F7" opacity="0.15"/>
+    <path d="M175 314C198 328 222 335 256 335C290 335 314 328 337 314L344 400C344 406 339 410 333 410H179C173 410 168 406 168 400L175 314Z" fill="#F4F8F8" opacity="0.13"/>
+    <path d="M210 327H302L289 372H223L210 327Z" fill="#F4F6F6" opacity="0.18"/>
   </g>
 
-  <circle cx="256" cy="256" r="226" stroke="#F7F9F6" stroke-width="6" opacity="0.18"/>
+  <circle cx="256" cy="256" r="228" fill="none" stroke="#F4F9F7" stroke-width="5" opacity="0.18"/>
 </svg>
