@@ -583,7 +583,10 @@ export function Register() {
       return parts.filter(Boolean).join(', ');
     };
 
-    const computedAddress = registrationAddress || buildAddrFromForm() || undefined;
+    const computedAddress =
+      role === 'hte'
+        ? form.companyAddress || registrationAddress || buildAddrFromForm() || undefined
+        : registrationAddress || buildAddrFromForm() || undefined;
 
     // Compose full name from parts if form.name is empty
     const composedName = form.name || form.contactPerson ||

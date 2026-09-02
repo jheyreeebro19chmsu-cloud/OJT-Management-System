@@ -81,6 +81,11 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     hteUser?.contactPhone ||
     '+63 (034) 712-0000';
 
+  const registrationAddress =
+    employee?.registrationAddress ||
+    employee?.companyAddress ||
+    (role === 'hte' ? company : 'Negros Occidental, Philippines');
+
   // Construct readable address
   const address = (() => {
     const empAny = employee as any;
@@ -94,8 +99,12 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
       ].filter(Boolean);
       if (parts.length > 0) return parts.join(', ');
     }
-    return employee?.registrationAddress || employee?.companyAddress || 'Negros Occidental, Philippines';
+    return registrationAddress;
   })();
+
+  const geofenceCoords = employee?.registrationLocation
+    ? `${employee.registrationLocation.lat.toFixed(6)}, ${employee.registrationLocation.lng.toFixed(6)}`
+    : 'Location not captured yet';
 
   const employeeId =
     employee?.employeeId ||
@@ -239,6 +248,39 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
             <div className="min-w-0 flex-1">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Address</span>
               <span className="font-medium text-slate-800 text-xs sm:text-sm leading-relaxed">{address}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center">
+            <MapPin className="text-blue-700" size={18} />
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-slate-900 tracking-tight">Permanent Geofence & Location</h3>
+            <p className="text-xs text-slate-500">Registered establishment location used for attendance verification</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Registered Address</div>
+            <div className="text-sm font-semibold text-slate-800 leading-relaxed">{registrationAddress}</div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">GPS Coordinates</div>
+            <div className="text-sm font-semibold text-slate-800">{geofenceCoords}</div>
+          </div>
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 sm:col-span-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Geofence Radius</div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-slate-800">50 meters (Permanent Radius)</span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <CheckCircle size={12} className="text-emerald-600" />
+                Active ({settings?.activeAcademicYear || '2026-2027'})
+              </span>
             </div>
           </div>
         </div>

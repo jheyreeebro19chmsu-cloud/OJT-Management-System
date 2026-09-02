@@ -1332,25 +1332,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (currentUser.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
     );
     if (!employee && currentUser) {
+      const currentUserAny = currentUser as any;
+      const registrationLocation =
+        currentUserAny.registrationLocation ||
+        (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('ojt_hte_user') || 'null')?.registrationLocation : null) ||
+        undefined;
+      const registrationAddress =
+        currentUserAny.registrationAddress ||
+        (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('ojt_hte_user') || 'null')?.registrationAddress : null) ||
+        currentUserAny.companyAddress ||
+        undefined;
       const fallbackEmp: Employee = {
         id: currentUser.employeeId || currentUser.id || `emp-${Date.now()}`,
         employeeId: currentUser.employeeId || currentUser.id || 'OJT-STUDENT',
         name: currentUser.name || 'Trainee Student',
         email: currentUser.email || '',
-        department: (currentUser as any).department || 'College of Computer Studies',
-        position: (currentUser as any).position || (currentUser.role === 'admin' ? 'OJT Instructor' : currentUser.role === 'hte' ? 'HTE Representative' : 'OJT Trainee'),
-        companyName: (currentUser as any).companyName || 'Host Training Establishment',
-        supervisorName: (currentUser as any).supervisorName || 'HTE Supervisor',
-        schoolName: (currentUser as any).schoolName || 'Carlos Hilado Memorial State University',
-        campus: (currentUser as any).campus || 'Talisay Campus',
-        course: (currentUser as any).course || 'BS Information Technology',
-        startDate: (currentUser as any).startDate || new Date().toISOString().split('T')[0],
-        endDate: (currentUser as any).endDate || new Date().toISOString().split('T')[0],
-        requiredHours: (currentUser as any).requiredHours || 486,
+        department: currentUserAny.department || 'College of Computer Studies',
+        position: currentUserAny.position || (currentUser.role === 'admin' ? 'OJT Instructor' : currentUser.role === 'hte' ? 'HTE Representative' : 'OJT Trainee'),
+        companyName: currentUserAny.companyName || 'Host Training Establishment',
+        supervisorName: currentUserAny.supervisorName || 'HTE Supervisor',
+        schoolName: currentUserAny.schoolName || 'Carlos Hilado Memorial State University',
+        campus: currentUserAny.campus || 'Talisay Campus',
+        course: currentUserAny.course || 'BS Information Technology',
+        startDate: currentUserAny.startDate || new Date().toISOString().split('T')[0],
+        endDate: currentUserAny.endDate || new Date().toISOString().split('T')[0],
+        requiredHours: currentUserAny.requiredHours || 486,
         photo: currentUser.photo || '',
         faceRegistered: currentUser.faceRegistered ?? false,
+        registrationLocation,
+        registrationAddress,
+        companyAddress: currentUserAny.companyAddress || registrationAddress,
         active: true,
-        academicYear: (currentUser as any).academicYear || settings.activeAcademicYear,
+        academicYear: currentUserAny.academicYear || settings.activeAcademicYear,
         approvalStatus: 'approved',
         createdAt: new Date().toISOString().split('T')[0],
       };
