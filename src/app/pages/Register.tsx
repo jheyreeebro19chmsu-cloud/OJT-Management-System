@@ -58,15 +58,7 @@ type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
 export function Register() {
-  const {
-    registerEmployee,
-    updateEmployee,
-    employees,
-    hostSupervisors,
-    settings,
-    addRequiredDocument,
-    submitRequiredDocument,
-  } = useApp();
+  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
@@ -140,9 +132,6 @@ export function Register() {
   const [emailValidationUnavailable, setEmailValidationUnavailable] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [requiredDocumentUploads, setRequiredDocumentUploads] = useState<
-    Record<string, { fileName: string; fileUrl: string }>
-  >({});
 
   const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702 }; // CHMSU Talisay Campus
 
@@ -455,20 +444,6 @@ export function Register() {
     setFaceCapturing(false);
   };
 
-  const handleRequiredDocumentUpload = (docKey: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      setRequiredDocumentUploads((prev) => ({
-        ...prev,
-        [docKey]: {
-          fileName: file.name,
-          fileUrl: String(reader.result || ''),
-        },
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
@@ -690,34 +665,6 @@ export function Register() {
     }
 
     const newEmp = result.employee!;
-
-    if (role !== 'admin') {
-      const docDefinitions = [
-        { key: 'endorsement-letter', title: 'Endorsement Letter' },
-        { key: 'parental-consent', title: 'Parental Consent Form' },
-        { key: 'medical-certificate', title: 'Medical Certificate' },
-        { key: 'bio-data', title: 'Student Bio-data / Resume' },
-      ];
-
-      for (const doc of docDefinitions) {
-        const upload = requiredDocumentUploads[doc.key];
-        if (!upload?.fileUrl) continue;
-
-        const createdDoc = addRequiredDocument(newEmp.id, {
-          title: doc.title,
-          description: 'Uploaded during OJT registration',
-          notes: 'Uploaded during OJT registration',
-          required: true,
-        });
-
-        submitRequiredDocument(createdDoc.id, newEmp.id, {
-          note: 'Uploaded during registration',
-          notes: 'Uploaded during registration',
-          fileName: upload.fileName,
-          fileUrl: upload.fileUrl,
-        });
-      }
-    }
 
     if (role === 'admin') {
       setRegisteredInstructorId(newEmp.id);
@@ -2076,26 +2023,12 @@ export function Register() {
                     <label className="text-xs font-semibold text-gray-600 block mb-1">School *</label>
                     <select
                       value={form.schoolName || 'Carlos Hilado Memorial State University'}
-                      onChange={(e) => update('schoolName', e.target.value)}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+                      onChange={(e) => update('schoolName', 'Carlos Hilado Memorial State University')}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-not-allowed bg-gray-100"
+                      disabled
                     >
                       <option value="Carlos Hilado Memorial State University">
                         Carlos Hilado Memorial State University
-                      </option>
-                      <option value="Technological University of the Philippines - Visayas">
-                        Technological University of the Philippines - Visayas
-                      </option>
-                      <option value="University of St. La Salle">
-                        University of St. La Salle
-                      </option>
-                      <option value="STI West Negros University">
-                        STI West Negros University
-                      </option>
-                      <option value="University of Negros Occidental - Recoletos">
-                        University of Negros Occidental - Recoletos
-                      </option>
-                      <option value="Other School / University">
-                        Other School / University
                       </option>
                     </select>
                   </div>
@@ -2188,7 +2121,6 @@ export function Register() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              handleRequiredDocumentUpload('endorsement-letter', file);
                               toast.success(`Attached ${file.name}`);
                             }
                           }}
@@ -2204,7 +2136,6 @@ export function Register() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              handleRequiredDocumentUpload('parental-consent', file);
                               toast.success(`Attached ${file.name}`);
                             }
                           }}
@@ -2220,7 +2151,6 @@ export function Register() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              handleRequiredDocumentUpload('medical-certificate', file);
                               toast.success(`Attached ${file.name}`);
                             }
                           }}
@@ -2236,7 +2166,6 @@ export function Register() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              handleRequiredDocumentUpload('bio-data', file);
                               toast.success(`Attached ${file.name}`);
                             }
                           }}
