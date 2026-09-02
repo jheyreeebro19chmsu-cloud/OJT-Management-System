@@ -19,6 +19,9 @@ export interface Employee {
   faceRegistered: boolean;
   createdAt: string;
   active: boolean;
+  instructorId?: string;
+  hteId?: string;
+  linkedAt?: string;
   registrationLocation?: { lat: number; lng: number };
   registrationAddress?: string;
   firstName?: string;

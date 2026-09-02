@@ -42,47 +42,18 @@ export function HTEDashboard() {
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
 
-  const assignedTraineeIds = useMemo(() => {
-    const ids = new Set<string>();
-    try {
-      const raw = localStorage.getItem('ojt_hte_student_access');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((entry: any) => {
-            const studentId = entry?.student_id || entry?.studentId || entry?.student?.id;
-            if (studentId) ids.add(String(studentId));
-          });
-        }
-      }
-    } catch {
-      // ignore malformed local storage payloads
-    }
-
-    if (ids.size > 0) return ids;
-
-    employees
-      .filter(
-        (e) =>
-          e.active &&
-          e.position !== 'OJT Instructor' &&
-          e.position !== 'HTE Representative' &&
-          (e.companyName === companyName || e.companyName?.toLowerCase() === companyName.toLowerCase())
-      )
-      .forEach((e) => ids.add(e.id));
-
-    return ids;
-  }, [employees, companyName]);
-
-  // Filter trainees
+  // Only trainees tied to the active HTE via an instructor link or a direct HTE assignment are shown.
   const trainees = useMemo(() => {
+    const currentHteId = currentUser?.id || currentEmp?.id || undefined;
+
     return employees.filter((e) => {
-      const isTrainee = e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative';
-      if (!isTrainee) return false;
-      if (assignedTraineeIds.size === 0) return true;
-      return assignedTraineeIds.has(e.id);
+      if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+      const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
+      const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
+      const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
+      return isAssignedToCurrentHte || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
     });
-  }, [employees, assignedTraineeIds]);
+  }, [employees, currentUser, currentEmp, companyName]);
 
   // Compute rendered hours
   const traineeStats = useMemo(() => {

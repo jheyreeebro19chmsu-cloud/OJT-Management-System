@@ -49,8 +49,17 @@ const ANN_ICON: Record<Announcement['type'], React.ReactNode> = {
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { currentUser, getCurrentEmployee, getTodayRecord, getEmployeeRecords, settings, getActiveAnnouncements, employees, timeRecords: contextTimeRecords } =
-    useApp();
+  const {
+    currentUser,
+    getCurrentEmployee,
+    getTodayRecord,
+    getEmployeeRecords,
+    settings,
+    getActiveAnnouncements,
+    employees,
+    timeRecords: contextTimeRecords,
+    updateEmployee,
+  } = useApp();
   const employee = getCurrentEmployee();
   const isAdmin = currentUser?.role === 'admin';
   
@@ -226,6 +235,14 @@ export function Dashboard() {
 
       if (error) throw error;
 
+      const foundLocal = employees.find((emp) => emp.id === student.id);
+      if (foundLocal) {
+        updateEmployee(foundLocal.id, {
+          instructorId: currentUser?.id || foundLocal.instructorId,
+          linkedAt: new Date().toISOString(),
+        });
+      }
+
       toast.success('Student linked successfully');
       setSearchId('');
       fetchLinkedStudents();
@@ -271,25 +288,6 @@ export function Dashboard() {
         .update({ status: 'approved', approved_at: new Date().toISOString() })
         .eq('id', request.id);
       if (error) throw error;
-
-      try {
-        const stored = JSON.parse(localStorage.getItem('ojt_hte_student_access') || '[]');
-        const next = [
-          ...stored.filter((item: any) => item.id !== request.id),
-          {
-            id: request.id,
-            student_id: request.student_id || request.employees?.id,
-            instructor_id: request.instructor_id || currentUser?.id,
-            status: 'approved',
-            approved_at: new Date().toISOString(),
-            company_name: request.host_supervisors?.company_name,
-          },
-        ];
-        localStorage.setItem('ojt_hte_student_access', JSON.stringify(next));
-      } catch {
-        // ignore local storage failures
-      }
-
       setHteRequests((prev) => prev.map((r) => (r.id === request.id ? { ...r, status: 'approved' } : r)));
       toast.success('HTE access approved');
     } catch (err: any) {
@@ -304,9 +302,20 @@ export function Dashboard() {
     try {
       const { error } = await supabase
         .from('employees')
-        .update({ application_status: 'approved' })
+        .update({
+          application_status: 'approved',
+          instructor_id: currentUser?.id || student.instructorId,
+          instructorId: currentUser?.id || student.instructorId,
+        })
         .eq('id', student.id);
       if (error) throw error;
+
+      updateEmployee(student.id, {
+        active: true,
+        approvalStatus: 'approved',
+        instructorId: currentUser?.id || student.instructorId,
+        linkedAt: new Date().toISOString(),
+      });
 
       setPendingApps((prev) => prev.filter((a) => a.id !== student.id));
 

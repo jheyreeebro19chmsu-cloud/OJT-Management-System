@@ -172,41 +172,6 @@ export function HTEEvaluations() {
   const queryParams = new URLSearchParams(location.search);
   const preselectedStudentId = queryParams.get('studentId');
 
-  const hteCompany = currentEmp?.companyName || localStorage.getItem('ojt_hte_company') || '';
-  const assignedTraineeIds = useMemo(() => {
-    const ids = new Set<string>();
-    try {
-      const raw = localStorage.getItem('ojt_hte_student_access');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((entry: any) => {
-            const studentId = entry?.student_id || entry?.studentId || entry?.student?.id;
-            if (studentId) ids.add(String(studentId));
-          });
-        }
-      }
-    } catch {
-      // ignore malformed local storage payloads
-    }
-
-    if (ids.size > 0) return ids;
-
-    if (hteCompany) {
-      employees
-        .filter(
-          (e) =>
-            e.active &&
-            e.position !== 'OJT Instructor' &&
-            e.position !== 'HTE Representative' &&
-            (e.companyName === hteCompany || e.companyName?.toLowerCase() === hteCompany.toLowerCase())
-        )
-        .forEach((e) => ids.add(e.id));
-    }
-
-    return ids;
-  }, [employees, hteCompany]);
-
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState<EvaluationForm>(BLANK_FORM);
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
@@ -235,15 +200,18 @@ export function HTEEvaluations() {
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
 
-  // Filter only active trainees (exclude instructors and non-trainees)
+  // Only trainees linked to the active HTE workflow should appear in evaluation queues.
   const activeTrainees = useMemo(() => {
+    const currentHteId = currentUser?.id || currentEmp?.id || undefined;
+
     return employees.filter((e) => {
-      const isTrainee = e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative';
-      if (!isTrainee) return false;
-      if (assignedTraineeIds.size === 0) return true;
-      return assignedTraineeIds.has(e.id);
+      if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+      const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
+      const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
+      const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
+      return isAssignedToCurrentHte || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
     });
-  }, [employees, assignedTraineeIds]);
+  }, [employees, currentUser, currentEmp, companyName]);
 
   // Handle preselected student from URL
   React.useEffect(() => {
