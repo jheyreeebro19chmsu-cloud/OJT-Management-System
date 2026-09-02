@@ -217,7 +217,7 @@ export function AdminLayout() {
         <div className="p-5 border-b border-blue-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-              <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+              <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div>
               <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
@@ -319,7 +319,7 @@ export function AdminLayout() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-                      <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                      <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
                     </div>
                     <div>
                       <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>

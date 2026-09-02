@@ -433,7 +433,7 @@ export function HTEEvaluations() {
           <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
             <div className="flex flex-col items-center justify-center gap-2">
               <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
-                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
               <div>
                 <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
@@ -715,7 +715,7 @@ export function HTEEvaluations() {
           <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
             <div className="flex flex-col items-center justify-center gap-2">
               <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
-                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
               <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
                 Carlos Hilado Memorial State University

@@ -61,7 +61,7 @@ export function EmployeeLayout() {
         <div className="p-5 border-b border-blue-800 bg-blue-950/40">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-              <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+              <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div className="min-w-0">
               <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT DTR</div>
@@ -153,7 +153,7 @@ export function EmployeeLayout() {
           <div className="max-w-md lg:max-w-none mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-                <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
               <div>
                 <div className="text-xs text-blue-200 leading-tight">CHMSU OJT DTR</div>

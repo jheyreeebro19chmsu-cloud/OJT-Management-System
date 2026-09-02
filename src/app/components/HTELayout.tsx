@@ -83,7 +83,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
         <div className="p-5 border-b border-slate-800/80 bg-slate-950/40">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white rounded-2xl p-1 shadow-md shrink-0 flex items-center justify-center">
-              <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-xl" />
+              <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-xl" />
             </div>
             <div className="min-w-0">
               <div className="text-white font-extrabold text-sm tracking-tight truncate flex items-center gap-1.5">
@@ -191,7 +191,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-white rounded-xl p-1 shadow-md">
-                  <img src="/CHMSU.JPEG" alt="CHMSU Logo" className="w-full h-full object-contain rounded-lg" />
+                  <img src="/chmsu-logo.svg" alt="CHMSU Logo" className="w-full h-full object-contain rounded-lg" />
                 </div>
                 <div>
                   <div className="text-white font-extrabold text-sm">HTE Portal</div>

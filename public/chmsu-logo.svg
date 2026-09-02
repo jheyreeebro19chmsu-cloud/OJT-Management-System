@@ -1,0 +1,54 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E5F47"/>
+      <stop offset="1" stop-color="#0A3D32"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="196" y1="148" x2="312" y2="332" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7D75B"/>
+      <stop offset="1" stop-color="#D9A91A"/>
+    </linearGradient>
+    <linearGradient id="torch" x1="247" y1="146" x2="247" y2="274" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F97316"/>
+      <stop offset="1" stop-color="#D93810"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="256" cy="256" r="228" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="212" stroke="#E8F9F4" stroke-width="12" opacity="0.9"/>
+  <circle cx="256" cy="256" r="180" stroke="#E8F9F4" stroke-width="8" opacity="0.65"/>
+
+  <g opacity="0.28">
+    <path d="M86 142C123 170 156 188 190 198" stroke="#F2FFF6" stroke-width="9" stroke-linecap="round"/>
+    <path d="M426 142C389 170 356 188 322 198" stroke="#F2FFF6" stroke-width="9" stroke-linecap="round"/>
+    <path d="M86 370C123 342 156 324 190 314" stroke="#F2FFF6" stroke-width="9" stroke-linecap="round"/>
+    <path d="M426 370C389 342 356 324 322 314" stroke="#F2FFF6" stroke-width="9" stroke-linecap="round"/>
+  </g>
+
+  <g>
+    <path d="M256 114L278 139L304 137L295 166L321 182L291 191L296 218L267 204L250 228L236 204L208 218L213 191L183 182L209 166L199 137L225 139L256 114Z" fill="url(#gold)"/>
+    <path d="M256 88L268 111L293 111L275 128L282 152L256 139L230 152L237 128L219 111L244 111L256 88Z" fill="#F7D75B"/>
+  </g>
+
+  <g>
+    <path d="M196 185C196 152 226 128 256 128C286 128 316 152 316 185V196C316 216 302 234 283 244L283 260C283 288 266 307 256 307C246 307 229 288 229 260V244C210 234 196 216 196 196V185Z" fill="#F3F5F1" opacity="0.96"/>
+    <path d="M238 246C238 226 248 208 256 203C264 208 274 226 274 246V288C274 298 267 305 256 305C245 305 238 298 238 288V246Z" fill="#D7E4E0"/>
+    <path d="M248 132H264V180H248V132Z" fill="#0D3A30"/>
+    <path d="M180 196C218 233 234 258 243 302C248 319 246 336 234 350C250 332 262 312 269 292C279 259 274 205 256 172L180 196Z" fill="url(#torch)"/>
+    <path d="M332 196C294 233 278 258 269 302C264 319 266 336 278 350C262 332 250 312 243 292C233 259 238 205 256 172L332 196Z" fill="url(#torch)"/>
+    <path d="M256 176C246 194 240 214 236 236C231 260 232 286 245 310C251 320 256 326 256 326C256 326 261 320 267 310C280 286 281 260 276 236C272 214 266 194 256 176Z" fill="#FDE68A" opacity="0.9"/>
+    <path d="M256 126C247 140 242 154 242 168C242 176 246 181 256 181C266 181 270 176 270 168C270 154 265 140 256 126Z" fill="#EF4444"/>
+  </g>
+
+  <g>
+    <path d="M128 356C160 330 179 304 190 272C176 307 150 338 128 356Z" fill="#F0F7F4" opacity="0.96"/>
+    <path d="M384 356C352 330 333 304 322 272C336 307 362 338 384 356Z" fill="#F0F7F4" opacity="0.96"/>
+    <path d="M192 342H320L302 404H210L192 342Z" fill="#F0F7F4"/>
+    <path d="M216 318H296V342H216V318Z" fill="#113F35"/>
+  </g>
+
+  <g fill="#F8FFF9" font-family="'Georgia', serif" text-anchor="middle">
+    <text x="256" y="430" font-size="34" font-weight="700" letter-spacing="2">CHMSU</text>
+    <text x="256" y="462" font-size="18" font-weight="600" letter-spacing="4">OJT DTR</text>
+  </g>
+</svg>
