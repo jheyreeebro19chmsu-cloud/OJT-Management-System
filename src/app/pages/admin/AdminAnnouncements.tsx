@@ -64,6 +64,8 @@ const ROLE_LABELS: Record<Announcement['targetRole'], string> = {
   all: 'All Users',
   employee: 'Employees Only',
   admin: 'Admins Only',
+  hte: 'HTE Only',
+  host: 'Host Supervisors Only',
 };
 
 const BLANK_FORM = {

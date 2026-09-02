@@ -138,7 +138,7 @@ export interface Announcement {
   photo?: string;
   reminder?: string;
   type: 'info' | 'warning' | 'success' | 'urgent';
-  targetRole: 'all' | 'employee' | 'admin';
+  targetRole: 'all' | 'employee' | 'admin' | 'hte' | 'host';
   isPinned: boolean;
   requiresSubmission?: boolean;
   deadlineAt?: string;

@@ -301,7 +301,7 @@ interface AppContextType {
   addAnnouncement: (data: Omit<Announcement, 'id'>) => Announcement;
   updateAnnouncement: (id: string, data: Partial<Announcement>) => void;
   deleteAnnouncement: (id: string) => void;
-  getActiveAnnouncements: (role?: 'employee' | 'admin') => Announcement[];
+  getActiveAnnouncements: (role?: 'employee' | 'admin' | 'hte' | 'host') => Announcement[];
   submitAnnouncementResponse: (
     announcementId: string,
     employeeId: string,
@@ -1443,12 +1443,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getActiveAnnouncements = (role?: 'employee' | 'admin'): Announcement[] => {
+  const getActiveAnnouncements = (role?: 'employee' | 'admin' | 'hte' | 'host'): Announcement[] => {
     const now = new Date();
+    const matchesAudience = (announcementRole: Announcement['targetRole'], requestedRole?: typeof role) => {
+      if (!requestedRole) return true;
+      if (announcementRole === 'all') return true;
+      if (requestedRole === 'admin') return ['admin', 'employee'].includes(announcementRole);
+      if (requestedRole === 'employee') return ['employee', 'admin'].includes(announcementRole);
+      if (requestedRole === 'hte') return ['hte', 'host'].includes(announcementRole);
+      if (requestedRole === 'host') return ['host', 'hte'].includes(announcementRole);
+      return false;
+    };
+
     return announcements
       .filter((a) => {
         if (a.expiresAt && new Date(a.expiresAt) < now) return false;
-        if (role && a.targetRole !== 'all' && a.targetRole !== role) return false;
+        if (!matchesAudience(a.targetRole, role)) return false;
         return true;
       })
       .sort((a, b) => {
