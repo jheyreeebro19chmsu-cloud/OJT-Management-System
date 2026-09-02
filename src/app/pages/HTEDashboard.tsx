@@ -42,12 +42,47 @@ export function HTEDashboard() {
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
 
+  const assignedTraineeIds = useMemo(() => {
+    const ids = new Set<string>();
+    try {
+      const raw = localStorage.getItem('ojt_hte_student_access');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((entry: any) => {
+            const studentId = entry?.student_id || entry?.studentId || entry?.student?.id;
+            if (studentId) ids.add(String(studentId));
+          });
+        }
+      }
+    } catch {
+      // ignore malformed local storage payloads
+    }
+
+    if (ids.size > 0) return ids;
+
+    employees
+      .filter(
+        (e) =>
+          e.active &&
+          e.position !== 'OJT Instructor' &&
+          e.position !== 'HTE Representative' &&
+          (e.companyName === companyName || e.companyName?.toLowerCase() === companyName.toLowerCase())
+      )
+      .forEach((e) => ids.add(e.id));
+
+    return ids;
+  }, [employees, companyName]);
+
   // Filter trainees
   const trainees = useMemo(() => {
-    return employees.filter(
-      (e) => e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative'
-    );
-  }, [employees]);
+    return employees.filter((e) => {
+      const isTrainee = e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative';
+      if (!isTrainee) return false;
+      if (assignedTraineeIds.size === 0) return true;
+      return assignedTraineeIds.has(e.id);
+    });
+  }, [employees, assignedTraineeIds]);
 
   // Compute rendered hours
   const traineeStats = useMemo(() => {

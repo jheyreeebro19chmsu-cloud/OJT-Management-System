@@ -271,6 +271,25 @@ export function Dashboard() {
         .update({ status: 'approved', approved_at: new Date().toISOString() })
         .eq('id', request.id);
       if (error) throw error;
+
+      try {
+        const stored = JSON.parse(localStorage.getItem('ojt_hte_student_access') || '[]');
+        const next = [
+          ...stored.filter((item: any) => item.id !== request.id),
+          {
+            id: request.id,
+            student_id: request.student_id || request.employees?.id,
+            instructor_id: request.instructor_id || currentUser?.id,
+            status: 'approved',
+            approved_at: new Date().toISOString(),
+            company_name: request.host_supervisors?.company_name,
+          },
+        ];
+        localStorage.setItem('ojt_hte_student_access', JSON.stringify(next));
+      } catch {
+        // ignore local storage failures
+      }
+
       setHteRequests((prev) => prev.map((r) => (r.id === request.id ? { ...r, status: 'approved' } : r)));
       toast.success('HTE access approved');
     } catch (err: any) {
