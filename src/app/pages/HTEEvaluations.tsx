@@ -372,14 +372,6 @@ export function HTEEvaluations() {
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => window.print()}
-              className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 rounded-2xl text-xs font-bold hover:bg-slate-50 transition-all flex items-center gap-1.5 shadow-sm"
-              title="Print Evaluation Sheet"
-            >
-              <Printer size={15} />
-              Print Sheet
-            </button>
-            <button
               onClick={() => {
                 const ev = evaluations.find((e) => e.employeeId === selectedEmp.id);
                 const csvData = [
@@ -395,14 +387,15 @@ export function HTEEvaluations() {
                     'final',
                   ],
                 ];
-                const csvContent = 'data:text/csv;charset=utf-8,' + csvData.map((e) => e.join(',')).join('\n');
-                const encodedUri = encodeURI(csvContent);
+                const csvContent = csvData.map((e) => e.join(',')).join('\n');
+                const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
                 const link = document.createElement('a');
-                link.setAttribute('href', encodedUri);
-                link.setAttribute('download', `HTE_Evaluation_${selectedEmp.name.replace(/\s+/g, '_')}.csv`);
+                link.href = url;
+                link.download = `HTE_Evaluation_${selectedEmp.name.replace(/\s+/g, '_')}.csv`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                URL.revokeObjectURL(url);
                 toast.success('CSV exported successfully!');
               }}
               className="px-3.5 py-2 bg-emerald-600 text-white rounded-2xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm"
@@ -693,13 +686,6 @@ export function HTEEvaluations() {
             Back to Trainees List
           </button>
           <div className="flex gap-2">
-            <button
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-md"
-            >
-              <Printer size={15} />
-              Print Official Form
-            </button>
             <button
               onClick={() => openNewEval(selectedEmp)}
               className="px-4 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/20"

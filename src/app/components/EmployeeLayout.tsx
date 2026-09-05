@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Star } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/announcements', label: 'Announce', icon: Bell, end: false },
+  { to: '/app/hte-feedback', label: 'HTE Feedback', icon: Star, end: false },
   { to: '/app/profile', label: 'Profile', icon: User, end: false },
 ];
 

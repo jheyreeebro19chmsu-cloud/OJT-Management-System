@@ -118,6 +118,7 @@ export const router = createBrowserRouter([
       { path: 'time-record', element: withSuspense(TimeRecord) },
       { path: 'records', element: withSuspense(Records) },
       { path: 'announcements', element: withSuspense(Announcements) },
+      { path: 'hte-feedback', element: withSuspense(HostFeedback) },
       { path: 'profile', element: withSuspense(Profile) },
       { path: 'instructor-qr', element: withSuspense(InstructorQR) },
       { path: 'scan-qr', element: withSuspense(QRScanner) },

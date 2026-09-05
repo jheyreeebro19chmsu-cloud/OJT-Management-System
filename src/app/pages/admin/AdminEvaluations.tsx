@@ -252,14 +252,15 @@ export function AdminEvaluations() {
                     ev?.status || 'draft',
                   ],
                 ];
-                const csvContent = 'data:text/csv;charset=utf-8,' + csvData.map((e) => e.join(',')).join('\n');
-                const encodedUri = encodeURI(csvContent);
+                const csvContent = csvData.map((e) => e.join(',')).join('\n');
+                const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
                 const link = document.createElement('a');
-                link.setAttribute('href', encodedUri);
-                link.setAttribute('download', `Evaluation_${selectedEmp.name.replace(/\s+/g, '_')}.csv`);
+                link.href = url;
+                link.download = `Evaluation_${selectedEmp.name.replace(/\s+/g, '_')}.csv`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                URL.revokeObjectURL(url);
                 toast.success('CSV exported successfully!');
               }}
               className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm"
@@ -737,14 +738,15 @@ export function AdminEvaluations() {
                 ev ? ev.status : 'Pending',
               ]);
             });
-            const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.map((e) => e.join(',')).join('\n');
-            const encodedUri = encodeURI(csvContent);
+            const csvContent = csvRows.map((e) => e.join(',')).join('\n');
+            const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
             const link = document.createElement('a');
-            link.setAttribute('href', encodedUri);
-            link.setAttribute('download', `OJT_Evaluations_Summary_${new Date().toISOString().split('T')[0]}.csv`);
+            link.href = url;
+            link.download = `OJT_Evaluations_Summary_${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url);
             toast.success('Evaluations summary CSV exported!');
           }}
           className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm shrink-0"

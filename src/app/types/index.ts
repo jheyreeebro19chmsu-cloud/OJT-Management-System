@@ -52,6 +52,10 @@ export interface TimeRecord {
   status: 'present' | 'late' | 'absent' | 'half-day' | 'overtime';
   notes?: string;
   academicYear?: string;
+  approvalStatus?: 'approved' | 'disapproved' | 'pending';
+  approvalNote?: string;
+  approvedBy?: string;
+  approvedAt?: string;
 }
 
 export interface GeofenceZone {
@@ -111,6 +115,7 @@ export interface HostSupervisor {
   companyName: string;
   position: string;
   active: boolean;
+  academicYear?: string;
 }
 
 export interface HostFeedback {
@@ -183,7 +188,8 @@ export interface RequiredDocumentSubmission {
   notes?: string;
   fileName?: string;
   fileUrl?: string;
-  status: 'pending' | 'submitted';
+  status: 'pending' | 'submitted' | 'approved' | 'rejected';
+  verificationStatus?: 'passed' | 'failed' | 'pending';
 }
 
 export type RequirementStatus = 'missing' | 'incomplete' | 'complete';

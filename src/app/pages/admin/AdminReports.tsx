@@ -1,4 +1,4 @@
-import { BarChart2, Download, Filter, Clock, Users, TrendingUp, Calendar, Printer } from 'lucide-react';
+import { BarChart2, Download, Filter, Clock, Users, TrendingUp, Calendar, Printer, CheckCircle, XCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useMemo } from 'react';
 import {
@@ -20,7 +20,7 @@ import { formatTime } from '../../utils/geo';
 
 
 export function AdminReports() {
-  const { employees, timeRecords } = useApp();
+  const { employees, timeRecords, approveTimeRecord, disapproveTimeRecord } = useApp();
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -87,7 +87,7 @@ export function AdminReports() {
   const activeEmployees = employees.filter((e) => e.active);
 
   const exportCsv = () => {
-    const headers = ['Date', 'Trainee', 'Time In', 'Time Out', 'Hours', 'Status', 'Face Verified', 'Geofenced'];
+    const headers = ['Date', 'Trainee', 'Time In', 'Time Out', 'Hours', 'Status', 'Face Verified', 'Geofenced', 'DTR Approval'];
     const rows = filteredRecords.map((record) => {
       const employee = employees.find((e) => e.id === record.employeeId);
       return [
@@ -99,12 +99,14 @@ export function AdminReports() {
         record.status,
         record.timeInFaceVerified && record.timeOutFaceVerified ? 'Yes' : 'No',
         record.timeInGeofenced && record.timeOutGeofenced ? 'Yes' : 'No',
+        record.approvalStatus || 'pending',
       ];
     });
     const csv = [headers, ...rows]
       .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    // Prepend UTF-8 BOM (\uFEFF) so Excel opens it with proper encoding
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url;
     link.download = `attendance-report-${selectedMonth}.csv`;
@@ -348,7 +350,7 @@ export function AdminReports() {
           <div className="p-4 border-b border-gray-100">
             <h3 className="font-bold text-gray-800">Detailed Records ({filteredRecords.length})</h3>
           </div>
-          <div className="overflow-x-auto max-h-80">
+          <div className="overflow-x-auto max-h-96">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50">
                 <tr className="text-xs font-semibold text-gray-500 uppercase">
@@ -359,6 +361,7 @@ export function AdminReports() {
                   <th className="px-4 py-2 text-center">Hours</th>
                   <th className="px-4 py-2 text-center">Status</th>
                   <th className="px-4 py-2 text-center">Verified</th>
+                  <th className="px-4 py-2 text-center">DTR Approval</th>
                 </tr>
               </thead>
               <tbody>
@@ -367,6 +370,7 @@ export function AdminReports() {
                   .sort((a, b) => b.date.localeCompare(a.date))
                   .map((record) => {
                     const emp = employees.find((e) => e.id === record.employeeId);
+                    const approvalStatus = record.approvalStatus || 'pending';
                     return (
                       <tr key={record.id} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
@@ -415,6 +419,34 @@ export function AdminReports() {
                               </span>
                             )}
                           </div>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {approvalStatus === 'approved' ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                              <CheckCircle size={10} /> Approved
+                            </span>
+                          ) : approvalStatus === 'disapproved' ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+                              <XCircle size={10} /> Disapproved
+                            </span>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => approveTimeRecord(record.id, 'Instructor')}
+                                title="Approve DTR"
+                                className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                              >
+                                <CheckCircle size={9} /> Approve
+                              </button>
+                              <button
+                                onClick={() => disapproveTimeRecord(record.id)}
+                                title="Disapprove DTR"
+                                className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                              >
+                                <XCircle size={9} /> Reject
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );

@@ -716,3 +716,129 @@ function transformSupabaseTimeRecord(data: any): TimeRecord {
     academicYear: data.academic_year,
   };
 }
+
+// ─── Batch Synchronization & Data Repair ─────────────────────────────────────
+
+export async function upsertEmployees(employees: Employee[]): Promise<boolean> {
+  if (!isSupabaseConfigured() || employees.length === 0) return false;
+
+  try {
+    const payload = employees.map((emp) => ({
+      id: emp.id,
+      name: emp.name,
+      employee_id: emp.employeeId,
+      email: emp.email,
+      department: emp.department,
+      position: emp.position,
+      company_name: emp.companyName,
+      supervisor_name: emp.supervisorName,
+      school_name: emp.schoolName,
+      campus: emp.campus,
+      course: emp.course,
+      start_date: emp.startDate,
+      end_date: emp.endDate,
+      required_hours: emp.requiredHours,
+      photo: emp.photo,
+      face_registered: emp.faceRegistered,
+      active: emp.active,
+      academic_year: emp.academicYear,
+      registration_lat: emp.registrationLocation?.lat,
+      registration_lng: emp.registrationLocation?.lng,
+      registration_address: emp.registrationAddress,
+    }));
+
+    const { error } = await supabase.from('employees').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.error('Error upserting employees in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('upsertEmployees exception:', e);
+    return false;
+  }
+}
+
+export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean> {
+  if (!isSupabaseConfigured() || records.length === 0) return false;
+
+  try {
+    const payload = records.map((rec) => ({
+      id: rec.id,
+      employee_id: rec.employeeId,
+      date: rec.date,
+      time_in: rec.timeIn,
+      time_out: rec.timeOut,
+      time_in_lat: rec.timeInLocation?.lat,
+      time_in_lng: rec.timeInLocation?.lng,
+      time_out_lat: rec.timeOutLocation?.lat,
+      time_out_lng: rec.timeOutLocation?.lng,
+      time_in_geofenced: rec.timeInGeofenced,
+      time_out_geofenced: rec.timeOutGeofenced,
+      time_in_face_verified: rec.timeInFaceVerified,
+      time_out_face_verified: rec.timeOutFaceVerified,
+      time_in_photo: rec.timeInPhoto,
+      time_out_photo: rec.timeOutPhoto,
+      total_hours: rec.totalHours,
+      status: rec.status,
+      notes: rec.notes,
+      academic_year: rec.academicYear,
+    }));
+
+    const { error } = await supabase.from('time_records').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.error('Error upserting time records in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('upsertTimeRecords exception:', e);
+    return false;
+  }
+}
+
+export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ success: boolean; repairedEmployees: number; repairedRecords: number }> {
+  if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0 };
+
+  try {
+    // 1. Update any employee missing academic_year or with legacy administrator position
+    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position');
+    let repairedEmployees = 0;
+    if (!empFetchErr && emps) {
+      for (const e of emps) {
+        let needsUpdate = false;
+        const updates: any = {};
+        if (!e.academic_year) {
+          updates.academic_year = activeAY;
+          needsUpdate = true;
+        }
+        if (e.position === 'Administrator') {
+          updates.position = 'OJT Instructor';
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          await supabase.from('employees').update(updates).eq('id', e.id);
+          repairedEmployees++;
+        }
+      }
+    }
+
+    // 2. Update any time_records missing academic_year
+    const { data: recs, error: recFetchErr } = await supabase.from('time_records').select('id, academic_year');
+    let repairedRecords = 0;
+    if (!recFetchErr && recs) {
+      for (const r of recs) {
+        if (!r.academic_year) {
+          await supabase.from('time_records').update({ academic_year: activeAY }).eq('id', r.id);
+          repairedRecords++;
+        }
+      }
+    }
+
+    return { success: true, repairedEmployees, repairedRecords };
+  } catch (e) {
+    console.error('repairDatabaseData error:', e);
+    return { success: false, repairedEmployees: 0, repairedRecords: 0 };
+  }
+}
+

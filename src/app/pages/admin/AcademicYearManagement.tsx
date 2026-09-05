@@ -1,4 +1,21 @@
-import { CalendarRange, Plus, Save, Sparkles, CheckCircle2, Shield, FolderPlus, Layers, Users, Clock, Award, ArrowRight } from 'lucide-react';
+import {
+  CalendarRange,
+  Plus,
+  Save,
+  Sparkles,
+  CheckCircle2,
+  FolderPlus,
+  Layers,
+  Users,
+  Clock,
+  Award,
+  ArrowRight,
+  RefreshCw,
+  Database,
+  Building2,
+  GraduationCap,
+  Check,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -6,16 +23,24 @@ import { toast } from 'sonner';
 import { useApp } from '../../store/AppContext';
 
 export function AcademicYearManagement() {
-  const { settings, updateSettings, employees, timeRecords, evaluations } = useApp();
+  const {
+    settings,
+    updateSettings,
+    employees,
+    hostSupervisors,
+    timeRecords,
+    evaluations,
+    syncAllAccountsAcrossAcademicYears,
+    repairAndPersistDatabase,
+  } = useApp();
   const [form, setForm] = useState(settings);
   const [newAcademicYear, setNewAcademicYear] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
 
   useEffect(() => {
     setForm(settings);
   }, [settings]);
-
-  const upd = (field: string, value: string | number | boolean | string[]) =>
-    setForm((prev) => ({ ...prev, [field]: value }));
 
   const handleAddAcademicYear = () => {
     const academicYear = newAcademicYear.trim();
@@ -58,11 +83,48 @@ export function AcademicYearManagement() {
     toast.success('Academic environment settings saved successfully.');
   };
 
+  const handleSyncAllAccounts = async () => {
+    try {
+      setIsSyncing(true);
+      const res = await syncAllAccountsAcrossAcademicYears(form.activeAcademicYear);
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error('Account sync encountered an issue.');
+      }
+    } catch (e: any) {
+      toast.error('Sync failed: ' + (e?.message || String(e)));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleRepairDatabase = async () => {
+    try {
+      setIsRepairing(true);
+      const res = await repairAndPersistDatabase();
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error('Database verification failed.');
+      }
+    } catch (e: any) {
+      toast.error('Database repair failed: ' + (e?.message || String(e)));
+    } finally {
+      setIsRepairing(false);
+    }
+  };
+
   const { geofenceZones } = useApp();
 
   // Helper stats per academic environment
   const getEnvStats = (year: string) => {
-    const envTrainees = employees.filter((e) => e.academicYear === year || (!e.academicYear && year === form.academicYears[0]));
+    const envTrainees = employees.filter(
+      (e) =>
+        e.position !== 'OJT Instructor' &&
+        e.position !== 'HTE Representative' &&
+        (e.academicYear === year || (!e.academicYear && year === form.academicYears[0]))
+    );
     const envRecords = timeRecords.filter((r) => r.academicYear === year || (!r.academicYear && year === form.academicYears[0]));
     const envEvals = evaluations.filter((ev) => ev.academicYear === year || (!ev.academicYear && year === form.academicYears[0]));
     const envGeofences = geofenceZones.filter((z) => !z.academicYear || z.academicYear === year);
@@ -70,14 +132,17 @@ export function AcademicYearManagement() {
   };
 
   const activeStats = getEnvStats(form.activeAcademicYear);
+  const totalInstructors = employees.filter((e) => e.position === 'OJT Instructor').length;
+  const totalHTE = employees.filter((e) => e.position === 'HTE Representative').length + hostSupervisors.length;
+  const totalTrainees = employees.filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative').length;
 
   return (
     <div className="max-w-4xl space-y-6 pb-12">
       {/* Header */}
       <div>
-        <h2 className="text-xl font-bold text-slate-800">Academic Year Environment Management</h2>
+        <h2 className="text-xl font-bold text-slate-800">Academic Year & Account Synchronization</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Create, switch, and manage isolated academic year environments for compliance, trainee rosters, and records.
+          Manage isolated academic year environments, synchronize accounts (HTE, Instructors, Trainees), and ensure data integrity in the database.
         </p>
       </div>
 
@@ -90,7 +155,7 @@ export function AcademicYearManagement() {
         <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20 shadow-inner">
                 <CalendarRange size={24} className="text-sky-300" />
@@ -112,17 +177,17 @@ export function AcademicYearManagement() {
           </div>
 
           <p className="text-xs text-blue-200 leading-relaxed max-w-2xl">
-            When a new academic year environment is created or set as active, all new trainee registrations, daily time records (DTR), and evaluation forms automatically comply under <strong>AY {form.activeAcademicYear}</strong>.
+            All account rosters, daily time records (DTR), and evaluation forms automatically operate under <strong>AY {form.activeAcademicYear}</strong>. Institutional HTE and Instructor accounts remain active across all years.
           </p>
 
           <div className="grid grid-cols-3 gap-3 pt-2">
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
               <div className="flex items-center justify-center gap-1.5 text-sky-300 mb-1">
                 <Users size={15} />
-                <span className="text-xs font-semibold">Trainees</span>
+                <span className="text-xs font-semibold">Trainees (Active AY)</span>
               </div>
               <p className="text-xl font-extrabold text-white">{activeStats.trainees}</p>
-              <p className="text-[10px] text-blue-200">Registered</p>
+              <p className="text-[10px] text-blue-200">Enrolled</p>
             </div>
 
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
@@ -146,6 +211,86 @@ export function AcademicYearManagement() {
         </div>
       </motion.div>
 
+      {/* Account Synchronization & Database Persistence Actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-5"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+              <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm">Synchronize Accounts Across Academic Years</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Ensure all HTE Representatives, Instructors, and Trainees are synced and active in every academic year.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Global Account Overview */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 bg-purple-100 text-purple-700 rounded-xl flex items-center justify-center shrink-0 font-bold">
+              <GraduationCap size={18} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">OJT Instructors</p>
+              <p className="text-base font-bold text-slate-800">{totalInstructors} Accounts</p>
+              <p className="text-[10px] text-emerald-600 font-semibold">Global Access</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center shrink-0 font-bold">
+              <Building2 size={18} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">HTE Partners</p>
+              <p className="text-base font-bold text-slate-800">{totalHTE} Supervisors</p>
+              <p className="text-[10px] text-emerald-600 font-semibold">Global Access</p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center gap-3">
+            <div className="w-9 h-9 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center shrink-0 font-bold">
+              <Users size={18} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 font-medium">Total Trainees</p>
+              <p className="text-base font-bold text-slate-800">{totalTrainees} Students</p>
+              <p className="text-[10px] text-blue-600 font-semibold">Tracked per AY</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleSyncAllAccounts}
+            disabled={isSyncing}
+            className="flex-1 min-w-[220px] inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw size={15} className={isSyncing ? 'animate-spin' : ''} />
+            {isSyncing ? 'Synchronizing Accounts...' : 'Sync All Accounts to Active AY'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleRepairDatabase}
+            disabled={isRepairing}
+            className="flex-1 min-w-[220px] inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 transition-all shadow-md shadow-slate-200 disabled:opacity-50 cursor-pointer"
+          >
+            <Database size={15} className={isRepairing ? 'animate-spin' : ''} />
+            {isRepairing ? 'Validating Database...' : 'Verify & Store Data in Database'}
+          </button>
+        </div>
+      </motion.div>
+
       {/* Create New Academic Environment Card */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -160,7 +305,7 @@ export function AcademicYearManagement() {
           <div>
             <h3 className="font-bold text-slate-800 text-sm">Create New Academic Year Environment</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Enter a new academic year to spawn a fresh system environment for new student cohorts and compliance.
+              Enter a new academic year to spawn a fresh system environment for new student cohorts.
             </p>
           </div>
         </div>
@@ -194,7 +339,7 @@ export function AcademicYearManagement() {
             <div>
               <p className="font-bold mb-0.5">Environment Isolation Guarantee:</p>
               <p className="text-amber-800 leading-relaxed">
-                Creating a new year automatically sets it as the active workspace. Previous year records will remain untouched and archived for historical auditing.
+                Creating a new year automatically sets it as the active workspace. Previous year records remain intact for historical auditing.
               </p>
             </div>
           </div>
@@ -294,3 +439,4 @@ export function AcademicYearManagement() {
     </div>
   );
 }
+

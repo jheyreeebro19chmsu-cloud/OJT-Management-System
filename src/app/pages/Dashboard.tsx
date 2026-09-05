@@ -157,19 +157,17 @@ export function Dashboard() {
         console.warn('Supabase metric query warning, using active AY context metrics:', error);
       }
 
-      // Context Fallback (Scoped strictly to current active Academic Year)
-      const currentYearStudents = employees.filter(
-        (e) => e.position !== 'OJT Instructor' && (e.academicYear === settings.activeAcademicYear || !e.academicYear)
-      );
-      const approvedCount = currentYearStudents.filter((e) => e.active && e.approvalStatus !== 'pending').length;
-      const pendingCount = currentYearStudents.filter((e) => !e.active || e.approvalStatus === 'pending').length;
-      const totalReq = currentYearStudents.reduce((sum, e) => sum + (e.requiredHours || 486), 0);
-      const activeIds = new Set(currentYearStudents.map((e) => e.id));
+      // Context fallback includes trainees from every academic year so account sync is global.
+      const allStudents = employees.filter((e) => e.position !== 'OJT Instructor');
+      const approvedCount = allStudents.filter((e) => e.active && e.approvalStatus !== 'pending').length;
+      const pendingCount = allStudents.filter((e) => !e.active || e.approvalStatus === 'pending').length;
+      const totalReq = allStudents.reduce((sum, e) => sum + (e.requiredHours || 486), 0);
+      const activeIds = new Set(allStudents.map((e) => e.id));
       const activeTimeRecs = contextTimeRecords.filter((r) => activeIds.has(r.employeeId));
       const totalRendered = activeTimeRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0);
 
       setMetrics({
-        total_applications: currentYearStudents.length,
+        total_applications: allStudents.length,
         status_counts: {
           pending: pendingCount,
           approved: approvedCount,
@@ -180,7 +178,7 @@ export function Dashboard() {
         total_required_hours: totalReq,
         total_rendered_hours: totalRendered,
         total_remaining_hours: Math.max(0, totalReq - totalRendered),
-        unique_students: currentYearStudents.length,
+        unique_students: allStudents.length,
       });
 
       const formatted = activeTimeRecs.slice(0, 10).map((r) => {

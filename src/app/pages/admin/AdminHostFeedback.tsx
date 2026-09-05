@@ -49,10 +49,19 @@ export function AdminHostFeedback() {
           </div>
           <div>
             <h2 className="font-bold text-gray-800">Host Establishment Feedback</h2>
-            <p className="text-xs text-gray-500">Monitor and review feedback submitted by host supervisors</p>
+            <p className="text-xs text-gray-500">View and monitor feedback submitted by student trainees about their host companies</p>
+          </div>
+        </div>
+        {/* Info banner clarifying ownership */}
+        <div className="mt-3 p-3 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-700 flex items-start gap-2">
+          <span className="text-base leading-none">ℹ️</span>
+          <div>
+            <span className="font-semibold">Instructor View Only — </span>
+            HTE feedback is submitted exclusively by student trainees. As instructor, you can review, mark as reviewed, or archive submissions.
           </div>
         </div>
       </motion.div>
+
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard label="Average Score" value={`${summary.avg}%`} />

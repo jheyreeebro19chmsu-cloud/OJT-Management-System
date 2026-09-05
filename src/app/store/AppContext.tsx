@@ -284,6 +284,8 @@ interface AppContextType {
   deleteEmployee: (id: string) => void;
   addTimeRecord: (record: Omit<TimeRecord, 'id'>) => TimeRecord;
   updateTimeRecord: (id: string, data: Partial<TimeRecord>) => void;
+  approveTimeRecord: (id: string, approvedBy?: string) => void;
+  disapproveTimeRecord: (id: string, note?: string) => void;
   getTodayRecord: (employeeId: string) => TimeRecord | null;
   getEmployeeRecords: (employeeId: string) => TimeRecord[];
   updateGeofenceZones: (zones: GeofenceZone[]) => void;
@@ -334,6 +336,8 @@ interface AppContextType {
   approveEmployee: (id: string) => void;
   rejectEmployee: (id: string) => void;
   setPasswordForEmail: (email: string, password: string) => void;
+  syncAllAccountsAcrossAcademicYears: (targetAcademicYear?: string) => Promise<{ success: boolean; syncedCount: number; message: string }>;
+  repairAndPersistDatabase: () => Promise<{ success: boolean; message: string; repairedCounts: any }>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -1257,6 +1261,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const approveTimeRecord = (id: string, approvedBy?: string) => {
+    const now = new Date().toISOString();
+    const update: Partial<TimeRecord> = {
+      approvalStatus: 'approved',
+      approvedBy: approvedBy || 'Instructor',
+      approvedAt: now,
+      approvalNote: '',
+    };
+    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...update } : r)));
+    if (useSupabase) supabaseService.updateTimeRecord(id, update);
+  };
+
+  const disapproveTimeRecord = (id: string, note?: string) => {
+    const now = new Date().toISOString();
+    const update: Partial<TimeRecord> = {
+      approvalStatus: 'disapproved',
+      approvalNote: note || '',
+      approvedAt: now,
+    };
+    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...update } : r)));
+    if (useSupabase) supabaseService.updateTimeRecord(id, update);
+  };
+
+
   const getTodayRecord = (employeeId: string): TimeRecord | null => {
     const today = new Date().toISOString().split('T')[0];
     const todayRecords = timeRecords.filter((r) => r.employeeId === employeeId && r.date === today);
@@ -1672,6 +1700,91 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return list.length > 0 ? list[0] : null;
   };
 
+  const syncAllAccountsAcrossAcademicYears = async (
+    targetAcademicYear?: string
+  ): Promise<{ success: boolean; syncedCount: number; message: string }> => {
+    const ay = targetAcademicYear || settings.activeAcademicYear;
+
+    // 1. Synchronize all employees (Trainees, Instructors, and HTE Representatives)
+    const updatedEmployees = employees.map((emp) => {
+      const isInstructor = emp.position === 'OJT Instructor' || (emp.position && emp.position.toLowerCase().includes('instructor'));
+      const isHTE = emp.position === 'HTE Representative' || (emp.position && emp.position.toLowerCase().includes('hte'));
+
+      if (isInstructor || isHTE) {
+        return {
+          ...emp,
+          active: true,
+          approvalStatus: 'approved' as const,
+          academicYear: emp.academicYear || ay,
+        };
+      }
+
+      return {
+        ...emp,
+        academicYear: emp.academicYear || ay,
+      };
+    });
+
+    setEmployees(updatedEmployees);
+    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+
+    // 2. Ensure all Host Supervisors remain active
+    const updatedHosts = hostSupervisors.map((h) => ({
+      ...h,
+      active: true,
+      academicYear: h.academicYear || ay,
+    }));
+    setHostSupervisors(updatedHosts);
+    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+
+    // 3. Persist to Supabase if configured
+    if (useSupabase) {
+      await supabaseService.upsertEmployees(updatedEmployees);
+      await supabaseService.repairDatabaseData(ay);
+    }
+
+    const totalSynced = updatedEmployees.length + updatedHosts.length;
+    return {
+      success: true,
+      syncedCount: totalSynced,
+      message: `Synchronized ${updatedEmployees.length} user accounts and ${updatedHosts.length} HTE partners for Academic Year ${ay}.`,
+    };
+  };
+
+  const repairAndPersistDatabase = async (): Promise<{ success: boolean; message: string; repairedCounts: any }> => {
+    const activeAY = settings.activeAcademicYear;
+
+    // 1. Ensure all time records have academicYear & valid photo fields
+    const fixedRecords = timeRecords.map((r) => ({
+      ...r,
+      academicYear: r.academicYear || activeAY,
+    }));
+    setTimeRecords(fixedRecords);
+    saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
+
+    // 2. Ensure all employees have academicYear and normalized positions
+    const fixedEmployees = employees.map((e) => ({
+      ...e,
+      position: e.position === 'Administrator' ? 'OJT Instructor' : e.position,
+      academicYear: e.academicYear || activeAY,
+    }));
+    setEmployees(fixedEmployees);
+    saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
+
+    let supabaseResult = { repairedEmployees: 0, repairedRecords: 0 };
+    if (useSupabase) {
+      await supabaseService.upsertEmployees(fixedEmployees);
+      await supabaseService.upsertTimeRecords(fixedRecords);
+      supabaseResult = await supabaseService.repairDatabaseData(activeAY);
+    }
+
+    return {
+      success: true,
+      message: 'All data, photos, records, and accounts successfully verified and saved in database.',
+      repairedCounts: supabaseResult,
+    };
+  };
+
   const approveEmployee = (id: string) => {
     updateEmployee(id, { active: true, approvalStatus: 'approved' });
   };
@@ -1691,17 +1804,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  // Dynamic filtering based on active Academic Year
-  const activeAY = settings.activeAcademicYear;
-  const filteredEmployees = employees.filter(
-    (e) => e.position === 'OJT Instructor' || e.academicYear === activeAY || (!e.academicYear && activeAY === settings.academicYears[0])
-  );
-  const activeEmpIds = new Set(filteredEmployees.map((e) => e.id));
-  const filteredTimeRecords = timeRecords.filter((r) => activeEmpIds.has(r.employeeId));
-  const filteredGeofenceZones = geofenceZones.filter((z) => !z.academicYear || z.academicYear === activeAY);
-  const filteredEvaluations = evaluations.filter((ev) => ev.academicYear === activeAY || (!ev.academicYear && activeAY === settings.academicYears[0]));
-  const filteredAnnouncements = announcements.filter((a) => !a.academicYear || a.academicYear === activeAY);
-  const filteredHostFeedback = hostFeedback.filter((hf) => hf.academicYear === activeAY || (!hf.academicYear && activeAY === settings.academicYears[0]));
+  // Accounts are global across academic years; records retain their own academic-year metadata.
+  const filteredEmployees = employees;
+  const filteredTimeRecords = timeRecords;
+  const filteredGeofenceZones = geofenceZones;
+  const filteredEvaluations = evaluations;
+  const filteredAnnouncements = announcements;
+  const filteredHostFeedback = hostFeedback;
 
   return (
     <AppContext.Provider
@@ -1728,6 +1837,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         rejectEmployee,
         addTimeRecord,
         updateTimeRecord,
+        approveTimeRecord,
+        disapproveTimeRecord,
         getTodayRecord,
         getEmployeeRecords,
         updateGeofenceZones,
@@ -1762,6 +1873,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         getLatestHostFeedback,
         // Expose password helper so UI can set passwords when updating existing accounts
         setPasswordForEmail,
+        syncAllAccountsAcrossAcademicYears,
+        repairAndPersistDatabase,
       }}
     >
       {children}

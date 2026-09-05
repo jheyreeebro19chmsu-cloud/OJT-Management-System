@@ -133,12 +133,12 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702 }; // CHMSU Talisay Campus
+  const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702 }; // CHMSU Talisay Campus — used only as GPS fallback
 
-  // Registration location state
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>('captured');
-  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>(DEFAULT_CAMPUS_LOCATION);
-  const [registrationAddress, setRegistrationAddress] = useState<string>('Carlos Hilado Memorial State University, Talisay City, Negros Occidental');
+  // Registration location state — starts as idle until GPS is captured
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
+  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>(undefined);
+  const [registrationAddress, setRegistrationAddress] = useState<string>('');
   const [showLocationMap, setShowLocationMap] = useState(true);
   const [pickingLocation, setPickingLocation] = useState(false);
   const watchIdRef = React.useRef<number | null>(null);
@@ -226,11 +226,21 @@ export function Register() {
       const { latitude, longitude, accuracy } = position.coords;
       setRegistrationLocation({ lat: latitude, lng: longitude, accuracy });
       setLocationStatus('captured');
-      toast.success('Live GPS coordinates locked for attendance geofencing!');
+      const accuracyLabel = accuracy < 10 ? 'High' : accuracy < 50 ? 'Good' : 'Low';
+      toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
     } catch (err: unknown) {
-      console.warn('Geolocation fallback:', err);
-      setRegistrationLocation((prev) => prev || DEFAULT_CAMPUS_LOCATION);
-      setLocationStatus('captured');
+      console.warn('Geolocation error:', err);
+      const isDenied = isGeolocationPositionError(err) && err.code === 1;
+      if (isDenied) {
+        // Permission denied — do NOT fall back; require user to grant GPS
+        setLocationStatus('denied');
+        toast.error('Location access denied. Please allow GPS access in your browser settings.');
+      } else {
+        // Timeout or unavailable — fall back to campus coords with warning
+        setRegistrationLocation((prev) => prev || DEFAULT_CAMPUS_LOCATION);
+        setLocationStatus('captured');
+        toast.warning('Could not get live GPS. Using default campus location — please adjust pin if needed.');
+      }
     }
   };
 
@@ -665,6 +675,19 @@ export function Register() {
     }
 
     const newEmp = result.employee!;
+
+    // Store the same face template used by attendance verification.
+    if (role === 'trainee' && photo && isSecurityApiConfigured()) {
+      try {
+        const faceResult = await registerFace({ employee_id: newEmp.id, image: photo });
+        if (!faceResult.success) {
+          toast.warning(faceResult.message || 'Registration completed, but face enrollment needs to be retried from Profile.');
+        }
+      } catch (faceError: any) {
+        console.error('Face enrollment failed after registration:', faceError);
+        toast.warning('Registration completed, but face enrollment could not reach the server. Please enroll again from Profile.');
+      }
+    }
 
     if (role === 'admin') {
       setRegisteredInstructorId(newEmp.id);
@@ -1211,39 +1234,65 @@ export function Register() {
                           </div>
                         )}
 
-                        {/* Location Pinning & Map Box (Visible First in View Mode) */}
+                        {/* Location Pinning & Map Box */}
                         <div className="mt-4 pt-3 border-t border-blue-100/60 space-y-2.5">
                           <div className="flex items-center justify-between">
                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
                               <MapPin size={13} className="text-blue-600" />
-                              <span>Company Geofence Location</span>
+                              <span>Geofence Location (GPS)</span>
                             </label>
-
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                              {pickingLocation ? 'Pick Mode Active' : 'View Mode'}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              locationStatus === 'captured' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                              locationStatus === 'capturing' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
+                              locationStatus === 'denied' ? 'bg-red-100 text-red-700 border-red-200' :
+                              'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                              {locationStatus === 'captured' ? '📍 GPS Locked' :
+                               locationStatus === 'capturing' ? '⟳ Detecting...' :
+                               locationStatus === 'denied' ? '⚠ Access Denied' : 'Waiting for GPS'}
                             </span>
                           </div>
 
-                          {/* Embedded Map Component (Always Visible First in View Mode) */}
+                          {/* GPS denied warning */}
+                          {locationStatus === 'denied' && (
+                            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                              <span className="text-lg leading-none">🚫</span>
+                              <div>
+                                <p className="font-bold">GPS Access Denied</p>
+                                <p>Please enable location access in your browser settings, then click "Detect Device GPS" again. Accurate GPS is required for attendance geofencing.</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Embedded Map Component */}
                           <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm relative h-48 bg-slate-100">
-                            <GeofenceMap
-                              zones={[]}
-                              picking={pickingLocation}
-                              pickedCoords={registrationLocation}
-                              onPick={(lat, lng) => {
-                                setRegistrationLocation({ lat, lng });
-                                setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-                                setLocationStatus('captured');
-                              }}
-                              liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
-                              className="h-48"
-                            />
+                            {locationStatus === 'capturing' ? (
+                              <div className="flex flex-col items-center justify-center h-full gap-2 text-blue-600">
+                                <Loader className="animate-spin" size={28} />
+                                <p className="text-xs font-medium">Acquiring GPS signal…</p>
+                              </div>
+                            ) : (
+                              <GeofenceMap
+                                zones={[]}
+                                picking={pickingLocation}
+                                pickedCoords={registrationLocation}
+                                onPick={(lat, lng) => {
+                                  setRegistrationLocation({ lat, lng });
+                                  setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                                  setLocationStatus('captured');
+                                }}
+                                liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
+                                className="h-48"
+                              />
+                            )}
 
                             {/* Map Mode Overlay Badge */}
-                            <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-700 shadow border border-slate-200 flex items-center gap-1.5 pointer-events-none">
-                              <span className={`w-2 h-2 rounded-full ${pickingLocation ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-                              <span>{pickingLocation ? 'Click map to set pin' : 'Location Pin (View Mode)'}</span>
-                            </div>
+                            {locationStatus !== 'capturing' && (
+                              <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-700 shadow border border-slate-200 flex items-center gap-1.5 pointer-events-none">
+                                <span className={`w-2 h-2 rounded-full ${pickingLocation ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                                <span>{pickingLocation ? 'Click map to set pin' : 'Location Pin (View Mode)'}</span>
+                              </div>
+                            )}
                           </div>
 
                           {/* Location Action Buttons */}
@@ -1251,7 +1300,8 @@ export function Register() {
                             <button
                               type="button"
                               onClick={() => setPickingLocation(!pickingLocation)}
-                              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                              disabled={locationStatus === 'capturing'}
+                              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 ${
                                 pickingLocation
                                   ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600'
                                   : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
@@ -1264,23 +1314,33 @@ export function Register() {
                             <button
                               type="button"
                               onClick={captureLocation}
-                              className="py-2 px-3 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-sm hover:bg-blue-700 flex items-center justify-center gap-1.5 transition-all"
+                              disabled={locationStatus === 'capturing'}
+                              className="py-2 px-3 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:bg-blue-400 flex items-center justify-center gap-1.5 transition-all"
                             >
                               {locationStatus === 'capturing' ? (
                                 <Loader className="animate-spin" size={14} />
                               ) : (
                                 <MapPin size={14} />
                               )}
-                              <span>Detect Device GPS</span>
+                              <span>{locationStatus === 'capturing' ? 'Detecting GPS…' : 'Detect Device GPS'}</span>
                             </button>
                           </div>
 
-                          {registrationLocation && (
-                            <p className="text-[11px] text-slate-500 text-center font-mono">
-                              Pinned Coords: {registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}
-                            </p>
+                          {registrationLocation && locationStatus === 'captured' && (
+                            <div className="text-center space-y-0.5">
+                              <p className="text-[11px] text-slate-500 font-mono">
+                                📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
+                              </p>
+                              {(registrationLocation as any).accuracy && (
+                                <p className={`text-[10px] font-semibold ${(registrationLocation as any).accuracy < 20 ? 'text-green-600' : (registrationLocation as any).accuracy < 100 ? 'text-amber-600' : 'text-red-500'}`}>
+                                  GPS Accuracy: ±{Math.round((registrationLocation as any).accuracy)}m
+                                  {(registrationLocation as any).accuracy < 20 ? ' ✓ High' : (registrationLocation as any).accuracy < 100 ? ' ⚠ Medium' : ' ✗ Low — move to open area'}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
+
                       </div>
 
                       {/* Account Security Card */}

@@ -76,6 +76,7 @@ export async function migrateLocalStorageToSupabase(): Promise<MigrationResult> 
         photo: emp.photo,
         face_registered: emp.faceRegistered,
         active: emp.active,
+        academic_year: emp.academicYear || '2026-2027',
         registration_lat: emp.registrationLocation?.lat,
         registration_lng: emp.registrationLocation?.lng,
         registration_address: emp.registrationAddress,
@@ -116,6 +117,7 @@ export async function migrateLocalStorageToSupabase(): Promise<MigrationResult> 
         total_hours: rec.totalHours,
         status: rec.status,
         notes: rec.notes,
+        academic_year: rec.academicYear || '2026-2027',
       }));
 
       const { error: recError, count: recCount } = await supabase
@@ -133,9 +135,13 @@ export async function migrateLocalStorageToSupabase(): Promise<MigrationResult> 
     // Migrate Geofence Zones
     const geofenceZones = getFromLocalStorage<GeofenceZone[]>(STORAGE_KEYS.GEOFENCE_ZONES, []);
     if (geofenceZones.length > 0) {
+      const zoneData = geofenceZones.map((z) => ({
+        ...z,
+        academic_year: (z as any).academicYear || '2026-2027',
+      }));
       const { error: zoneError, count: zoneCount } = await supabase
         .from('geofence_zones')
-        .upsert(geofenceZones, { onConflict: 'id' })
+        .upsert(zoneData, { onConflict: 'id' })
         .select();
 
       if (zoneError) {
@@ -164,6 +170,7 @@ export async function migrateLocalStorageToSupabase(): Promise<MigrationResult> 
         recommendations: evaluation.recommendations,
         evaluated_at: evaluation.evaluatedAt,
         status: evaluation.status,
+        academic_year: evaluation.academicYear || '2026-2027',
       }));
 
       const { error: evalError, count: evalCount } = await supabase
@@ -191,6 +198,7 @@ export async function migrateLocalStorageToSupabase(): Promise<MigrationResult> 
         created_at: ann.createdAt,
         expires_at: ann.expiresAt,
         created_by: ann.createdBy,
+        academic_year: ann.academicYear || '2026-2027',
       }));
 
       const { error: annError, count: annCount } = await supabase

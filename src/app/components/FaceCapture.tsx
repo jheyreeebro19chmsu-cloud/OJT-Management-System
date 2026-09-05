@@ -2,7 +2,7 @@ import { CheckCircle, XCircle, Camera, RefreshCw, AlertCircle } from 'lucide-rea
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
-import { detectFaceInDataUrl, computeDescriptorFromDataUrl, descriptorDistance } from '../services/faceClient';
+import { loadFaceModels, detectFaceInDataUrl, computeDescriptorFromDataUrl, descriptorDistance } from '../services/faceClient';
 import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
 
 type ScanState = 'idle' | 'requesting' | 'scanning' | 'analyzing' | 'verifying' | 'success' | 'failed' | 'no-camera';
@@ -322,22 +322,39 @@ export function FaceCapture({
         }
       }
 
+      // Pre-load face models in parallel
+      loadFaceModels().catch((err) => console.warn('Background model preload:', err));
+
       // In register mode or client fallback
       if (img) {
-        const hasFace = await detectFaceInDataUrl(img).catch(() => true);
-        if (!hasFace) {
-          setProgress(100);
-          setState('failed');
-          setScanMessage('No face detected. Please face the camera and try again.');
-          stopCamera();
-          return;
+        if (mode === 'register') {
+          setScanMessage('Validating biometric face template...');
+          const descriptor = await computeDescriptorFromDataUrl(img).catch(() => null);
+          const hasFace = descriptor !== null || await detectFaceInDataUrl(img).catch(() => false);
+          if (!hasFace) {
+            setProgress(100);
+            setState('failed');
+            setScanMessage('No clear face detected. Please ensure good lighting, look straight at the camera, and try again.');
+            stopCamera();
+            return;
+          }
+        } else {
+          // verify mode offline fallback
+          const hasFace = await detectFaceInDataUrl(img).catch(() => true);
+          if (!hasFace) {
+            setProgress(100);
+            setState('failed');
+            setScanMessage('No face detected. Please face the camera and try again.');
+            stopCamera();
+            return;
+          }
         }
       }
 
       setCapturedImage(img || null);
       setProgress(100);
       setState('success');
-      setScanMessage(mode === 'verify' ? 'Verified successfully!' : 'Face registered successfully!');
+      setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Biometric face registered successfully!');
       stopCamera();
       onSuccess(img);
     } catch (err: unknown) {

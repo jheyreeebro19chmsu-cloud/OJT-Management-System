@@ -669,9 +669,17 @@ export function AdminEmployees() {
                       <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-semibold text-violet-900">Required Documents</p>
-                          <span className="text-[10px] uppercase tracking-wide text-violet-600">
-                            {getEmployeeRequiredDocuments(selectedEmp.id).length} items
-                          </span>
+                          {(() => {
+                            const summary = getEmployeeRequirementSummary(selectedEmp.id);
+                            const total = summary.complete + summary.incomplete + summary.missing;
+                            const allPassed = total > 0 && summary.missing === 0 && summary.incomplete === 0;
+                            const allMissing = total > 0 && summary.complete === 0;
+                            return (
+                              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${allPassed ? 'bg-green-100 text-green-700 border-green-200' : allMissing ? 'bg-red-100 text-red-700 border-red-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
+                                {allPassed ? '✓ All Documents Passed' : allMissing ? '✗ No Documents Uploaded' : `${summary.complete}/${total} Passed`}
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         <div className="space-y-2">
@@ -680,15 +688,18 @@ export function AdminEmployees() {
                           ) : (
                             getEmployeeRequiredDocuments(selectedEmp.id).map((doc) => {
                               const submission = getRequiredDocumentSubmission(doc.id, selectedEmp.id);
+                              const status = getRequirementStatus(doc.id, selectedEmp.id);
+                              const isPassed = status === 'complete';
+                              const isMissing = status === 'missing';
                               return (
-                                <div key={doc.id} className="rounded-xl bg-white p-2.5 border border-violet-100">
+                                <div key={doc.id} className={`rounded-xl bg-white p-2.5 border ${isPassed ? 'border-green-200' : isMissing ? 'border-red-200' : 'border-orange-200'}`}>
                                   <div className="flex items-start justify-between gap-3">
-                                    <div>
+                                    <div className="flex-1">
                                       <p className="text-sm font-semibold text-gray-800">{doc.title}</p>
                                       {doc.description && <p className="text-[11px] text-gray-500 mt-1">{doc.description}</p>}
                                     </div>
-                                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${getRequirementStatus(doc.id, selectedEmp.id) === 'complete' ? 'bg-green-100 text-green-700' : getRequirementStatus(doc.id, selectedEmp.id) === 'incomplete' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                      {getRequirementStatus(doc.id, selectedEmp.id)}
+                                    <span className={`shrink-0 text-[10px] rounded-full px-2.5 py-1 font-bold border ${isPassed ? 'bg-green-100 text-green-700 border-green-200' : isMissing ? 'bg-red-100 text-red-700 border-red-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
+                                      {isPassed ? '✓ Passed' : isMissing ? '✗ Missing' : '⚠ Incomplete'}
                                     </span>
                                   </div>
                                   {doc.dueDate && <p className="text-[11px] text-gray-500 mt-2">Due: {doc.dueDate}</p>}
@@ -736,6 +747,7 @@ export function AdminEmployees() {
                             })
                           )}
                         </div>
+
 
                         <div className="space-y-2 rounded-xl bg-white p-3 border border-violet-100">
                           <input

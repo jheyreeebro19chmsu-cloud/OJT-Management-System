@@ -54,13 +54,13 @@ export function HostFeedback() {
     navigate('/');
   };
 
-  if (!currentUser || (currentUser.role !== 'host' && currentUser.role !== 'hte')) {
+  if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-950 via-blue-900 to-sky-800 flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl p-6 shadow-xl max-w-md w-full text-center">
-          <h2 className="text-gray-800 font-bold text-lg mb-2">Host Portal Access</h2>
+          <h2 className="text-gray-800 font-bold text-lg mb-2">Access Required</h2>
           <p className="text-sm text-gray-500 mb-4">
-            This feedback portal is for authorized host supervisors and HTE representatives only. Please sign in to continue.
+            Please sign in to access the HTE feedback form.
           </p>
           <Link
             to="/"
