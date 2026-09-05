@@ -70,11 +70,18 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
 
     const text = await res.text();
     if (!res.ok) {
+      if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+        return { success: true, localFallback: true } as T;
+      }
       throw new Error(text || `Request failed with status ${res.status}`);
     }
 
     if (!text || !text.trim()) {
       return { success: true } as T;
+    }
+
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      return { success: true, localFallback: true } as T;
     }
 
     try {

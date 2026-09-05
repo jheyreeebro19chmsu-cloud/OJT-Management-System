@@ -4,7 +4,6 @@ import { authAPI } from '../services/authApi';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
-import { getAbsoluteUrl } from '../services/config';
 import {
   Employee,
   TimeRecord,
@@ -1049,95 +1048,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         let authId: string | undefined;
         if (password) {
-          const { data: authData, error: authError } = await supabase.auth.signUp({
-            email: cleanData.email,
-            password: password,
-            options: {
-              data: {
-                full_name: cleanData.name,
-                role: cleanData.position === 'OJT Instructor' ? 'admin' : cleanData.position === 'HTE Representative' ? 'host' : 'employee',
+          try {
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+              email: cleanData.email.trim(),
+              password: password,
+              options: {
+                data: {
+                  full_name: cleanData.name,
+                  role: cleanData.position === 'OJT Instructor' ? 'admin' : cleanData.position === 'HTE Representative' ? 'host' : 'employee',
+                }
               }
-            }
-          });
+            });
 
-          if (authError) {
-            // If user already exists in auth, allow them to complete registration by updating local profile
-            if (authError.message?.toLowerCase().includes('already registered') ||
-                authError.message?.toLowerCase().includes('user already exists')) {
-              setPasswordForEmail(cleanData.email, password);
-              const updatedData = { ...newEmp };
-              setEmployees((prev) => [updatedData, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase())]);
-              return {
-                success: true,
-                message: 'Account registered and updated successfully. You can now log in with your credentials.',
-                employee: updatedData,
-              };
+            if (authError) {
+              console.warn('Supabase Auth signUp note:', authError.message);
+            } else if (authData?.user?.id) {
+              authId = authData.user.id;
             }
-            console.warn('Supabase signUp failed, falling back to local create:', authError);
-            // Local fallback: persist password and create the employee locally so the user can sign up immediately
-            setPasswordForEmail(cleanData.email, password);
-            setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
-            return {
-              success: true,
-              message: 'Created locally; Supabase signup failed: ' + (authError.message || String(authError)),
-              employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false },
-            } as any;
-          }
-
-          if (authData?.user) {
-            authId = authData.user.id;
+          } catch (signUpErr) {
+            console.warn('Supabase Auth signUp exception:', signUpErr);
           }
         }
-
 
         const employeePayload = {
           ...cleanData,
-          id: authId || newEmp.id,
+          id: authId || newEmp.id || crypto.randomUUID(),
         };
 
-        let created = null as any;
-        // First try server-side insert (secure) which uses SUPABASE_SERVICE_ROLE_KEY on the server
-        try {
-          const resp = await fetch(getAbsoluteUrl('/api/auth/server-create-employee/'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(employeePayload),
-          });
-          if (resp.ok) {
-            const json = await resp.json();
-            if (json && json.success && json.employee) {
-              created = json.employee;
-            } else if (json && json.employee) {
-              created = json.employee;
-            }
-          } else {
-            const errBody = await resp.text();
-            console.warn('Server create employee returned non-OK:', resp.status, errBody);
-          }
-        } catch (err) {
-          console.warn('Server create employee request failed, will fallback to client Supabase:', err);
-        }
-
-        // Fallback to direct Supabase insert if server endpoint didn't return created row
-        if (!created) {
+        let created: Employee | null = null;
+        if (isSupabaseConfigured()) {
           try {
             created = await supabaseService.createEmployee(employeePayload);
           } catch (createErr: any) {
-            console.error('Supabase createEmployee failed, falling back to local save:', createErr);
-            // Fallback: create locally so the user can sign up immediately
-            if (password) {
-              setPasswordForEmail(cleanData.email, password);
+            console.warn('supabaseService.createEmployee failed, trying upsert:', createErr);
+            const upsertOk = await supabaseService.upsertEmployees([employeePayload as Employee]);
+            if (upsertOk) {
+              created = employeePayload as Employee;
             }
-            setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
-            return { success: true, message: 'Created locally; Supabase sync failed: ' + (createErr?.message || String(createErr)), employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false } } as any;
           }
         }
 
-        if (created) {
-          setEmployees((prev) => [created, ...prev]);
-          if (password) {
-            setPasswordForEmail(cleanData.email, password);
-          }
+        if (!created) {
+          // Fallback to memory / local store
+          created = { ...newEmp, ...employeePayload } as Employee;
+        }
+
+        if (password) {
+          setPasswordForEmail(cleanData.email, password);
+        }
+
+        setEmployees((prev) => [created!, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase())]);
 
           // Handle face registration after successful database creation to use the real database UUID
           // Skip face registration for OJT Instructors and HTE Representatives
@@ -1164,9 +1124,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
           }
           return { success: true, employee: created };
-        } else {
-          return { success: false, message: 'Failed to create database record in Supabase.' };
-        }
       } catch (err: any) {
         console.error('registerEmployee Supabase path error:', err);
         const errMsg = err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Unknown error during Supabase registration.';

@@ -49,11 +49,21 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     required_hours: employee.requiredHours,
     photo: employee.photo,
     face_registered: employee.faceRegistered,
-    active: employee.active,
+    active: employee.active !== undefined ? employee.active : true,
     registration_lat: employee.registrationLocation?.lat,
     registration_lng: employee.registrationLocation?.lng,
     registration_address: employee.registrationAddress,
     academic_year: employee.academicYear,
+    instructor_id: employee.instructorId,
+    hte_id: employee.hteId,
+    linked_at: employee.linkedAt,
+    approval_status: employee.approvalStatus || 'approved',
+    first_name: employee.firstName,
+    last_name: employee.lastName,
+    middle_initial: employee.middleInitial,
+    company_address: employee.companyAddress,
+    contact_person: employee.contactPerson,
+    contact_phone: employee.contactPhone,
   };
 
   if (employee.id) {
@@ -97,6 +107,16 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.registrationAddress !== undefined) {
     supabaseUpdates.registration_address = updates.registrationAddress;
   }
+  if (updates.instructorId !== undefined) supabaseUpdates.instructor_id = updates.instructorId;
+  if (updates.hteId !== undefined) supabaseUpdates.hte_id = updates.hteId;
+  if (updates.linkedAt !== undefined) supabaseUpdates.linked_at = updates.linkedAt;
+  if (updates.approvalStatus !== undefined) supabaseUpdates.approval_status = updates.approvalStatus;
+  if (updates.firstName !== undefined) supabaseUpdates.first_name = updates.firstName;
+  if (updates.lastName !== undefined) supabaseUpdates.last_name = updates.lastName;
+  if (updates.middleInitial !== undefined) supabaseUpdates.middle_initial = updates.middleInitial;
+  if (updates.companyAddress !== undefined) supabaseUpdates.company_address = updates.companyAddress;
+  if (updates.contactPerson !== undefined) supabaseUpdates.contact_person = updates.contactPerson;
+  if (updates.contactPhone !== undefined) supabaseUpdates.contact_phone = updates.contactPhone;
 
   const { error } = await supabase.from('employees').update(supabaseUpdates).eq('id', id);
 
@@ -691,6 +711,16 @@ function transformSupabaseEmployee(data: any): Employee {
         ? { lat: data.registration_lat, lng: data.registration_lng }
         : undefined,
     registrationAddress: data.registration_address,
+    instructorId: data.instructor_id,
+    hteId: data.hte_id,
+    linkedAt: data.linked_at,
+    approvalStatus: data.approval_status,
+    firstName: data.first_name,
+    lastName: data.last_name,
+    middleInitial: data.middle_initial,
+    companyAddress: data.company_address,
+    contactPerson: data.contact_person,
+    contactPhone: data.contact_phone,
   };
 }
 
@@ -745,6 +775,16 @@ export async function upsertEmployees(employees: Employee[]): Promise<boolean> {
       registration_lat: emp.registrationLocation?.lat,
       registration_lng: emp.registrationLocation?.lng,
       registration_address: emp.registrationAddress,
+      instructor_id: emp.instructorId,
+      hte_id: emp.hteId,
+      linked_at: emp.linkedAt,
+      approval_status: emp.approvalStatus || 'approved',
+      first_name: emp.firstName,
+      last_name: emp.lastName,
+      middle_initial: emp.middleInitial,
+      company_address: emp.companyAddress,
+      contact_person: emp.contactPerson,
+      contact_phone: emp.contactPhone,
     }));
 
     const { error } = await supabase.from('employees').upsert(payload, { onConflict: 'id' });

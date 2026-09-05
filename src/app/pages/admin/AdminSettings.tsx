@@ -20,7 +20,6 @@ import { isSupabaseConfigured } from '../../lib/supabase';
 import addressApi from '../../services/addressApi';
 import { fetchSecurityHealth, isSecurityApiConfigured, type SecurityHealthResponse } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
-import { getAbsoluteUrl } from '../../services/config';
 
 export function AdminSettings() {
   const { settings, updateSettings, changeCurrentUserPassword, currentUser } = useApp();
@@ -240,12 +239,12 @@ export function AdminSettings() {
     if (!currentUser?.id) return;
     setLoadingOtps(true);
     try {
-      const res = await fetch(getAbsoluteUrl(`/api/security/auth/list-instructor-otps/?instructor_id=${currentUser.id}`));
-      if (!res.ok) throw new Error('Failed to load OTPs');
-      const d = await res.json();
-      setOtps(d.otps || []);
+      const stored = JSON.parse(localStorage.getItem('ojt_instructor_otps') || '[]');
+      const filtered = stored.filter((o: any) => o.instructorId === currentUser.id);
+      setOtps(filtered);
     } catch (e) {
       console.error(e);
+      setOtps([]);
     } finally {
       setLoadingOtps(false);
     }
@@ -262,16 +261,17 @@ export function AdminSettings() {
     if (!currentUser?.id) return toast.error('Instructor context not available');
 
     try {
-      const res = await fetch(getAbsoluteUrl('/api/security/auth/generate-instructor-otp/'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructor_id: currentUser.id }),
-      });
-
-      if (!res.ok) throw new Error('Failed to generate OTP');
-      const d = await res.json();
-      toast.success('OTP generated and copied to clipboard');
-      if (d.otp_code) await navigator.clipboard.writeText(d.otp_code);
+      const newOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const stored = JSON.parse(localStorage.getItem('ojt_instructor_otps') || '[]');
+      const newOtpObj = {
+        code: newOtpCode,
+        instructorId: currentUser.id,
+        createdAt: new Date().toISOString(),
+      };
+      stored.unshift(newOtpObj);
+      localStorage.setItem('ojt_instructor_otps', JSON.stringify(stored));
+      await navigator.clipboard.writeText(newOtpCode);
+      toast.success(`OTP ${newOtpCode} generated and copied to clipboard`);
       fetchOtps();
     } catch (e: any) {
       console.error(e);
@@ -283,13 +283,9 @@ export function AdminSettings() {
     if (!currentUser?.id) return;
 
     try {
-      const res = await fetch(getAbsoluteUrl('/api/security/auth/revoke-instructor-otp/'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructor_id: currentUser.id, otp_code: code }),
-      });
-
-      if (!res.ok) throw new Error('Revoke failed');
+      const stored = JSON.parse(localStorage.getItem('ojt_instructor_otps') || '[]');
+      const filtered = stored.filter((o: any) => !(o.instructorId === currentUser.id && o.code === code));
+      localStorage.setItem('ojt_instructor_otps', JSON.stringify(filtered));
       toast.success('OTP revoked');
       fetchOtps();
     } catch (e: any) {

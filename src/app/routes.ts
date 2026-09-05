@@ -11,7 +11,6 @@ const AdminReports = React.lazy(() => import('./pages/admin/AdminReports').then(
 const AdminSettings = React.lazy(() => import('./pages/admin/AdminSettings').then(m => ({ default: m.AdminSettings })));
 const AcademicYearManagement = React.lazy(() => import('./pages/admin/AcademicYearManagement').then(m => ({ default: m.AcademicYearManagement })));
 const AccountProfile = React.lazy(() => import('./pages/AccountProfile').then(m => ({ default: m.AccountProfile })));
-const InstructorPendingRequests = React.lazy(() => import('./pages/InstructorPendingRequests').then(m => ({ default: m.default })));
 const AdminEvaluations = React.lazy(() => import('./pages/admin/AdminEvaluations').then(m => ({ default: m.AdminEvaluations })));
 const AdminAnnouncements = React.lazy(() => import('./pages/admin/AdminAnnouncements').then(m => ({ default: m.AdminAnnouncements })));
 const HostFeedback = React.lazy(() => import('./pages/HostFeedback').then(m => ({ default: m.HostFeedback })));
@@ -139,7 +138,6 @@ export const router = createBrowserRouter([
       { path: 'academic-years', element: withSuspense(AcademicYearManagement) },
       { path: 'settings', element: withSuspense(AdminSettings) },
       { path: 'profile', element: withSuspense(() => React.createElement(AccountProfile, { role: 'admin' })) },
-      { path: 'pending-requests', element: withSuspense(InstructorPendingRequests) },
     ],
   },
   {

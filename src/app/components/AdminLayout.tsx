@@ -19,7 +19,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
-import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
+import { getPhotoUrl } from '../services/config';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 
 
@@ -31,7 +31,6 @@ const navItems = [
   { to: '/admin/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/admin/host-feedback', label: 'Host Feedback', icon: MessageSquare, end: false },
   { to: '/admin/announcements', label: 'Announcements', icon: Megaphone, end: false },
-  { to: '/admin/pending-requests', label: 'Pending Requests', icon: Bell, end: false },
   { to: '/admin/academic-years', label: 'Academic Year', icon: Calendar, end: false },
   { to: '/admin/settings', label: 'Settings', icon: Settings, end: false },
 ];
@@ -41,160 +40,7 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [pendingCount, setPendingCount] = useState<number>(0);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-
-  // Determine whether the current user is an instructor
-  const isInstructor = Boolean(
-    (employee && (employee as any).role === 'instructor') ||
-      (currentUser && (currentUser as any).role === 'instructor') ||
-      (() => {
-        try {
-          const u = localStorage.getItem('user');
-          if (!u) return false;
-          const parsed = JSON.parse(u);
-          return parsed && parsed.role === 'instructor';
-        } catch {
-          return false;
-        }
-      })()
-  );
-
-  const fetchPendingCount = useCallback(async () => {
-    if (!isInstructor) return setPendingCount(0);
-    try {
-      const instrId = employee?.id || (() => {
-        try {
-          const u = localStorage.getItem('user');
-          if (u) return JSON.parse(u).id;
-        } catch {}
-        return null;
-      })();
-      if (!instrId) return setPendingCount(0);
-      const res = await fetch(getAbsoluteUrl(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${instrId}`));
-      if (!res.ok) return;
-      const data = await res.json();
-      const count = Array.isArray(data.requests) ? data.requests.length : 0;
-      setPendingCount(count);
-    } catch (e) {
-      // silent
-    }
-  }, [employee, isInstructor]);
-
-  useEffect(() => {
-    if (!isInstructor) return;
-
-    let ws: WebSocket | null = null;
-    let es: EventSource | null = null;
-    let pollId: any = null;
-    let reconnectTimer: any = null;
-    let retries = 0;
-
-    const startPolling = () => {
-      void fetchPendingCount();
-      pollId = setInterval(() => void fetchPendingCount(), 10000);
-    };
-    const stopPolling = () => {
-      if (pollId) {
-        clearInterval(pollId);
-        pollId = null;
-      }
-    };
-
-    const setupEventSource = () => {
-      try {
-        const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null; })();
-        if (!instrId || typeof window === 'undefined' || !('EventSource' in window)) return;
-        const url = getAbsoluteUrl(`/api/security/auth/pending-requests/stream/?instructor_id=${instrId}`);
-        es = new EventSource(url);
-        es.onmessage = (ev) => {
-          try {
-            const payload = JSON.parse(ev.data);
-            if (typeof payload.count === 'number') setPendingCount(payload.count);
-          } catch {
-            // ignore
-          }
-        };
-        es.onerror = () => {
-          if (es) { try { es.close(); } catch {} es = null; }
-          // fallback to polling
-          if (!pollId) startPolling();
-        };
-      } catch (e) {
-        // fallback to polling
-        if (!pollId) startPolling();
-      }
-    };
-
-    const setupWebSocket = () => {
-      try {
-        const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch {} return null; })();
-        if (!instrId || typeof window === 'undefined' || !('WebSocket' in window)) {
-          // no websocket support; try SSE
-          setupEventSource();
-          return;
-        }
-
-        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const host = window.location.host;
-        const url = `${proto}://${host}/ws/pending-requests/?instructor_id=${instrId}`;
-        ws = new WebSocket(url);
-
-        ws.onopen = () => {
-          // connected; stop other fallbacks
-          retries = 0;
-          if (es) { try { es.close(); } catch {} es = null; }
-          stopPolling();
-        };
-
-        ws.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data);
-            if (typeof data.count === 'number') setPendingCount(data.count);
-          } catch {
-            // ignore parse errors
-          }
-        };
-
-        ws.onclose = () => {
-          ws = null;
-          // try reconnect with exponential backoff
-          if (retries < 5) {
-            const delay = Math.min(30000, 1000 * 2 ** retries);
-            reconnectTimer = setTimeout(() => { retries += 1; setupWebSocket(); }, delay);
-            return;
-          }
-          // after retries exhausted, attempt SSE, then polling
-          setupEventSource();
-          if (!pollId) startPolling();
-        };
-
-        ws.onerror = () => {
-          try { ws?.close(); } catch {}
-        };
-      } catch (e) {
-        // fallback to SSE/polling
-        setupEventSource();
-        if (!pollId) startPolling();
-      }
-    };
-
-    // Start with WebSocket if available, otherwise SSE, otherwise polling
-    if (typeof window !== 'undefined' && 'WebSocket' in window) {
-      setupWebSocket();
-    } else if (typeof window !== 'undefined' && 'EventSource' in window) {
-      setupEventSource();
-    } else {
-      startPolling();
-    }
-
-    return () => {
-      if (ws) try { ws.close(); } catch {}
-      if (es) try { es.close(); } catch {}
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (pollId) clearInterval(pollId);
-    };
-  }, [fetchPendingCount, isInstructor, employee]);
 
   const handleLogout = () => {
     setShowLogoutModal(true);
@@ -419,14 +265,14 @@ export function AdminLayout() {
             <div className="hidden lg:flex items-center gap-2">
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => navigate('/admin/pending-requests')}
+                    onClick={() => navigate('/admin/announcements')}
                     className="relative inline-flex items-center justify-center w-8 h-8 rounded-full bg-transparent text-gray-600 hover:text-gray-800"
-                    title="Pending Requests"
+                    title="Announcements"
                   >
                     <Bell size={18} />
-                    {pendingCount > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                        {pendingCount}
+                    {unreadAnn > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                        {unreadAnn}
                       </span>
                     )}
                   </button>

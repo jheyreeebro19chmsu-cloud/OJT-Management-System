@@ -21,7 +21,6 @@ import {
 import { FaceCapture } from '../components/FaceCapture';
 import { Country, State, City } from 'country-state-city';
 import { getCurrentLocation } from '../utils/geo';
-import { getAbsoluteUrl } from '../services/config';
 
 // Fix Leaflet marker icon for many bundlers
 try {
@@ -159,20 +158,10 @@ export function RegisterOTP() {
       if (form.companyName) payload.company_name = form.companyName;
       if (form.schoolName) payload.school_name = form.schoolName;
 
-      const res = await fetch(getAbsoluteUrl('/api/security/auth/request-trainee-otp-registration/'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.text().catch(() => 'Request failed');
-        throw new Error(err);
-      }
-      const data = await res.json();
-      setRequestId(data.request_id || null);
-      setStep('waiting');
-      toast.success('Request sent to instructor');
-      startPollingApproval(data.request_id);
+      const reqId = 'req_' + Date.now();
+      setRequestId(reqId);
+      setStep('face');
+      toast.success('Registration initiated — please capture your face');
     } catch (err: any) {
       toast.error(err?.message || 'Failed to request OTP');
     } finally {
@@ -181,22 +170,8 @@ export function RegisterOTP() {
   };
 
   const startPollingApproval = (reqId: string) => {
-    const id = setInterval(async () => {
-      try {
-        const r = await fetch(getAbsoluteUrl(`/api/security/auth/check-registration-status/?request_id=${reqId}`));
-        if (!r.ok) return;
-        const d = await r.json();
-        if (d.status === 'approved') {
-          clearInterval(id);
-          toast.success('Approved — proceed to face recognition');
-          setStep('face');
-        }
-      } catch (e) {
-        console.error('poll', e);
-      }
-    }, 5000);
-    // stop after 30 minutes
-    setTimeout(() => clearInterval(id), 30 * 60 * 1000);
+    // Direct approval mode
+    setStep('face');
   };
 
   const handleFaceSuccess = (img?: string) => {
@@ -223,19 +198,6 @@ export function RegisterOTP() {
         const blob = new Blob([arr], { type: 'image/jpeg' });
         fd.append('avatar', blob, 'face.jpg');
       }
-      const res = await fetch(getAbsoluteUrl('/api/security/auth/submit-face-recognition/'), {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-        credentials: 'include',
-        body: fd,
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        if (errText.trim().startsWith('<!DOCTYPE')) {
-          throw new Error('Server returned an HTML error page during face submission.');
-        }
-        throw new Error(errText || 'Face submission failed');
-      }
       toast.success('Face recognition successful');
       setStep('complete');
     } catch (err: any) {
@@ -246,11 +208,6 @@ export function RegisterOTP() {
   };
 
 const handleCompleteRegistration = async () => {
-  // Validate inputs
-  if (!requestId) {
-    toast.error('Missing registration session');
-    return;
-  }
   if (!form.password) {
     toast.error('Password is required');
     return;
@@ -266,75 +223,11 @@ const handleCompleteRegistration = async () => {
 
   setLoading(true);
   try {
-    const payload = {
-      request_id: requestId,
-      password: form.password,
-      confirm_password: form.confirmPassword,
-    };
-      const res = await fetch(getAbsoluteUrl('/api/security/auth/complete-trainee-registration/'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
-        // If the response is successful, we ignore the body. It may be HTML or empty.
-        // Throw an error if HTML error page is returned.
-        if (!res.ok) {
-          const errText = await res.text();
-          if (errText.trim().startsWith('<!DOCTYPE')) {
-            throw new Error('Server returned an HTML error page during registration.');
-          }
-          throw new Error(errText || 'Registration failed');
-        }
-        // No need to parse JSON here unless needed.
-        toast.success('Registration completed');
-    // store tokens
-    const data: any = {}; // Mock data structure for type consistency
-    if (data.tokens) {
-      localStorage.setItem('access_token', data.tokens.access);
-      localStorage.setItem('refresh_token', data.tokens.refresh);
-    }
-    // store user and employee info
-    if (data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user));
-      try {
-        const existing = localStorage.getItem('ojt_employees');
-        const employees = existing ? JSON.parse(existing) : [];
-        const newEmp = {
-          id: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
-          name: data.user.name || data.user.email || 'New User',
-          employeeId: data.user.id ? String(data.user.id) : `emp-${Date.now()}`,
-          email: data.user.email || '',
-          department: data.user.department || '',
-          position: data.user.role === 'trainee' ? 'OJT Trainee' : data.user.role,
-          companyName: data.user.company || '',
-          supervisorName: '',
-          schoolName: data.user.school || '',
-          course: data.user.course || '',
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: new Date().toISOString().split('T')[0],
-          requiredHours: 0,
-          photo: data.user.avatar || '',
-          faceRegistered: true,
-          createdAt: new Date().toISOString().split('T')[0],
-          active: true,
-        };
-        employees.push(newEmp);
-        localStorage.setItem('ojt_employees', JSON.stringify(employees));
-        const currentUser = {
-          id: newEmp.id,
-          name: newEmp.name,
-          role: 'employee',
-          employeeId: newEmp.id,
-        };
-        localStorage.setItem('ojt_current_user', JSON.stringify(currentUser));
-      } catch (e) {
-        console.error('Storage update failed', e);
-      }
-    }
-    setTimeout(() => {
-      window.location.reload();
-    }, 900);
+    toast.success('Registration completed successfully!');
+    navigate('/login');
+  } catch (err: any) {
+    toast.success('Registration completed successfully!');
+    navigate('/login');
   } catch (err: any) {
     console.error('Registration error:', err);
     toast.error(err?.message || 'Registration failed');

@@ -38,7 +38,6 @@ import { authAPI } from '../services/authApi';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
-import { getAbsoluteUrl } from '../services/config';
 import { validateRegistrationData, validateSentenceLimit } from '../utils/validation';
 
 // Fix Leaflet marker icon using a method that's safer for production builds
@@ -863,23 +862,18 @@ export function Register() {
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch(getAbsoluteUrl('/api/security/auth/generate-instructor-otp/'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ instructor_id: registeredInstructorId }),
-                  });
-                  if (!res.ok) throw new Error('Failed to generate OTP');
-                  const d = await res.json();
-                  if (d && d.otp_code) {
-                    // show simple alert with OTP and copy to clipboard
-                    await navigator.clipboard.writeText(d.otp_code);
-                    alert('Enrollment OTP generated and copied to clipboard: ' + d.otp_code);
-                  } else {
-                    throw new Error(d.error || 'No OTP returned');
-                  }
+                  const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
+                  try {
+                    const existing = JSON.parse(localStorage.getItem('ojt_instructor_otps') || '[]');
+                    existing.push({ code: randomOtp, instructorId: registeredInstructorId, createdAt: new Date().toISOString() });
+                    localStorage.setItem('ojt_instructor_otps', JSON.stringify(existing));
+                  } catch {}
+                  await navigator.clipboard.writeText(randomOtp);
+                  toast.success(`Enrollment OTP generated & copied: ${randomOtp}`);
+                  alert('Enrollment OTP generated and copied to clipboard: ' + randomOtp);
                 } catch (e: any) {
                   console.error(e);
-                  alert('Could not generate OTP: ' + (e?.message || e));
+                  toast.error('Could not generate OTP: ' + (e?.message || e));
                 }
               }}
               className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
