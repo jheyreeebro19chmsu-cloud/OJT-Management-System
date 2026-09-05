@@ -38,6 +38,7 @@ import { authAPI } from '../services/authApi';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
+import { getAbsoluteUrl } from '../services/config';
 import { validateRegistrationData, validateSentenceLimit } from '../utils/validation';
 
 // Fix Leaflet marker icon using a method that's safer for production builds
@@ -187,6 +188,14 @@ export function Register() {
   };
 
   // Force-submit removed: face capture/force submit is disabled for HTE and Instructors
+
+  useEffect(() => {
+    // Instructor registration no longer shows a QR/enrollment screen —
+    // go straight to login (which leads to the dashboard) like every other role.
+    if (registrationComplete && role === 'admin') {
+      navigate('/login');
+    }
+  }, [registrationComplete, role]);
 
   // Detect OAuth HTE prefill on mount
   useEffect(() => {
@@ -519,7 +528,7 @@ export function Register() {
         return;
       }
     }
-    
+
     // ── Validate and sanitize form data to prevent dirty data ──
     try {
       // Call validation which will throw on errors
@@ -550,7 +559,7 @@ export function Register() {
         employeeId: form.employeeId,
         username: form.username,
       };
-      
+
       // This will throw if validation fails
       validateRegistrationData(validationFormData, role || 'trainee');
     } catch (validationErr) {
@@ -560,7 +569,7 @@ export function Register() {
       setIsSubmitting(false);
       return;
     }
-    
+
     // HTE flow (existing logic remains unchanged)
     if (role === 'hte') {
       if (!form.email && !form.username) {
@@ -827,72 +836,8 @@ export function Register() {
   const locConfig = locationStatusConfig[locationStatus];
 
   if (registrationComplete && role === 'admin') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-white max-w-md w-full rounded-3xl shadow-xl p-8 text-center"
-        >
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Check size={40} className="text-green-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Registration Successful!</h2>
-          <p className="text-gray-500 mb-8">
-            Your OJT Instructor account has been created. Here is your enrollment QR Code:
-          </p>
-
-          <div className="bg-slate-50 p-6 rounded-2xl inline-block mb-8 border-2 border-dashed border-slate-200">
-            <QRCodeSVG
-              id="instructor-qr"
-              value={`enroll:${registeredInstructorId}`}
-              size={200}
-              level="H"
-              includeMargin={true}
-            />
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={handleShareQr}
-              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-            >
-              Share QR Code
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
-                  try {
-                    const existing = JSON.parse(localStorage.getItem('ojt_instructor_otps') || '[]');
-                    existing.push({ code: randomOtp, instructorId: registeredInstructorId, createdAt: new Date().toISOString() });
-                    localStorage.setItem('ojt_instructor_otps', JSON.stringify(existing));
-                  } catch {}
-                  await navigator.clipboard.writeText(randomOtp);
-                  toast.success(`Enrollment OTP generated & copied: ${randomOtp}`);
-                  alert('Enrollment OTP generated and copied to clipboard: ' + randomOtp);
-                } catch (e: any) {
-                  console.error(e);
-                  toast.error('Could not generate OTP: ' + (e?.message || e));
-                }
-              }}
-              className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
-            >
-              Generate Enrollment OTP
-            </button>
-            <button
-              onClick={() => navigate('/login')}
-              className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors"
-            >
-              Go to Login
-            </button>
-          </div>
-          <p className="mt-6 text-xs text-slate-400 uppercase tracking-widest font-bold">
-            Instruction: Students must scan this code to enroll under you.
-          </p>
-        </motion.div>
-      </div>
-    );
+    // Auto-redirecting to /login via useEffect above — render nothing while that happens.
+    return null;
   }
 
   return (
@@ -1235,15 +1180,14 @@ export function Register() {
                               <MapPin size={13} className="text-blue-600" />
                               <span>Geofence Location (GPS)</span>
                             </label>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              locationStatus === 'captured' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                              locationStatus === 'capturing' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
-                              locationStatus === 'denied' ? 'bg-red-100 text-red-700 border-red-200' :
-                              'bg-slate-100 text-slate-600 border-slate-200'
-                            }`}>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${locationStatus === 'captured' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                locationStatus === 'capturing' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
+                                  locationStatus === 'denied' ? 'bg-red-100 text-red-700 border-red-200' :
+                                    'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}>
                               {locationStatus === 'captured' ? '📍 GPS Locked' :
-                               locationStatus === 'capturing' ? '⟳ Detecting...' :
-                               locationStatus === 'denied' ? '⚠ Access Denied' : 'Waiting for GPS'}
+                                locationStatus === 'capturing' ? '⟳ Detecting...' :
+                                  locationStatus === 'denied' ? '⚠ Access Denied' : 'Waiting for GPS'}
                             </span>
                           </div>
 
@@ -1295,11 +1239,10 @@ export function Register() {
                               type="button"
                               onClick={() => setPickingLocation(!pickingLocation)}
                               disabled={locationStatus === 'capturing'}
-                              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 ${
-                                pickingLocation
+                              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 ${pickingLocation
                                   ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600'
                                   : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
-                              }`}
+                                }`}
                             >
                               <MapPin size={14} />
                               {pickingLocation ? 'Lock Pin Location' : 'Adjust Pin on Map'}
@@ -1375,9 +1318,8 @@ export function Register() {
                                 value={form.confirmPassword}
                                 onChange={(e) => update('confirmPassword', e.target.value)}
                                 placeholder="Repeat password"
-                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${
-                                  form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
-                                }`}
+                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
+                                  }`}
                               />
                               <button
                                 type="button"
@@ -1756,9 +1698,8 @@ export function Register() {
                                 update('city', '');
                                 update('barangay', '');
                               }}
-                              className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${
-                                !form.region ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                              }`}
+                              className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.region ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                                }`}
                             >
                               <option value="">{form.region ? 'Select Province' : 'Select Region First'}</option>
                               {phProvincesList.map((p) => (
@@ -1784,16 +1725,15 @@ export function Register() {
                                   setRegistrationAddress(fullAddr);
                                 }
                               }}
-                              className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${
-                                !form.province ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                              }`}
+                              className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.province ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                                }`}
                             >
                               <option value="">
                                 {!form.region
                                   ? 'Select Region First'
                                   : !form.province
-                                  ? 'Select Province First'
-                                  : 'Select City/Municipality'}
+                                    ? 'Select Province First'
+                                    : 'Select City/Municipality'}
                               </option>
                               {phCitiesList.map((c) => (
                                 <option key={c} value={c}>
@@ -2377,5 +2317,1418 @@ export function Register() {
         </div>
       </motion.div>
     </div>
+  );
+} 500">
+Register as an OJT trainee or employee.You'll complete a full registration with company and
+                        school information.
+                      </p >
+                    </div >
+                  </div >
+                </button >
+
+                <button
+                  onClick={() => selectRole('admin')}
+                  className="w-full p-5 border-2 border-purple-200 rounded-2xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center group-hover:bg-purple-500 transition-colors shrink-0">
+                      <ShieldCheck size={28} className="text-purple-600 group-hover:text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-gray-800 mb-1">OJT Instructor</h3>
+                      <p className="text-xs text-gray-500">
+                        Register as an OJT Instructor or supervisor. You'll have access to manage employees, view
+                        reports, and configure settings.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => selectRole('hte')}
+                  className="w-full p-5 border-2 border-green-200 rounded-2xl hover:border-green-500 hover:bg-green-50 transition-all text-left group"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 transition-colors shrink-0">
+                      <Building size={28} className="text-green-600 group-hover:text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
+                      <p className="text-xs text-gray-500">
+                        Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
+                        provide feedback on their performance.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <div className="mt-6 pt-4 border-t border-gray-100">
+                  <p className="text-center text-xs text-gray-400">
+                    Already have an account?{' '}
+                    <Link to="/" className="text-blue-600 hover:text-blue-800 font-medium">
+                      Sign in here
+                    </Link>
+                  </p>
+                </div>
+              </motion.div >
+            )}
+
+{/* Step 0: Personal Info (Trainee/Admin) or Company Details (HTE) */ }
+{
+  role !== null && step === 0 && (
+    <motion.div
+      key="step0"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+    >
+      {role === 'hte' ? (
+        <>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+              <Building size={16} className="text-green-700" />
+            </div>
+            <h2 className="font-bold text-gray-800">Company Details</h2>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
+              <input
+                value={form.companyName}
+                onChange={(e) => update('companyName', e.target.value)}
+                placeholder="Host Training Establishment Name"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+
+            <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
+                  <select
+                    value={form.country}
+                    onChange={(e) => {
+                      update('country', e.target.value);
+                      update('region', '');
+                      update('province', '');
+                      update('city', '');
+                      update('barangay', '');
+                    }}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">Select Country</option>
+                    {allCountries.map((c) => (
+                      <option key={c.isoCode} value={c.isoCode}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">
+                    {form.country === 'PH' ? 'Region *' : 'State/Region *'}
+                  </label>
+                  {form.country === 'PH' ? (
+                    <select
+                      value={form.region}
+                      onChange={(e) => {
+                        update('region', e.target.value);
+                        update('province', '');
+                        update('city', '');
+                        update('barangay', '');
+                      }}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">Select Region</option>
+                      {PH_ADDRESS_DATA.map((r) => (
+                        <option key={r.name} value={r.name}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={form.region}
+                      onChange={(e) => {
+                        update('region', e.target.value);
+                        update('province', '');
+                        update('city', '');
+                        update('barangay', '');
+                      }}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">Select State/Region</option>
+                      {statesList.map((s) => (
+                        <option key={s.isoCode} value={s.isoCode}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">
+                    {form.country === 'PH' ? 'Province *' : 'City/Town *'}
+                  </label>
+                  {form.country === 'PH' ? (
+                    <div className="space-y-2">
+                      <select
+                        value={form.province}
+                        onChange={(e) => {
+                          update('province', e.target.value);
+                          update('city', '');
+                          update('barangay', '');
+                        }}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      >
+                        <option value="">Select Province</option>
+                        {PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <select
+                        value={form.city}
+                        onChange={(e) => {
+                          update('city', e.target.value);
+                          update('barangay', '');
+                          const countryObj = Country.getCountryByCode(form.country);
+                          const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                          const fullAddr = `${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                          setRegistrationAddress(fullAddr);
+                        }}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      >
+                        <option value="">Select City</option>
+                        {citiesList.map((c) => (
+                          <option key={c.name} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">
+                    {form.country === 'PH' ? 'City/Municipality *' : 'Neighborhood/Barangay'}
+                  </label>
+                  {form.country === 'PH' ? (
+                    <div className="space-y-2">
+                      <select
+                        value={form.city}
+                        onChange={(e) => {
+                          update('city', e.target.value);
+                          update('barangay', '');
+                          const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
+                          setRegistrationAddress(fullAddr);
+                        }}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      >
+                        <option value="">Select City</option>
+                        {PH_ADDRESS_DATA.find((r) => r.name === form.region)
+                          ?.provinces.find((p) => p.name === form.province)
+                          ?.cities.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <input
+                      value={form.barangay}
+                      onChange={(e) => {
+                        update('barangay', e.target.value);
+                        const countryObj = Country.getCountryByCode(form.country);
+                        const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                        const fullAddr = `${form.city}, ${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                        setRegistrationAddress(fullAddr);
+                      }}
+                      placeholder="Area/Street"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {form.country === 'PH' && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay *</label>
+                  <input
+                    value={form.barangay}
+                    onChange={(e) => {
+                      update('barangay', e.target.value);
+                      const cityName = form.city;
+                      const provName = form.province;
+                      const fullAddr = `${e.target.value}, ${cityName}, ${provName}, ${form.region}, Philippines`;
+                      setRegistrationAddress(fullAddr);
+                    }}
+                    placeholder="Enter barangay"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+              )}
+
+              {/* Location Pinning & Map Box */}
+              <div className="mt-4 pt-3 border-t border-blue-100/60 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <MapPin size={13} className="text-blue-600" />
+                    <span>Geofence Location (GPS)</span>
+                  </label>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${locationStatus === 'captured' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                      locationStatus === 'capturing' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
+                        locationStatus === 'denied' ? 'bg-red-100 text-red-700 border-red-200' :
+                          'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                    {locationStatus === 'captured' ? '📍 GPS Locked' :
+                      locationStatus === 'capturing' ? '⟳ Detecting...' :
+                        locationStatus === 'denied' ? '⚠ Access Denied' : 'Waiting for GPS'}
+                  </span>
+                </div>
+
+                {/* GPS denied warning */}
+                {locationStatus === 'denied' && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                    <span className="text-lg leading-none">🚫</span>
+                    <div>
+                      <p className="font-bold">GPS Access Denied</p>
+                      <p>Please enable location access in your browser settings, then click "Detect Device GPS" again. Accurate GPS is required for attendance geofencing.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Embedded Map Component */}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm relative h-48 bg-slate-100">
+                  {locationStatus === 'capturing' ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 text-blue-600">
+                      <Loader className="animate-spin" size={28} />
+                      <p className="text-xs font-medium">Acquiring GPS signal…</p>
+                    </div>
+                  ) : (
+                    <GeofenceMap
+                      zones={[]}
+                      picking={pickingLocation}
+                      pickedCoords={registrationLocation}
+                      onPick={(lat, lng) => {
+                        setRegistrationLocation({ lat, lng });
+                        setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                        setLocationStatus('captured');
+                      }}
+                      liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
+                      className="h-48"
+                    />
+                  )}
+
+                  {/* Map Mode Overlay Badge */}
+                  {locationStatus !== 'capturing' && (
+                    <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-700 shadow border border-slate-200 flex items-center gap-1.5 pointer-events-none">
+                      <span className={`w-2 h-2 rounded-full ${pickingLocation ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                      <span>{pickingLocation ? 'Click map to set pin' : 'Location Pin (View Mode)'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Location Action Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setPickingLocation(!pickingLocation)}
+                    disabled={locationStatus === 'capturing'}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 ${pickingLocation
+                        ? 'bg-amber-500 text-white shadow-md hover:bg-amber-600'
+                        : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
+                      }`}
+                  >
+                    <MapPin size={14} />
+                    {pickingLocation ? 'Lock Pin Location' : 'Adjust Pin on Map'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={captureLocation}
+                    disabled={locationStatus === 'capturing'}
+                    className="py-2 px-3 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:bg-blue-400 flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    {locationStatus === 'capturing' ? (
+                      <Loader className="animate-spin" size={14} />
+                    ) : (
+                      <MapPin size={14} />
+                    )}
+                    <span>{locationStatus === 'capturing' ? 'Detecting GPS…' : 'Detect Device GPS'}</span>
+                  </button>
+                </div>
+
+                {registrationLocation && locationStatus === 'captured' && (
+                  <div className="text-center space-y-0.5">
+                    <p className="text-[11px] text-slate-500 font-mono">
+                      📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
+                    </p>
+                    {(registrationLocation as any).accuracy && (
+                      <p className={`text-[10px] font-semibold ${(registrationLocation as any).accuracy < 20 ? 'text-green-600' : (registrationLocation as any).accuracy < 100 ? 'text-amber-600' : 'text-red-500'}`}>
+                        GPS Accuracy: ±{Math.round((registrationLocation as any).accuracy)}m
+                        {(registrationLocation as any).accuracy < 20 ? ' ✓ High' : (registrationLocation as any).accuracy < 100 ? ' ⚠ Medium' : ' ✗ Low — move to open area'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Account Security Card */}
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3.5 mt-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-slate-200 rounded-md flex items-center justify-center">
+                  <Lock size={13} className="text-slate-700" />
+                </div>
+                <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider">Account Credentials</h3>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => update('password', e.target.value)}
+                      placeholder="Min 8 chars"
+                      className="w-full pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.confirmPassword}
+                      onChange={(e) => update('confirmPassword', e.target.value)}
+                      placeholder="Repeat password"
+                      className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
+                        }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Password strength checklist */}
+              {form.password && (
+                <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-200">
+                  <p className="font-semibold text-slate-700 mb-0.5">Password Strength Checklist:</p>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                    <div className="flex items-center gap-1">
+                      <span className={/[A-Z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                        {/[A-Z]/.test(form.password) ? "✓" : "○"}
+                      </span>
+                      <span className={/[A-Z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Uppercase letter</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={/[a-z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                        {/[a-z]/.test(form.password) ? "✓" : "○"}
+                      </span>
+                      <span className={/[a-z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Lowercase letter</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                        {/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "✓" : "○"}
+                      </span>
+                      <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Special character</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={form.password.length >= 8 ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                        {form.password.length >= 8 ? "✓" : "○"}
+                      </span>
+                      <span className={form.password.length >= 8 ? "text-green-700 font-medium" : "text-gray-500"}>At least 8 chars</span>
+                    </div>
+                    {form.confirmPassword && (
+                      <div className="flex items-center gap-1 col-span-2 border-t border-slate-100 pt-1 mt-1">
+                        <span className={form.password === form.confirmPassword ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
+                          {form.password === form.confirmPassword ? "✓" : "✗"}
+                        </span>
+                        <span className={form.password === form.confirmPassword ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                          {form.password === form.confirmPassword ? "Passwords match" : "Passwords do not match"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <User size={16} className="text-blue-700" />
+            </div>
+            <h2 className="font-bold text-gray-800">Personal Information</h2>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
+                <input
+                  value={form.lastName}
+                  onChange={(e) => update('lastName', e.target.value)}
+                  placeholder="Dela Cruz"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
+                <input
+                  value={form.firstName}
+                  onChange={(e) => update('firstName', e.target.value)}
+                  placeholder="Juan"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
+                <input
+                  value={form.middleInitial}
+                  onChange={(e) => update('middleInitial', e.target.value)}
+                  placeholder="D"
+                  maxLength={1}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => { update('email', e.target.value); setEmailTaken(null); }}
+                onBlur={() => checkEmailExists(form.email)}
+                placeholder="your@email.com"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+              {emailChecking ? (
+                <p className="text-xs text-gray-500 mt-1">Checking email…</p>
+              ) : emailTaken ? (
+                <p className="text-xs text-red-600 mt-1">{emailMsg}</p>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={(e) => update('password', e.target.value)}
+                    placeholder="Min 8 characters"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.confirmPassword}
+                  onChange={(e) => update('confirmPassword', e.target.value)}
+                  placeholder="Repeat password"
+                  className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 px-1">
+              <input
+                type="checkbox"
+                id="show-pw"
+                checked={showPassword}
+                onChange={() => setShowPassword(!showPassword)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">
+                Show passwords
+              </label>
+            </div>
+
+            {form.password && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-200">
+                <p className="font-semibold text-slate-700 mb-0.5">Password Strength Checklist:</p>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className={/[A-Z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                      {/[A-Z]/.test(form.password) ? "✓" : "○"}
+                    </span>
+                    <span className={/[A-Z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Uppercase letter</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className={/[a-z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                      {/[a-z]/.test(form.password) ? "✓" : "○"}
+                    </span>
+                    <span className={/[a-z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Lowercase letter</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                      {/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "✓" : "○"}
+                    </span>
+                    <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Special character</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className={form.password.length >= 8 ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                      {form.password.length >= 8 ? "✓" : "○"}
+                    </span>
+                    <span className={form.password.length >= 8 ? "text-green-700 font-medium" : "text-gray-500"}>At least 8 chars</span>
+                  </div>
+                  {form.confirmPassword && (
+                    <div className="flex items-center gap-1 col-span-2 border-t border-slate-200/50 pt-1 mt-1">
+                      <span className={form.password === form.confirmPassword ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
+                        {form.password === form.confirmPassword ? "✓" : "✗"}
+                      </span>
+                      <span className={form.password === form.confirmPassword ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                        {form.password === form.confirmPassword ? "Passwords match" : "Passwords do not match"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {role === 'admin' && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+                  <input
+                    value={form.department}
+                    onChange={(e) => update('department', e.target.value)}
+                    placeholder="e.g. CICS"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Field *</label>
+                  <input
+                    value={form.course}
+                    onChange={(e) => update('course', e.target.value)}
+                    placeholder="e.g. IT"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Email Verification hidden as requested */}
+            {false && role === 'trainee' && (
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">
+                    Email Verification
+                  </label>
+                  {isOtpVerified && (
+                    <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                      Verified
+                    </span>
+                  )}
+                </div>
+
+                {!isOtpVerified ? (
+                  <div className="flex gap-2">
+                    {!otpSent ? (
+                      <button
+                        type="button"
+                        onClick={handleRequestOtp}
+                        disabled={otpVerifying || !form.email}
+                        className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm"
+                      >
+                        {otpVerifying ? 'Sending...' : 'Request Confirmation Code'}
+                      </button>
+                    ) : (
+                      <>
+                        <input
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value)}
+                          placeholder="6-digit code"
+                          className="flex-1 px-3 py-2 border border-blue-200 rounded-xl text-center font-bold tracking-widest focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                          maxLength={6}
+                        />
+                        <button
+                          type="button"
+                          onClick={verifyOtp}
+                          className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-bold"
+                        >
+                          Verify
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRequestOtp}
+                          className="px-2 text-[10px] text-blue-600 underline"
+                        >
+                          Resend
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-green-700">
+                    <Check size={16} />
+                    <span className="text-sm font-medium">Email confirmed via Resend API</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Birthdate *</label>
+              <input
+                type="date"
+                value={form.birthdate}
+                onChange={(e) => update('birthdate', e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
+              <input
+                value={form.age}
+                disabled
+                type="number"
+                placeholder="Enter birthdate first"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-500"
+              />
+            </div>
+            {/* Home address search removed for privacy */}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">Country *</label>
+                <select
+                  value={form.country}
+                  onChange={(e) => {
+                    update('country', e.target.value);
+                    update('region', '');
+                    update('province', '');
+                    update('city', '');
+                    update('barangay', '');
+                  }}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                >
+                  <option value="">Select Country</option>
+                  {allCountries.map((c) => (
+                    <option key={c.isoCode} value={c.isoCode}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">
+                  {form.country === 'PH' ? 'Region *' : 'State/Region *'}
+                </label>
+                {form.country === 'PH' ? (
+                  <select
+                    value={form.region}
+                    onChange={(e) => {
+                      update('region', e.target.value);
+                      update('province', '');
+                      update('city', '');
+                      update('barangay', '');
+                    }}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  >
+                    <option value="">Select Region</option>
+                    {PH_ADDRESS_DATA.map((r) => (
+                      <option key={r.name} value={r.name}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    value={form.region}
+                    onChange={(e) => {
+                      update('region', e.target.value);
+                      update('province', '');
+                      update('city', '');
+                      update('barangay', '');
+                    }}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  >
+                    <option value="">Select State/Region</option>
+                    {statesList.map((s) => (
+                      <option key={s.isoCode} value={s.isoCode}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {form.country === 'PH' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Province *</label>
+                  <select
+                    value={form.province}
+                    disabled={!form.region}
+                    onChange={(e) => {
+                      const selectedProv = e.target.value;
+                      update('province', selectedProv);
+                      update('city', '');
+                      update('barangay', '');
+                    }}
+                    className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.region ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                  >
+                    <option value="">{form.region ? 'Select Province' : 'Select Region First'}</option>
+                    {phProvincesList.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">
+                    City/Municipality *
+                  </label>
+                  <select
+                    value={form.city}
+                    disabled={!form.province}
+                    onChange={(e) => {
+                      const selectedCity = e.target.value;
+                      update('city', selectedCity);
+                      update('barangay', '');
+                      if (selectedCity && form.province && form.region) {
+                        const fullAddr = `${selectedCity}, ${form.province}, ${form.region}, Philippines`;
+                        setRegistrationAddress(fullAddr);
+                      }
+                    }}
+                    className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.province ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                  >
+                    <option value="">
+                      {!form.region
+                        ? 'Select Region First'
+                        : !form.province
+                          ? 'Select Province First'
+                          : 'Select City/Municipality'}
+                    </option>
+                    {phCitiesList.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {form.country !== 'PH' && form.region && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">City *</label>
+                  <select
+                    value={form.city}
+                    onChange={(e) => {
+                      update('city', e.target.value);
+                      update('barangay', '');
+                      const countryObj = Country.getCountryByCode(form.country);
+                      const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                      const fullAddr = `${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                      setRegistrationAddress(fullAddr);
+                    }}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  >
+                    <option value="">Select City</option>
+                    {citiesList.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1">Street Address</label>
+                  <input
+                    value={form.street}
+                    onChange={(e) => update('street', e.target.value)}
+                    placeholder="Street name"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">
+                {form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}
+              </label>
+              {/* Always use manual input for Barangay to avoid select fallback */}
+              <input
+                value={form.barangay}
+                onChange={(e) => {
+                  update('barangay', e.target.value);
+                  const countryObj = Country.getCountryByCode(form.country);
+                  const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
+                  const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
+                  setRegistrationAddress(fullAddr);
+                }}
+                placeholder="Enter barangay"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
+              <input
+                value={form.employeeId}
+                onChange={(e) => update('employeeId', e.target.value)}
+                placeholder="Auto-generated if empty"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+
+            {registrationLocation && (
+              <div className="mt-4 space-y-3">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
+                  <div className="flex items-start gap-3">
+                    <MapPin className="text-green-600 mt-0.5" size={18} />
+                    <div>
+                      <p className="text-green-800 text-sm font-bold">Registration Location Captured</p>
+                      <p className="text-green-600 text-xs mt-0.5">
+                        Your official geofence location is locked.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLocationMap(!showLocationMap);
+                      setTimeout(() => {
+                        window.dispatchEvent(new Event('resize'));
+                      }, 300);
+                    }}
+                    className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    {showLocationMap ? 'Hide Map' : 'See your location'}
+                  </button>
+                </div>
+
+                <AnimatePresence>
+                  {showLocationMap && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 210, opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
+                    >
+                      <div className="h-52">
+                        <GeofenceMap
+                          zones={[]}
+                          picking={false}
+                          pickedCoords={registrationLocation}
+                          liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
+                          className="h-52 pointer-events-none"
+                        />
+                      </div>
+
+                      <div className="absolute top-3 right-3 z-[1100] pointer-events-none flex items-center gap-2">
+                        <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-emerald-100 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          <span className="font-bold text-emerald-700">Live GPS</span>
+                          {registrationLocation && (
+                            <span className="text-gray-600 font-mono text-[11px] ml-1">
+                              {registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="absolute bottom-3 left-3 z-[1100] pointer-events-none">
+                        <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[11px] text-gray-600 shadow border border-gray-100 flex items-center gap-1.5">
+                          <MapPin size={12} className="text-blue-600" />
+                          <span>Viewing mode only (Real-time GPS locked)</span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </motion.div>
+  )
+}
+
+{
+  role !== null && role !== 'admin' && step === 1 && (
+    <motion.div
+      key="step1"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
+          <Building size={16} className="text-sky-700" />
+        </div>
+        <h2 className="font-bold text-gray-800">
+          {role === 'hte' ? 'Contact Information' : 'Company Information'}
+        </h2>
+      </div>
+      <div className="space-y-3">
+        {role === 'hte' ? (
+          <>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">
+                Email Address *
+              </label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => update('email', e.target.value)}
+                placeholder="your.email@company.com"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">
+                Contact Person / Representative *
+              </label>
+              <input
+                value={form.contactPerson}
+                onChange={(e) => update('contactPerson', e.target.value)}
+                placeholder="Full Name of Representative"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">
+                Contact Phone / Mobile *
+              </label>
+              <input
+                value={form.contactPhone}
+                onChange={(e) => update('contactPhone', e.target.value)}
+                placeholder="e.g. 09123456789"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Position / Title</label>
+              <input
+                value={form.supervisorName}
+                onChange={(e) => update('supervisorName', e.target.value)}
+                placeholder="e.g. HR Manager"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
+              <input
+                value={form.companyName}
+                onChange={(e) => update('companyName', e.target.value)}
+                placeholder="Company Name"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
+              <input
+                value={form.supervisorName}
+                onChange={(e) => update('supervisorName', e.target.value)}
+                placeholder="Mr./Ms. Supervisor"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  value={form.startDate}
+                  onChange={(e) => update('startDate', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
+                <input
+                  type="date"
+                  value={form.endDate}
+                  onChange={(e) => update('endDate', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
+              <input
+                type="number"
+                value={form.requiredHours}
+                onChange={(e) => update('requiredHours', e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
+{
+  role !== null && step === 2 && (
+    <motion.div
+      key="step2"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+          <GraduationCap size={16} className="text-green-700" />
+        </div>
+        <h2 className="font-bold text-gray-800">School Information</h2>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">School *</label>
+          <select
+            value={form.schoolName || 'Carlos Hilado Memorial State University'}
+            onChange={(e) => update('schoolName', 'Carlos Hilado Memorial State University')}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-not-allowed bg-gray-100"
+            disabled
+          >
+            <option value="Carlos Hilado Memorial State University">
+              Carlos Hilado Memorial State University
+            </option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+          <select
+            value={form.department}
+            onChange={(e) => {
+              const newDept = e.target.value;
+              update('department', newDept);
+              if (!form.schoolName) {
+                update('schoolName', 'Carlos Hilado Memorial State University');
+              }
+            }}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+          >
+            <option value="">Select Department</option>
+            {departmentOptions.map((department) => (
+              <option key={department} value={department}>
+                {department}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">Campus *</label>
+          <select
+            value={form.campus}
+            onChange={(e) => {
+              const newCampus = e.target.value;
+              update('campus', newCampus);
+              if (!form.schoolName) {
+                update('schoolName', 'Carlos Hilado Memorial State University');
+              }
+            }}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+          >
+            <option value="">Select Campus</option>
+            {campusOptions.map((campus) => (
+              <option key={campus} value={campus}>
+                {campus}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 block mb-1">Program *</label>
+          <select
+            value={form.course}
+            onChange={(e) => {
+              const selectedCourse = e.target.value;
+              update('course', selectedCourse);
+              if (selectedCourse && !form.department) {
+                for (const dept of departmentOptions) {
+                  const courses = getCoursesForDepartment(dept);
+                  if (courses.includes(selectedCourse)) {
+                    update('department', dept);
+                    break;
+                  }
+                }
+              }
+            }}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+          >
+            <option value="">Select Program</option>
+            {selectedProgramOptions.map((program) => (
+              <option key={program} value={program}>
+                {program}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Required OJT Documents Section */}
+        <div className="pt-3 border-t border-gray-100 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldCheck size={14} className="text-blue-600" />
+              <span>Required OJT Documents (Optional during Registration)</span>
+            </label>
+            <span className="text-[10px] text-gray-400 font-medium">PDF / JPG / PNG</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+              <label className="text-[11px] font-bold text-gray-700 block mb-1">1. Endorsement Letter</label>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    toast.success(`Attached ${file.name}`);
+                  }
+                }}
+                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+              />
+            </div>
+
+            <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+              <label className="text-[11px] font-bold text-gray-700 block mb-1">2. Parental Consent Form</label>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    toast.success(`Attached ${file.name}`);
+                  }
+                }}
+                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+              />
+            </div>
+
+            <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+              <label className="text-[11px] font-bold text-gray-700 block mb-1">3. Medical Certificate</label>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    toast.success(`Attached ${file.name}`);
+                  }
+                }}
+                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+              />
+            </div>
+
+            <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+              <label className="text-[11px] font-bold text-gray-700 block mb-1">4. Student Bio-data / Resume</label>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    toast.success(`Attached ${file.name}`);
+                  }
+                }}
+                className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+{
+  role !== null && (role === 'trainee' && step === 3) && (
+    <motion.div
+      key="step3"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+          <Camera size={16} className="text-purple-700" />
+        </div>
+        <h2 className="font-bold text-gray-800">Face Registration</h2>
+      </div>
+      <p className="text-sm text-gray-500 mb-4">
+        Register your face for biometric time recording. The captured image will be stored in the system for
+        <p className="text-sm text-gray-500 mt-2">Optional: you can skip this and enroll your face later from your Profile after logging in.</p>
+        identity verification during clock-in/out.
+      </p>
+
+      {faceCapturing ? (
+        <FaceCapture
+          key={`face-reg-${retryCount}`}
+          mode="register"
+          employeeName={form.name}
+          onSuccess={handleFaceSuccess}
+          onCancel={() => setFaceCapturing(false)}
+          autoStart
+        />
+      ) : faceRegistered ? (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300">
+            {photo ? (
+              <img
+                src={photo}
+                alt="Registered Face"
+                className="w-full h-full object-cover rounded-full"
+                style={{ transform: 'scaleX(-1)' }}
+              />
+            ) : (
+              <Check size={36} className="text-green-600" />
+            )}
+          </div>
+          <div className="text-center">
+            <p className="font-semibold text-green-700">Face Registered!</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Your biometric image has been captured and will be stored
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setFaceRegistered(false);
+              setFaceCapturing(true);
+            }}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            Re-register face
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-4 py-4">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
+            <Camera size={28} className="text-gray-400" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-medium text-gray-700">No face registered yet</p>
+            <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
+          </div>
+          <button
+            onClick={() => setFaceCapturing(true)}
+            className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2"
+          >
+            <Camera size={16} />
+            Register Face
+          </button>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+          </AnimatePresence >
+
+  {/* Navigation - Only show when role is selected */ }
+{
+  role !== null && (
+    <div className="mt-6">
+      {validationErrors.length > 0 && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded text-sm text-red-700">
+          <strong className="block mb-1">Please fix the following before continuing:</strong>
+          <ul className="list-disc list-inside">
+            {validationErrors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        {step > 0 && (
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            <ArrowLeft size={14} />
+            Back
+          </button>
+        )}
+        {step < steps.length - 1 ? (
+          <button
+            onClick={handleNext}
+            disabled={!isStepValid()}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+          >
+            Next
+            <ArrowRight size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={!isStepValid() || isSubmitting}
+            className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Registering...
+              </>
+            ) : (
+              <>
+                <Check size={14} />
+                Complete Registration
+              </>
+            )}
+          </button>
+        )}
+      </div>
+      {/* Error message display */}
+      {submitError && (
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-700">{submitError}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+        </div >
+      </motion.div >
+    </div >
   );
 }
