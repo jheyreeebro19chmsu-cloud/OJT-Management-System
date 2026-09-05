@@ -54,6 +54,9 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     registration_lng: employee.registrationLocation?.lng,
     registration_address: employee.registrationAddress,
     academic_year: employee.academicYear,
+    instructor_id: (employee as any).instructorId || null,
+    hte_id: (employee as any).hteId || null,
+    application_status: (employee as any).applicationStatus || 'unregistered',
   };
 
   if (employee.id) {
