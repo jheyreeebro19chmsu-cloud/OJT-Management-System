@@ -42,6 +42,25 @@ def _face_backend_available() -> bool:
         return False
 
 
+def _encode_face_with_fallback(image_array):
+    """Detect and encode a face, retrying with upsampling if the first pass fails.
+
+    Returns a list of encodings (usually 0 or 1 items). Using the same
+    detection effort here for BOTH registration and verification avoids the
+    situation where a registration photo is accepted (with upsampling) but a
+    live attendance capture is rejected because it only got a single,
+    non-upsampled attempt (or vice versa).
+    """
+    import face_recognition  # type: ignore
+
+    locations = face_recognition.face_locations(image_array)
+    if not locations:
+        locations = face_recognition.face_locations(image_array, number_of_times_to_upsample=2)
+    if not locations:
+        return []
+    return face_recognition.face_encodings(image_array, known_face_locations=locations)
+
+
 def _json_body(request: HttpRequest) -> Dict[str, Any]:
     try:
         if request.body:
@@ -324,36 +343,39 @@ def register_face(request: HttpRequest) -> JsonResponse:
 
     # Pre-compute and save face encoding for faster future verification
     try:
-        import face_recognition # type: ignore
+        import face_recognition  # type: ignore
         img = face_recognition.load_image_file(registration.image.path)
-        
-        # Try default face detection
-        locations = face_recognition.face_locations(img)
-        if not locations:
-            # If no face found, try upsampling once for smaller faces
-            locations = face_recognition.face_locations(img, number_of_times_to_upsample=2)
-            
-        encodings = face_recognition.face_encodings(img, known_face_locations=locations)
+        encodings = _encode_face_with_fallback(img)
+
         if encodings:
             registration.face_encoding = list(encodings[0])
             registration.save()
             logger.info(f"Face registration successful for {employee_id} with brightness {brightness_check['brightness']:.1f} - Image stored in database")
         else:
-            logger.warning(f"No face detected in registered image for {employee_id}. Saving as avatar anyway, but face login may not work.")
+            logger.warning(f"No face detected in registered image for {employee_id}. Rejecting registration so attendance is not silently broken.")
             registration.face_encoding = None
+            # Remove the unusable image so the employee is not left in a
+            # false "enrolled" state; they need to retry with a clearer photo.
+            registration.image.delete(save=False)
+            registration.image_data = None
             registration.save()
-            # Return success anyway so they can at least use it as an avatar
             return JsonResponse({
-                "success": True,
-                "image_url": image_url,
-                "message": "Avatar uploaded, but no face was clearly detected. Facial recognition may not work.",
+                "success": False,
+                "message": "No face was clearly detected in that photo. Please retake it with your full face centered, well-lit, and facing the camera, then try again.",
                 "brightness": brightness_check['brightness'],
                 "status": brightness_check['status']
-            })
+            }, status=422)
     except BaseException as e:
         # face_recognition may raise SystemExit or other BaseExceptions when models are missing.
-        # Don't fail the whole registration if encoding fails, but log it.
         logger.error(f"Encoding extraction failed for {employee_id}: {e}")
+        registration.face_encoding = None
+        registration.image.delete(save=False)
+        registration.image_data = None
+        registration.save()
+        return JsonResponse({
+            "success": False,
+            "message": "Could not process the face in that photo. Please try again.",
+        }, status=500)
 
     return JsonResponse({
         "success": True,
@@ -476,7 +498,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             known_encoding = np.array(registration.face_encoding)
         else:
             known_image = face_recognition.load_image_file(registration.image.path)
-            known_encodings = face_recognition.face_encodings(known_image)
+            known_encodings = _encode_face_with_fallback(known_image)
             if known_encodings:
                 known_encoding = known_encodings[0]
                 # Cache it for next time
@@ -484,7 +506,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 registration.save()
     elif registered_file:
         known_image = face_recognition.load_image_file(registered_file)
-        known_encodings = face_recognition.face_encodings(known_image)
+        known_encodings = _encode_face_with_fallback(known_image)
         if known_encodings: known_encoding = known_encodings[0]
     else:
         registered_b64 = data.get("registered_image")
@@ -494,7 +516,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=400,
             )
         known_image = face_recognition.load_image_file(decode_base64_image(registered_b64))
-        known_encodings = face_recognition.face_encodings(known_image)
+        known_encodings = _encode_face_with_fallback(known_image)
         if known_encodings: known_encoding = known_encodings[0]
 
     if known_encoding is None:
@@ -550,7 +572,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=422
             )
 
-    unknown_encodings = face_recognition.face_encodings(unknown_image)
+    unknown_encodings = _encode_face_with_fallback(unknown_image)
 
     if not unknown_encodings:
         return JsonResponse(

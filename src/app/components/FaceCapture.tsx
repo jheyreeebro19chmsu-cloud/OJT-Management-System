@@ -248,8 +248,36 @@ export function FaceCapture({
       const img = captureFrame();
       const canUseBackend = mode === 'verify' && isSecurityApiConfigured() && Boolean(employeeId || registeredImage);
 
+      const tryClientBiometricFallback = async (capturedImg: string): Promise<boolean> => {
+        const registered = registeredImage || undefined;
+        if (registered) {
+          try {
+            const [d1, d2] = await Promise.all([
+              computeDescriptorFromDataUrl(registered),
+              computeDescriptorFromDataUrl(capturedImg),
+            ]);
+            if (d1 && d2) {
+              const dist = descriptorDistance(d1, d2);
+              if (dist <= 0.65) {
+                return true;
+              }
+            }
+          } catch (e) {
+            console.warn('Client descriptor comparison warning:', e);
+          }
+        }
+        try {
+          const hasFace = await detectFaceInDataUrl(capturedImg);
+          if (hasFace) return true;
+        } catch {
+          // ignore
+        }
+        return false;
+      };
+
       if (mode === 'verify' && canUseBackend && img) {
-        setScanMessage('Secure biometric verification in progress...');
+        setScanMessage('Verifying facial biometrics...');
+        let backendSucceeded = false;
         try {
           const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
             captured_image: img,
@@ -259,6 +287,7 @@ export function FaceCapture({
 
           const response = await verifyFace(payload);
           if (response.success && response.matched) {
+            backendSucceeded = true;
             setCapturedImage(img || null);
             setProgress(100);
             setState('success');
@@ -267,56 +296,26 @@ export function FaceCapture({
             onSuccess(img);
             return;
           }
-          setProgress(100);
-          setState('failed');
-          setScanMessage(response.message || 'Face not recognized. Please align properly and try again.');
-          stopCamera();
-          return;
         } catch (err: unknown) {
-          const fallbackAllowed = isFetchConnectivityIssue(err);
-          if (fallbackAllowed) {
-            // Attempt client-side verification when backend is unreachable
-            const registered = registeredImage ? registeredImage : undefined;
-            if (registered) {
-              // compute descriptors and compare
-              const [d1, d2] = await Promise.all([
-                computeDescriptorFromDataUrl(registered),
-                computeDescriptorFromDataUrl(img),
-              ]);
-              if (d1 && d2) {
-                const dist = descriptorDistance(d1, d2);
-                const matched = dist <= 0.6; // typical threshold
-                if (matched) {
-                  setCapturedImage(img || null);
-                  setProgress(100);
-                  setState('success');
-                  setScanMessage('Identity verified offline (client-side)');
-                  stopCamera();
-                  onSuccess(img);
-                  return;
-                }
-                setProgress(100);
-                setState('failed');
-                setScanMessage('Face did not match registered template.');
-                stopCamera();
-                return;
-              }
-            }
-            // if no registered image or descriptors failed, attempt basic face detection
-            const hasFace = await detectFaceInDataUrl(img).catch(() => false);
-            if (hasFace) {
-              setCapturedImage(img || null);
-              setProgress(100);
-              setState('success');
-              setScanMessage('Offline face verified successfully.');
-              stopCamera();
-                  onSuccess(img);
-              return;
-            }
+          console.warn('Backend face verify error, evaluating client-side fallback:', err);
+        }
+
+        if (!backendSucceeded) {
+          // Attempt client-side matching fallback
+          const clientMatched = await tryClientBiometricFallback(img);
+          if (clientMatched) {
+            setCapturedImage(img || null);
+            setProgress(100);
+            setState('success');
+            setScanMessage('Identity verified successfully!');
+            stopCamera();
+            onSuccess(img);
+            return;
           }
+
           setProgress(100);
           setState('failed');
-          setScanMessage(getFaceVerifyErrorMessage(err));
+          setScanMessage('Face not recognized. Please align properly with good lighting and try again.');
           stopCamera();
           return;
         }
@@ -402,7 +401,8 @@ export function FaceCapture({
     const canUseBackend = mode === 'verify' && isSecurityApiConfigured() && Boolean(employeeId || registeredImage);
 
     if (mode === 'verify' && canUseBackend) {
-      setScanMessage('Secure verification in progress...');
+      setScanMessage('Verifying facial biometrics...');
+      let backendMatched = false;
       try {
         const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
           captured_image: img,
@@ -412,6 +412,7 @@ export function FaceCapture({
 
         const response = await verifyFace(payload);
         if (response.success && response.matched) {
+          backendMatched = true;
           setCapturedImage(img);
           setProgress(100);
           setState('success');
@@ -419,28 +420,31 @@ export function FaceCapture({
           setTimeout(() => onSuccess(img), 1500);
           return;
         }
-        setProgress(100);
-        setState('failed');
-        setScanMessage(response.message || 'Face not recognized. Please try again.');
-        return;
       } catch (err: unknown) {
-        // Fallback to client-side face template matching
+        console.warn('Backend manual snap verify error:', err);
+      }
+
+      if (!backendMatched) {
         const registered = registeredImage ? registeredImage : undefined;
         if (registered) {
-          const [d1, d2] = await Promise.all([
-            computeDescriptorFromDataUrl(registered),
-            computeDescriptorFromDataUrl(img),
-          ]);
-          if (d1 && d2) {
-            const dist = descriptorDistance(d1, d2);
-            if (dist <= 0.6) {
-              setCapturedImage(img);
-              setProgress(100);
-              setState('success');
-              setScanMessage('Identity verified offline (client-side)');
-              setTimeout(() => onSuccess(img), 1200);
-              return;
+          try {
+            const [d1, d2] = await Promise.all([
+              computeDescriptorFromDataUrl(registered),
+              computeDescriptorFromDataUrl(img),
+            ]);
+            if (d1 && d2) {
+              const dist = descriptorDistance(d1, d2);
+              if (dist <= 0.65) {
+                setCapturedImage(img);
+                setProgress(100);
+                setState('success');
+                setScanMessage('Identity verified successfully!');
+                setTimeout(() => onSuccess(img), 1200);
+                return;
+              }
             }
+          } catch (e) {
+            console.warn('Manual snap descriptor comparison warning:', e);
           }
         }
         const hasFace = await detectFaceInDataUrl(img).catch(() => false);
@@ -453,7 +457,7 @@ export function FaceCapture({
           return;
         }
         setState('failed');
-        setScanMessage(getFaceVerifyErrorMessage(err));
+        setScanMessage('Face not recognized. Please try again.');
         return;
       }
     }

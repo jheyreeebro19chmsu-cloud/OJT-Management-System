@@ -42,7 +42,14 @@ function baseUrl() {
 }
 
 export function isSecurityApiConfigured(): boolean {
-  return Boolean(baseUrl());
+  // Only treat the Django security backend as available when an explicit,
+  // absolute backend URL is configured (VITE_DJANGO_API_URL / VITE_SECURITY_API_KEY).
+  // The same-origin '/api' fallback in config.ts assumes a reverse proxy that
+  // does not exist on this Vercel deployment, so it must NOT count as "configured" —
+  // otherwise face verification silently calls a dead endpoint instead of falling
+  // back to the working client-side (face-api.js) comparison.
+  const base = baseUrl();
+  return Boolean(base) && /^https?:\/\//i.test(base);
 }
 
 function securityHeaders(): Record<string, string> {
@@ -70,18 +77,11 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
 
     const text = await res.text();
     if (!res.ok) {
-      if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
-        return { success: true, localFallback: true } as T;
-      }
       throw new Error(text || `Request failed with status ${res.status}`);
     }
 
     if (!text || !text.trim()) {
       return { success: true } as T;
-    }
-
-    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
-      return { success: true, localFallback: true } as T;
     }
 
     try {

@@ -32,6 +32,8 @@ export interface Employee {
   contactPhone?: string;
   academicYear?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
+  /** Backed by the `application_status` column in Supabase. Source of truth for the login gate. */
+  applicationStatus?: 'unregistered' | 'pending' | 'approved' | 'rejected';
 }
 
 export interface TimeRecord {

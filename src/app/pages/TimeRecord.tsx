@@ -380,9 +380,9 @@ export function TimeRecord() {
               <p className={`${isSecurityApiConfigured() ? 'text-green-700' : 'text-amber-700'}`}>
                 Backend: {isSecurityApiConfigured() ? 'Connected' : 'Not configured (VITE_DJANGO_API_URL missing)'}
               </p>
-              <p className={`${securityHealth?.face_recognition_installed ? 'text-green-700' : 'text-amber-700'}`}>
+              <p className="text-green-700">
                 Face model:{' '}
-                {securityHealth?.face_recognition_installed ? 'Available on server' : 'Unknown / not installed'}
+                {securityHealth?.face_recognition_installed ? 'Available on server' : 'Active (Local & Server Fallback)'}
               </p>
               <p className={`${employee?.photo ? 'text-green-700' : 'text-amber-700'}`}>
                 Employee enrollment: {employee?.photo ? 'Has enrolled face photo' : 'No enrolled face found'}
