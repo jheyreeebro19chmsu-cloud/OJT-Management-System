@@ -506,13 +506,22 @@ export default function App() {
               /* ─── HTE SUPERVISOR PORTAL ─── */
               <View style={styles.dashboardContainer}>
                 <View style={styles.dashHeader}>
-                  <View>
-                    <Text style={styles.welcomeLabel}>HTE Supervisor</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.welcomeLabel}>HTE Supervisor</Text>
+                      <TouchableOpacity
+                        style={styles.academicPill}
+                        onPress={() => setShowAcademicYearEditor(true)}
+                      >
+                        <Text style={styles.academicPillText}>AY {activeAcademicYear}</Text>
+                      </TouchableOpacity>
+                    </View>
                     <Text style={styles.userName}>{profile.name || 'Supervisor'}</Text>
+                    <Text style={styles.userSub}>{profile.companyName || 'Host Establishment'}</Text>
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-                      <LogOut color="#ef4444" size={20} />
+                      <LogOut color="#ef4444" size={18} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -531,32 +540,52 @@ export default function App() {
               /* ─── TRAINEE / STUDENT PORTAL ─── */
               <View style={styles.dashboardContainer}>
                 <View style={styles.dashHeader}>
-                  <View>
-                    <Text style={styles.welcomeLabel}>Trainee Portal</Text>
-                    <Text style={styles.userName}>{profile.name || 'Student Trainee'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.welcomeLabel}>Trainee Portal</Text>
+                      <TouchableOpacity
+                        style={styles.academicPill}
+                        onPress={() => setShowAcademicYearEditor(true)}
+                      >
+                        <Text style={styles.academicPillText}>AY {activeAcademicYear}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.userName} numberOfLines={1}>{profile.name || 'Student Trainee'}</Text>
+                    <Text style={styles.userSub} numberOfLines={1}>
+                      {profile.course || 'Information Systems'} • {profile.companyName || 'CHMSU Trainee'}
+                    </Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TouchableOpacity onPress={() => setShowProfile(true)} style={styles.profileAvatarBtn}>
                       {profile.photo ? (
-                        <Image source={{ uri: profile.photo }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                        <Image source={{ uri: profile.photo }} style={{ width: 40, height: 40, borderRadius: 20 }} />
                       ) : (
-                        <User color="#2563eb" size={20} />
+                        <User color="#2563eb" size={22} />
                       )}
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-                      <LogOut color="#ef4444" size={20} />
+                      <LogOut color="#ef4444" size={18} />
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                <ScrollView contentContainerStyle={styles.dashContent}>
-                  {/* Hours Rendered Progress Card */}
+                <ScrollView contentContainerStyle={styles.dashContent} showsVerticalScrollIndicator={false}>
+                  {/* Hours Rendered Hero Card with Progress */}
                   <View style={styles.hoursCard}>
                     <View style={styles.hoursRow}>
-                      <View>
-                        <Text style={styles.hoursLabel}>Rendered Hours</Text>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <Award size={16} color="#38bdf8" />
+                          <Text style={styles.hoursLabel}>OJT RENDERED PROGRESS</Text>
+                        </View>
                         <Text style={styles.hoursValue}>
-                          {renderedHours.toFixed(1)} / {profile.requiredHours || 300} hrs
+                          {renderedHours.toFixed(1)}{' '}
+                          <Text style={{ fontSize: 14, color: '#94a3b8', fontWeight: '600' }}>
+                            / {profile.requiredHours || 300} hrs
+                          </Text>
+                        </Text>
+                        <Text style={styles.hoursSubtext}>
+                          {Math.max(0, (profile.requiredHours || 300) - renderedHours).toFixed(1)} hours remaining to complete OJT
                         </Text>
                       </View>
                       <View style={styles.progressCircle}>
@@ -565,81 +594,105 @@ export default function App() {
                         </Text>
                       </View>
                     </View>
+
+                    {/* Progress Bar Line */}
+                    <View style={styles.progressBarTrack}>
+                      <View
+                        style={[
+                          styles.progressBarFill,
+                          {
+                            width: `${Math.min(100, Math.max(4, Math.round((renderedHours / (profile.requiredHours || 300)) * 100)))}%`,
+                          },
+                        ]}
+                      />
+                    </View>
                   </View>
 
                   {/* Enrollment Status Notice */}
                   {profile.application_status === 'pending' ? (
                     <View style={styles.statusBannerPending}>
-                      <Clock color="#d97706" size={24} />
+                      <Clock color="#d97706" size={20} />
                       <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.statusBannerTitlePending}>Application Pending Approval</Text>
-                        <Text style={styles.statusBannerDescPending}>Your instructor is currently reviewing your profile.</Text>
+                        <Text style={styles.statusBannerTitlePending}>Registration In Review</Text>
+                        <Text style={styles.statusBannerDescPending}>Your OJT Instructor is reviewing your submission & documents.</Text>
                       </View>
                     </View>
                   ) : profile.application_status === 'approved' ? (
                     <View style={styles.statusBannerApproved}>
-                      <Check color="#16a34a" size={24} />
+                      <Check color="#16a34a" size={20} />
                       <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.statusBannerTitleApproved}>Active OJT Trainee</Text>
+                        <Text style={styles.statusBannerTitleApproved}>Active Enrolled Trainee</Text>
                         <Text style={styles.statusBannerDescApproved}>
-                          {profile.companyName ? `Assigned at ${profile.companyName}` : 'Enrollment Approved'}
+                          {profile.companyName ? `Assigned: ${profile.companyName}` : 'Eligible for daily biometric DTR attendance'}
                         </Text>
                       </View>
                     </View>
                   ) : (
                     <TouchableOpacity style={styles.scanCard} onPress={() => setScanning(true)}>
-                      <QrCode color="#2563eb" size={32} />
+                      <View style={styles.scanIconBg}>
+                        <QrCode color="#2563eb" size={24} />
+                      </View>
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={styles.scanCardTitle}>Scan Instructor QR Code</Text>
-                        <Text style={styles.scanCardDesc}>Link your account to your instructor's class</Text>
+                        <Text style={styles.scanCardDesc}>Link your mobile profile to your instructor's class</Text>
                       </View>
-                      <ChevronRight color="#94a3b8" size={20} />
+                      <ChevronRight color="#94a3b8" size={18} />
                     </TouchableOpacity>
                   )}
 
                   {/* Quick Action Grid */}
-                  <Text style={styles.sectionHeader}>Quick Actions</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 10 }}>
+                    <Text style={styles.sectionHeader}>OJT Portal Services</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b' }}>Quick Access</Text>
+                  </View>
+
                   <View style={styles.actionGrid}>
                     <TouchableOpacity style={styles.actionCard} onPress={() => setShowDTR(true)}>
                       <View style={[styles.actionIconBg, { backgroundColor: '#eff6ff' }]}>
-                        <Clock color="#2563eb" size={24} />
+                        <Clock color="#2563eb" size={22} />
                       </View>
                       <Text style={styles.actionLabel}>Attendance (DTR)</Text>
+                      <Text style={styles.actionSub}>Facial & GPS</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionCard} onPress={() => setShowAnnouncements(true)}>
                       <View style={[styles.actionIconBg, { backgroundColor: '#f0fdf4' }]}>
-                        <Bell color="#16a34a" size={24} />
+                        <Bell color="#16a34a" size={22} />
                       </View>
                       <Text style={styles.actionLabel}>Announcements</Text>
+                      <Text style={styles.actionSub}>Tasks & Updates</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionCard} onPress={() => setShowTasks(true)}>
                       <View style={[styles.actionIconBg, { backgroundColor: '#fdf4ff' }]}>
-                        <ClipboardList color="#c026d3" size={24} />
+                        <ClipboardList color="#c026d3" size={22} />
                       </View>
                       <Text style={styles.actionLabel}>My Tasks</Text>
+                      <Text style={styles.actionSub}>Assignments</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionCard} onPress={() => setShowEvaluation(true)}>
                       <View style={[styles.actionIconBg, { backgroundColor: '#fef3c7' }]}>
-                        <Star color="#d97706" size={24} />
+                        <Star color="#d97706" size={22} />
                       </View>
-                      <Text style={styles.actionLabel}>Evaluation</Text>
+                      <Text style={styles.actionLabel}>Evaluations</Text>
+                      <Text style={styles.actionSub}>Scores & Grade</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionCard} onPress={() => setShowHTELink(true)}>
                       <View style={[styles.actionIconBg, { backgroundColor: '#ede9fe' }]}>
-                        <Building color="#7c3aed" size={24} />
+                        <Building color="#7c3aed" size={22} />
                       </View>
-                      <Text style={styles.actionLabel}>HTE Placement</Text>
+                      <Text style={styles.actionLabel}>HTE Workplace</Text>
+                      <Text style={styles.actionSub}>Placement</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.actionCard} onPress={() => setShowProfile(true)}>
                       <View style={[styles.actionIconBg, { backgroundColor: '#e0f2fe' }]}>
-                        <User color="#0284c7" size={24} />
+                        <User color="#0284c7" size={22} />
                       </View>
-                      <Text style={styles.actionLabel}>Profile</Text>
+                      <Text style={styles.actionLabel}>My Profile</Text>
+                      <Text style={styles.actionSub}>Biometrics & Info</Text>
                     </TouchableOpacity>
                   </View>
                 </ScrollView>
@@ -647,21 +700,28 @@ export default function App() {
             )
           ) : (
             /* ─── LOGIN SCREEN ─── */
-            <ScrollView contentContainerStyle={styles.loginContainer}>
+            <ScrollView contentContainerStyle={styles.loginContainer} showsVerticalScrollIndicator={false}>
               <View style={styles.loginHeader}>
-                <Building color="#38bdf8" size={48} />
+                <View style={styles.logoBadge}>
+                  <Building color="#38bdf8" size={36} />
+                </View>
                 <Text style={styles.loginAppTitle}>OJT Management System</Text>
                 <Text style={styles.loginAppSubtitle}>Carlos Hilado Memorial State University</Text>
+                <View style={styles.loginAyChip}>
+                  <Text style={styles.loginAyChipText}>ACADEMIC YEAR {activeAcademicYear}</Text>
+                </View>
               </View>
 
               <View style={styles.loginCard}>
                 <Text style={styles.cardTitle}>Sign In</Text>
+                <Text style={styles.cardSubtitle}>Access your Trainee, Instructor or HTE portal</Text>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Email Address</Text>
                   <TextInput
                     style={styles.textInput}
                     placeholder="student@chmsu.edu.ph"
+                    placeholderTextColor="#94a3b8"
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
@@ -674,6 +734,7 @@ export default function App() {
                   <TextInput
                     style={styles.textInput}
                     placeholder="Enter your password"
+                    placeholderTextColor="#94a3b8"
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
@@ -684,13 +745,13 @@ export default function App() {
                   {authLoading ? (
                     <ActivityIndicator color="#ffffff" />
                   ) : (
-                    <Text style={styles.loginButtonText}>LOGIN</Text>
+                    <Text style={styles.loginButtonText}>SIGN IN TO PORTAL</Text>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.registerLink} onPress={() => setView('register')}>
                   <Text style={styles.registerLinkText}>
-                    Don't have an account? <Text style={{ color: '#2563eb', fontWeight: '800' }}>Register</Text>
+                    Don't have an account? <Text style={{ color: '#2563eb', fontWeight: '900' }}>Register Now</Text>
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -722,6 +783,7 @@ export default function App() {
               <TextInput
                 style={styles.addAyInput}
                 placeholder="New AY (e.g. 2026-2027)"
+                placeholderTextColor="#94a3b8"
                 value={newAcademicYear}
                 onChangeText={setNewAcademicYear}
               />
@@ -753,110 +815,134 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: '#f1f5f9',
   },
-  welcomeLabel: { fontSize: 12, color: '#64748b', fontWeight: '700' },
-  userName: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  academicPill: { backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  academicPillText: { fontSize: 11, fontWeight: '800', color: '#2563eb' },
+  welcomeLabel: { fontSize: 11, color: '#64748b', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  userName: { fontSize: 17, fontWeight: '900', color: '#0f172a', marginTop: 2 },
+  userSub: { fontSize: 12, color: '#64748b', fontWeight: '600', marginTop: 1 },
+  academicPill: { backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#bfdbfe' },
+  academicPillText: { fontSize: 10, fontWeight: '800', color: '#2563eb' },
   profileAvatarBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#dbeafe',
   },
-  logoutBtn: { padding: 8, borderRadius: 10, backgroundColor: '#fef2f2' },
+  logoutBtn: { padding: 9, borderRadius: 12, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fee2e2' },
   dashContent: { padding: 16, paddingBottom: 60 },
   hoursCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 20,
+    backgroundColor: '#0f172a',
+    borderRadius: 24,
     padding: 20,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
   },
   hoursRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  hoursLabel: { color: '#94a3b8', fontSize: 12, fontWeight: '700' },
-  hoursValue: { color: '#ffffff', fontSize: 22, fontWeight: '900', marginTop: 4 },
+  hoursLabel: { color: '#38bdf8', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  hoursValue: { color: '#ffffff', fontSize: 24, fontWeight: '900', marginTop: 4 },
+  hoursSubtext: { color: '#94a3b8', fontSize: 11, fontWeight: '500', marginTop: 4 },
   progressCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#2563eb',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#60a5fa',
   },
-  progressText: { color: '#ffffff', fontWeight: '900', fontSize: 14 },
+  progressText: { color: '#ffffff', fontWeight: '900', fontSize: 15 },
+  progressBarTrack: { height: 6, backgroundColor: '#1e293b', borderRadius: 3, marginTop: 16, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#38bdf8', borderRadius: 3 },
   statusBannerPending: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fffbeb',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#fde68a',
   },
-  statusBannerTitlePending: { fontSize: 14, fontWeight: '800', color: '#b45309' },
-  statusBannerDescPending: { fontSize: 12, color: '#d97706', marginTop: 2 },
+  statusBannerTitlePending: { fontSize: 13, fontWeight: '800', color: '#b45309' },
+  statusBannerDescPending: { fontSize: 11, color: '#d97706', marginTop: 2 },
   statusBannerApproved: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0fdf4',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#bbf7d0',
   },
-  statusBannerTitleApproved: { fontSize: 14, fontWeight: '800', color: '#15803d' },
-  statusBannerDescApproved: { fontSize: 12, color: '#16a34a', marginTop: 2 },
+  statusBannerTitleApproved: { fontSize: 13, fontWeight: '800', color: '#15803d' },
+  statusBannerDescApproved: { fontSize: 11, color: '#16a34a', marginTop: 2 },
   scanCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  scanCardTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
-  scanCardDesc: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  sectionHeader: { fontSize: 15, fontWeight: '900', color: '#0f172a', marginBottom: 12, marginTop: 8 },
-  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  scanIconBg: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+  scanCardTitle: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
+  scanCardDesc: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  sectionHeader: { fontSize: 14, fontWeight: '900', color: '#0f172a' },
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   actionCard: {
-    width: '30.5%',
+    width: '31.2%',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 18,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
   actionIconBg: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   actionLabel: { fontSize: 11, fontWeight: '800', color: '#0f172a', textAlign: 'center' },
-  loginContainer: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  loginHeader: { alignItems: 'center', marginBottom: 32 },
-  loginAppTitle: { fontSize: 24, fontWeight: '900', color: '#ffffff', marginTop: 12 },
-  loginAppSubtitle: { fontSize: 13, color: '#94a3b8', marginTop: 4, textAlign: 'center' },
-  loginCard: { backgroundColor: '#ffffff', borderRadius: 24, padding: 24, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  cardTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 20 },
+  actionSub: { fontSize: 9, color: '#94a3b8', marginTop: 2, textAlign: 'center', fontWeight: '600' },
+  loginContainer: { flexGrow: 1, justifyContent: 'center', padding: 24, backgroundColor: '#0f172a' },
+  loginHeader: { alignItems: 'center', marginBottom: 28 },
+  logoBadge: { width: 64, height: 64, borderRadius: 20, backgroundColor: 'rgba(56, 189, 248, 0.15)', borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  loginAppTitle: { fontSize: 22, fontWeight: '900', color: '#ffffff', textAlign: 'center' },
+  loginAppSubtitle: { fontSize: 12, color: '#94a3b8', marginTop: 4, textAlign: 'center', fontWeight: '600' },
+  loginAyChip: { backgroundColor: 'rgba(56, 189, 248, 0.1)', borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.25)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginTop: 10 },
+  loginAyChipText: { fontSize: 10, color: '#38bdf8', fontWeight: '800' },
+  loginCard: { backgroundColor: '#ffffff', borderRadius: 28, padding: 24, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20 },
+  cardTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
+  cardSubtitle: { fontSize: 12, color: '#64748b', marginTop: 2, marginBottom: 20 },
   inputGroup: { marginBottom: 16 },
   inputLabel: { fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6 },
   textInput: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
     paddingHorizontal: 14,
     height: 48,
     fontSize: 14,
     color: '#0f172a',
     backgroundColor: '#f8fafc',
   },
-  loginButton: { backgroundColor: '#2563eb', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  loginButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '900' },
+  loginButton: { backgroundColor: '#2563eb', paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginTop: 8, shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  loginButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
   registerLink: { marginTop: 18, alignItems: 'center' },
   registerLinkText: { fontSize: 13, color: '#64748b' },
   scannerContainer: { flex: 1, backgroundColor: '#000' },
@@ -864,7 +950,7 @@ const styles = StyleSheet.create({
   scannerText: { color: '#ffffff', fontSize: 16, fontWeight: '800', marginBottom: 16, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100 },
   cancelScanBtn: { backgroundColor: '#ffffff', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 100 },
   cancelScanBtnText: { color: '#0f172a', fontWeight: '800' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 },
   modalCard: { backgroundColor: '#ffffff', borderRadius: 24, padding: 24 },
   modalTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a', marginBottom: 16 },
   ayItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
@@ -872,7 +958,7 @@ const styles = StyleSheet.create({
   ayText: { fontSize: 14, fontWeight: '700', color: '#475569' },
   ayTextActive: { color: '#2563eb', fontWeight: '900' },
   addAyRow: { flexDirection: 'row', marginTop: 16, gap: 8 },
-  addAyInput: { flex: 1, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingHorizontal: 12, height: 42, fontSize: 13 },
+  addAyInput: { flex: 1, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingHorizontal: 12, height: 42, fontSize: 13, color: '#0f172a' },
   addAyBtn: { backgroundColor: '#2563eb', width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   modalCloseBtn: { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
   modalCloseBtnText: { color: '#64748b', fontWeight: '700' },
