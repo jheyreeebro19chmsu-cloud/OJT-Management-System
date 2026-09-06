@@ -84,26 +84,26 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
     };
   }, []);
 
-  // Automatic Facial Recognition Sequence
+  // Fast Automatic Facial Recognition Sequence (No sluggish delays)
   useEffect(() => {
     if (!permission?.granted) return;
 
-    // Stage 1: Aligning (0 - 900ms)
+    // Stage 1: Fast initial lock (0 - 250ms)
     const t1 = setTimeout(() => {
       setScanStage('analyzing');
-      setProgress(45);
-    }, 900);
+      setProgress(50);
+    }, 250);
 
-    // Stage 2: Biometrics Analyzed (1800ms)
+    // Stage 2: Biometrics Analyzed & Matched (500ms)
     const t2 = setTimeout(() => {
       setScanStage('matched');
       setProgress(100);
-    }, 1800);
+    }, 500);
 
-    // Stage 3: Auto-Capture on biometric match (2500ms)
+    // Stage 3: Immediate Auto-Capture on match (750ms)
     const t3 = setTimeout(() => {
       autoCapture();
-    }, 2500);
+    }, 750);
 
     return () => {
       clearTimeout(t1);
@@ -122,7 +122,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
       }
 
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.85,
+        quality: 0.75,
         base64: true,
       });
 
