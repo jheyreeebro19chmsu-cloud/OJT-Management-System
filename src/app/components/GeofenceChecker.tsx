@@ -52,14 +52,16 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     );
 
     // Add employee's custom registration location if it exists at the top priority
-    if (employee?.registrationLocation?.lat && employee?.registrationLocation?.lng) {
+    const regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat ?? (employee as any)?.latitude;
+    const regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng ?? (employee as any)?.longitude;
+    if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
       zones.unshift({
-        id: `personal-${employee.id}`,
-        name: employee.registrationAddress || 'Registered Establishment Premises',
-        address: employee.registrationAddress || '',
-        lat: employee.registrationLocation.lat,
-        lng: employee.registrationLocation.lng,
-        radius: GEOFENCE_RADIUS_METERS,
+        id: `personal-${employee?.id || 'trainee'}`,
+        name: employee?.companyName ? `${employee.companyName} (Designated Workplace)` : (employee?.registrationAddress || 'Assigned Establishment Premises'),
+        address: employee?.registrationAddress || employee?.companyAddress || '',
+        lat: Number(regLat),
+        lng: Number(regLng),
+        radius: Math.max(Number((employee as any)?.geofenceRadius || (employee as any)?.radius || 250), 200),
         active: true,
       });
     }

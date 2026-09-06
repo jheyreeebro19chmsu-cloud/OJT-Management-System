@@ -146,9 +146,21 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
         return;
       }
 
-      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      setCurrentLocation(location);
-      await evaluateGeofence(location);
+      let location: Location.LocationObject | null = null;
+      try {
+        location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      } catch {
+        try {
+          location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        } catch {
+          location = await Location.getLastKnownPositionAsync();
+        }
+      }
+
+      if (location) {
+        setCurrentLocation(location);
+        await evaluateGeofence(location);
+      }
     } catch (e) {
       console.warn('Geofence check warning:', e);
       setIsWithinGeofence(true);

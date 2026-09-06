@@ -217,16 +217,31 @@ export default function RegisterScreen({
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setLocation({ error: 'Location permission was denied' });
+        setLocation({ error: 'Location permission was denied. Please allow location access.' });
         setLocLoading(false);
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      setLocation({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy ?? undefined,
-      });
+      
+      let pos: Location.LocationObject | null = null;
+      try {
+        pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      } catch {
+        try {
+          pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        } catch {
+          pos = await Location.getLastKnownPositionAsync();
+        }
+      }
+
+      if (pos) {
+        setLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? undefined,
+        });
+      } else {
+        setLocation({ error: 'Could not acquire GPS coordinates' });
+      }
     } catch (e: any) {
       setLocation({ error: e.message || 'Could not acquire GPS coordinates' });
     } finally {

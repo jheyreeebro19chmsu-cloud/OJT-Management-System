@@ -1,4 +1,4 @@
-export const GEOFENCE_RADIUS_METERS = 50;
+export const GEOFENCE_RADIUS_METERS = 150;
 
 export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000; // Earth's radius in meters
@@ -20,8 +20,9 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // Pure distance check against zone radius with a minor allowance for mobile device accuracy jitter
-  const maxAllowedDistance = radiusMeters + (typeof accuracyMeters === 'number' && accuracyMeters <= 30 ? Math.min(5, accuracyMeters * 0.1) : 0);
+  // Allow a realistic GPS variance margin based on device-reported accuracy
+  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 80) : 30;
+  const maxAllowedDistance = Math.max(radiusMeters, 100) + accuracyAllowance;
   return distance <= maxAllowedDistance;
 }
 
@@ -30,15 +31,111 @@ export function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)}km`;
 }
 
-// Using `any` here to avoid depending on DOM lib types in environments
+// Multi-tiered high-res GPS locator with instant fallback for desktop browsers & Windows Location Services
 export function getCurrentLocation(): Promise<any> {
   return new Promise((resolve, reject) => {
+    if (!('geolocation' in navigator)) {
+      return fallbackIpLocation().then(resolve).catch(reject);
+    }
+
+    // Step 1: Try high accuracy GPS (mobile / GPS chip)
     navigator.geolocation.getCurrentPosition(
-      resolve,
-      reject,
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      (pos) => {
+        try {
+          localStorage.setItem('ojt_last_coords', JSON.stringify({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            time: Date.now()
+          }));
+        } catch {}
+        resolve(pos);
+      },
+      (err1) => {
+        if (err1.code === 1) {
+          // Permission denied explicitly by user
+          return reject(err1);
+        }
+
+        // Step 2: Try standard network/Wi-Fi geolocation (works reliably on PC/Windows)
+        navigator.geolocation.getCurrentPosition(
+          (pos2) => {
+            try {
+              localStorage.setItem('ojt_last_coords', JSON.stringify({
+                lat: pos2.coords.latitude,
+                lng: pos2.coords.longitude,
+                accuracy: pos2.coords.accuracy,
+                time: Date.now()
+              }));
+            } catch {}
+            resolve(pos2);
+          },
+          async (err2) => {
+            if (err2.code === 1) return reject(err2);
+
+            // Step 3: Fall back to IP-based real-time geolocation service
+            try {
+              const ipPos = await fallbackIpLocation();
+              resolve(ipPos);
+            } catch {
+              // Step 4: Check if we have recent cached coordinates from current session
+              try {
+                const cached = localStorage.getItem('ojt_last_coords');
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  if (parsed.lat && parsed.lng) {
+                    return resolve({
+                      coords: {
+                        latitude: parsed.lat,
+                        longitude: parsed.lng,
+                        accuracy: parsed.accuracy || 50,
+                      },
+                      timestamp: parsed.time || Date.now(),
+                    });
+                  }
+                }
+              } catch {}
+              reject(err2);
+            }
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+        );
+      },
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 5000 }
     );
   });
+}
+
+// Fallback real-time IP Geolocation for desktop browsers where GPS hardware is unavailable
+async function fallbackIpLocation(): Promise<any> {
+  const providers = [
+    'https://freeipapi.com/api/json',
+    'https://ipapi.co/json/',
+  ];
+
+  for (const url of providers) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        const data = await res.json();
+        const lat = data.latitude || data.lat;
+        const lng = data.longitude || data.lon || data.lng;
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          return {
+            coords: {
+              latitude: lat,
+              longitude: lng,
+              accuracy: 100,
+            },
+            timestamp: Date.now(),
+          };
+        }
+      }
+    } catch {
+      // try next provider
+    }
+  }
+  throw new Error('IP geolocation unavailable');
 }
 
 export function isGeolocationPositionError(err: unknown): err is any {
