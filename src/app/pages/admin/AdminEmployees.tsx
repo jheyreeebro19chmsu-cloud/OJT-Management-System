@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2 } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
@@ -930,9 +930,19 @@ export function AdminEmployees() {
                           <p><span className="font-semibold text-blue-900">Workplace/HTE:</span> {selectedEmp.companyName || 'Not Assigned'}</p>
                           <p><span className="font-semibold text-blue-900">Workplace Address:</span> {selectedEmp.registrationAddress || selectedEmp.companyName || 'Campus Location'}</p>
                           {selectedEmp.registrationLocation ? (
-                            <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
-                              📍 GPS Coordinates: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±300m Radius)
-                            </p>
+                            <div className="flex items-center justify-between gap-2 mt-1">
+                              <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
+                                📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±300m)
+                              </p>
+                              <a
+                                href={`https://www.google.com/maps?q=${selectedEmp.registrationLocation.lat},${selectedEmp.registrationLocation.lng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
+                              >
+                                <ExternalLink size={11} /> Open Map
+                              </a>
+                            </div>
                           ) : (
                             <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
                               📍 Geofence Boundary: Institutional Campus Zone (Default 300m)

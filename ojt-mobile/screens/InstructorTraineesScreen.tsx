@@ -10,6 +10,7 @@ import {
   TextInput,
   Image,
   Modal,
+  Linking,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -404,6 +405,18 @@ export default function InstructorTraineesScreen({
                     <Text style={styles.detailLabel}>Geofence Radius:</Text>
                     <Text style={styles.detailValue}>300 Meters</Text>
                   </View>
+                  {selectedTrainee.registrationLocation && (
+                    <TouchableOpacity
+                      style={styles.openMapBtn}
+                      onPress={() => {
+                        const url = `https://www.google.com/maps?q=${selectedTrainee.registrationLocation?.lat},${selectedTrainee.registrationLocation?.lng}`;
+                        Linking.openURL(url);
+                      }}
+                    >
+                      <MapPin size={12} color="#0284c7" />
+                      <Text style={styles.openMapBtnText}>View Workplace Pin on Google Maps</Text>
+                    </TouchableOpacity>
+                  )}
                   <View style={styles.geofenceStatusRow}>
                     <ShieldCheck size={14} color="#059669" />
                     <Text style={styles.geofenceStatusText}>
@@ -513,6 +526,19 @@ const styles = StyleSheet.create({
   geofenceBody: { gap: 6 },
   geofenceStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: '#dcfce7' },
   geofenceStatusText: { fontSize: 11, fontWeight: '700', color: '#15803d', flex: 1 },
+  openMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#eff6ff',
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    marginVertical: 4,
+  },
+  openMapBtnText: { fontSize: 11, fontWeight: '800', color: '#0284c7' },
   docsMonitoringCard: {
     backgroundColor: '#faf5ff',
     borderRadius: 16,
