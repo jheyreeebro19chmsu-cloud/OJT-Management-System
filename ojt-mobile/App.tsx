@@ -703,7 +703,11 @@ export default function App() {
             <ScrollView contentContainerStyle={styles.loginContainer} showsVerticalScrollIndicator={false}>
               <View style={styles.loginHeader}>
                 <View style={styles.logoBadge}>
-                  <Building color="#38bdf8" size={36} />
+                  <Image
+                    source={require('./assets/chmsu-logo.png')}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
                 </View>
                 <Text style={styles.loginAppTitle}>OJT Management System</Text>
                 <Text style={styles.loginAppSubtitle}>Carlos Hilado Memorial State University</Text>
@@ -921,7 +925,25 @@ const styles = StyleSheet.create({
   actionSub: { fontSize: 9, color: '#94a3b8', marginTop: 2, textAlign: 'center', fontWeight: '600' },
   loginContainer: { flexGrow: 1, justifyContent: 'center', padding: 24, backgroundColor: '#0f172a' },
   loginHeader: { alignItems: 'center', marginBottom: 28 },
-  logoBadge: { width: 64, height: 64, borderRadius: 20, backgroundColor: 'rgba(56, 189, 248, 0.15)', borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  logoBadge: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#ffffff',
+    padding: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 35,
+  },
   loginAppTitle: { fontSize: 22, fontWeight: '900', color: '#ffffff', textAlign: 'center' },
   loginAppSubtitle: { fontSize: 12, color: '#94a3b8', marginTop: 4, textAlign: 'center', fontWeight: '600' },
   loginAyChip: { backgroundColor: 'rgba(56, 189, 248, 0.1)', borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.25)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginTop: 10 },

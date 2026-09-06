@@ -4,6 +4,11 @@
  */
 
 export const SCHOOL_LOGOS: Record<string, string> = {
+  // Carlos Hilado Memorial State University (CHMSU)
+  'Carlos Hilado Memorial State University': '/chmsu-logo.png',
+  'CHMSU': '/chmsu-logo.png',
+  'Carlos Hilado': '/chmsu-logo.png',
+
   // Popular Philippine Universities
   'Polytechnic University of the Philippines': 'https://upload.wikimedia.org/wikipedia/en/5/51/PUP_Logo_Updated.png',
   'De La Salle University': 'https://upload.wikimedia.org/wikipedia/en/7/74/DLSU_logo.svg',
