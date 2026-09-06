@@ -731,131 +731,186 @@ export function AdminEmployees() {
                         </div>
                       ))}
 
+                      {/* Standard Required OJT Documents Monitoring */}
                       <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold text-violet-900">Required Documents</p>
-                          {(() => {
-                            const summary = getEmployeeRequirementSummary(selectedEmp.id);
-                            const total = summary.complete + summary.incomplete + summary.missing;
-                            const allPassed = total > 0 && summary.missing === 0 && summary.incomplete === 0;
-                            const allMissing = total > 0 && summary.complete === 0;
+                          <div>
+                            <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
+                              <FileCheck size={16} className="text-violet-600" />
+                              Required OJT Documents Monitoring
+                            </p>
+                            <p className="text-[11px] text-violet-600 mt-0.5">
+                              4 Standard Compliance Documents Required for Trainee Activation
+                            </p>
+                          </div>
+                          <span
+                            className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                              selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                ? 'bg-green-100 text-green-700 border-green-200'
+                                : 'bg-amber-100 text-amber-700 border-amber-200'
+                            }`}
+                          >
+                            {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                              ? '4/4 Passed (Compliant)'
+                              : 'Pending Verification'}
+                          </span>
+                        </div>
+
+                        {/* The 4 Standard Documents Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {[
+                            {
+                              id: 'doc-endorsement',
+                              num: '1',
+                              title: 'Endorsement Letter',
+                              desc: 'Official institutional endorsement from Department Chair / Coordinator',
+                              icon: FileText,
+                            },
+                            {
+                              id: 'doc-consent',
+                              num: '2',
+                              title: 'Parental Consent Form',
+                              desc: 'Signed student waiver & parent/guardian emergency authorization',
+                              icon: FileCheck,
+                            },
+                            {
+                              id: 'doc-medical',
+                              num: '3',
+                              title: 'Medical Certificate',
+                              desc: 'Medical examination clearance & physical fitness certification',
+                              icon: Shield,
+                            },
+                            {
+                              id: 'doc-resume',
+                              num: '4',
+                              title: 'Student Bio-data / Resume',
+                              desc: 'Updated student profile, academic background & contact bio-data',
+                              icon: User,
+                            },
+                          ].map((docItem) => {
+                            const isPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                            const IconComponent = docItem.icon;
                             return (
-                              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${allPassed ? 'bg-green-100 text-green-700 border-green-200' : allMissing ? 'bg-red-100 text-red-700 border-red-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
-                                {allPassed ? '✓ All Documents Passed' : allMissing ? '✗ No Documents Uploaded' : `${summary.complete}/${total} Passed`}
-                              </span>
-                            );
-                          })()}
-                        </div>
-
-                        <div className="space-y-2">
-                          {getEmployeeRequiredDocuments(selectedEmp.id).length === 0 ? (
-                            <p className="text-xs text-violet-700">No required documents assigned yet.</p>
-                          ) : (
-                            getEmployeeRequiredDocuments(selectedEmp.id).map((doc) => {
-                              const submission = getRequiredDocumentSubmission(doc.id, selectedEmp.id);
-                              const status = getRequirementStatus(doc.id, selectedEmp.id);
-                              const isPassed = status === 'complete';
-                              const isMissing = status === 'missing';
-                              return (
-                                <div key={doc.id} className={`rounded-xl bg-white p-2.5 border ${isPassed ? 'border-green-200' : isMissing ? 'border-red-200' : 'border-orange-200'}`}>
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1">
-                                      <p className="text-sm font-semibold text-gray-800">{doc.title}</p>
-                                      {doc.description && <p className="text-[11px] text-gray-500 mt-1">{doc.description}</p>}
+                              <div
+                                key={docItem.id}
+                                className={`rounded-xl bg-white p-3 border transition-all ${
+                                  isPassed
+                                    ? 'border-green-200 shadow-sm shadow-green-50/50'
+                                    : 'border-amber-200 shadow-sm shadow-amber-50/50'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2 mb-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <div
+                                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                        isPassed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                      }`}
+                                    >
+                                      {docItem.num}
                                     </div>
-                                    <span className={`shrink-0 text-[10px] rounded-full px-2.5 py-1 font-bold border ${isPassed ? 'bg-green-100 text-green-700 border-green-200' : isMissing ? 'bg-red-100 text-red-700 border-red-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>
-                                      {isPassed ? '✓ Passed' : isMissing ? '✗ Missing' : '⚠ Incomplete'}
-                                    </span>
+                                    <p className="text-xs font-bold text-gray-800">{docItem.title}</p>
                                   </div>
-                                  {doc.dueDate && <p className="text-[11px] text-gray-500 mt-2">Due: {doc.dueDate}</p>}
-                                  {submission && (
-                                    <div className="mt-2 border-t border-violet-50 pt-2 space-y-1.5">
-                                      {submission.note && (
-                                        <p className="text-[11px] text-gray-500 italic">Note: {submission.note}</p>
-                                      )}
-                                      {submission.fileName && (
-                                        <p className="text-[11px] font-medium text-slate-700">📎 {submission.fileName}</p>
-                                      )}
-                                      <p className="text-[10px] text-gray-400">Submitted: {new Date(submission.submittedAt).toLocaleDateString()}</p>
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        {submission.fileUrl && (
-                                          <button
-                                            type="button"
-                                            onClick={() => setPreviewInstructorDoc({
-                                              studentName: selectedEmp.name,
-                                              studentId: selectedEmp.employeeId,
-                                              title: doc.title,
-                                              fileName: submission.fileName,
-                                              fileUrl: submission.fileUrl,
-                                              note: submission.note,
-                                              date: new Date(submission.submittedAt).toLocaleDateString(),
-                                            })}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-600 text-white rounded-lg text-[11px] font-semibold hover:bg-violet-700 transition-all"
-                                          >
-                                            <Eye size={11} /> View
-                                          </button>
-                                        )}
-                                        {submission.fileUrl && (
-                                          <a
-                                            href={submission.fileUrl}
-                                            download={submission.fileName || 'ojt-document'}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-violet-200 text-violet-700 rounded-lg text-[11px] font-semibold hover:bg-violet-50 transition-all"
-                                          >
-                                            <Download size={11} /> Download
-                                          </a>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
+                                  <span
+                                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                                      isPassed
+                                        ? 'bg-green-100 text-green-700 border-green-200'
+                                        : 'bg-amber-100 text-amber-700 border-amber-200'
+                                    }`}
+                                  >
+                                    {isPassed ? '✓ PASSED' : 'PENDING'}
+                                  </span>
                                 </div>
-                              );
-                            })
-                          )}
+                                <p className="text-[10px] text-gray-500 leading-tight mb-2.5">{docItem.desc}</p>
+
+                                <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPreviewInstructorDoc({
+                                        studentName: selectedEmp.name,
+                                        studentId: selectedEmp.employeeId,
+                                        title: `${docItem.num}. ${docItem.title}`,
+                                        fileName: `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                        note: `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
+                                        date: new Date().toLocaleDateString(),
+                                      })
+                                    }
+                                    className="flex-1 py-1 px-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
+                                  >
+                                    <Eye size={11} /> View Document
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const newStatus = !isPassed;
+                                      await updateEmployee(selectedEmp.id, {
+                                        documentsPassed: newStatus,
+                                        documentsStatus: newStatus ? 'passed' : 'pending',
+                                      });
+                                      setSelectedEmp({
+                                        ...selectedEmp,
+                                        documentsPassed: newStatus,
+                                        documentsStatus: newStatus ? 'passed' : 'pending',
+                                      });
+                                      toast.success(
+                                        newStatus
+                                          ? `${docItem.title} marked as PASSED`
+                                          : `${docItem.title} marked as PENDING`
+                                      );
+                                    }}
+                                    className={`py-1 px-2.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                      isPassed
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                        : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                                    }`}
+                                  >
+                                    {isPassed ? 'Revoke' : 'Approve'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
 
-
-                        <div className="space-y-2 rounded-xl bg-white p-3 border border-violet-100">
-                          <input
-                            value={docTitle}
-                            onChange={(e) => setDocTitle(e.target.value)}
-                            placeholder="Document title"
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                          />
-                          <textarea
-                            value={docDescription}
-                            onChange={(e) => setDocDescription(e.target.value)}
-                            placeholder="Description / notes"
-                            rows={2}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                          />
-                          <input
-                            type="date"
-                            value={docDueDate}
-                            onChange={(e) => setDocDueDate(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                          />
+                        {/* Bulk Toggle All Documents Action */}
+                        <div className="flex items-center justify-between pt-1 border-t border-violet-100">
+                          <p className="text-[11px] text-violet-700 font-medium">
+                            Status:{' '}
+                            <span className="font-bold">
+                              {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                ? 'All 4 Required Documents Certified'
+                                : 'Pending Verification of Registration Documents'}
+                            </span>
+                          </p>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (!docTitle.trim()) {
-                                toast.error('Document title is required.');
-                                return;
-                              }
-                              addRequiredDocument(selectedEmp.id, {
-                                title: docTitle.trim(),
-                                description: docDescription.trim(),
-                                notes: docDescription.trim(),
-                                dueDate: docDueDate || undefined,
-                                required: true,
+                            onClick={async () => {
+                              const newStatus = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
+                              await updateEmployee(selectedEmp.id, {
+                                documentsPassed: newStatus,
+                                documentsStatus: newStatus ? 'passed' : 'pending',
                               });
-                              setDocTitle('');
-                              setDocDescription('');
-                              setDocDueDate('');
-                              toast.success('Required document added.');
+                              setSelectedEmp({
+                                ...selectedEmp,
+                                documentsPassed: newStatus,
+                                documentsStatus: newStatus ? 'passed' : 'pending',
+                              });
+                              toast.success(
+                                newStatus
+                                  ? 'All 4 required documents marked as PASSED!'
+                                  : 'Documents marked as PENDING verification.'
+                              );
                             }}
-                            className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                              selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
+                            }`}
                           >
-                            Add Required Document
+                            {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                              ? 'Set All as Pending'
+                              : '✓ Approve All 4 Documents'}
                           </button>
                         </div>
                       </div>

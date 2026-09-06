@@ -261,35 +261,118 @@ export default function InstructorTraineesScreen({
                     {selectedTrainee.faceRegistered ? 'Registered' : 'Not Registered'}
                   </Text>
                 </View>
-                <View style={[styles.detailRow, { alignItems: 'center' }]}>
-                  <Text style={styles.detailLabel}>Registration Documents:</Text>
-                  <TouchableOpacity
-                    onPress={async () => {
-                      const newStatus = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? false : true;
-                      await mobileDb.updateEmployee(selectedTrainee.id, {
-                        documentsPassed: newStatus,
-                        documentsStatus: newStatus ? 'passed' : 'pending',
-                      });
-                      setSelectedTrainee({
-                        ...selectedTrainee,
-                        documentsPassed: newStatus,
-                        documentsStatus: newStatus ? 'passed' : 'pending',
-                      });
-                      fetchTrainees();
-                      Alert.alert('Documents Updated', newStatus ? 'Marked as PASSED' : 'Marked as PENDING');
-                    }}
-                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#ecfdf5' : '#fffbeb', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 }}
+              </View>
+
+              {/* 4 Standard Required OJT Documents Monitoring Card */}
+              <View style={styles.docsMonitoringCard}>
+                <View style={styles.docsCardHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.docsCardTitle}>Required OJT Documents</Text>
+                    <Text style={styles.docsCardSub}>4 Standard compliance documents</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.docsBadge,
+                      selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                        ? styles.docsBadgePassed
+                        : styles.docsBadgePending,
+                    ]}
                   >
-                    {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? (
-                      <FileCheck size={12} color="#059669" />
-                    ) : (
-                      <FileText size={12} color="#d97706" />
-                    )}
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#059669' : '#d97706' }}>
-                      {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? 'PASSED (Tap to toggle)' : 'PENDING (Tap to toggle)'}
+                    <Text
+                      style={[
+                        styles.docsBadgeText,
+                        selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                          ? styles.docsBadgeTextPassed
+                          : styles.docsBadgeTextPending,
+                      ]}
+                    >
+                      {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                        ? '4/4 Passed'
+                        : 'Pending Docs'}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 </View>
+
+                {/* 4 Standard Documents List */}
+                <View style={styles.docsList}>
+                  {[
+                    { id: '1', title: '1. Endorsement Letter', desc: 'Department Chair recommendation' },
+                    { id: '2', title: '2. Parental Consent Form', desc: 'Signed guardian authorization' },
+                    { id: '3', title: '3. Medical Certificate', desc: 'Physician fit-to-work clearance' },
+                    { id: '4', title: '4. Student Bio-data / Resume', desc: 'Updated CV & photo' },
+                  ].map((doc) => {
+                    const isPassed = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending';
+                    return (
+                      <View key={doc.id} style={styles.docItemRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.docItemTitle}>{doc.title}</Text>
+                          <Text style={styles.docItemDesc}>{doc.desc}</Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.docStatusPill,
+                            isPassed ? styles.docStatusPillPassed : styles.docStatusPillPending,
+                          ]}
+                        >
+                          {isPassed ? (
+                            <FileCheck size={11} color="#059669" />
+                          ) : (
+                            <Clock size={11} color="#d97706" />
+                          )}
+                          <Text
+                            style={[
+                              styles.docStatusPillText,
+                              isPassed ? styles.docStatusPillTextPassed : styles.docStatusPillTextPending,
+                            ]}
+                          >
+                            {isPassed ? 'Verified' : 'Submitted'}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                {/* Toggle All Documents Approval Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.toggleDocsBtn,
+                    selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                      ? styles.toggleDocsBtnRevoke
+                      : styles.toggleDocsBtnApprove,
+                  ]}
+                  onPress={async () => {
+                    const newStatus = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? false : true;
+                    await mobileDb.updateEmployee(selectedTrainee.id, {
+                      documentsPassed: newStatus,
+                      documentsStatus: newStatus ? 'passed' : 'pending',
+                    });
+                    setSelectedTrainee({
+                      ...selectedTrainee,
+                      documentsPassed: newStatus,
+                      documentsStatus: newStatus ? 'passed' : 'pending',
+                    });
+                    fetchTrainees();
+                    Alert.alert(
+                      'Documents Status Updated',
+                      newStatus ? 'All 4 standard documents marked as PASSED.' : 'Documents marked as PENDING verification.'
+                    );
+                  }}
+                >
+                  <FileCheck size={14} color={selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#b91c1c' : '#15803d'} />
+                  <Text
+                    style={[
+                      styles.toggleDocsBtnText,
+                      selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                        ? { color: '#b91c1c' }
+                        : { color: '#15803d' },
+                    ]}
+                  >
+                    {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                      ? 'Revoke Document Approval'
+                      : '✓ Approve All 4 Standard Documents'}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {/* Geofencing & Workplace Location Box */}
@@ -430,6 +513,69 @@ const styles = StyleSheet.create({
   geofenceBody: { gap: 6 },
   geofenceStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: '#dcfce7' },
   geofenceStatusText: { fontSize: 11, fontWeight: '700', color: '#15803d', flex: 1 },
+  docsMonitoringCard: {
+    backgroundColor: '#faf5ff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e9d5ff',
+    padding: 12,
+    marginBottom: 12,
+  },
+  docsCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3e8ff',
+    paddingBottom: 8,
+  },
+  docsCardTitle: { fontSize: 13, fontWeight: '800', color: '#581c87' },
+  docsCardSub: { fontSize: 10, color: '#7e22ce', marginTop: 1 },
+  docsBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  docsBadgePassed: { backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#a7f3d0' },
+  docsBadgePending: { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' },
+  docsBadgeText: { fontSize: 10, fontWeight: '800' },
+  docsBadgeTextPassed: { color: '#059669' },
+  docsBadgeTextPending: { color: '#d97706' },
+  docsList: { gap: 6, marginBottom: 10 },
+  docItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f3e8ff',
+  },
+  docItemTitle: { fontSize: 11, fontWeight: '700', color: '#1e293b' },
+  docItemDesc: { fontSize: 9, color: '#64748b', marginTop: 1 },
+  docStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  docStatusPillPassed: { backgroundColor: '#ecfdf5' },
+  docStatusPillPending: { backgroundColor: '#fffbeb' },
+  docStatusPillText: { fontSize: 9, fontWeight: '800' },
+  docStatusPillTextPassed: { color: '#059669' },
+  docStatusPillTextPending: { color: '#d97706' },
+  toggleDocsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  toggleDocsBtnApprove: { backgroundColor: '#ecfdf5', borderColor: '#bbf7d0' },
+  toggleDocsBtnRevoke: { backgroundColor: '#fef2f2', borderColor: '#fecaca' },
+  toggleDocsBtnText: { fontSize: 11, fontWeight: '800' },
   modalActions: { gap: 10 },
   modalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, gap: 6 },
   modalBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
