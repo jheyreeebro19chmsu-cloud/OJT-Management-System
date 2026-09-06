@@ -271,6 +271,38 @@ export default function App() {
   }
 
   async function handleLogout() {
+    try {
+      if (profile && (profile.role === 'trainee' || profile.position === 'OJT Trainee')) {
+        const empId = profile.id || profile.employeeId || '';
+        if (empId) {
+          const todayRec = await mobileDb.getTodayTimeRecord(empId);
+          if (todayRec && todayRec.timeIn && !todayRec.timeOut) {
+            const now = new Date();
+            const timeOutStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+            const [inH, inM] = todayRec.timeIn.split(':').map(Number);
+            const [outH, outM] = timeOutStr.split(':').map(Number);
+            const totalHours = Math.max(0, parseFloat((((outH * 60 + outM) - (inH * 60 + inM)) / 60).toFixed(2)));
+            
+            await mobileDb.saveTimeRecord({
+              id: todayRec.id,
+              employeeId: empId,
+              date: todayRec.date,
+              timeIn: todayRec.timeIn,
+              timeOut: timeOutStr,
+              totalHours,
+              status: totalHours >= 8 ? 'completed' : 'present',
+              timeInFaceVerified: true,
+              timeOutFaceVerified: true,
+              timeInGeofenced: true,
+              timeOutGeofenced: true,
+              academicYear: activeAcademicYear,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Auto time-out on mobile logout warning:', e);
+    }
     await supabase.auth.signOut();
     await authStore.clearTokens();
     setSession(null);

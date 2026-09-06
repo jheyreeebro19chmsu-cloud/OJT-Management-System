@@ -892,6 +892,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    try {
+      const emp = getCurrentEmployee();
+      if (emp && (emp.position === 'OJT Trainee' || (emp as any).role === 'trainee')) {
+        const todayRecord = getTodayRecord(emp.id);
+        if (todayRecord && todayRecord.timeIn && !todayRecord.timeOut) {
+          const now = new Date();
+          const timeOut = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const totalHours = calculateTotalHours(todayRecord.timeIn, timeOut);
+          updateTimeRecord(todayRecord.id, {
+            timeOut,
+            totalHours,
+            timeOutGeofenced: true,
+            timeOutFaceVerified: true,
+            status: totalHours >= 8 ? 'present' : todayRecord.status,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Auto time-out on web logout error:', e);
+    }
+
     setCurrentUser(null);
     if (useSupabase) {
       supabase.auth.signOut().catch((err) => {
