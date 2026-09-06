@@ -33,13 +33,32 @@ const BLANK_ZONE = {
 };
 
 export function AdminGeofence() {
-  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees } = useApp();
+  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, settings } = useApp();
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_ZONE);
   const [focusCoords, setFocusCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  const getZoneAcademicYear = (zone: any): string | null => {
+    if (zone.academicYear) return zone.academicYear;
+    if (zone.id?.startsWith('personal-')) {
+      const empId = zone.id.replace('personal-', '');
+      const emp = (employees as any[]).find((e: any) => e.id === empId);
+      return emp?.academicYear || null;
+    }
+    return null;
+  };
+
+  const filteredZones = geofenceZones.filter((zone) => {
+    if (selectedAcademicYear === 'all') return true;
+    const zoneAY = getZoneAcademicYear(zone);
+    // If it's a global institutional zone without specific AY, keep it visible in all years
+    if (!zoneAY && !zone.id?.startsWith('personal-')) return true;
+    return zoneAY === selectedAcademicYear;
+  });
 
   const getZoneOwner = (zone: any): string => {
     if (zone.id?.startsWith('personal-')) {
@@ -53,7 +72,10 @@ export function AdminGeofence() {
   const upd = (f: string, v: string | number | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
   const handleAdd = () => {
-    addGeofenceZone(form);
+    addGeofenceZone({
+      ...form,
+      academicYear: selectedAcademicYear !== 'all' ? selectedAcademicYear : settings.activeAcademicYear,
+    } as any);
     setForm(BLANK_ZONE);
     setShowAdd(false);
   };
@@ -84,25 +106,54 @@ export function AdminGeofence() {
   const handleToggle = (zone: GeofenceZone) => {
     updateGeofenceZone(zone.id, { active: !zone.active });
   };
-  const invalidZones = geofenceZones.filter((zone) => !zone || !isValidCoord(zone.lat, zone.lng));
+  const invalidZones = filteredZones.filter((zone) => !zone || !isValidCoord(zone.lat, zone.lng));
+
+  const availableYears = Array.from(
+    new Set([
+      settings?.activeAcademicYear || '2026-2027',
+      ...(settings?.academicYears || []),
+      ...geofenceZones.map((z: any) => getZoneAcademicYear(z)).filter(Boolean),
+    ])
+  ).sort().reverse();
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Geofence Zones</h2>
-          <p className="text-sm text-gray-500">{geofenceZones.filter((z) => z.active).length} active zones</p>
+          <p className="text-sm text-gray-500">
+            {filteredZones.filter((z) => z.active).length} active zones {selectedAcademicYear !== 'all' && `(${selectedAcademicYear})`}
+          </p>
         </div>
-        <button
-          onClick={() => {
-            setForm(BLANK_ZONE);
-            setShowAdd(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
-        >
-          <Plus size={15} />
-          Add Zone
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Academic Year Selector */}
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm text-xs">
+            <span className="font-semibold text-gray-600">Cohort AY:</span>
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="bg-transparent font-bold text-blue-700 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Academic Years</option>
+              {availableYears.map((ay) => (
+                <option key={ay} value={ay}>
+                  AY {ay} {ay === settings?.activeAcademicYear ? '(Active)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => {
+              setForm(BLANK_ZONE);
+              setShowAdd(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
+          >
+            <Plus size={15} />
+            Add Zone
+          </button>
+        </div>
       </div>
 
       {/* Info card */}
@@ -112,7 +163,7 @@ export function AdminGeofence() {
           <p className="font-semibold mb-1">How Geofencing Works</p>
           <p className="text-blue-600 text-xs leading-relaxed">
             When a trainee attempts to clock in or out, the system checks their GPS coordinates against all active
-            geofence zones. They must be within the specified radius (in meters) from the zone center to proceed with
+            geofence zones in their academic year. They must be within the specified radius (in meters) from the zone center to proceed with
             face verification.
           </p>
         </div>
@@ -139,7 +190,7 @@ export function AdminGeofence() {
           </div>
         )}
         <GeofenceMap
-          zones={geofenceZones}
+          zones={filteredZones}
           picking={Boolean(showAdd || editId)}
           pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : undefined}
           focusCoords={focusCoords}
@@ -152,14 +203,14 @@ export function AdminGeofence() {
 
       {/* Zone List */}
       <div className="space-y-3">
-        {geofenceZones.length === 0 ? (
+        {filteredZones.length === 0 ? (
           <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center">
             <MapPin size={40} className="text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No geofence zones configured</p>
-            <p className="text-gray-400 text-sm mt-1">Add a zone to enable location-based attendance</p>
+            <p className="text-gray-500 font-medium">No geofence zones found</p>
+            <p className="text-gray-400 text-sm mt-1">Add a zone for this academic year to enable location-based attendance</p>
           </div>
         ) : (
-          geofenceZones.map((zone, idx) => (
+          filteredZones.map((zone, idx) => (
             <motion.div
               key={zone.id}
               initial={{ opacity: 0, y: 10 }}
@@ -231,12 +282,23 @@ export function AdminGeofence() {
                           </span>
                           <span>⭕ {zone.radius}m radius</span>
                         </div>
-                        {/* Owner badge */}
-                        <div className="flex items-center gap-1 mt-2">
-                          <User size={10} className="text-purple-500" />
-                          <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-medium">
-                            Owner: {getZoneOwner(zone)}
-                          </span>
+                        {/* Owner & AY badges */}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <div className="flex items-center gap-1">
+                            <User size={10} className="text-purple-500" />
+                            <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-medium">
+                              Owner: {getZoneOwner(zone)}
+                            </span>
+                          </div>
+                          {getZoneAcademicYear(zone) ? (
+                            <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full font-medium">
+                              AY {getZoneAcademicYear(zone)}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
+                              Global / All Cohorts
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -14,6 +14,7 @@ import {
   Evaluation,
   Announcement,
   AnnouncementSubmission,
+  AnnouncementComment,
   RequiredDocument,
   RequiredDocumentSubmission,
   RequirementStatus,
@@ -32,6 +33,7 @@ const STORAGE_KEYS = {
   EVALUATIONS: 'ojt_evaluations',
   ANNOUNCEMENTS: 'ojt_announcements',
   ANNOUNCEMENT_SUBMISSIONS: 'ojt_announcement_submissions',
+  ANNOUNCEMENT_COMMENTS: 'ojt_announcement_comments',
   REQUIRED_DOCUMENTS: 'ojt_required_documents',
   REQUIRED_DOCUMENT_SUBMISSIONS: 'ojt_required_document_submissions',
   HOST_FEEDBACK: 'ojt_host_feedback',
@@ -272,6 +274,7 @@ interface AppContextType {
   evaluations: Evaluation[];
   announcements: Announcement[];
   announcementSubmissions: AnnouncementSubmission[];
+  announcementComments: AnnouncementComment[];
   requiredDocuments: RequiredDocument[];
   requiredDocumentSubmissions: RequiredDocumentSubmission[];
   hostFeedback: HostFeedback[];
@@ -312,6 +315,8 @@ interface AppContextType {
   ) => AnnouncementSubmission;
   getAnnouncementSubmission: (announcementId: string, employeeId: string) => AnnouncementSubmission | null;
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
+  addAnnouncementComment: (comment: Omit<AnnouncementComment, 'id'>) => Promise<AnnouncementComment>;
+  getAnnouncementComments: (announcementId: string) => AnnouncementComment[];
   addRequiredDocument: (
     employeeId: string,
     data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean; academicYear?: string }
@@ -490,6 +495,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [announcementSubmissions, setAnnouncementSubmissions] = useState<AnnouncementSubmission[]>(() =>
     loadFromStorage<AnnouncementSubmission[]>(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, [])
   );
+  const [announcementComments, setAnnouncementComments] = useState<AnnouncementComment[]>(() =>
+    loadFromStorage<AnnouncementComment[]>(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, [])
+  );
   const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>(() =>
     loadFromStorage<RequiredDocument[]>(STORAGE_KEYS.REQUIRED_DOCUMENTS, [])
   );
@@ -558,6 +566,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseSettings,
             supabaseEvaluations,
             supabaseAnnouncements,
+            supabaseSubmissions,
+            supabaseComments,
             supabaseHostFeedback,
           ] = await Promise.all([
             supabaseService.fetchEmployees(),
@@ -566,6 +576,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchSettings(),
             supabaseService.fetchEvaluations(),
             supabaseService.fetchAnnouncements(),
+            supabaseService.fetchAnnouncementSubmissions(),
+            supabaseService.fetchAnnouncementComments(),
             supabaseService.fetchHostFeedback(),
           ]);
 
@@ -578,6 +590,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (supabaseSettings) setSettings(supabaseSettings);
           if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+          if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
+          if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
           if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
         } catch (error) {
           console.error('Error loading data from Supabase:', error);
@@ -611,6 +625,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseSettings,
             supabaseEvaluations,
             supabaseAnnouncements,
+            supabaseSubmissions,
+            supabaseComments,
             supabaseHostFeedback,
           ] = await Promise.all([
             supabaseService.fetchEmployees(),
@@ -619,6 +635,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchSettings(),
             supabaseService.fetchEvaluations(),
             supabaseService.fetchAnnouncements(),
+            supabaseService.fetchAnnouncementSubmissions(),
+            supabaseService.fetchAnnouncementComments(),
             supabaseService.fetchHostFeedback(),
           ]);
 
@@ -629,6 +647,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (supabaseSettings) setSettings(supabaseSettings);
           if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+          if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
+          if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
           if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
         } catch (err) {
           console.error('Supabase real-time sync error:', err);
@@ -684,6 +704,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, announcementSubmissions);
   }, [announcementSubmissions]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, announcementComments);
+  }, [announcementComments]);
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, requiredDocuments);
@@ -812,14 +836,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       emp?.position === 'OJT Instructor' ? 'admin123' : emp?.position === 'HTE Representative' ? 'hte123' : 'ojt2024';
 
     if (emp && (password === storedPassword || password === fallbackPassword || !storedPassword)) {
-      if (emp.active === false || emp.approvalStatus === 'pending') {
-        return {
-          id: emp.id,
-          name: emp.name,
-          role: 'employee',
-          pendingApproval: true,
-          academicYear: emp.academicYear || settings.activeAcademicYear,
-        } as any;
+      if (emp.active === false) {
+        return null;
       }
       try {
         const resp = await authAPI.login(emp.email, password);
@@ -1123,7 +1141,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const employeePayload = {
           ...cleanData,
           instructorId: autoInstructorId,
-          applicationStatus: 'approved', // no pending step — active immediately
+          applicationStatus: 'approved' as const, // no pending step — active immediately
           id: authId || newEmp.id,
         };
 
@@ -1433,19 +1451,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ─── Announcements ────────────────────────────────────────────────────────────
+  // FIXED: now catches Supabase insert failures instead of silently swallowing them.
+  // If the DB write fails, the optimistic local entry is rolled back so the UI
+  // never shows an announcement that doesn't actually exist in the database.
   const addAnnouncement = (data: Omit<Announcement, 'id'>): Announcement => {
     const dataWithAY = { ...data, academicYear: data.academicYear || settings.activeAcademicYear };
     const newAnn: Announcement = { ...dataWithAY, id: `ann-${Date.now()}` };
 
+    // Optimistically show it right away for a snappy UI
     setAnnouncements((prev) => [newAnn, ...prev]);
 
     if (useSupabase) {
-      supabaseService.createAnnouncement(dataWithAY).then((created) => {
-        if (created) {
-          setAnnouncements((prev) => prev.map((a) => (a.id === newAnn.id ? created : a)));
-        }
-      });
+      supabaseService
+        .createAnnouncement(dataWithAY)
+        .then((created) => {
+          if (created) {
+            // Swap the optimistic local copy for the real DB row (real id, timestamps, etc.)
+            setAnnouncements((prev) => prev.map((a) => (a.id === newAnn.id ? created : a)));
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to save announcement to Supabase:', err);
+          // Roll back the optimistic entry — don't let the UI show something that
+          // isn't actually saved, since it would vanish on next reload anyway.
+          setAnnouncements((prev) => prev.filter((a) => a.id !== newAnn.id));
+          if (typeof window !== 'undefined') {
+            alert('Could not save this announcement to the database. Please check your connection and try again.');
+          }
+        });
     }
+    // If not using Supabase, it only ever lives in localStorage — by design.
 
     return newAnn;
   };
@@ -1514,6 +1549,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return [saved, ...prev];
     });
+
+    if (useSupabase) {
+      supabaseService.createAnnouncementSubmission({
+        announcementId,
+        employeeId,
+        message,
+        photo,
+        submittedAt: now,
+      }).catch((err) => console.warn('Supabase create submission error:', err));
+    }
+
     return saved;
   };
 
@@ -1532,6 +1578,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (submission) return 'passed';
     if (announcement.deadlineAt && new Date(announcement.deadlineAt) < new Date()) return 'missed';
     return 'pending';
+  };
+
+  const addAnnouncementComment = async (comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment> => {
+    const newComm: AnnouncementComment = {
+      ...comment,
+      id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: comment.createdAt || new Date().toISOString(),
+    };
+
+    setAnnouncementComments((prev) => [...prev, newComm]);
+
+    if (useSupabase) {
+      try {
+        const created = await supabaseService.createAnnouncementComment(comment);
+        if (created) {
+          setAnnouncementComments((prev) => prev.map((c) => (c.id === newComm.id ? created : c)));
+          return created;
+        }
+      } catch (err) {
+        console.warn('Supabase create comment error:', err);
+      }
+    }
+
+    return newComm;
+  };
+
+  const getAnnouncementComments = (announcementId: string): AnnouncementComment[] => {
+    return announcementComments.filter((c) => c.announcementId === announcementId);
   };
 
   const addRequiredDocument = (
@@ -1818,6 +1892,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         evaluations: filteredEvaluations,
         announcements: filteredAnnouncements,
         announcementSubmissions,
+        announcementComments,
         requiredDocuments,
         requiredDocumentSubmissions,
         hostFeedback: filteredHostFeedback,
@@ -1853,6 +1928,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         submitAnnouncementResponse,
         getAnnouncementSubmission,
         getAnnouncementSubmissionStatus,
+        addAnnouncementComment,
+        getAnnouncementComments,
         addRequiredDocument,
         updateRequiredDocument,
         deleteRequiredDocument,

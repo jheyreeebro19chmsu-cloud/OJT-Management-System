@@ -23,6 +23,7 @@ import {
   MapPin,
   Phone,
   Mail,
+  Camera,
 } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
 
@@ -30,9 +31,10 @@ interface Props {
   profile: any;
   session: any;
   onBack: () => void;
+  onEnrollFace?: () => void;
 }
 
-export default function ProfileScreen({ profile, session, onBack }: Props) {
+export default function ProfileScreen({ profile, session, onBack, onEnrollFace }: Props) {
   const [employeeData, setEmployeeData] = useState<any>(null);
   const [timeRecords, setTimeRecords] = useState<any[]>([]);
   const [evaluation, setEvaluation] = useState<any>(null);
@@ -240,6 +242,17 @@ export default function ProfileScreen({ profile, session, onBack }: Props) {
               {data?.face_registered ? '✓ Face Enrolled — Biometric time-in enabled' : '✗ Not enrolled — Face recognition unavailable'}
             </Text>
           </View>
+          {onEnrollFace && (
+            <TouchableOpacity
+              style={styles.enrollFaceBtn}
+              onPress={onEnrollFace}
+            >
+              <Camera color="#fff" size={16} />
+              <Text style={styles.enrollFaceBtnText}>
+                {data?.face_registered ? 'Retake Biometric Face Scan' : 'Scan & Enroll Face Now'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -360,4 +373,20 @@ const styles = StyleSheet.create({
   infoValue: { fontSize: 15, color: '#0f172a', fontWeight: '600' },
   faceStatusRow: { borderRadius: 12, padding: 14 },
   faceStatusText: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  enrollFaceBtn: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563eb',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  enrollFaceBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });

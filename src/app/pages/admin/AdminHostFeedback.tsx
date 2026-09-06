@@ -11,17 +11,22 @@ const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
 };
 
 export function AdminHostFeedback() {
-  const { hostFeedback, employees, updateHostFeedback } = useApp();
+  const { hostFeedback, employees, updateHostFeedback, settings } = useApp();
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
 
   const filtered = useMemo(() => {
     return hostFeedback.filter((item) => {
+      if (selectedAcademicYear !== 'all') {
+        const itemYear = item.academicYear || employees.find((e) => e.id === item.employeeId)?.academicYear;
+        if (itemYear && itemYear !== selectedAcademicYear) return false;
+      }
       if (employeeFilter !== 'all' && item.employeeId !== employeeFilter) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
       return true;
     });
-  }, [hostFeedback, employeeFilter, statusFilter]);
+  }, [hostFeedback, employeeFilter, statusFilter, selectedAcademicYear, employees]);
 
   const summary = useMemo(() => {
     if (hostFeedback.length === 0) return { avg: 0, submitted: 0, reviewed: 0, archived: 0 };
@@ -75,6 +80,18 @@ export function AdminHostFeedback() {
           <Filter size={14} />
           Filters
         </div>
+        <select
+          value={selectedAcademicYear}
+          onChange={(e) => setSelectedAcademicYear(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-sm font-semibold text-blue-700"
+        >
+          <option value="all">All Academic Years</option>
+          {settings.academicYears.map((ay) => (
+            <option key={ay} value={ay}>
+              A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+            </option>
+          ))}
+        </select>
         <select
           value={employeeFilter}
           onChange={(e) => setEmployeeFilter(e.target.value)}

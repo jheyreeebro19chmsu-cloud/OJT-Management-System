@@ -92,11 +92,33 @@ export function AdminAnnouncements() {
     deleteAnnouncement,
     getAnnouncementSubmission,
     getAnnouncementSubmissionStatus,
+    getAnnouncementComments,
+    addAnnouncementComment,
+    settings,
   } = useApp();
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_FORM);
   const [showSubmissionsId, setShowSubmissionsId] = useState<string | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+
+  const handlePostComment = async (announcementId: string) => {
+    const text = (commentDrafts[announcementId] || '').trim();
+    if (!text) return;
+
+    await addAnnouncementComment({
+      announcementId,
+      employeeId: currentUser?.id,
+      authorName: currentUser?.name || 'OJT Instructor',
+      authorRole: 'admin',
+      content: text,
+      createdAt: new Date().toISOString(),
+    });
+
+    setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
+    toast.success('Comment posted!');
+  };
 
   const upd = (key: string, val: string | boolean) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -132,6 +154,7 @@ export function AdminAnnouncements() {
 
     const data = {
       ...form,
+      academicYear: selectedAcademicYear === 'all' ? settings.activeAcademicYear : selectedAcademicYear,
       expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : undefined,
       deadlineAt: form.deadlineAt ? new Date(form.deadlineAt).toISOString() : undefined,
       createdAt: new Date().toISOString(),
@@ -180,7 +203,13 @@ export function AdminAnnouncements() {
     toast.success(ann.isPinned ? 'Unpinned.' : 'Pinned to top!');
   };
 
-  const sorted = [...announcements].sort((a, b) => {
+  const filteredAnnouncements = announcements.filter((ann) => {
+    if (selectedAcademicYear === 'all') return true;
+    if (!ann.academicYear) return true;
+    return ann.academicYear === selectedAcademicYear;
+  });
+
+  const sorted = [...filteredAnnouncements].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -194,24 +223,39 @@ export function AdminAnnouncements() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Announcements & Notices</h2>
           <p className="text-sm text-gray-500">
-            {announcements.length} total • {announcements.filter((a) => !isExpired(a)).length} active notices and updates
+            {filteredAnnouncements.length} total • {filteredAnnouncements.filter((a) => !isExpired(a)).length} active notices and updates
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2 flex-wrap no-print">
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
+            <span className="text-xs font-semibold text-gray-500">AY:</span>
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Academic Years</option>
+              {settings.academicYears.map((ay) => (
+                <option key={ay} value={ay}>
+                  A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-medium hover:bg-gray-900 transition-colors shadow-sm no-print"
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-xl text-sm font-medium hover:bg-gray-900 transition-colors shadow-sm"
           >
             <Printer size={15} />
             Print Board
           </button>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm no-print"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
           >
             <Plus size={15} />
             Post Notice
@@ -342,6 +386,54 @@ export function AdminAnnouncements() {
                           </button>
                         </div>
                       )}
+
+                      {/* Discussion Comments Thread */}
+                      <div className="mt-3 pt-3 border-t border-gray-100 no-print">
+                        <p className="text-[11px] font-bold text-gray-700 mb-2 flex items-center gap-1">
+                          💬 Discussion Comments ({getAnnouncementComments(ann.id).length})
+                        </p>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto mb-2">
+                          {getAnnouncementComments(ann.id).map((c) => (
+                            <div key={c.id} className="bg-gray-50 border border-gray-100 rounded-lg p-2 text-xs">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className="font-bold text-gray-800 text-[11px]">{c.authorName}</span>
+                                <span className="text-[9px] text-gray-400">
+                                  {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-gray-600 text-[11px]">{c.content}</p>
+                            </div>
+                          ))}
+                          {getAnnouncementComments(ann.id).length === 0 && (
+                            <p className="text-[10px] text-gray-400 italic">No comments yet.</p>
+                          )}
+                        </div>
+
+                        {/* Reply / Comment input */}
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Write an instructor reply..."
+                            value={commentDrafts[ann.id] || ''}
+                            onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [ann.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handlePostComment(ann.id);
+                              }
+                            }}
+                            className="flex-1 px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handlePostComment(ann.id)}
+                            disabled={!(commentDrafts[ann.id] || '').trim()}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+                          >
+                            Reply
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0 no-print">
                       <button

@@ -11,7 +11,8 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
-import { Bell, Plus, X, Clock, CheckCircle, Send, AlertCircle, ChevronRight } from 'lucide-react-native';
+import { Bell, Plus, X, Clock, CheckCircle, Send, AlertCircle, ChevronRight, Camera, Image as ImageIcon, MessageSquare, Check } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 
 interface Announcement {
@@ -23,6 +24,7 @@ interface Announcement {
   created_at: string;
   photo?: string;
   academic_year?: string;
+  requires_submission?: boolean;
 }
 
 interface AnnouncementResponse {
@@ -30,6 +32,17 @@ interface AnnouncementResponse {
   announcement_id: string;
   employee_id: string;
   message: string;
+  photo?: string;
+  created_at: string;
+}
+
+export interface AnnouncementComment {
+  id: string;
+  announcement_id: string;
+  author_id: string;
+  author_name: string;
+  author_role: string;
+  content: string;
   created_at: string;
 }
 
@@ -42,9 +55,13 @@ interface Props {
 export default function AnnouncementsScreen({ profile, activeAcademicYear, onBack }: Props) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [responses, setResponses] = useState<Record<string, AnnouncementResponse>>({});
+  const [comments, setComments] = useState<Record<string, AnnouncementComment[]>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [submittingComment, setSubmittingComment] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | null>>({});
   const [submitting, setSubmitting] = useState<Record<string, boolean>>({});
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -87,6 +104,25 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
         });
         setResponses(respMap);
       }
+
+      // Fetch all comments for active announcements
+      try {
+        const { data: commData } = await supabase
+          .from('announcement_comments')
+          .select('*')
+          .order('created_at', { ascending: true });
+        
+        if (commData) {
+          const commMap: Record<string, AnnouncementComment[]> = {};
+          commData.forEach((c: AnnouncementComment) => {
+            if (!commMap[c.announcement_id]) commMap[c.announcement_id] = [];
+            commMap[c.announcement_id].push(c);
+          });
+          setComments(commMap);
+        }
+      } catch (commErr) {
+        console.debug('Failed to fetch announcement comments:', commErr);
+      }
     } catch (err) {
       console.error('Failed to fetch announcements', err);
     } finally {
@@ -94,6 +130,44 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
       setRefreshing(false);
     }
   }, [profile?.id, activeAcademicYear]);
+
+  const postComment = async (announcementId: string) => {
+    const text = (commentDrafts[announcementId] || '').trim();
+    if (!text) return;
+
+    setSubmittingComment(prev => ({ ...prev, [announcementId]: true }));
+    const newComm: AnnouncementComment = {
+      id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      announcement_id: announcementId,
+      author_id: profile?.id || 'anonymous',
+      author_name: profile?.name || 'User',
+      author_role: isAdmin ? 'Instructor' : profile?.role === 'hte' ? 'HTE' : 'Trainee',
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistically show immediately
+    setComments(prev => ({
+      ...prev,
+      [announcementId]: [...(prev[announcementId] || []), newComm],
+    }));
+    setCommentDrafts(prev => ({ ...prev, [announcementId]: '' }));
+
+    try {
+      await supabase.from('announcement_comments').insert({
+        announcement_id: announcementId,
+        author_id: newComm.author_id,
+        author_name: newComm.author_name,
+        author_role: newComm.author_role,
+        content: newComm.content,
+        created_at: newComm.created_at,
+      });
+    } catch (err) {
+      console.debug('Supabase comment insert failed, saved in local state:', err);
+    } finally {
+      setSubmittingComment(prev => ({ ...prev, [announcementId]: false }));
+    }
+  };
 
   useEffect(() => {
     fetchAnnouncements();
@@ -104,23 +178,71 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
     fetchAnnouncements();
   };
 
+  const pickImage = async (announcementId: string) => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.6,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setPhotoDrafts((prev) => ({ ...prev, [announcementId]: uri }));
+      }
+    } catch (err) {
+      console.warn('Image picker error:', err);
+    }
+  };
+
+  const takePhoto = async (announcementId: string) => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to capture assignment photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.6,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setPhotoDrafts((prev) => ({ ...prev, [announcementId]: uri }));
+      }
+    } catch (err) {
+      console.warn('Camera error:', err);
+    }
+  };
+
   const submitResponse = async (announcement: Announcement) => {
     const message = (messageDrafts[announcement.id] || '').trim();
-    if (!message) return;
+    const photo = photoDrafts[announcement.id];
+    if (!message && !photo) {
+      Alert.alert('Required', 'Please write a message or attach a photo for your submission.');
+      return;
+    }
     setSubmitting((prev) => ({ ...prev, [announcement.id]: true }));
     try {
       const { error } = await supabase.from('announcement_responses').upsert({
         announcement_id: announcement.id,
         employee_id: profile.id,
-        message,
+        message: message || 'Assignment attachment submitted',
+        photo: photo || null,
         created_at: new Date().toISOString(),
       });
       if (error) throw error;
       setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
+      setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: null }));
       await fetchAnnouncements();
-      Alert.alert('Success', 'Response submitted!');
+      Alert.alert('Success', 'Assignment response submitted successfully!');
     } catch {
-      Alert.alert('Error', 'Failed to submit response.');
+      Alert.alert('Error', 'Failed to submit assignment response.');
     } finally {
       setSubmitting((prev) => ({ ...prev, [announcement.id]: false }));
     }
@@ -291,35 +413,175 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
                   </Text>
                 )}
 
+                {/* Trainee Assignment Submission Section */}
                 {!isAdmin && (
-                  responded ? (
-                    <View style={styles.respondedBadge}>
-                      <CheckCircle color="#16a34a" size={16} />
-                      <Text style={styles.respondedText}>Responded: {responses[ann.id]?.message}</Text>
+                  <View style={styles.assignmentSection}>
+                    <View style={styles.assignmentHeader}>
+                      <Text style={styles.assignmentTitle}>Assignment / Task Submission</Text>
+                    </View>
+
+                    {responded ? (
+                      <View style={styles.respondedCard}>
+                        <View style={styles.respondedTop}>
+                          <CheckCircle size={16} color="#059669" />
+                          <Text style={styles.respondedTitle}>Submitted</Text>
+                          <Text style={styles.respondedDate}>{formatDate(responses[ann.id].created_at)}</Text>
+                        </View>
+                        <Text style={styles.respondedMessage}>{responses[ann.id].message}</Text>
+                        {responses[ann.id].photo && (
+                          <Image
+                            source={{ uri: responses[ann.id].photo }}
+                            style={styles.submittedPhoto}
+                            resizeMode="cover"
+                          />
+                        )}
+                      </View>
+                    ) : (
+                      <View style={styles.submissionBox}>
+                        <TextInput
+                          style={styles.submissionInput}
+                          placeholder="Type your assignment response or work summary..."
+                          placeholderTextColor="#94a3b8"
+                          value={messageDrafts[ann.id] || ''}
+                          onChangeText={(v) => setMessageDrafts((prev) => ({ ...prev, [ann.id]: v }))}
+                          multiline
+                        />
+
+                        {photoDrafts[ann.id] && (
+                          <View style={styles.previewContainer}>
+                            <Image
+                              source={{ uri: photoDrafts[ann.id]! }}
+                              style={styles.previewImage}
+                              resizeMode="cover"
+                            />
+                            <TouchableOpacity
+                              style={styles.removePhotoBtn}
+                              onPress={() => setPhotoDrafts((prev) => ({ ...prev, [ann.id]: null }))}
+                            >
+                              <X size={14} color="#fff" />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        <View style={styles.submissionActionsRow}>
+                          <View style={styles.attachmentButtons}>
+                            <TouchableOpacity
+                              style={styles.attachBtn}
+                              onPress={() => takePhoto(ann.id)}
+                            >
+                              <Camera size={16} color="#0284c7" />
+                              <Text style={styles.attachBtnText}>Camera</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.attachBtn}
+                              onPress={() => pickImage(ann.id)}
+                            >
+                              <ImageIcon size={16} color="#0284c7" />
+                              <Text style={styles.attachBtnText}>Gallery</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <TouchableOpacity
+                            style={[
+                              styles.submitAssignmentBtn,
+                              (!messageDrafts[ann.id]?.trim() && !photoDrafts[ann.id]) && styles.submitBtnDisabled,
+                            ]}
+                            onPress={() => submitResponse(ann)}
+                            disabled={
+                              submitting[ann.id] ||
+                              (!messageDrafts[ann.id]?.trim() && !photoDrafts[ann.id])
+                            }
+                          >
+                            {submitting[ann.id] ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <>
+                                <Send size={14} color="#fff" />
+                                <Text style={styles.submitAssignmentBtnText}>Submit</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Synced Comments Section */}
+                <View style={styles.commentsSection}>
+                  <View style={styles.commentsHeader}>
+                    <Text style={styles.commentsHeading}>
+                      Comments ({comments[ann.id]?.length || 0})
+                    </Text>
+                  </View>
+
+                  {/* List of comments */}
+                  {comments[ann.id] && comments[ann.id].length > 0 ? (
+                    <View style={styles.commentsList}>
+                      {comments[ann.id].map((comm) => {
+                        const isInstr = comm.author_role === 'Instructor';
+                        const isHTE = comm.author_role === 'HTE';
+                        return (
+                          <View key={comm.id} style={styles.commentItem}>
+                            <View style={styles.commentMetaRow}>
+                              <Text style={styles.commentAuthor}>{comm.author_name}</Text>
+                              <View
+                                style={[
+                                  styles.roleBadge,
+                                  isInstr
+                                    ? { backgroundColor: '#f3e8ff' }
+                                    : isHTE
+                                    ? { backgroundColor: '#dcfce7' }
+                                    : { backgroundColor: '#e0f2fe' },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.roleBadgeText,
+                                    isInstr
+                                      ? { color: '#7e22ce' }
+                                      : isHTE
+                                      ? { color: '#15803d' }
+                                      : { color: '#0369a1' },
+                                  ]}
+                                >
+                                  {comm.author_role}
+                                </Text>
+                              </View>
+                              <Text style={styles.commentDate}>{formatDate(comm.created_at)}</Text>
+                            </View>
+                            <Text style={styles.commentBody}>{comm.content}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   ) : (
-                    <View style={styles.responseArea}>
-                      <TextInput
-                        style={styles.responseInput}
-                        placeholder="Type your response..."
-                        value={messageDrafts[ann.id] || ''}
-                        onChangeText={(v) => setMessageDrafts((prev) => ({ ...prev, [ann.id]: v }))}
-                        multiline
-                      />
-                      <TouchableOpacity
-                        style={styles.sendBtn}
-                        onPress={() => submitResponse(ann)}
-                        disabled={submitting[ann.id]}
-                      >
-                        {submitting[ann.id] ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <Send color="#fff" size={16} />
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  )
-                )}
+                    <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
+                  )}
+
+                  {/* Comment Input */}
+                  <View style={styles.commentInputRow}>
+                    <TextInput
+                      style={styles.commentInput}
+                      placeholder="Write a comment..."
+                      placeholderTextColor="#94a3b8"
+                      value={commentDrafts[ann.id] || ''}
+                      onChangeText={(v) => setCommentDrafts((prev) => ({ ...prev, [ann.id]: v }))}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={styles.commentSendBtn}
+                      onPress={() => postComment(ann.id)}
+                      disabled={submittingComment[ann.id] || !commentDrafts[ann.id]?.trim()}
+                    >
+                      {submittingComment[ann.id] ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Send color="#fff" size={15} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             );
           })}
@@ -463,4 +725,222 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   postBtnText: { fontWeight: '800', color: '#fff' },
+  commentsSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  commentsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  commentsHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  commentsList: {
+    gap: 8,
+    marginBottom: 10,
+  },
+  commentItem: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  commentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  commentAuthor: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  roleBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  commentDate: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginLeft: 'auto',
+  },
+  commentBody: {
+    fontSize: 13,
+    color: '#334155',
+    lineHeight: 18,
+  },
+  noCommentsText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    maxHeight: 70,
+  },
+  commentSendBtn: {
+    width: 38,
+    height: 38,
+    backgroundColor: '#2563eb',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  assignmentSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  assignmentHeader: {
+    marginBottom: 8,
+  },
+  assignmentTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0369a1',
+  },
+  respondedCard: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    padding: 12,
+    gap: 6,
+  },
+  respondedTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  respondedTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#15803d',
+  },
+  respondedDate: {
+    fontSize: 11,
+    color: '#16a34a',
+    marginLeft: 'auto',
+  },
+  respondedMessage: {
+    fontSize: 13,
+    color: '#166534',
+    lineHeight: 18,
+  },
+  submittedPhoto: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  submissionBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 10,
+    gap: 8,
+  },
+  submissionInput: {
+    fontSize: 13,
+    color: '#0f172a',
+    minHeight: 50,
+    textAlignVertical: 'top',
+  },
+  previewContainer: {
+    position: 'relative',
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  removePhotoBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 10,
+    padding: 3,
+  },
+  submissionActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  attachmentButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  attachBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f0f9ff',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  attachBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284c7',
+  },
+  submitAssignmentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  submitBtnDisabled: {
+    backgroundColor: '#94a3b8',
+  },
+  submitAssignmentBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
 });

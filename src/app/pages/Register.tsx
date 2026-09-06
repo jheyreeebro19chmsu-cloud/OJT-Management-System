@@ -622,6 +622,10 @@ export function Register() {
         faceRegistered,
         photo,
         active: true,
+        approvalStatus: 'approved',
+        applicationStatus: 'approved',
+        documentsPassed: role === 'trainee' ? true : undefined,
+        documentsStatus: role === 'trainee' ? 'passed' : undefined,
         // Ensure location info is always persisted even if GPS is missing
         registrationLocation: registrationLocation || undefined,
         registrationAddress: computedAddress,
@@ -721,7 +725,7 @@ export function Register() {
       toast.success('Registration successful! Please log in with your HTE credentials.');
       navigate('/login');
     } else {
-      toast.success(`Registration submitted! Your enrollment is pending approval by the OJT Instructor for A.Y. ${settings.activeAcademicYear}.`);
+      toast.success('Registration successful! You can now log in to access your OJT dashboard.');
       navigate('/login');
     }
   };
@@ -836,8 +840,54 @@ export function Register() {
   const locConfig = locationStatusConfig[locationStatus];
 
   if (registrationComplete && role === 'admin') {
-    // Auto-redirecting to /login via useEffect above — render nothing while that happens.
-    return null;
+    const instructorQrData = JSON.stringify({
+      type: 'instructor_enrollment',
+      instructorId: registeredInstructorId || form.email,
+      name: form.name || [form.firstName, form.lastName].filter(Boolean).join(' '),
+    });
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl text-center">
+          <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-green-200">
+            <Check size={28} className="text-green-600" />
+          </div>
+          <h2 className="text-2xl font-black text-gray-900 mb-1">Instructor Registered!</h2>
+          <p className="text-sm text-gray-500 mb-6">
+            Your account has been created. Here is your official Enrollment QR Code for trainees.
+          </p>
+
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 mb-6 flex flex-col items-center">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4">
+              <QRCodeSVG value={instructorQrData} size={200} level="H" includeMargin />
+            </div>
+            <p className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-1">Instructor ID</p>
+            <p className="text-sm font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200" selectable="true">
+              {registeredInstructorId || form.email}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(registeredInstructorId || form.email);
+                toast.success('Instructor ID copied to clipboard!');
+              }}
+              className="w-full py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
+            >
+              Copy Instructor ID
+            </button>
+            <button
+              onClick={() => navigate('/login')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+            >
+              Proceed to Login
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
   }
 
   return (

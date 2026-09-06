@@ -1,160 +1,436 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, FlatList, Alert, TextInput } from 'react-native';
-import { ArrowLeft, User } from 'lucide-react-native';
-import { instructorApi } from '../lib/api';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  Image,
+  Modal,
+} from 'react-native';
+import {
+  ArrowLeft,
+  Search,
+  CheckCircle,
+  XCircle,
+  User,
+  MapPin,
+  Clock,
+  ShieldCheck,
+  Building,
+  Award,
+  FileCheck,
+  FileText,
+} from 'lucide-react-native';
+import { mobileDb, Employee } from '../lib/supabaseService';
 
-interface Props {
+export default function InstructorTraineesScreen({
+  profile,
+  activeAcademicYear,
+  onBack,
+}: {
+  profile: any;
+  activeAcademicYear?: string;
   onBack: () => void;
-  onOpenRecords: (applicationId: string, studentName: string) => void;
-}
-
-export default function InstructorTraineesScreen({ onBack, onOpenRecords }: Props) {
+}) {
   const [loading, setLoading] = useState(false);
-  const [applications, setApplications] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
-  const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState('');
+  const [trainees, setTrainees] = useState<Employee[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>('all');
+  const [selectedTrainee, setSelectedTrainee] = useState<Employee | null>(null);
 
   useEffect(() => {
-    fetchApplications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, query]);
+    fetchTrainees();
+  }, [profile, activeAcademicYear]);
 
-  async function fetchApplications() {
+  async function fetchTrainees() {
     setLoading(true);
     try {
-      const res = await instructorApi.listApplications({ page, page_size: pageSize, q: query });
-      if (res && res.applications) {
-        setApplications(res.applications);
-        setTotal(res.total || 0);
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to fetch trainees');
+      const instructorId = profile?.id || profile?.employeeId || '';
+      const list = await mobileDb.getTraineesByInstructor(instructorId, activeAcademicYear);
+      setTrainees(list);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to load trainees');
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleApprove(trainee: Employee) {
+    try {
+      setLoading(true);
+      const ok = await mobileDb.updateEmployee(trainee.id, { applicationStatus: 'approved' });
+      if (ok) {
+        Alert.alert('Success', `${trainee.name}'s OJT application has been approved.`);
+        fetchTrainees();
+        setSelectedTrainee(null);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to approve');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReject(trainee: Employee) {
+    try {
+      setLoading(true);
+      const ok = await mobileDb.updateEmployee(trainee.id, { applicationStatus: 'rejected' });
+      if (ok) {
+        Alert.alert('Rejected', `${trainee.name}'s OJT application has been marked as rejected.`);
+        fetchTrainees();
+        setSelectedTrainee(null);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to reject');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredTrainees = trainees.filter((t) => {
+    const q = searchQuery.toLowerCase();
+    const matchesQuery = t.name.toLowerCase().includes(q) || t.employeeId.toLowerCase().includes(q);
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'pending' && t.applicationStatus === 'pending') ||
+      (statusFilter === 'approved' && t.applicationStatus === 'approved');
+    return matchesQuery && matchesStatus;
+  });
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-        <ArrowLeft color="#64748b" size={20} />
-        <Text style={styles.backText}>Back</Text>
-      </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+          <ArrowLeft color="#0f172a" size={20} />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Enrolled Trainees</Text>
+        <Text style={styles.subtitle}>Manage student approvals, hours & placement</Text>
+      </View>
 
-      <Text style={styles.title}>Trainees</Text>
-
-      <View style={{ marginBottom: 12 }}>
+      {/* Search & Status Filters */}
+      <View style={styles.searchBar}>
+        <Search size={18} color="#94a3b8" />
         <TextInput
-          placeholder="Search by name, email, company"
-          value={query}
-          onChangeText={(text) => {
-            setPage(1);
-            setQuery(text);
-          }}
-          style={{
-            backgroundColor: '#fff',
-            padding: 12,
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: '#e2e8f0',
-            marginBottom: 8,
-          }}
+          style={styles.searchInput}
+          placeholder="Search by student name or ID..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor="#94a3b8"
         />
       </View>
 
+      <View style={styles.filterRow}>
+        {(['all', 'pending', 'approved'] as const).map((filter) => (
+          <TouchableOpacity
+            key={filter}
+            style={[styles.filterChip, statusFilter === filter && styles.filterChipActive]}
+            onPress={() => setStatusFilter(filter)}
+          >
+            <Text style={[styles.filterChipText, statusFilter === filter && styles.filterChipTextActive]}>
+              {filter.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Trainees List */}
       {loading ? (
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
+      ) : filteredTrainees.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <User size={36} color="#cbd5e1" />
+          <Text style={styles.emptyTitle}>No trainees found</Text>
+          <Text style={styles.emptyDesc}>No students match your filter criteria.</Text>
+        </View>
       ) : (
-        <>
-          <FlatList
-            data={applications}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.card} onPress={() => onOpenRecords(String(item.id), item.student_name)}>
-                <View style={styles.cardLeft}>
-                  <User color="#2563eb" size={28} />
+        <FlatList
+          data={filteredTrainees}
+          keyExtractor={(i) => i.id}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.card} onPress={() => setSelectedTrainee(item)}>
+              <View style={styles.cardLeft}>
+                <View style={styles.avatar}>
+                  {item.photo ? (
+                    <Image source={{ uri: item.photo }} style={styles.avatarImg} />
+                  ) : (
+                    <User size={20} color="#2563eb" />
+                  )}
                 </View>
-                <View style={styles.cardBody}>
-                  <Text style={styles.name}>{item.student_name}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{item.name}</Text>
                   <Text style={styles.meta}>
-                    {item.student_email} â€¢ {item.status}
+                    {item.course || 'Student'} • ID: {item.employeeId}
                   </Text>
-                  {item.status === 'pending' && (
-                    <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                      <TouchableOpacity
-                        style={{ marginRight: 8 }}
-                        onPress={async () => {
-                          try {
-                            await instructorApi.approveApplication(String(item.id));
-                            Alert.alert('Approved', 'Application approved');
-                            fetchApplications();
-                          } catch (err: any) {
-                            Alert.alert('Error', err.message || 'Approve failed');
-                          }
-                        }}
-                      >
-                        <Text style={{ color: '#16a34a', fontWeight: '800' }}>Approve</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={async () => {
-                          try {
-                            await instructorApi.rejectApplication(String(item.id), 'Rejected by instructor');
-                            Alert.alert('Rejected', 'Application rejected');
-                            fetchApplications();
-                          } catch (err: any) {
-                            Alert.alert('Error', err.message || 'Reject failed');
-                          }
-                        }}
-                      >
-                        <Text style={{ color: '#ef4444', fontWeight: '800' }}>Reject</Text>
-                      </TouchableOpacity>
+                  <Text style={styles.submeta}>{item.companyName || 'No HTE Assigned'}</Text>
+                  {item.registrationLocation ? (
+                    <View style={styles.geofenceChip}>
+                      <MapPin size={10} color="#0284c7" />
+                      <Text style={styles.geofenceChipText}>
+                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} (300m)
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.geofenceChip, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                      <MapPin size={10} color="#94a3b8" />
+                      <Text style={[styles.geofenceChipText, { color: '#64748b' }]}>GPS Unset</Text>
                     </View>
                   )}
                 </View>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={{ color: '#64748b', textAlign: 'center', marginTop: 20 }}>No trainees found.</Text>}
-          />
+              </View>
 
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
-            <TouchableOpacity disabled={page <= 1} onPress={() => setPage((p) => Math.max(1, p - 1))}>
-              <Text style={{ color: page <= 1 ? '#94a3b8' : '#2563eb' }}>Previous</Text>
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                {item.documentsPassed !== false && item.documentsStatus !== 'pending' ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ecfdf5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3, borderWidth: 1, borderColor: '#a7f3d0' }}>
+                    <FileCheck size={10} color="#059669" />
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: '#059669' }}>DOCS: PASSED</Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3, borderWidth: 1, borderColor: '#fde68a' }}>
+                    <FileText size={10} color="#d97706" />
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: '#d97706' }}>DOCS: PENDING</Text>
+                  </View>
+                )}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    item.applicationStatus === 'approved' ? styles.badgeApproved : styles.badgePending,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      item.applicationStatus === 'approved' ? styles.statusTextApproved : styles.statusTextPending,
+                    ]}
+                  >
+                    {item.applicationStatus?.toUpperCase() || 'ENROLLED'}
+                  </Text>
+                </View>
+              </View>
             </TouchableOpacity>
-            <Text style={{ color: '#64748b' }}>
-              {page} / {Math.max(1, Math.ceil((total || 0) / pageSize))}
-            </Text>
-            <TouchableOpacity
-              disabled={page >= Math.ceil((total || 0) / pageSize)}
-              onPress={() => setPage((p) => p + 1)}
-            >
-              <Text style={{ color: page >= Math.ceil((total || 0) / pageSize) ? '#94a3b8' : '#2563eb' }}>Next</Text>
-            </TouchableOpacity>
+          )}
+        />
+      )}
+
+      {/* Trainee Detail & Approval Modal */}
+      {selectedTrainee && (
+        <Modal animationType="slide" transparent visible={Boolean(selectedTrainee)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Trainee Details</Text>
+                <TouchableOpacity onPress={() => setSelectedTrainee(null)}>
+                  <Text style={styles.closeText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.profileSummary}>
+                <View style={styles.modalAvatar}>
+                  {selectedTrainee.photo ? (
+                    <Image source={{ uri: selectedTrainee.photo }} style={styles.avatarImg} />
+                  ) : (
+                    <User size={30} color="#2563eb" />
+                  )}
+                </View>
+                <Text style={styles.modalName}>{selectedTrainee.name}</Text>
+                <Text style={styles.modalCourse}>{selectedTrainee.course}</Text>
+              </View>
+
+              <View style={styles.detailGrid}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Email:</Text>
+                  <Text style={styles.detailValue}>{selectedTrainee.email}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Required Hours:</Text>
+                  <Text style={styles.detailValue}>{selectedTrainee.requiredHours} hrs</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Host Establishment:</Text>
+                  <Text style={styles.detailValue}>{selectedTrainee.companyName || 'Not Assigned'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Face Biometrics:</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedTrainee.faceRegistered ? 'Registered' : 'Not Registered'}
+                  </Text>
+                </View>
+                <View style={[styles.detailRow, { alignItems: 'center' }]}>
+                  <Text style={styles.detailLabel}>Registration Documents:</Text>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      const newStatus = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? false : true;
+                      await mobileDb.updateEmployee(selectedTrainee.id, {
+                        documentsPassed: newStatus,
+                        documentsStatus: newStatus ? 'passed' : 'pending',
+                      });
+                      setSelectedTrainee({
+                        ...selectedTrainee,
+                        documentsPassed: newStatus,
+                        documentsStatus: newStatus ? 'passed' : 'pending',
+                      });
+                      fetchTrainees();
+                      Alert.alert('Documents Updated', newStatus ? 'Marked as PASSED' : 'Marked as PENDING');
+                    }}
+                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#ecfdf5' : '#fffbeb', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 }}
+                  >
+                    {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? (
+                      <FileCheck size={12} color="#059669" />
+                    ) : (
+                      <FileText size={12} color="#d97706" />
+                    )}
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#059669' : '#d97706' }}>
+                      {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? 'PASSED (Tap to toggle)' : 'PENDING (Tap to toggle)'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Geofencing & Workplace Location Box */}
+              <View style={styles.geofenceBox}>
+                <View style={styles.geofenceHeader}>
+                  <MapPin size={16} color="#0284c7" />
+                  <Text style={styles.geofenceTitle}>Geofencing & Workplace Location</Text>
+                </View>
+                <View style={styles.geofenceBody}>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Workplace:</Text>
+                    <Text style={styles.detailValue}>{selectedTrainee.companyName || 'Not Assigned'}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Location Address:</Text>
+                    <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                      {selectedTrainee.registrationAddress || 'Registered Location'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>GPS Coordinates:</Text>
+                    <Text style={[styles.detailValue, { fontFamily: 'monospace', color: '#0369a1' }]}>
+                      {selectedTrainee.registrationLocation
+                        ? `${selectedTrainee.registrationLocation.lat.toFixed(6)}, ${selectedTrainee.registrationLocation.lng.toFixed(6)}`
+                        : 'Not Set'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Geofence Radius:</Text>
+                    <Text style={styles.detailValue}>300 Meters</Text>
+                  </View>
+                  <View style={styles.geofenceStatusRow}>
+                    <ShieldCheck size={14} color="#059669" />
+                    <Text style={styles.geofenceStatusText}>
+                      Attendance is restricted to this 300m workplace boundary.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Approval Actions */}
+              <View style={styles.modalActions}>
+                {selectedTrainee.applicationStatus !== 'approved' && (
+                  <TouchableOpacity
+                    style={[styles.modalBtn, { backgroundColor: '#16a34a' }]}
+                    onPress={() => handleApprove(selectedTrainee)}
+                  >
+                    <CheckCircle size={18} color="#fff" />
+                    <Text style={styles.modalBtnText}>Approve Application</Text>
+                  </TouchableOpacity>
+                )}
+                {selectedTrainee.applicationStatus !== 'rejected' && (
+                  <TouchableOpacity
+                    style={[styles.modalBtn, { backgroundColor: '#dc2626' }]}
+                    onPress={() => handleReject(selectedTrainee)}
+                  >
+                    <XCircle size={18} color="#fff" />
+                    <Text style={styles.modalBtnText}>Reject Application</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           </View>
-        </>
+        </Modal>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, paddingTop: 60, backgroundColor: '#f8fafc', flex: 1 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  backText: { marginLeft: 8, color: '#64748b', fontWeight: '700' },
-  title: { fontSize: 28, fontWeight: '900', color: '#0f172a', marginBottom: 12 },
+  container: { flex: 1, backgroundColor: '#f8fafc', padding: 16, paddingTop: 50 },
+  header: { marginBottom: 16 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  backText: { marginLeft: 6, fontWeight: '700', color: '#0f172a', fontSize: 14 },
+  title: { fontSize: 24, fontWeight: '900', color: '#0f172a' },
+  subtitle: { fontSize: 13, color: '#64748b', marginTop: 2 },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 10,
+  },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: '#0f172a' },
+  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
+  filterChipActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  filterChipText: { fontSize: 11, fontWeight: '800', color: '#64748b' },
+  filterChipTextActive: { color: '#ffffff' },
   card: {
     flexDirection: 'row',
-    padding: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 12,
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
   },
-  cardLeft: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  cardBody: { flex: 1 },
-  name: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
-  meta: { fontSize: 13, color: '#64748b', marginTop: 4 },
+  cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
+  name: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
+  meta: { fontSize: 12, color: '#64748b', marginTop: 1 },
+  submeta: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusBadgeText: { fontSize: 10, fontWeight: '800' },
+  badgeApproved: { backgroundColor: '#dcfce7' },
+  statusTextApproved: { color: '#16a34a', fontSize: 10, fontWeight: '800' },
+  badgePending: { backgroundColor: '#fef3c7' },
+  statusTextPending: { color: '#d97706', fontSize: 10, fontWeight: '800' },
+  emptyCard: { backgroundColor: '#fff', padding: 30, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', marginTop: 20 },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginTop: 10 },
+  emptyDesc: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalCard: { backgroundColor: '#fff', borderRadius: 24, padding: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  closeText: { color: '#64748b', fontWeight: '700' },
+  profileSummary: { alignItems: 'center', marginBottom: 20 },
+  modalAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 10 },
+  modalName: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+  modalCourse: { fontSize: 13, color: '#64748b', marginTop: 2 },
+  detailGrid: { backgroundColor: '#f8fafc', padding: 14, borderRadius: 14, gap: 8, marginBottom: 12 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  detailLabel: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+  detailValue: { fontSize: 13, color: '#0f172a', fontWeight: '800' },
+  geofenceChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f9ff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 4, marginTop: 4, borderWidth: 1, borderColor: '#bae6fd', alignSelf: 'flex-start' },
+  geofenceChipText: { fontSize: 10, fontWeight: '700', color: '#0284c7' },
+  geofenceBox: { backgroundColor: '#f0fdf4', borderRadius: 14, borderWidth: 1, borderColor: '#bbf7d0', padding: 12, marginBottom: 16 },
+  geofenceHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  geofenceTitle: { fontSize: 13, fontWeight: '800', color: '#0f172a' },
+  geofenceBody: { gap: 6 },
+  geofenceStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: '#dcfce7' },
+  geofenceStatusText: { fontSize: 11, fontWeight: '700', color: '#15803d', flex: 1 },
+  modalActions: { gap: 10 },
+  modalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, gap: 6 },
+  modalBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 });

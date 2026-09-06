@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment } from '../types';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
 
@@ -56,7 +56,9 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     academic_year: employee.academicYear,
     instructor_id: (employee as any).instructorId || null,
     hte_id: (employee as any).hteId || null,
-    application_status: (employee as any).applicationStatus || 'unregistered',
+    application_status: (employee as any).applicationStatus || 'approved',
+    documents_passed: employee.documentsPassed ?? (employee.position === 'OJT Trainee' || !employee.position ? true : undefined),
+    documents_status: employee.documentsStatus || 'passed',
   };
 
   if (employee.id) {
@@ -93,6 +95,9 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.faceRegistered !== undefined) supabaseUpdates.face_registered = updates.faceRegistered;
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
+  if (updates.documentsPassed !== undefined) supabaseUpdates.documents_passed = updates.documentsPassed;
+  if (updates.documentsStatus !== undefined) supabaseUpdates.documents_status = updates.documentsStatus;
+  if (updates.applicationStatus !== undefined) supabaseUpdates.application_status = updates.applicationStatus;
   if (updates.registrationLocation !== undefined) {
     supabaseUpdates.registration_lat = updates.registrationLocation?.lat;
     supabaseUpdates.registration_lng = updates.registrationLocation?.lng;
@@ -484,6 +489,10 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
 }
 
 // ─── Announcements ───────────────────────────────────────────────────────────
+// FIXED: fetchAnnouncements now maps ALL columns (previously silently dropped photo,
+// reminder, deadline_at, comments, requires_submission, created_by_role).
+// FIXED: createAnnouncement now sends ALL fields to Supabase, and THROWS on error
+// instead of silently returning null (which is what let failed saves hide from you).
 
 export async function fetchAnnouncements(): Promise<Announcement[]> {
   if (!isSupabaseConfigured()) return [];
@@ -505,7 +514,13 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
     createdAt: ann.created_at,
     expiresAt: ann.expires_at,
     createdBy: ann.created_by,
+    createdByRole: ann.created_by_role,
     academicYear: ann.academic_year,
+    photo: ann.photo,
+    reminder: ann.reminder,
+    deadlineAt: ann.deadline_at,
+    comments: ann.comments,
+    requiresSubmission: ann.requires_submission,
   }));
 }
 
@@ -518,17 +533,25 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     type: announcement.type,
     target_role: announcement.targetRole,
     is_pinned: announcement.isPinned,
-    created_at: announcement.createdAt,
     expires_at: announcement.expiresAt,
     created_by: announcement.createdBy,
-    academic_year: announcement.academicYear,
+    created_by_role: announcement.createdByRole,
+    academic_year: (announcement as any).academicYear,
+    photo: announcement.photo,
+    reminder: announcement.reminder,
+    deadline_at: announcement.deadlineAt,
+    comments: announcement.comments,
+    requires_submission: announcement.requiresSubmission,
+    // created_at intentionally omitted — let the DB default (now()) set it
   };
 
   const { data, error } = await supabase.from('announcements').insert([supabaseAnn]).select().single();
 
   if (error) {
     console.error('Error creating announcement:', error);
-    return null;
+    // Throw instead of returning null, so AppContext.addAnnouncement's .catch()
+    // actually finds out the save failed instead of silently treating it as done.
+    throw new Error(error.message || JSON.stringify(error));
   }
 
   return {
@@ -541,8 +564,14 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     createdAt: data.created_at,
     expiresAt: data.expires_at,
     createdBy: data.created_by,
+    createdByRole: data.created_by_role,
     academicYear: data.academic_year,
-  };
+    photo: data.photo,
+    reminder: data.reminder,
+    deadlineAt: data.deadline_at,
+    comments: data.comments,
+    requiresSubmission: data.requires_submission,
+  } as Announcement;
 }
 
 export async function updateAnnouncement(id: string, updates: Partial<Announcement>): Promise<boolean> {
@@ -555,7 +584,13 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
   if (updates.targetRole !== undefined) supabaseUpdates.target_role = updates.targetRole;
   if (updates.isPinned !== undefined) supabaseUpdates.is_pinned = updates.isPinned;
   if (updates.expiresAt !== undefined) supabaseUpdates.expires_at = updates.expiresAt;
-  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
+  if ((updates as any).academicYear !== undefined) supabaseUpdates.academic_year = (updates as any).academicYear;
+  if (updates.photo !== undefined) supabaseUpdates.photo = updates.photo;
+  if (updates.reminder !== undefined) supabaseUpdates.reminder = updates.reminder;
+  if (updates.deadlineAt !== undefined) supabaseUpdates.deadline_at = updates.deadlineAt;
+  if (updates.comments !== undefined) supabaseUpdates.comments = updates.comments;
+  if (updates.requiresSubmission !== undefined) supabaseUpdates.requires_submission = updates.requiresSubmission;
+  if (updates.createdByRole !== undefined) supabaseUpdates.created_by_role = updates.createdByRole;
 
   const { error } = await supabase.from('announcements').update(supabaseUpdates).eq('id', id);
 
@@ -578,6 +613,142 @@ export async function deleteAnnouncement(id: string): Promise<boolean> {
   }
 
   return true;
+}
+
+// ─── Announcement Submissions & Comments ─────────────────────────────────────
+
+export async function fetchAnnouncementSubmissions(): Promise<AnnouncementSubmission[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('announcement_submissions')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+
+    if (error) {
+      // Best-effort check if table exists
+      console.debug('Error fetching announcement submissions:', error);
+      return [];
+    }
+
+    return (data || []).map((sub: any) => ({
+      id: sub.id,
+      announcementId: sub.announcement_id,
+      employeeId: sub.employee_id,
+      message: sub.message || '',
+      photo: sub.photo || undefined,
+      submittedAt: sub.submitted_at || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.debug('Submissions fetch caught:', err);
+    return [];
+  }
+}
+
+export async function createAnnouncementSubmission(submission: Omit<AnnouncementSubmission, 'id'>): Promise<AnnouncementSubmission | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const payload = {
+      announcement_id: submission.announcementId,
+      employee_id: submission.employeeId,
+      message: submission.message,
+      photo: submission.photo || null,
+      submitted_at: submission.submittedAt || new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('announcement_submissions')
+      .upsert(payload)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Error saving announcement submission:', error);
+      return null;
+    }
+
+    return {
+      id: data?.id || `sub-${Date.now()}`,
+      announcementId: data?.announcement_id || submission.announcementId,
+      employeeId: data?.employee_id || submission.employeeId,
+      message: data?.message || submission.message,
+      photo: data?.photo || submission.photo,
+      submittedAt: data?.submitted_at || submission.submittedAt,
+    };
+  } catch (err) {
+    console.warn('Create submission caught:', err);
+    return null;
+  }
+}
+
+export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('announcement_comments')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.debug('Error fetching announcement comments:', error);
+      return [];
+    }
+
+    return (data || []).map((comm: any) => ({
+      id: comm.id,
+      announcementId: comm.announcement_id,
+      employeeId: comm.employee_id || undefined,
+      authorName: comm.author_name || 'User',
+      authorRole: comm.author_role || 'employee',
+      content: comm.content || '',
+      createdAt: comm.created_at || new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.debug('Comments fetch caught:', err);
+    return [];
+  }
+}
+
+export async function createAnnouncementComment(comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const payload = {
+      announcement_id: comment.announcementId,
+      employee_id: comment.employeeId || null,
+      author_name: comment.authorName,
+      author_role: comment.authorRole,
+      content: comment.content,
+      created_at: comment.createdAt || new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('announcement_comments')
+      .insert([payload])
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Error saving announcement comment:', error);
+      return null;
+    }
+
+    return {
+      id: data?.id || `comm-${Date.now()}`,
+      announcementId: data?.announcement_id || comment.announcementId,
+      employeeId: data?.employee_id || comment.employeeId,
+      authorName: data?.author_name || comment.authorName,
+      authorRole: data?.author_role || comment.authorRole,
+      content: data?.content || comment.content,
+      createdAt: data?.created_at || comment.createdAt,
+    };
+  } catch (err) {
+    console.warn('Create comment caught:', err);
+    return null;
+  }
 }
 
 // ─── Host Feedback ────────────────────────────────────────────────────────────
@@ -697,7 +868,9 @@ function transformSupabaseEmployee(data: any): Employee {
     instructorId: data.instructor_id,
     hteId: data.hte_id,
     linkedAt: data.linked_at,
-    applicationStatus: data.application_status,
+    applicationStatus: data.application_status || 'approved',
+    documentsPassed: data.documents_passed !== undefined ? Boolean(data.documents_passed) : true,
+    documentsStatus: data.documents_status || (data.documents_passed === false ? 'pending' : 'passed'),
   };
 }
 

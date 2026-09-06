@@ -15,13 +15,32 @@ export function Announcements() {
     getAnnouncementSubmissionStatus,
     submitAnnouncementResponse,
     addAnnouncement,
+    getAnnouncementComments,
+    addAnnouncementComment,
   } = useApp();
   const employee = getCurrentEmployee();
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | undefined>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   
   const [isPosting, setIsPosting] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '', photo: '' });
+
+  const handlePostComment = async (announcementId: string) => {
+    const text = (commentDrafts[announcementId] || '').trim();
+    if (!text || !employee) return;
+
+    await addAnnouncementComment({
+      announcementId,
+      employeeId: employee.id,
+      authorName: currentUser?.name || employee.name,
+      authorRole: 'trainee',
+      content: text,
+      createdAt: new Date().toISOString(),
+    });
+
+    setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
+  };
 
   const announcements = useMemo(() => getActiveAnnouncements('employee'), [getActiveAnnouncements]);
 
@@ -319,6 +338,73 @@ export function Announcements() {
                   </div>
                 </div>
               )}
+
+              {/* Discussion Comments Thread */}
+              <div className="pt-3 border-t border-gray-100">
+                <div className="flex items-center gap-1.5 mb-2.5">
+                  <MessageSquare size={13} className="text-gray-400" />
+                  <p className="text-xs font-bold text-gray-700">Discussion Comments</p>
+                  <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded-full font-semibold">
+                    {getAnnouncementComments(announcement.id).length}
+                  </span>
+                </div>
+
+                {/* Existing Comments */}
+                <div className="space-y-2 mb-3">
+                  {getAnnouncementComments(announcement.id).map((c) => (
+                    <div key={c.id} className="bg-gray-50 border border-gray-100 rounded-xl p-2.5 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-gray-800">{c.authorName}</span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold uppercase ${
+                              c.authorRole === 'admin'
+                                ? 'bg-amber-100 text-amber-800'
+                                : c.authorRole === 'host'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {c.authorRole === 'admin' ? 'Instructor' : c.authorRole === 'host' ? 'HTE' : 'Trainee'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-gray-700 leading-relaxed">{c.content}</p>
+                    </div>
+                  ))}
+                  {getAnnouncementComments(announcement.id).length === 0 && (
+                    <p className="text-[11px] text-gray-400 italic">No comments yet. Be the first to start the discussion!</p>
+                  )}
+                </div>
+
+                {/* Post Comment Input */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Write a comment..."
+                    value={commentDrafts[announcement.id] || ''}
+                    onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [announcement.id]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handlePostComment(announcement.id);
+                      }
+                    }}
+                    className="flex-1 px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handlePostComment(announcement.id)}
+                    disabled={!(commentDrafts[announcement.id] || '').trim()}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
             </div>
           );
         })

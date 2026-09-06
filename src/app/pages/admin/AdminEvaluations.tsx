@@ -104,13 +104,24 @@ export function AdminEvaluations() {
     deleteEvaluation,
     getEmployeeRequiredDocuments,
     getEmployeeRequirementSummary,
+    settings,
   } = useApp();
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState<EvaluationForm>(BLANK_FORM);
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
 
-  const activeEmployees = employees.filter((e) => e.active);
+  const activeEmployees = useMemo(() => {
+    return employees.filter((e) => {
+      if (!e.active) return false;
+      const normalized = (e.position || '').toLowerCase();
+      if (normalized.includes('instructor') || normalized.includes('hte') || normalized.includes('host training')) return false;
+      if (selectedAcademicYear === 'all') return true;
+      if (!e.academicYear) return true;
+      return e.academicYear === selectedAcademicYear;
+    });
+  }, [employees, selectedAcademicYear]);
 
   const openNewEval = (emp: Employee) => {
     const existing = evaluations.find((e) => e.employeeId === emp.id);
@@ -715,45 +726,62 @@ export function AdminEvaluations() {
   // ── List View (Trainees Roster) ──────────────────────────────────────────
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">OJT Trainee Performance Evaluations</h2>
           <p className="text-sm text-gray-500">Official evaluation management for OJT trainees and intern performance reports</p>
         </div>
-        <button
-          onClick={() => {
-            const csvRows = [
-              ['Trainee Name', 'Employee ID', 'Company', 'Department', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
-            ];
-            activeEmployees.forEach((emp) => {
-              const ev = evaluations.find((e) => e.employeeId === emp.id);
-              csvRows.push([
-                emp.name,
-                emp.employeeId,
-                emp.companyName,
-                emp.department,
-                ev ? `${ev.overallScore}%` : 'N/A',
-                ev ? ev.grade : 'Not Evaluated',
-                ev ? ev.evaluatedAt : 'N/A',
-                ev ? ev.status : 'Pending',
-              ]);
-            });
-            const csvContent = csvRows.map((e) => e.join(',')).join('\n');
-            const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `OJT_Evaluations_Summary_${new Date().toISOString().split('T')[0]}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            toast.success('Evaluations summary CSV exported!');
-          }}
-          className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm shrink-0"
-        >
-          <Download size={14} />
-          Export All CSV
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
+            <span className="text-xs font-semibold text-gray-500">AY:</span>
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Academic Years</option>
+              {settings.academicYears.map((ay) => (
+                <option key={ay} value={ay}>
+                  A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => {
+              const csvRows = [
+                ['Trainee Name', 'Employee ID', 'Company', 'Department', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
+              ];
+              activeEmployees.forEach((emp) => {
+                const ev = evaluations.find((e) => e.employeeId === emp.id);
+                csvRows.push([
+                  emp.name,
+                  emp.employeeId,
+                  emp.companyName,
+                  emp.department,
+                  ev ? `${ev.overallScore}%` : 'N/A',
+                  ev ? ev.grade : 'Not Evaluated',
+                  ev ? ev.evaluatedAt : 'N/A',
+                  ev ? ev.status : 'Pending',
+                ]);
+              });
+              const csvContent = csvRows.map((e) => e.join(',')).join('\n');
+              const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `OJT_Evaluations_Summary_${new Date().toISOString().split('T')[0]}.csv`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(url);
+              toast.success('Evaluations summary CSV exported!');
+            }}
+            className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+          >
+            <Download size={14} />
+            Export All CSV
+          </button>
+        </div>
       </div>
 
       <div className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3 border border-blue-100 shadow-sm">

@@ -20,7 +20,8 @@ import { formatTime } from '../../utils/geo';
 
 
 export function AdminReports() {
-  const { employees, timeRecords, approveTimeRecord, disapproveTimeRecord } = useApp();
+  const { employees, timeRecords, approveTimeRecord, disapproveTimeRecord, settings } = useApp();
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -38,9 +39,13 @@ export function AdminReports() {
     return timeRecords.filter((r) => {
       const matchMonth = r.date.startsWith(selectedMonth);
       const matchEmp = selectedEmpId === 'all' || r.employeeId === selectedEmpId;
-      return matchMonth && matchEmp;
+      const matchYear =
+        selectedAcademicYear === 'all' ||
+        r.academicYear === selectedAcademicYear ||
+        (!r.academicYear && selectedAcademicYear === settings?.academicYears?.[0]);
+      return matchMonth && matchEmp && matchYear;
     });
-  }, [timeRecords, selectedMonth, selectedEmpId]);
+  }, [timeRecords, selectedMonth, selectedEmpId, selectedAcademicYear, settings]);
 
   // Daily chart data
   const dailyData = useMemo(() => {
@@ -141,6 +146,21 @@ export function AdminReports() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 no-print">
+        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
+          <span className="text-xs font-semibold text-gray-500">AY:</span>
+          <select
+            value={selectedAcademicYear}
+            onChange={(e) => setSelectedAcademicYear(e.target.value)}
+            className="text-sm font-semibold text-blue-700 bg-transparent focus:outline-none"
+          >
+            <option value="all">All Academic Years</option>
+            {settings.academicYears.map((ay) => (
+              <option key={ay} value={ay}>
+                A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
           <Calendar size={14} className="text-gray-400" />
           <select

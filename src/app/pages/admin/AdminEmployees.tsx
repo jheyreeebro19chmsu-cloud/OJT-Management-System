@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
@@ -60,6 +60,8 @@ export function AdminEmployees() {
   const [docDescription, setDocDescription] = useState('');
   const [docDueDate, setDocDueDate] = useState('');
 
+  const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
+
   const getEmployeeGroup = (emp: Employee) => {
     const normalized = emp.position?.toLowerCase() || '';
     if (normalized.includes('instructor')) return 'instructor';
@@ -67,10 +69,17 @@ export function AdminEmployees() {
     return 'student';
   };
 
+  const matchesYear = (emp: Employee) => {
+    if (selectedYear === 'all') return true;
+    if (!emp.academicYear) return true;
+    return emp.academicYear === selectedYear;
+  };
+
   const filteredGroups = {
     pending: employees.filter(
       (e) =>
         (!e.active || e.approvalStatus === 'pending') &&
+        matchesYear(e) &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.email.toLowerCase().includes(search.toLowerCase()) ||
           (e.department || '').toLowerCase().includes(search.toLowerCase()))
@@ -79,6 +88,7 @@ export function AdminEmployees() {
       (e) =>
         (e.active && e.approvalStatus !== 'pending') &&
         getEmployeeGroup(e) === 'student' &&
+        matchesYear(e) &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
           e.department.toLowerCase().includes(search.toLowerCase()))
@@ -123,6 +133,7 @@ export function AdminEmployees() {
   const handleAdd = () => {
     registerEmployee({
       ...form,
+      academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
       requiredHours: Number(form.requiredHours),
       faceRegistered: false,
       active: true,
@@ -269,14 +280,23 @@ export function AdminEmployees() {
                     </div>
                   )}
                   {!isPendingGroup && (
-                    <div className="flex items-center gap-2">
-                      {emp.faceRegistered ? (
-                        <span className="text-xs flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                          <Camera size={10} /> Enrolled
+                    <div className="flex flex-col gap-1 items-start">
+                      {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
+                        <span className="text-[11px] font-bold flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                          <FileCheck size={11} className="text-emerald-600" /> Docs: Passed
                         </span>
                       ) : (
-                        <span className="text-xs flex items-center gap-1 text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
-                          <XCircle size={10} /> Not enrolled
+                        <span className="text-[11px] font-bold flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                          <FileText size={11} className="text-amber-600" /> Docs: Pending
+                        </span>
+                      )}
+                      {emp.faceRegistered ? (
+                        <span className="text-[10px] flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                          <Camera size={9} /> Face Enrolled
+                        </span>
+                      ) : (
+                        <span className="text-[10px] flex items-center gap-1 text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">
+                          <XCircle size={9} /> Face Pending
                         </span>
                       )}
                     </div>
@@ -429,20 +449,37 @@ export function AdminEmployees() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">OJT/Records</h2>
           <p className="text-sm text-gray-500">
             {filteredGroups.student.length} Active Trainees • Current Academic Year: <span className="font-semibold text-blue-700">A.Y. {settings.activeAcademicYear}</span>
           </p>
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
-        >
-          <Plus size={15} />
-          Add Employee
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
+            <span className="text-xs font-semibold text-gray-500">Academic Year:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Academic Years</option>
+              {settings.academicYears.map((ay) => (
+                <option key={ay} value={ay}>
+                  A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
+          >
+            <Plus size={15} />
+            Add Employee
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -556,7 +593,7 @@ export function AdminEmployees() {
                     <div className="space-y-4">
                       {/* Profile header */}
                       <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl">
-                        <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden">
+                        <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden shrink-0">
                           {selectedEmp.photo ? (
                             <img
                               src={getPhotoUrl(selectedEmp.photo)}
@@ -568,10 +605,38 @@ export function AdminEmployees() {
                             <User size={28} className="text-blue-700" />
                           )}
                         </div>
-                        <div>
+                        <div className="flex-1">
                           <p className="font-bold text-blue-900">{selectedEmp.name}</p>
                           <p className="text-blue-600 text-sm">{selectedEmp.employeeId}</p>
-                          <div className="flex gap-2 mt-1">
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? (
+                              <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+                                <FileCheck size={11} className="text-emerald-600" /> Documents: Passed
+                              </span>
+                            ) : (
+                              <span className="text-xs flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold">
+                                <FileText size={11} className="text-amber-600" /> Documents: Pending
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const newStatus = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? false : true;
+                                await updateEmployee(selectedEmp.id, {
+                                  documentsPassed: newStatus,
+                                  documentsStatus: newStatus ? 'passed' : 'pending',
+                                });
+                                setSelectedEmp({
+                                  ...selectedEmp,
+                                  documentsPassed: newStatus,
+                                  documentsStatus: newStatus ? 'passed' : 'pending',
+                                });
+                                toast.success(newStatus ? 'Registration documents marked as PASSED!' : 'Registration documents marked as PENDING');
+                              }}
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline ml-1"
+                            >
+                              Toggle Status
+                            </button>
                             {selectedEmp.faceRegistered ? (
                               <span className="text-xs flex items-center gap-0.5 text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
                                 <Camera size={10} /> Face Enrolled
@@ -792,6 +857,32 @@ export function AdminEmployees() {
                           >
                             Add Required Document
                           </button>
+                        </div>
+                      </div>
+
+                      {/* Geofencing & Workplace Attendance Zone */}
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
+                            <MapPin size={16} className="text-blue-600" />
+                            <span>Geofencing & Workplace Location</span>
+                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 text-blue-800">
+                            Active Monitoring
+                          </span>
+                        </div>
+                        <div className="text-xs text-blue-800 space-y-1">
+                          <p><span className="font-semibold text-blue-900">Workplace/HTE:</span> {selectedEmp.companyName || 'Not Assigned'}</p>
+                          <p><span className="font-semibold text-blue-900">Workplace Address:</span> {selectedEmp.registrationAddress || selectedEmp.companyName || 'Campus Location'}</p>
+                          {selectedEmp.registrationLocation ? (
+                            <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
+                              📍 GPS Coordinates: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±300m Radius)
+                            </p>
+                          ) : (
+                            <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
+                              📍 Geofence Boundary: Institutional Campus Zone (Default 300m)
+                            </p>
+                          )}
                         </div>
                       </div>
 

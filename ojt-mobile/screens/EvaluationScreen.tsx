@@ -158,9 +158,9 @@ export default function EvaluationScreen({ profile, session, onBack }: Props) {
         ) : !evaluation ? (
           <View style={styles.emptyBox}>
             <Star color="#cbd5e1" size={48} />
-            <Text style={styles.emptyTitle}>No Evaluation Yet</Text>
+            <Text style={styles.emptyTitle}>No Evaluation Submitted Yet</Text>
             <Text style={styles.emptyDesc}>
-              Your evaluation will appear here after your instructor completes your OJT assessment.
+              Your evaluation will appear here after your Host Training Establishment (HTE) supervisor completes and submits your official OJT performance evaluation.
             </Text>
           </View>
         ) : (
@@ -177,7 +177,7 @@ export default function EvaluationScreen({ profile, session, onBack }: Props) {
                   <View style={[styles.statusPill, evaluation.status === 'final' ? styles.finalPill : styles.draftPill]}>
                     <CheckCircle2 color={evaluation.status === 'final' ? '#16a34a' : '#d97706'} size={14} />
                     <Text style={[styles.statusPillText, { color: evaluation.status === 'final' ? '#15803d' : '#d97706' }]}>
-                      {evaluation.status === 'final' ? 'Official Result' : 'Draft'}
+                      {evaluation.status === 'final' ? 'Official HTE Evaluation' : 'Verified'}
                     </Text>
                   </View>
                 </View>
@@ -196,7 +196,7 @@ export default function EvaluationScreen({ profile, session, onBack }: Props) {
             {/* Remarks */}
             {evaluation.remarks && (
               <View style={styles.remarksCard}>
-                <Text style={styles.cardTitle}>Instructor Remarks</Text>
+                <Text style={styles.cardTitle}>HTE Supervisor Remarks</Text>
                 <Text style={styles.remarksText}>"{evaluation.remarks}"</Text>
               </View>
             )}

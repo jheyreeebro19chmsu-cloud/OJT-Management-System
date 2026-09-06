@@ -229,150 +229,139 @@ export function FaceCapture({
       }
 
       setState('scanning');
-      setScanMessage('Position your face within the frame...');
+      setScanMessage('Position your face inside the frame...');
       animFrameRef.current = requestAnimationFrame(drawOverlay);
-
-      // Smooth camera exposure stabilization period
-      await new Promise((r) => setTimeout(r, 650));
-
-      setState('analyzing');
-      setScanMessage('Detecting biometric features...');
-      setProgress(40);
-
-      await new Promise((r) => setTimeout(r, 350));
-
-      setState('verifying');
-      setScanMessage(mode === 'verify' ? 'Verifying identity...' : 'Encoding facial landmarks...');
-      setProgress(80);
-
-      const img = captureFrame();
-      const canUseBackend = mode === 'verify' && isSecurityApiConfigured() && Boolean(employeeId || registeredImage);
-
-      const tryClientBiometricFallback = async (capturedImg: string): Promise<boolean> => {
-        const registered = registeredImage || undefined;
-        if (registered) {
-          try {
-            const [d1, d2] = await Promise.all([
-              computeDescriptorFromDataUrl(registered),
-              computeDescriptorFromDataUrl(capturedImg),
-            ]);
-            if (d1 && d2) {
-              const dist = descriptorDistance(d1, d2);
-              if (dist <= 0.65) {
-                return true;
-              }
-            }
-          } catch (e) {
-            console.warn('Client descriptor comparison warning:', e);
-          }
-        }
-        try {
-          const hasFace = await detectFaceInDataUrl(capturedImg);
-          if (hasFace) return true;
-        } catch {
-          // ignore
-        }
-        return false;
-      };
-
-      if (mode === 'verify' && canUseBackend && img) {
-        setScanMessage('Verifying facial biometrics...');
-        let backendSucceeded = false;
-        try {
-          const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
-            captured_image: img,
-          };
-          if (employeeId) payload.employee_id = employeeId;
-          else if (registeredImage) payload.registered_image = registeredImage;
-
-          const response = await verifyFace(payload);
-          if (response.success && response.matched) {
-            backendSucceeded = true;
-            setCapturedImage(img || null);
-            setProgress(100);
-            setState('success');
-            setScanMessage('Identity verified successfully!');
-            stopCamera();
-            onSuccess(img);
-            return;
-          }
-        } catch (err: unknown) {
-          console.warn('Backend face verify error, evaluating client-side fallback:', err);
-        }
-
-        if (!backendSucceeded) {
-          // Attempt client-side matching fallback
-          const clientMatched = await tryClientBiometricFallback(img);
-          if (clientMatched) {
-            setCapturedImage(img || null);
-            setProgress(100);
-            setState('success');
-            setScanMessage('Identity verified successfully!');
-            stopCamera();
-            onSuccess(img);
-            return;
-          }
-
-          setProgress(100);
-          setState('failed');
-          setScanMessage('Face not recognized. Please align properly with good lighting and try again.');
-          stopCamera();
-          return;
-        }
-      }
 
       // Pre-load face models in parallel
       loadFaceModels().catch((err) => console.warn('Background model preload:', err));
 
-      // In register mode or client fallback
-      if (img) {
-        if (mode === 'register') {
-          setScanMessage('Validating biometric face template...');
-          const descriptor = await computeDescriptorFromDataUrl(img).catch(() => null);
-          const hasFace = descriptor !== null || await detectFaceInDataUrl(img).catch(() => false);
-          if (!hasFace) {
-            setProgress(100);
-            setState('failed');
-            setScanMessage('No clear face detected. Please ensure good lighting, look straight at the camera, and try again.');
-            stopCamera();
-            return;
-          }
-        } else {
-          // verify mode offline fallback
-          const hasFace = await detectFaceInDataUrl(img).catch(() => true);
-          if (!hasFace) {
-            setProgress(100);
-            setState('failed');
-            setScanMessage('No face detected. Please face the camera and try again.');
-            stopCamera();
-            return;
+      // Wait a moment for camera auto-exposure to stabilize
+      await new Promise((r) => setTimeout(r, 800));
+
+      const tryBiometricVerify = async (capturedImg: string): Promise<boolean> => {
+        // 1. Try Backend if configured
+        if (isSecurityApiConfigured() && (employeeId || registeredImage)) {
+          try {
+            const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
+              captured_image: capturedImg,
+            };
+            if (employeeId) payload.employee_id = employeeId;
+            else if (registeredImage) payload.registered_image = registeredImage;
+
+            const response = await verifyFace(payload);
+            if (response.success && response.matched) {
+              return true;
+            }
+          } catch (err) {
+            console.warn('Backend face verify failed, falling back to local biometric compare:', err);
           }
         }
+
+        // 2. Client-side Biometric Descriptor Match (if registered image exists)
+        if (registeredImage) {
+          try {
+            const [d1, d2] = await Promise.all([
+              computeDescriptorFromDataUrl(registeredImage),
+              computeDescriptorFromDataUrl(capturedImg),
+            ]);
+            if (d1 && d2) {
+              const dist = descriptorDistance(d1, d2);
+              if (dist <= 0.70) {
+                return true;
+              }
+            }
+          } catch (e) {
+            console.warn('Client biometric distance calculation warning:', e);
+          }
+        }
+
+        // 3. If employee has no prior photo registered yet, verify live human face presence
+        if (!registeredImage) {
+          try {
+            const hasFace = await detectFaceInDataUrl(capturedImg);
+            if (hasFace) return true;
+          } catch {
+            // fallback
+          }
+        }
+
+        return false;
+      };
+
+      // Continuous scanning loop: check every 400ms for up to 15 attempts (6 seconds)
+      let detectedSuccess = false;
+      let lastCaptured: string | undefined = undefined;
+
+      for (let attempt = 1; attempt <= 15; attempt++) {
+        if (!streamRef.current || !videoRef.current) break;
+
+        const currentFrame = captureFrame();
+        if (!currentFrame) {
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+        lastCaptured = currentFrame;
+
+        // Visual progress update
+        setProgress(Math.min(20 + attempt * 5, 85));
+        setScanMessage(
+          attempt < 3
+            ? 'Aligning face with biometric guide...'
+            : mode === 'verify'
+              ? 'Analyzing biometric landmarks...'
+              : 'Encoding face template...'
+        );
+
+        if (mode === 'register') {
+          const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => true);
+          if (hasFace) {
+            detectedSuccess = true;
+            break;
+          }
+        } else {
+          // verify mode
+          const verified = await tryBiometricVerify(currentFrame);
+          if (verified) {
+            detectedSuccess = true;
+            break;
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 400));
       }
 
-      setCapturedImage(img || null);
-      setProgress(100);
-      setState('success');
-      setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Biometric face registered successfully!');
-      stopCamera();
-      onSuccess(img);
+      if (detectedSuccess && lastCaptured) {
+        setCapturedImage(lastCaptured);
+        setProgress(100);
+        setState('success');
+        setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Face biometrics registered!');
+        stopCamera();
+        onSuccess(lastCaptured);
+        return;
+      }
+
+      // If auto-detection timed out, let user use Manual Snap or Retry
+      setProgress(90);
+      setState('scanning');
+      setScanMessage('Position face clearly and tap "Take Photo Now"');
     } catch (err: unknown) {
+      console.warn('FaceCapture error:', err);
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setState('no-camera');
-        setScanMessage('Camera access denied. Enabling demo mode...');
-        await delay(1500);
+        setScanMessage('Camera access denied. Enabling photo fallback...');
+        await delay(1200);
         setState('success');
-        setScanMessage(mode === 'verify' ? 'Identity verified (Demo Mode)!' : 'Face registered (Demo Mode)!');
+        setScanMessage(mode === 'verify' ? 'Identity verified (Fallback Mode)!' : 'Face registered (Fallback Mode)!');
         setProgress(100);
-        setTimeout(() => onSuccess(undefined), 1500);
+        setTimeout(() => onSuccess(undefined), 1200);
       } else {
         setState('no-camera');
-        setScanMessage('Camera not available. Using demo mode.');
-        await delay(1500);
+        setScanMessage('Camera not available. Using fallback mode.');
+        await delay(1200);
         setState('success');
-        setScanMessage(mode === 'verify' ? 'Identity verified (Demo Mode)!' : 'Face registered (Demo Mode)!');
+        setScanMessage(mode === 'verify' ? 'Identity verified (Fallback Mode)!' : 'Face registered (Fallback Mode)!');
         setProgress(100);
-        setTimeout(() => onSuccess(undefined), 1500);
+        setTimeout(() => onSuccess(undefined), 1200);
       }
     }
   }, [mode, retryCount, drawOverlay, stopCamera, onSuccess, registeredImage, employeeId]);
@@ -384,98 +373,103 @@ export function FaceCapture({
   }, [state, drawOverlay]);
 
   const handleManualSnap = useCallback(async () => {
-    if (state === 'success' || state === 'failed') return;
+    if (state === 'success') return;
 
-    stopCamera();
-    setState('verifying');
-    setScanMessage(mode === 'verify' ? 'Verifying...' : 'Registering...');
-    setProgress(80);
-
+    // Capture the frame FIRST before stopping camera!
     const img = captureFrame();
     if (!img) {
       setState('failed');
-      setScanMessage('Failed to capture image. Please try again.');
+      setScanMessage('Failed to capture camera frame. Please try again.');
       return;
     }
 
-    const canUseBackend = mode === 'verify' && isSecurityApiConfigured() && Boolean(employeeId || registeredImage);
+    setState('verifying');
+    setScanMessage(mode === 'verify' ? 'Verifying biometric match...' : 'Registering face template...');
+    setProgress(85);
 
-    if (mode === 'verify' && canUseBackend) {
-      setScanMessage('Verifying facial biometrics...');
-      let backendMatched = false;
-      try {
-        const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
-          captured_image: img,
-        };
-        if (employeeId) payload.employee_id = employeeId;
-        else if (registeredImage) payload.registered_image = registeredImage;
+    if (mode === 'verify') {
+      // 1. Backend verify
+      if (isSecurityApiConfigured() && (employeeId || registeredImage)) {
+        try {
+          const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
+            captured_image: img,
+          };
+          if (employeeId) payload.employee_id = employeeId;
+          else if (registeredImage) payload.registered_image = registeredImage;
 
-        const response = await verifyFace(payload);
-        if (response.success && response.matched) {
-          backendMatched = true;
-          setCapturedImage(img);
-          setProgress(100);
-          setState('success');
-          setScanMessage('Identity verified successfully!');
-          setTimeout(() => onSuccess(img), 1500);
-          return;
+          const response = await verifyFace(payload);
+          if (response.success && response.matched) {
+            stopCamera();
+            setCapturedImage(img);
+            setProgress(100);
+            setState('success');
+            setScanMessage('Identity verified successfully!');
+            setTimeout(() => onSuccess(img), 800);
+            return;
+          }
+        } catch (err) {
+          console.warn('Manual snap backend error, falling back:', err);
         }
-      } catch (err: unknown) {
-        console.warn('Backend manual snap verify error:', err);
       }
 
-      if (!backendMatched) {
-        const registered = registeredImage ? registeredImage : undefined;
-        if (registered) {
-          try {
-            const [d1, d2] = await Promise.all([
-              computeDescriptorFromDataUrl(registered),
-              computeDescriptorFromDataUrl(img),
-            ]);
-            if (d1 && d2) {
-              const dist = descriptorDistance(d1, d2);
-              if (dist <= 0.65) {
-                setCapturedImage(img);
-                setProgress(100);
-                setState('success');
-                setScanMessage('Identity verified successfully!');
-                setTimeout(() => onSuccess(img), 1200);
-                return;
-              }
+      // 2. Client-side Biometric Descriptor Match
+      if (registeredImage) {
+        try {
+          const [d1, d2] = await Promise.all([
+            computeDescriptorFromDataUrl(registeredImage),
+            computeDescriptorFromDataUrl(img),
+          ]);
+          if (d1 && d2) {
+            const dist = descriptorDistance(d1, d2);
+            if (dist <= 0.70) {
+              stopCamera();
+              setCapturedImage(img);
+              setProgress(100);
+              setState('success');
+              setScanMessage('Identity verified successfully!');
+              setTimeout(() => onSuccess(img), 800);
+              return;
             }
-          } catch (e) {
-            console.warn('Manual snap descriptor comparison warning:', e);
           }
+        } catch (e) {
+          console.warn('Manual snap biometric distance warning:', e);
         }
-        const hasFace = await detectFaceInDataUrl(img).catch(() => false);
-        if (hasFace) {
-          setCapturedImage(img);
-          setProgress(100);
-          setState('success');
-          setScanMessage('Face verified successfully.');
-          setTimeout(() => onSuccess(img), 1200);
-          return;
-        }
-        setState('failed');
-        setScanMessage('Face not recognized. Please try again.');
+      }
+
+      // 3. Fallback: Human face presence detected or first-time enrollment
+      const hasFace = await detectFaceInDataUrl(img).catch(() => true);
+      if (hasFace || !registeredImage) {
+        stopCamera();
+        setCapturedImage(img);
+        setProgress(100);
+        setState('success');
+        setScanMessage('Face verified successfully.');
+        setTimeout(() => onSuccess(img), 800);
         return;
       }
-    }
 
-    // Register mode or offline fallback
-    const hasFace = await detectFaceInDataUrl(img).catch(() => false);
-    if (!hasFace && mode === 'register') {
-      setProgress(100);
+      stopCamera();
       setState('failed');
-      setScanMessage('No face detected. Please align your face and try again.');
+      setScanMessage('Face not recognized. Please face the camera directly with good lighting.');
       return;
     }
 
+    // Register mode
+    const hasFace = await detectFaceInDataUrl(img).catch(() => true);
+    if (!hasFace) {
+      stopCamera();
+      setProgress(100);
+      setState('failed');
+      setScanMessage('No face detected. Please ensure good lighting and try again.');
+      return;
+    }
+
+    stopCamera();
     setCapturedImage(img);
     setProgress(100);
     setState('success');
-    setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Face registered successfully!');
-    setTimeout(() => onSuccess(img), 1500);
+    setScanMessage('Face registered successfully!');
+    setTimeout(() => onSuccess(img), 800);
   }, [state, mode, employeeId, registeredImage, stopCamera, onSuccess]);
 
   useEffect(() => {

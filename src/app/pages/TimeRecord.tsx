@@ -17,7 +17,7 @@ import { authAPI } from '../services/authApi';
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
 export function TimeRecord() {
-  const { getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, settings } = useApp();
+  const { getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings } = useApp();
   const employee = getCurrentEmployee();
   const todayRecord = employee ? getTodayRecord(employee.id) : null;
   const [pageState, setPageState] = useState<PageState>('check-geofence');
@@ -93,6 +93,18 @@ export function TimeRecord() {
         }
       } catch {
         // If upload fails, keep local image data
+      }
+    }
+
+    // Auto-enroll face biometrics if trainee was not enrolled before
+    if (imageData && (!employee.photo || !employee.faceRegistered)) {
+      try {
+        updateEmployee(employee.id, {
+          photo: storedImage || imageData,
+          faceRegistered: true,
+        });
+      } catch (e) {
+        console.warn('Auto-enroll update error:', e);
       }
     }
 

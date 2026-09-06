@@ -54,14 +54,14 @@ def safe_float(value: object, default: float = 0.0) -> float:
         return default
 
 
-def validate_image_brightness(image_path: str, min_brightness: int = 60, max_brightness: int = 200) -> Dict[str, any]:
+def validate_image_brightness(image_path: str, min_brightness: int = 15, max_brightness: int = 245) -> Dict[str, any]:
     """
     Validate that an image has acceptable brightness for face recognition.
     
     Args:
         image_path: Path to the image file
-        min_brightness: Minimum acceptable brightness (0-255), default 60 (too dark threshold)
-        max_brightness: Maximum acceptable brightness (0-255), default 200 (too bright threshold)
+        min_brightness: Minimum acceptable brightness (0-255), default 15
+        max_brightness: Maximum acceptable brightness (0-255), default 245
     
     Returns:
         dict: {

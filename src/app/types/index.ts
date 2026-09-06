@@ -34,6 +34,8 @@ export interface Employee {
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   /** Backed by the `application_status` column in Supabase. Source of truth for the login gate. */
   applicationStatus?: 'unregistered' | 'pending' | 'approved' | 'rejected';
+  documentsPassed?: boolean;
+  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete';
 }
 
 export interface TimeRecord {
@@ -167,6 +169,16 @@ export interface AnnouncementSubmission {
   message: string;
   photo?: string;
   submittedAt: string;
+}
+
+export interface AnnouncementComment {
+  id: string;
+  announcementId: string;
+  employeeId?: string;
+  authorName: string;
+  authorRole: 'admin' | 'host' | 'employee' | 'trainee';
+  content: string;
+  createdAt: string;
 }
 
 export interface RequiredDocument {
