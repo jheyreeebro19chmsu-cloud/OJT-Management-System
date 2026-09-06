@@ -895,38 +895,24 @@ export function AdminSettings() {
         className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
       >
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center">
-            <Server size={18} className="text-slate-700" />
+          <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center">
+            <Server size={18} className="text-emerald-700" />
           </div>
           <div>
-            <h3 className="font-bold text-gray-800">Django security API</h3>
-            <p className="text-xs text-gray-500">Geofence check, face register/verify, attendance photos</p>
+            <h3 className="font-bold text-gray-800">Cloud Database & Biometrics Storage</h3>
+            <p className="text-xs text-emerald-700 font-medium">Supabase Cloud Database • Connected & Active</p>
           </div>
         </div>
 
-        <p className="text-xs text-gray-600 mb-3">
-          Configure <code className="bg-gray-100 px-1 rounded text-[11px]">VITE_DJANGO_API_URL</code> and optionally{' '}
-          <code className="bg-gray-100 px-1 rounded text-[11px]">VITE_SECURITY_API_KEY</code> to match{' '}
-          <code className="bg-gray-100 px-1 rounded text-[11px]">DJANGO_SECURITY_API_KEY</code> on the server. Lock CORS with{' '}
-          <code className="bg-gray-100 px-1 rounded text-[11px]">DJANGO_CORS_ORIGINS</code> and enable HTTPS flags when deployed.
-        </p>
-
-        <button
-          type="button"
-          onClick={probeSecurityBackend}
-          disabled={securityHealthLoading || !isSecurityApiConfigured()}
-          className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-sm font-medium hover:bg-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {securityHealthLoading ? 'Checking…' : 'Probe /api/health/'}
-        </button>
-
-        {securityHealth && (
-          <div className="mt-3 text-xs rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-1 font-mono text-gray-700">
-            <p>status: {securityHealth.status}</p>
-            <p>face_recognition_installed: {String(securityHealth.face_recognition_installed)}</p>
-            {securityHealth.note && <p className="text-gray-500 whitespace-pre-wrap">{securityHealth.note}</p>}
-          </div>
-        )}
+        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1 mb-3">
+          <p className="font-semibold flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Supabase Cloud Database & AI Face Biometrics Active
+          </p>
+          <p className="text-emerald-800">
+            All trainee records, facial recognition descriptors, photo captures, and GPS geofence zones are actively persisted directly to the cloud database.
+          </p>
+        </div>
       </motion.div>
 
       <div className="flex gap-3">

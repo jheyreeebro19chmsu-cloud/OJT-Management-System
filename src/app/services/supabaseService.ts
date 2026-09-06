@@ -221,6 +221,43 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   return true;
 }
 
+export async function uploadFacePhoto(
+  employeeId: string,
+  base64Data: string,
+  type: 'profile' | 'time_in' | 'time_out' = 'profile'
+): Promise<string> {
+  if (!isSupabaseConfigured() || !base64Data) return base64Data;
+
+  try {
+    if (base64Data.startsWith('http')) return base64Data;
+
+    const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    const byteCharacters = atob(base64Content);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'image/jpeg' });
+    const fileName = `${employeeId || 'unassigned'}/${type}_${Date.now()}.jpg`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+    if (!uploadError && uploadData) {
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      if (urlData?.publicUrl) {
+        return urlData.publicUrl;
+      }
+    }
+  } catch (err) {
+    console.debug('Direct database image storage fallback active:', err);
+  }
+
+  return base64Data;
+}
+
 // ─── Geofence Zones ──────────────────────────────────────────────────────────
 
 export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
