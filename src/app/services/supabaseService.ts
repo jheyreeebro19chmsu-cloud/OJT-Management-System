@@ -57,8 +57,6 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     instructor_id: (employee as any).instructorId || null,
     hte_id: (employee as any).hteId || null,
     application_status: (employee as any).applicationStatus || 'approved',
-    documents_passed: employee.documentsPassed ?? (employee.position === 'OJT Trainee' || !employee.position ? true : undefined),
-    documents_status: employee.documentsStatus || 'passed',
   };
 
   if (employee.id) {
@@ -95,8 +93,6 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.faceRegistered !== undefined) supabaseUpdates.face_registered = updates.faceRegistered;
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
-  if (updates.documentsPassed !== undefined) supabaseUpdates.documents_passed = updates.documentsPassed;
-  if (updates.documentsStatus !== undefined) supabaseUpdates.documents_status = updates.documentsStatus;
   if (updates.applicationStatus !== undefined) supabaseUpdates.application_status = updates.applicationStatus;
   if (updates.registrationLocation !== undefined) {
     supabaseUpdates.registration_lat = updates.registrationLocation?.lat;

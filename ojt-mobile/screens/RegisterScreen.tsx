@@ -532,8 +532,6 @@ export default function RegisterScreen({
         profileData.required_hours = parseInt(form.requiredHours, 10) || 486;
         profileData.start_date = form.startDate || new Date().toISOString().split('T')[0];
         profileData.end_date = form.endDate || undefined;
-        profileData.documents_passed = true;
-        profileData.documents_status = 'passed';
       } else if (role === 'admin') {
         profileData.position = 'OJT Instructor';
         profileData.department = form.department;
