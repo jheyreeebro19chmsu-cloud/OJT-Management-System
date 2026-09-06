@@ -4,33 +4,65 @@ import { createBrowserRouter, isRouteErrorResponse, useRouteError } from 'react-
 import { AdminLayout } from './components/AdminLayout';
 import { EmployeeLayout } from './components/EmployeeLayout';
 import { HTELayout } from './components/HTELayout';
-const AdminDashboard = React.lazy(() => import('./pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
-const AdminEmployees = React.lazy(() => import('./pages/admin/AdminEmployees').then(m => ({ default: m.AdminEmployees })));
-const AdminGeofence = React.lazy(() => import('./pages/admin/AdminGeofence').then(m => ({ default: m.AdminGeofence })));
-const AdminReports = React.lazy(() => import('./pages/admin/AdminReports').then(m => ({ default: m.AdminReports })));
-const AdminSettings = React.lazy(() => import('./pages/admin/AdminSettings').then(m => ({ default: m.AdminSettings })));
-const AcademicYearManagement = React.lazy(() => import('./pages/admin/AcademicYearManagement').then(m => ({ default: m.AcademicYearManagement })));
-const AccountProfile = React.lazy(() => import('./pages/AccountProfile').then(m => ({ default: m.AccountProfile })));
-const AdminEvaluations = React.lazy(() => import('./pages/admin/AdminEvaluations').then(m => ({ default: m.AdminEvaluations })));
-const AdminAnnouncements = React.lazy(() => import('./pages/admin/AdminAnnouncements').then(m => ({ default: m.AdminAnnouncements })));
-const HostFeedback = React.lazy(() => import('./pages/HostFeedback').then(m => ({ default: m.HostFeedback })));
-const AdminHostFeedback = React.lazy(() => import('./pages/admin/AdminHostFeedback').then(m => ({ default: m.AdminHostFeedback })));
-const Announcements = React.lazy(() => import('./pages/Announcements').then(m => ({ default: m.Announcements })));
-const Dashboard = React.lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const HTEDashboard = React.lazy(() => import('./pages/HTEDashboard').then(m => ({ default: m.HTEDashboard })));
-const HTETrainees = React.lazy(() => import('./pages/HTETrainees').then(m => ({ default: m.HTETrainees })));
-const HTEEvaluations = React.lazy(() => import('./pages/HTEEvaluations').then(m => ({ default: m.HTEEvaluations })));
-const HTEAnnouncements = React.lazy(() => import('./pages/HTEAnnouncements').then(m => ({ default: m.HTEAnnouncements })));
-const HTERecords = React.lazy(() => import('./pages/HTERecords').then(m => ({ default: m.HTERecords })));
-const HTESettings = React.lazy(() => import('./pages/HTESettings').then(m => ({ default: m.HTESettings })));
-const InstructorQR = React.lazy(() => import('./pages/InstructorQR'));
-const Login = React.lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
-const OAuthCallback = React.lazy(() => import('./pages/OAuthCallback'));
-const Profile = React.lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
-const QRScanner = React.lazy(() => import('./pages/QRScanner'));
-const Records = React.lazy(() => import('./pages/Records').then(m => ({ default: m.Records })));
-const Register = React.lazy(() => import('./pages/Register').then(m => ({ default: m.Register })));
-const TimeRecord = React.lazy(() => import('./pages/TimeRecord').then(m => ({ default: m.TimeRecord })));
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T } | any>,
+  componentName: string
+) {
+  return React.lazy(async () => {
+    const sessionKey = `retry_import_${componentName}`;
+    try {
+      const module = await factory();
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(sessionKey);
+      }
+      return module.default ? module : { default: module };
+    } catch (error: any) {
+      console.warn(`Dynamic chunk loading failed for ${componentName}:`, error);
+      const isChunkError =
+        error?.message?.includes('Failed to fetch dynamically imported module') ||
+        error?.message?.includes('Importing a module script failed') ||
+        error?.name === 'ChunkLoadError';
+
+      if (isChunkError && typeof window !== 'undefined') {
+        const alreadyRetried = window.sessionStorage.getItem(sessionKey);
+        if (!alreadyRetried) {
+          window.sessionStorage.setItem(sessionKey, 'true');
+          window.location.reload();
+          return new Promise<{ default: T }>(() => {});
+        }
+      }
+      throw error;
+    }
+  });
+}
+
+const AdminDashboard = lazyWithRetry(() => import('./pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })), 'AdminDashboard');
+const AdminEmployees = lazyWithRetry(() => import('./pages/admin/AdminEmployees').then(m => ({ default: m.AdminEmployees })), 'AdminEmployees');
+const AdminGeofence = lazyWithRetry(() => import('./pages/admin/AdminGeofence').then(m => ({ default: m.AdminGeofence })), 'AdminGeofence');
+const AdminReports = lazyWithRetry(() => import('./pages/admin/AdminReports').then(m => ({ default: m.AdminReports })), 'AdminReports');
+const AdminSettings = lazyWithRetry(() => import('./pages/admin/AdminSettings').then(m => ({ default: m.AdminSettings })), 'AdminSettings');
+const AcademicYearManagement = lazyWithRetry(() => import('./pages/admin/AcademicYearManagement').then(m => ({ default: m.AcademicYearManagement })), 'AcademicYearManagement');
+const AccountProfile = lazyWithRetry(() => import('./pages/AccountProfile').then(m => ({ default: m.AccountProfile })), 'AccountProfile');
+const AdminEvaluations = lazyWithRetry(() => import('./pages/admin/AdminEvaluations').then(m => ({ default: m.AdminEvaluations })), 'AdminEvaluations');
+const AdminAnnouncements = lazyWithRetry(() => import('./pages/admin/AdminAnnouncements').then(m => ({ default: m.AdminAnnouncements })), 'AdminAnnouncements');
+const HostFeedback = lazyWithRetry(() => import('./pages/HostFeedback').then(m => ({ default: m.HostFeedback })), 'HostFeedback');
+const AdminHostFeedback = lazyWithRetry(() => import('./pages/admin/AdminHostFeedback').then(m => ({ default: m.AdminHostFeedback })), 'AdminHostFeedback');
+const Announcements = lazyWithRetry(() => import('./pages/Announcements').then(m => ({ default: m.Announcements })), 'Announcements');
+const Dashboard = lazyWithRetry(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })), 'Dashboard');
+const HTEDashboard = lazyWithRetry(() => import('./pages/HTEDashboard').then(m => ({ default: m.HTEDashboard })), 'HTEDashboard');
+const HTETrainees = lazyWithRetry(() => import('./pages/HTETrainees').then(m => ({ default: m.HTETrainees })), 'HTETrainees');
+const HTEEvaluations = lazyWithRetry(() => import('./pages/HTEEvaluations').then(m => ({ default: m.HTEEvaluations })), 'HTEEvaluations');
+const HTEAnnouncements = lazyWithRetry(() => import('./pages/HTEAnnouncements').then(m => ({ default: m.HTEAnnouncements })), 'HTEAnnouncements');
+const HTERecords = lazyWithRetry(() => import('./pages/HTERecords').then(m => ({ default: m.HTERecords })), 'HTERecords');
+const HTESettings = lazyWithRetry(() => import('./pages/HTESettings').then(m => ({ default: m.HTESettings })), 'HTESettings');
+const InstructorQR = lazyWithRetry(() => import('./pages/InstructorQR'), 'InstructorQR');
+const Login = lazyWithRetry(() => import('./pages/Login').then(m => ({ default: m.Login })), 'Login');
+const OAuthCallback = lazyWithRetry(() => import('./pages/OAuthCallback'), 'OAuthCallback');
+const Profile = lazyWithRetry(() => import('./pages/Profile').then(m => ({ default: m.Profile })), 'Profile');
+const QRScanner = lazyWithRetry(() => import('./pages/QRScanner'), 'QRScanner');
+const Records = lazyWithRetry(() => import('./pages/Records').then(m => ({ default: m.Records })), 'Records');
+const Register = lazyWithRetry(() => import('./pages/Register').then(m => ({ default: m.Register })), 'Register');
+const TimeRecord = lazyWithRetry(() => import('./pages/TimeRecord').then(m => ({ default: m.TimeRecord })), 'TimeRecord');
 
 function RouteErrorFallback() {
   const error = useRouteError();
@@ -39,6 +71,24 @@ function RouteErrorFallback() {
     message = `${error.status} ${error.statusText}`;
   } else if (error instanceof Error) {
     message = error.message;
+    if (
+      message.includes('Failed to fetch dynamically imported module') ||
+      message.includes('Importing a module script failed') ||
+      message.includes('error loading dynamically imported module')
+    ) {
+      if (typeof window !== 'undefined') {
+        const reloaded = window.sessionStorage.getItem('route_error_reloaded');
+        if (!reloaded) {
+          window.sessionStorage.setItem('route_error_reloaded', 'true');
+          window.location.reload();
+          return React.createElement(
+            'div',
+            { className: 'min-h-screen flex items-center justify-center bg-slate-50' },
+            React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600' })
+          );
+        }
+      }
+    }
   }
   return React.createElement(
     'div',
@@ -52,7 +102,12 @@ function RouteErrorFallback() {
         'button',
         {
           type: 'button',
-          onClick: () => window.location.reload(),
+          onClick: () => {
+            if (typeof window !== 'undefined') {
+              window.sessionStorage.clear();
+              window.location.reload();
+            }
+          },
           className:
             'mt-4 inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700',
         },
