@@ -31,7 +31,6 @@ const navItems = [
   { to: '/admin/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/admin/host-feedback', label: 'Host Feedback', icon: MessageSquare, end: false },
   { to: '/admin/announcements', label: 'Announcements', icon: Megaphone, end: false },
-  { to: '/admin/pending-requests', label: 'Pending Requests', icon: Bell, end: false },
   { to: '/admin/academic-years', label: 'Academic Year', icon: Calendar, end: false },
   { to: '/admin/settings', label: 'Settings', icon: Settings, end: false },
 ];
@@ -253,11 +252,6 @@ export function AdminLayout() {
                   {unreadAnn}
                 </span>
               )}
-              {label === 'Pending Requests' && pendingCount > 0 && (
-                <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                  {pendingCount}
-                </span>
-              )}
             </NavLink>
           ))}
         </nav>
@@ -416,19 +410,6 @@ export function AdminLayout() {
             </div>
             <div className="hidden lg:flex items-center gap-2">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => navigate('/admin/pending-requests')}
-                  className="relative inline-flex items-center justify-center w-8 h-8 rounded-full bg-transparent text-gray-600 hover:text-gray-800"
-                  title="Pending Requests"
-                >
-                  <Bell size={18} />
-                  {pendingCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                      {pendingCount}
-                    </span>
-                  )}
-                </button>
-
                 <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
                   {(() => {
                     const url = getPhotoUrl(employee?.photo as any);

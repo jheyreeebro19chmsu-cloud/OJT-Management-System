@@ -13,7 +13,6 @@ const navItems = [
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
-  { to: '/app/hte-feedback', label: 'HTE Feedback', icon: Star, end: false },
   { to: '/app/profile', label: 'Profile', icon: User, end: false },
 ];
 
