@@ -200,7 +200,18 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
 
-  const { error } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id);
+  let { error, data } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
+
+  // If update by id did not match any row (e.g. temporary local ID), match by employee_id and date
+  if ((error || !data || data.length === 0) && updates.employeeId) {
+    const targetDate = updates.date || new Date().toISOString().split('T')[0];
+    const { error: err2 } = await supabase
+      .from('time_records')
+      .update(supabaseUpdates)
+      .eq('employee_id', updates.employeeId)
+      .eq('date', targetDate);
+    if (!err2) return true;
+  }
 
   if (error) {
     console.error('Error updating time record:', error);
