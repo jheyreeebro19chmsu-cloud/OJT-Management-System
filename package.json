@@ -15,6 +15,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\""
   },
   "dependencies": {
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/icons-material": "7.3.5",

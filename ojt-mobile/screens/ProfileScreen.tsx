@@ -231,6 +231,33 @@ export default function ProfileScreen({ profile, session, onBack, onEnrollFace }
           </View>
         )}
 
+        {/* Required OJT Documents Monitoring Card */}
+        {data?.role !== 'admin' && data?.role !== 'hte' && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Award color="#7c3aed" size={18} />
+              <Text style={styles.cardTitle}>Required OJT Documents</Text>
+            </View>
+            <View style={styles.docsList}>
+              {[
+                { id: '1', name: '1. Endorsement Letter', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+                { id: '2', name: '2. Parental Consent Form', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+                { id: '3', name: '3. Medical Certificate', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+                { id: '4', name: '4. Student Bio-data / Resume', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+              ].map((doc) => (
+                <View key={doc.id} style={styles.docRow}>
+                  <Text style={styles.docRowName}>{doc.name}</Text>
+                  <View style={[styles.docRowBadge, doc.status === 'Verified' ? styles.docRowBadgePassed : styles.docRowBadgePending]}>
+                    <Text style={[styles.docRowBadgeText, doc.status === 'Verified' ? styles.docRowBadgeTextPassed : styles.docRowBadgeTextPending]}>
+                      {doc.status}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Face Recognition Status */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -371,6 +398,24 @@ const styles = StyleSheet.create({
   infoContent: { flex: 1 },
   infoLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '700', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   infoValue: { fontSize: 15, color: '#0f172a', fontWeight: '600' },
+  docsList: { gap: 8 },
+  docRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  docRowName: { fontSize: 12, fontWeight: '700', color: '#1e293b' },
+  docRowBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  docRowBadgePassed: { backgroundColor: '#ecfdf5' },
+  docRowBadgePending: { backgroundColor: '#fffbeb' },
+  docRowBadgeText: { fontSize: 10, fontWeight: '800' },
+  docRowBadgeTextPassed: { color: '#059669' },
+  docRowBadgeTextPending: { color: '#d97706' },
   faceStatusRow: { borderRadius: 12, padding: 14 },
   faceStatusText: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
   enrollFaceBtn: {
@@ -383,6 +428,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
+  },
+  enrollFaceText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   enrollFaceBtnText: {
     color: '#ffffff',
