@@ -1036,9 +1036,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     // Set robust default values for non-trainee roles to avoid violating NOT NULL database constraints
+    const isHTE = employeeData.position === 'HTE Representative' || employeeData.position === 'Training Supervisor' || (employeeData.position && employeeData.position.toLowerCase().includes('hte'));
+    const isInstructor = employeeData.position === 'OJT Instructor' || (employeeData.position && employeeData.position.toLowerCase().includes('instructor'));
+    const rolePrefix = isHTE ? 'HTE' : isInstructor ? 'ADM' : 'OJT';
+
+    let resolvedEmployeeId = employeeData.employeeId;
+    if (!resolvedEmployeeId || (isHTE && resolvedEmployeeId.startsWith('OJT-')) || (isInstructor && resolvedEmployeeId.startsWith('OJT-'))) {
+      if (resolvedEmployeeId && (isHTE || isInstructor) && resolvedEmployeeId.startsWith('OJT-')) {
+        resolvedEmployeeId = resolvedEmployeeId.replace(/^OJT-/, `${rolePrefix}-`);
+      } else {
+        resolvedEmployeeId = `${rolePrefix}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+      }
+    }
+
     const cleanData = {
       ...employeeData,
-      companyName: employeeData.companyName || (employeeData.position === 'HTE Representative' ? 'HTE Partner' : 'N/A'),
+      employeeId: resolvedEmployeeId,
+      companyName: employeeData.companyName || (isHTE ? 'HTE Partner' : 'N/A'),
       supervisorName: employeeData.supervisorName || 'N/A',
       schoolName: employeeData.schoolName || 'N/A',
       campus: employeeData.campus || 'N/A',
@@ -1889,12 +1903,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeRecords(fixedRecords);
     saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
 
-    // 2. Ensure all employees have academicYear and normalized positions
-    const fixedEmployees = employees.map((e) => ({
-      ...e,
-      position: e.position === 'Administrator' ? 'OJT Instructor' : e.position,
-      academicYear: e.academicYear || activeAY,
-    }));
+    // 2. Ensure all employees have academicYear, normalized positions, and correct ID prefixes
+    const fixedEmployees = employees.map((e) => {
+      const isHTE = e.position === 'HTE Representative' || e.position === 'Training Supervisor' || (e.position && e.position.toLowerCase().includes('hte'));
+      const isInstructor = e.position === 'Administrator' || e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'));
+      let employeeId = e.employeeId;
+      if (isHTE && employeeId && employeeId.startsWith('OJT-')) {
+        employeeId = employeeId.replace(/^OJT-/, 'HTE-');
+      } else if (isInstructor && employeeId && employeeId.startsWith('OJT-')) {
+        employeeId = employeeId.replace(/^OJT-/, 'ADM-');
+      }
+      return {
+        ...e,
+        position: e.position === 'Administrator' ? 'OJT Instructor' : e.position,
+        academicYear: e.academicYear || activeAY,
+        employeeId,
+      };
+    });
     setEmployees(fixedEmployees);
     saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
 

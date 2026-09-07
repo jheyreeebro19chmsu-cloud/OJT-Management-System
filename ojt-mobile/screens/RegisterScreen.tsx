@@ -547,16 +547,18 @@ export default function RegisterScreen({
         profileData.required_hours = parseInt(form.requiredHours, 10) || 486;
         profileData.start_date = form.startDate || new Date().toISOString().split('T')[0];
         profileData.end_date = form.endDate || undefined;
+        profileData.employee_id = form.employeeId || `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
       } else if (role === 'admin') {
         profileData.position = 'OJT Instructor';
         profileData.department = form.department;
         profileData.campus = form.campus;
         profileData.school_name = form.schoolName;
-        profileData.employee_id = form.employeeId || undefined;
+        profileData.employee_id = form.employeeId || `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
       } else if (role === 'hte') {
         profileData.position = 'Training Supervisor';
         profileData.company_name = form.companyName;
         profileData.department = form.department;
+        profileData.employee_id = form.employeeId || `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
       }
 
       // Upsert into employees table

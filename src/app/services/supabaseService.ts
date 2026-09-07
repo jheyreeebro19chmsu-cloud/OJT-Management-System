@@ -33,9 +33,22 @@ export async function fetchEmployees(): Promise<Employee[]> {
 export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'> & { id?: string }): Promise<Employee | null> {
   if (!isSupabaseConfigured()) return null;
 
+  const isHTE = employee.position === 'HTE Representative' || employee.position === 'Training Supervisor' || (employee.position && employee.position.toLowerCase().includes('hte'));
+  const isInstructor = employee.position === 'OJT Instructor' || (employee.position && employee.position.toLowerCase().includes('instructor'));
+  const rolePrefix = isHTE ? 'HTE' : isInstructor ? 'ADM' : 'OJT';
+
+  let assignedEmployeeId = employee.employeeId;
+  if (!assignedEmployeeId || (isHTE && assignedEmployeeId.startsWith('OJT-')) || (isInstructor && assignedEmployeeId.startsWith('OJT-'))) {
+    if (assignedEmployeeId && (isHTE || isInstructor) && assignedEmployeeId.startsWith('OJT-')) {
+      assignedEmployeeId = assignedEmployeeId.replace(/^OJT-/, `${rolePrefix}-`);
+    } else {
+      assignedEmployeeId = `${rolePrefix}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+    }
+  }
+
   const supabaseEmployee: any = {
     name: employee.name,
-    employee_id: employee.employeeId,
+    employee_id: assignedEmployeeId,
     email: employee.email,
     department: employee.department,
     position: employee.position,
@@ -78,6 +91,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
 
   const supabaseUpdates: any = {};
   if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+  if (updates.employeeId !== undefined) supabaseUpdates.employee_id = updates.employeeId;
   if (updates.email !== undefined) supabaseUpdates.email = updates.email;
   if (updates.department !== undefined) supabaseUpdates.department = updates.department;
   if (updates.position !== undefined) supabaseUpdates.position = updates.position;
@@ -885,10 +899,19 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
 // ─── Transform Helpers ───────────────────────────────────────────────────────
 
 function transformSupabaseEmployee(data: any): Employee {
+  const isHTE = data.position === 'HTE Representative' || data.position === 'Training Supervisor' || (data.position && data.position.toLowerCase().includes('hte'));
+  const isInstructor = data.position === 'OJT Instructor' || (data.position && data.position.toLowerCase().includes('instructor'));
+  let normalizedEmployeeId = data.employee_id;
+  if (isHTE && normalizedEmployeeId && normalizedEmployeeId.startsWith('OJT-')) {
+    normalizedEmployeeId = normalizedEmployeeId.replace(/^OJT-/, 'HTE-');
+  } else if (isInstructor && normalizedEmployeeId && normalizedEmployeeId.startsWith('OJT-')) {
+    normalizedEmployeeId = normalizedEmployeeId.replace(/^OJT-/, 'ADM-');
+  }
+
   return {
     id: data.id,
     name: data.name,
-    employeeId: data.employee_id,
+    employeeId: normalizedEmployeeId || (isHTE ? `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}` : isInstructor ? `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}` : `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`),
     email: data.email,
     department: data.department,
     position: data.position,
@@ -948,29 +971,40 @@ export async function upsertEmployees(employees: Employee[]): Promise<boolean> {
   if (!isSupabaseConfigured() || employees.length === 0) return false;
 
   try {
-    const payload = employees.map((emp) => ({
-      id: emp.id,
-      name: emp.name,
-      employee_id: emp.employeeId,
-      email: emp.email,
-      department: emp.department,
-      position: emp.position,
-      company_name: emp.companyName,
-      supervisor_name: emp.supervisorName,
-      school_name: emp.schoolName,
-      campus: emp.campus,
-      course: emp.course,
-      start_date: emp.startDate,
-      end_date: emp.endDate,
-      required_hours: emp.requiredHours,
-      photo: emp.photo,
-      face_registered: emp.faceRegistered,
-      active: emp.active,
-      academic_year: emp.academicYear,
-      registration_lat: emp.registrationLocation?.lat,
-      registration_lng: emp.registrationLocation?.lng,
-      registration_address: emp.registrationAddress,
-    }));
+    const payload = employees.map((emp) => {
+      const isHTE = emp.position === 'HTE Representative' || emp.position === 'Training Supervisor' || (emp.position && emp.position.toLowerCase().includes('hte'));
+      const isInstructor = emp.position === 'OJT Instructor' || (emp.position && emp.position.toLowerCase().includes('instructor'));
+      let employeeId = emp.employeeId;
+      if (isHTE && employeeId && employeeId.startsWith('OJT-')) {
+        employeeId = employeeId.replace(/^OJT-/, 'HTE-');
+      } else if (isInstructor && employeeId && employeeId.startsWith('OJT-')) {
+        employeeId = employeeId.replace(/^OJT-/, 'ADM-');
+      }
+
+      return {
+        id: emp.id,
+        name: emp.name,
+        employee_id: employeeId,
+        email: emp.email,
+        department: emp.department,
+        position: emp.position,
+        company_name: emp.companyName,
+        supervisor_name: emp.supervisorName,
+        school_name: emp.schoolName,
+        campus: emp.campus,
+        course: emp.course,
+        start_date: emp.startDate,
+        end_date: emp.endDate,
+        required_hours: emp.requiredHours,
+        photo: emp.photo,
+        face_registered: emp.faceRegistered,
+        active: emp.active,
+        academic_year: emp.academicYear,
+        registration_lat: emp.registrationLocation?.lat,
+        registration_lng: emp.registrationLocation?.lng,
+        registration_address: emp.registrationAddress,
+      };
+    });
 
     const { error } = await supabase.from('employees').upsert(payload, { onConflict: 'id' });
     if (error) {
@@ -1026,8 +1060,8 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
   if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0 };
 
   try {
-    // 1. Update any employee missing academic_year or with legacy administrator position
-    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position');
+    // 1. Update any employee missing academic_year, legacy administrator position, or mismatched HTE/ADM employee_ids
+    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position, employee_id');
     let repairedEmployees = 0;
     if (!empFetchErr && emps) {
       for (const e of emps) {
@@ -1039,6 +1073,15 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
         }
         if (e.position === 'Administrator') {
           updates.position = 'OJT Instructor';
+          needsUpdate = true;
+        }
+        const isHTE = e.position === 'HTE Representative' || e.position === 'Training Supervisor' || (e.position && e.position.toLowerCase().includes('hte'));
+        const isInstructor = e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'));
+        if (isHTE && (!e.employee_id || e.employee_id.startsWith('OJT-'))) {
+          updates.employee_id = e.employee_id && e.employee_id.startsWith('OJT-') ? e.employee_id.replace(/^OJT-/, 'HTE-') : `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+          needsUpdate = true;
+        } else if (isInstructor && (!e.employee_id || e.employee_id.startsWith('OJT-'))) {
+          updates.employee_id = e.employee_id && e.employee_id.startsWith('OJT-') ? e.employee_id.replace(/^OJT-/, 'ADM-') : `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
           needsUpdate = true;
         }
         if (needsUpdate) {

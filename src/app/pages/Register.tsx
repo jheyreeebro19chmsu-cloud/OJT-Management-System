@@ -467,7 +467,7 @@ export function Register() {
     setSubmitError(null);
     const empId =
       form.employeeId ||
-      `${role === 'admin' ? 'ADM' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+      `${role === 'admin' ? 'ADM' : role === 'hte' ? 'HTE' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
 
     // If OAuth HTE flow pending, attempt HTE registration via backend
     if (oauthPending && role === 'hte') {
@@ -647,6 +647,7 @@ export function Register() {
         const empToUpdateId = existing ? existing.id : empId;
         const updatedPayload = {
           id: empToUpdateId,
+          employeeId: form.employeeId || (existing?.employeeId ? (role === 'hte' && existing.employeeId.startsWith('OJT-') ? existing.employeeId.replace(/^OJT-/, 'HTE-') : existing.employeeId) : empId),
           name: composedName,
           firstName: form.firstName,
           lastName: form.lastName,
