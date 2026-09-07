@@ -858,6 +858,7 @@ export function AdminEmployees() {
                           {(isInstructor
                             ? [
                                 { label: 'Email', val: selectedEmp.email },
+                                { label: 'Contact Phone', val: selectedEmp.contactPhone || selectedEmp.phone || 'Not specified' },
                                 { label: 'Faculty ID', val: selectedEmp.employeeId },
                                 { label: 'Department', val: selectedEmp.department || 'College of Computer Studies' },
                                 { label: 'School', val: selectedEmp.schoolName || 'Carlos Hilado Memorial State University' },
@@ -867,6 +868,7 @@ export function AdminEmployees() {
                             : isHTE
                             ? [
                                 { label: 'Email', val: selectedEmp.email },
+                                { label: 'Contact Phone', val: selectedEmp.contactPhone || selectedEmp.phone || 'Not specified' },
                                 { label: 'Supervisor ID', val: selectedEmp.employeeId },
                                 { label: 'Company', val: selectedEmp.companyName || 'Host Training Establishment' },
                                 { label: 'Department', val: selectedEmp.department || 'Internship Division' },

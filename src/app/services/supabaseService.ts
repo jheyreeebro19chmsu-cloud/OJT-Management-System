@@ -73,7 +73,9 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     company_name: employee.companyName || 'N/A',
     supervisor_name: employee.supervisorName || 'N/A',
     school_name: employee.schoolName || 'Carlos Hilado Memorial State University',
-    campus: employee.campus || 'Talisay Campus',
+    campus: employee.campus || 'Talisay (Main Campus)',
+    contact_phone: employee.contactPhone || employee.phone || null,
+    phone: employee.contactPhone || employee.phone || null,
     course: employee.course || 'Information Systems',
     start_date: employee.startDate || new Date().toISOString().split('T')[0],
     end_date: employee.endDate || new Date().toISOString().split('T')[0],
@@ -133,6 +135,8 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
       registration_address: supabaseEmployee.registration_address,
       academic_year: supabaseEmployee.academic_year,
       campus: supabaseEmployee.campus,
+      contact_phone: supabaseEmployee.contact_phone,
+      phone: supabaseEmployee.phone,
       application_status: supabaseEmployee.application_status,
     };
     if (supabaseEmployee.id) baselinePayload.id = supabaseEmployee.id;
@@ -174,6 +178,14 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.supervisorName !== undefined) supabaseUpdates.supervisor_name = updates.supervisorName;
   if (updates.schoolName !== undefined) supabaseUpdates.school_name = updates.schoolName;
   if (updates.campus !== undefined) supabaseUpdates.campus = updates.campus;
+  if (updates.contactPhone !== undefined) {
+    supabaseUpdates.contact_phone = updates.contactPhone;
+    supabaseUpdates.phone = updates.contactPhone;
+  }
+  if (updates.phone !== undefined) {
+    supabaseUpdates.phone = updates.phone;
+    supabaseUpdates.contact_phone = updates.phone;
+  }
   if (updates.course !== undefined) supabaseUpdates.course = updates.course;
   if (updates.startDate !== undefined) supabaseUpdates.start_date = updates.startDate;
   if (updates.endDate !== undefined) supabaseUpdates.end_date = updates.endDate;
@@ -1103,6 +1115,8 @@ export function transformSupabaseEmployee(data: any): Employee {
         ? { lat: data.registration_lat, lng: data.registration_lng }
         : undefined,
     registrationAddress: data.registration_address,
+    contactPhone: data.contact_phone || data.phone || undefined,
+    phone: data.phone || data.contact_phone || undefined,
     instructorId: data.instructor_id,
     hteId: data.hte_id,
     linkedAt: data.linked_at,

@@ -21,6 +21,7 @@ import {
   Upload,
   Trash2,
   Clock,
+  Phone,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -861,6 +862,13 @@ export function Register() {
       if (step === 0) {
         if (!hasName) errors.push('Please enter your full name');
         if (!hasEmail) errors.push('Please enter your email');
+        if (!form.contactPhone?.trim()) {
+          errors.push('Please enter your Philippine contact number (+639...)');
+        } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
+          errors.push('Please enter a valid Philippine mobile number (e.g. +639123456789)');
+        }
+        if (!form.campus) errors.push('Please select your CHMSU Campus');
+        if (!form.department) errors.push('Please select your Department');
         if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
     }
@@ -1659,24 +1667,134 @@ export function Register() {
                       )}
 
                       {role === 'admin' && (
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-3 pt-1 border-t border-gray-100">
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
-                            <input
-                              value={form.department}
-                              onChange={(e) => update('department', e.target.value)}
-                              placeholder="e.g. CICS"
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                            />
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              Contact Number (Philippines +639...) *
+                            </label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                <Phone size={14} />
+                              </div>
+                              <input
+                                type="tel"
+                                value={form.contactPhone}
+                                onChange={(e) => {
+                                  let val = e.target.value;
+                                  // Keep only digits and leading plus
+                                  let digits = val.replace(/[^\d+]/g, '');
+                                  if (digits.includes('+')) {
+                                    digits = '+' + digits.replace(/\+/g, '');
+                                  }
+                                  // Auto-format PH prefixes
+                                  if (digits.startsWith('09')) {
+                                    digits = '+63' + digits.slice(1);
+                                  } else if (digits.startsWith('9')) {
+                                    digits = '+63' + digits;
+                                  } else if (digits.startsWith('639')) {
+                                    digits = '+' + digits;
+                                  }
+                                  // Limit strictly to 13 digits/chars (+639XXXXXXXXX)
+                                  if (digits.length > 13) {
+                                    digits = digits.slice(0, 13);
+                                  }
+                                  update('contactPhone', digits);
+                                }}
+                                placeholder="+639123456789"
+                                maxLength={13}
+                                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-mono tracking-wide"
+                              />
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              Philippine mobile number only (+639..., 13 digits maximum)
+                            </p>
                           </div>
+
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Field *</label>
-                            <input
-                              value={form.course}
-                              onChange={(e) => update('course', e.target.value)}
-                              placeholder="e.g. IT"
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                            />
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">School *</label>
+                            <select
+                              value={form.schoolName || 'Carlos Hilado Memorial State University'}
+                              onChange={() => update('schoolName', 'Carlos Hilado Memorial State University')}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-100 text-gray-700 cursor-not-allowed"
+                              disabled
+                            >
+                              <option value="Carlos Hilado Memorial State University">
+                                Carlos Hilado Memorial State University (CHMSU)
+                              </option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Campus *</label>
+                            <select
+                              value={form.campus}
+                              onChange={(e) => {
+                                const newCampus = e.target.value;
+                                update('campus', newCampus);
+                                if (!form.schoolName) {
+                                  update('schoolName', 'Carlos Hilado Memorial State University');
+                                }
+                              }}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+                            >
+                              <option value="">Select Campus</option>
+                              {campusOptions.map((campus) => (
+                                <option key={campus} value={campus}>
+                                  {campus}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+                              <select
+                                value={form.department}
+                                onChange={(e) => {
+                                  const newDept = e.target.value;
+                                  update('department', newDept);
+                                  if (!form.schoolName) {
+                                    update('schoolName', 'Carlos Hilado Memorial State University');
+                                  }
+                                }}
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+                              >
+                                <option value="">Select Department</option>
+                                {departmentOptions.map((department) => (
+                                  <option key={department} value={department}>
+                                    {department}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Field *</label>
+                              <select
+                                value={form.course}
+                                onChange={(e) => {
+                                  const selectedCourse = e.target.value;
+                                  update('course', selectedCourse);
+                                  if (selectedCourse && !form.department) {
+                                    for (const dept of departmentOptions) {
+                                      const courses = getCoursesForDepartment(dept);
+                                      if (courses.includes(selectedCourse)) {
+                                        update('department', dept);
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }}
+                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
+                              >
+                                <option value="">Select Program / Field</option>
+                                {selectedProgramOptions.map((program) => (
+                                  <option key={program} value={program}>
+                                    {program}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </div>
                       )}

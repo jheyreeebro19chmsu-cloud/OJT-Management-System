@@ -247,7 +247,9 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
         last_name = sanitize_string(data.get('last_name', ''))
         course = sanitize_string(data.get('course', ''))
         department = sanitize_string(data.get('department', ''))
-        institution = sanitize_string(data.get('institution', ''))
+        campus = sanitize_string(data.get('campus', ''))
+        contact_phone = sanitize_string(data.get('contact_phone', data.get('phone', '')))
+        institution = sanitize_string(data.get('institution', data.get('school_name', 'Carlos Hilado Memorial State University')))
         
         # Validate required fields
         if not all([email, password, first_name, last_name]):
@@ -261,6 +263,8 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
             'password': password,
             'course': course,
             'department': department,
+            'contact_phone': contact_phone,
+            'campus': campus,
         }
         
         sanitized, error = validate_registration_data(form_data, 'instructor')
@@ -300,6 +304,9 @@ def register_instructor(request: HttpRequest) -> JsonResponse:
         user_obj = {'id': user.id, 'email': user.email, 'name': user.get_full_name(), 'role': 'instructor'}
         user_obj['course'] = instructor.course
         user_obj['department'] = instructor.department
+        user_obj['campus'] = campus
+        user_obj['contact_phone'] = contact_phone
+        user_obj['phone'] = contact_phone
         # face_registration intentionally omitted for instructors
         return JsonResponse({'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj, 'qr_code_url': instructor.qr_code_image.url}, status=201)
     except Exception as e:
