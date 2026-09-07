@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { FaceCapture } from '../../components/FaceCapture';
-import { GeofenceMap } from '../../components/GeofenceMap';
 import { isSecurityApiConfigured, registerFace } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
 import { Employee } from '../../types';
@@ -1199,35 +1198,6 @@ export function AdminEmployees() {
                                 </p>
                               )}
                             </div>
-
-                            {/* Interactive Leaflet Map Preview */}
-                            {selectedEmp.registrationLocation && (
-                              <div className="rounded-xl overflow-hidden border border-blue-200 shadow-sm h-48 relative bg-slate-100">
-                                <GeofenceMap
-                                  zones={[
-                                    {
-                                      id: `personal-${selectedEmp.id}`,
-                                      name: `${selectedEmp.name} - ${isInstructor ? 'Official Station' : (selectedEmp.companyName || 'Workplace')}`,
-                                      address: isInstructor ? (selectedEmp.campus || 'CHMSU Campus') : (selectedEmp.companyAddress || `${selectedEmp.companyName || 'HTE'} Workplace`),
-                                      lat: Number(selectedEmp.registrationLocation.lat),
-                                      lng: Number(selectedEmp.registrationLocation.lng),
-                                      radius: 100,
-                                      active: true,
-                                    },
-                                  ]}
-                                  defaultCenter={[
-                                    Number(selectedEmp.registrationLocation.lat),
-                                    Number(selectedEmp.registrationLocation.lng),
-                                  ]}
-                                  zoom={15}
-                                  height="100%"
-                                />
-                                <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-700 shadow border border-emerald-200 flex items-center gap-1">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                  <span>100m {isInstructor ? 'Station Radius' : 'Workplace Attendance Radius'}</span>
-                                </div>
-                              </div>
-                            )}
                           </div>
 
                           {selectedEmp.registrationAddress && (
