@@ -69,88 +69,7 @@ const DEFAULT_GEOFENCE: GeofenceZone[] = [
   },
 ];
 
-const MOCK_EMPLOYEES: Employee[] = [
-  {
-    id: 'admin-1',
-    name: 'OJT Instructor',
-    employeeId: 'ADM-2024-001',
-    email: 'admin@ojt.com',
-    department: 'Administration',
-    position: 'OJT Instructor',
-    companyName: 'TechCorp Philippines',
-    supervisorName: 'System Owner',
-    schoolName: 'N/A',
-    course: 'N/A',
-    startDate: '2024-01-01',
-    endDate: '2024-12-31',
-    requiredHours: 0,
-    faceRegistered: false,
-    createdAt: '2024-01-01',
-    active: true,
-    registrationLocation: { lat: 14.5547, lng: 121.0244 },
-    registrationAddress: 'Ayala Avenue, Makati City',
-  },
-  {
-    id: 'emp-1',
-    name: 'Juan Dela Cruz',
-    employeeId: 'OJT-2024-001',
-    email: 'juan.delacruz@email.com',
-    department: 'Information Technology',
-    position: 'OJT Trainee',
-    companyName: 'TechCorp Philippines',
-    supervisorName: 'Mr. Roberto Santos',
-    schoolName: 'Polytechnic University of the Philippines',
-    course: 'Bachelor of Science in Information Technology',
-    startDate: '2024-01-15',
-    endDate: '2024-04-15',
-    requiredHours: 486,
-    faceRegistered: true,
-    createdAt: '2024-01-15',
-    active: true,
-    registrationLocation: { lat: 14.5547, lng: 121.0244 },
-    registrationAddress: 'Ayala Avenue, Makati City',
-  },
-  {
-    id: 'emp-2',
-    name: 'Maria Santos',
-    employeeId: 'OJT-2024-002',
-    email: 'maria.santos@email.com',
-    department: 'Human Resources',
-    position: 'OJT Trainee',
-    companyName: 'TechCorp Philippines',
-    supervisorName: 'Ms. Ana Reyes',
-    schoolName: 'De La Salle University',
-    course: 'Bachelor of Science in Psychology',
-    startDate: '2024-01-15',
-    endDate: '2024-04-15',
-    requiredHours: 486,
-    faceRegistered: true,
-    createdAt: '2024-01-15',
-    active: true,
-    registrationLocation: { lat: 14.5644, lng: 121.031 },
-    registrationAddress: 'Taft Avenue, Manila',
-  },
-  {
-    id: 'emp-3',
-    name: 'Carlo Reyes',
-    employeeId: 'OJT-2024-003',
-    email: 'carlo.reyes@email.com',
-    department: 'Engineering',
-    position: 'OJT Trainee',
-    companyName: 'TechCorp Philippines',
-    supervisorName: 'Engr. Mark Torres',
-    schoolName: 'University of Santo Tomas',
-    course: 'Bachelor of Science in Computer Engineering',
-    startDate: '2024-02-01',
-    endDate: '2024-05-01',
-    requiredHours: 486,
-    faceRegistered: false,
-    createdAt: '2024-02-01',
-    active: true,
-    registrationLocation: { lat: 14.6095, lng: 120.989 },
-    registrationAddress: 'España Blvd, Sampaloc, Manila',
-  },
-];
+const MOCK_EMPLOYEES: Employee[] = [];
 
 // Utility to generate stable-ish ids without calling impure APIs in render
 function generateId(prefix = 'id') {
@@ -159,10 +78,6 @@ function generateId(prefix = 'id') {
 
 const DEFAULT_PASSWORDS: Record<string, string> = {
   'admin@ojt.com': 'admin123',
-  'juan.delacruz@email.com': 'ojt2024',
-  'maria.santos@email.com': 'ojt2024',
-  'carlo.reyes@email.com': 'ojt2024',
-  'host.supervisor@ojt.com': 'host123',
 };
 
 const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
@@ -190,75 +105,12 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
   },
 ];
 
-const DEFAULT_HOST_SUPERVISORS: HostSupervisor[] = [
-  {
-    id: 'host-1',
-    name: 'Liza Ramos',
-    email: 'host.supervisor@ojt.com',
-    companyName: 'TechCorp Philippines',
-    position: 'Training Supervisor',
-    active: true,
-  },
-];
+const DEFAULT_HOST_SUPERVISORS: HostSupervisor[] = [];
 
-const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [
-  {
-    id: 'hf-1',
-    employeeId: 'emp-1',
-    hostName: 'Liza Ramos',
-    hostCompany: 'TechCorp Philippines',
-    hostPosition: 'Training Supervisor',
-    hostEmail: 'liza.ramos@techcorp.ph',
-    attendanceScore: 95,
-    performanceScore: 92,
-    attitudeScore: 94,
-    communicationScore: 90,
-    teamworkScore: 93,
-    overallScore: 93,
-    strengths: 'Consistently punctual and proactive in daily tasks.',
-    areasForImprovement: 'Continue building confidence in presenting ideas during meetings.',
-    recommendation: 'Highly Recommended',
-    submittedAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    status: 'submitted',
-  },
-];
+const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [];
 
 function generateMockRecords(): TimeRecord[] {
-  const records: TimeRecord[] = [];
-  const today = new Date();
-
-  for (let i = 30; i >= 1; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayOfWeek = date.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-
-    MOCK_EMPLOYEES.slice(0, 2).forEach((emp) => {
-      const isLate = Math.random() < 0.15;
-      const timeInHour = isLate ? 8 : 7 + Math.floor(Math.random() * 2);
-      const timeInMin = isLate ? 15 + Math.floor(Math.random() * 30) : Math.floor(Math.random() * 60);
-      const totalHours = 8 + Math.random() * 2;
-      const timeOutHour = Math.floor(timeInHour + totalHours);
-      const timeOutMin = Math.floor((totalHours % 1) * 60);
-      const outsidePremises = Math.random() < 0.05;
-
-      records.push({
-        id: `rec-${dateStr}-${emp.id}`,
-        employeeId: emp.id,
-        date: dateStr,
-        timeIn: `${String(timeInHour).padStart(2, '0')}:${String(timeInMin).padStart(2, '0')}`,
-        timeOut: `${String(timeOutHour).padStart(2, '0')}:${String(timeOutMin).padStart(2, '0')}`,
-        timeInGeofenced: !outsidePremises,
-        timeOutGeofenced: true,
-        timeInFaceVerified: true,
-        timeOutFaceVerified: true,
-        totalHours: parseFloat(totalHours.toFixed(2)),
-        status: isLate ? 'late' : 'present',
-      });
-    });
-  }
-  return records;
+  return [];
 }
 
 type RegisterEmployeeInput = Omit<Employee, 'id' | 'createdAt'> & {
@@ -583,19 +435,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchHostSupervisors(),
           ]);
 
+          if (localStorage.getItem('ojt_purged_all_credentials_v1') !== 'done') {
+            localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
+            localStorage.removeItem(STORAGE_KEYS.HOST_SUPERVISORS);
+            localStorage.removeItem(STORAGE_KEYS.TIME_RECORDS);
+            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+            localStorage.removeItem(STORAGE_KEYS.HOST_FEEDBACK);
+            localStorage.removeItem(STORAGE_KEYS.EVALUATIONS);
+            localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
+            localStorage.removeItem('ojt_passwords');
+            localStorage.removeItem('ojt_user');
+            localStorage.setItem('ojt_purged_all_credentials_v1', 'done');
+          }
+
           if (!isMounted) return;
 
-          if (supabaseEmployees.length > 0) setEmployees(supabaseEmployees);
-          if (supabaseRecords.length > 0) setTimeRecords(supabaseRecords);
+          setEmployees(supabaseEmployees);
+          setTimeRecords(supabaseRecords);
           const sanitizedSupabaseZones = sanitizeGeofenceZones(supabaseZones);
           if (sanitizedSupabaseZones.length > 0) setGeofenceZones(sanitizedSupabaseZones);
           if (supabaseSettings) setSettings(supabaseSettings);
-          if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
+          setEvaluations(supabaseEvaluations);
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
           if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
           if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
-          if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
-          if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
+          setHostFeedback(supabaseHostFeedback);
+          setHostSupervisors(supabaseHostSupervisors);
         } catch (error) {
           console.error('Error loading data from Supabase:', error);
         } finally {
