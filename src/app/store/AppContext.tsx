@@ -244,11 +244,22 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
   // Strict deduplication: keep only one zone per person/account or coordinate cluster
   const seen = new Map<string, GeofenceZone>();
   for (const z of valid) {
-    const normName = z.name.trim().toLowerCase();
-    const personName = normName.includes(' - ') ? normName.split(' - ')[0].trim() : normName;
-    const key = personName || `${z.lat.toFixed(4)},${z.lng.toFixed(4)}`;
+    const rawPerson = z.name.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name.trim();
+    const normPerson = rawPerson
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1)
+      .sort()
+      .join(' ');
+    const key = normPerson || `${z.lat.toFixed(3)},${z.lng.toFixed(3)}`;
     if (!seen.has(key)) {
       seen.set(key, z);
+    } else {
+      const existing = seen.get(key)!;
+      if ((!existing.address || existing.address.length < 5) && z.address) {
+        seen.set(key, z);
+      }
     }
   }
   return Array.from(seen.values());

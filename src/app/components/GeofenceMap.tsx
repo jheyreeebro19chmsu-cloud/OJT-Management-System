@@ -187,11 +187,6 @@ export function GeofenceMap({
           Click the map to set the zone center
         </div>
       )}
-      {!picking && safeZones.length > 0 && (
-        <div className="absolute right-3 bottom-3 bg-white/95 rounded-xl px-3 py-1.5 text-xs text-gray-700 shadow border border-blue-100">
-          Radius: {safeZones.map((zone) => `${zone.name || 'Zone'} ${Math.round(zone.radius)}m`).join(' | ')}
-        </div>
-      )}
       {safeLiveUser && !picking && (
         <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-2 pointer-events-none">
           <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-sky-100">

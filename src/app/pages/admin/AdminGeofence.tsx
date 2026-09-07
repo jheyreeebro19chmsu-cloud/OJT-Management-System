@@ -51,6 +51,16 @@ export function AdminGeofence() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
+  const normalizeName = (str: string): string => {
+    return (str || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1)
+      .sort()
+      .join(' ');
+  };
+
   const getTraineeForZone = (zone: any): Employee | null => {
     if (!zone) return null;
     if (zone.id?.startsWith('personal-')) {
@@ -61,9 +71,16 @@ export function AdminGeofence() {
     const directEmp = employees.find((e) => e.id === zone.id || e.employeeId === zone.id);
     if (directEmp) return directEmp;
 
-    const matchByName = employees.find((e) =>
-      e.name && (zone.name.includes(e.name) || zone.name.startsWith(e.name))
-    );
+    const personPrefix = zone.name?.includes(' - ') ? zone.name.split(' - ')[0].trim() : zone.name;
+    const normZonePrefix = normalizeName(personPrefix);
+
+    const matchByName = employees.find((e) => {
+      if (!e.name) return false;
+      const normEmp = normalizeName(e.name);
+      if (normEmp === normZonePrefix) return true;
+      if (normEmp && normZonePrefix && (normEmp.includes(normZonePrefix) || normZonePrefix.includes(normEmp))) return true;
+      return false;
+    });
     if (matchByName) return matchByName;
 
     return null;
@@ -78,12 +95,17 @@ export function AdminGeofence() {
       .filter((z) => !z.name.toLowerCase().includes('main training center') && z.id !== 'zone-1')
       .forEach((z) => {
         const account = getTraineeForZone(z);
-        const personKey = account
-          ? `acc-${(account.name || account.email || account.id).toLowerCase().trim()}`
-          : `zone-${z.name.toLowerCase().trim()}`;
+        const normPerson = account ? normalizeName(account.name) : normalizeName(z.name.split(' - ')[0] || z.name);
+        const personKey = normPerson ? `acc-${normPerson}` : `zone-${z.lat.toFixed(3)},${z.lng.toFixed(3)}`;
 
         if (!zoneMap.has(personKey)) {
           zoneMap.set(personKey, { ...z, active: z.active !== false });
+        } else {
+          // If already exists, keep the one that has valid address or personal- ID
+          const existing = zoneMap.get(personKey)!;
+          if ((!existing.address || existing.address === 'Official Workplace GPS') && z.address) {
+            zoneMap.set(personKey, { ...z, active: z.active !== false });
+          }
         }
       });
 
@@ -92,7 +114,8 @@ export function AdminGeofence() {
       const regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
       const regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
-        const personKey = `acc-${(emp.name || emp.email || emp.id).toLowerCase().trim()}`;
+        const normEmp = normalizeName(emp.name);
+        const personKey = `acc-${normEmp}`;
         if (!zoneMap.has(personKey)) {
           const isInst = emp.position === 'OJT Instructor' || (emp.employeeId && emp.employeeId.startsWith('ADM-'));
           const defaultName = isInst ? `${emp.name} - Official Station` : `${emp.name} - ${emp.companyName || 'Assigned Workplace'}`;
