@@ -97,17 +97,20 @@ export function Dashboard() {
       setDashboardError(null);
 
       try {
-        // Get all students assigned to this instructor
-        const { data: students } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('instructor_id', currentUser?.id);
+        // Get all student trainees in the system
+        const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+        let query = supabase.from('employees').select('*').neq('position', 'OJT Instructor').neq('position', 'HTE Representative');
+        if (currentUser?.id && isUuid(currentUser.id)) {
+          query = query.or(`instructor_id.eq.${currentUser.id},instructor_id.is.null`);
+        }
+        const { data: rawStudents } = await query;
+        const students = rawStudents || employees.filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative');
 
         // Calculate metrics
         const totalApplications = students?.length || 0;
-        const approved = students?.filter((s: any) => s.application_status === 'approved').length || 0;
-        const pending = students?.filter((s: any) => s.application_status === 'pending').length || 0;
-        const rejected = students?.filter((s: any) => s.application_status === 'rejected').length || 0;
+        const approved = students?.filter((s: any) => s.application_status === 'approved' || s.approval_status === 'approved' || s.active !== false).length || 0;
+        const pending = students?.filter((s: any) => s.application_status === 'pending' || s.approval_status === 'pending').length || 0;
+        const rejected = students?.filter((s: any) => s.application_status === 'rejected' || s.approval_status === 'rejected').length || 0;
         const completed = students?.filter((s: any) => s.application_status === 'completed').length || 0;
         const cancelled = students?.filter((s: any) => s.application_status === 'cancelled').length || 0;
 

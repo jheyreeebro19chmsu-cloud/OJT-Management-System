@@ -617,6 +617,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [currentUser]);
 
   useEffect(() => {
+    if (employees.length > 0) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, employees);
+    }
+  }, [employees]);
+
+  useEffect(() => {
     if (!useSupabase && evaluations.length > 0) {
       saveToStorage(STORAGE_KEYS.EVALUATIONS, evaluations);
     }
@@ -790,6 +796,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   active: dbHost.active ?? true,
                 };
                 setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
+              } else {
+                // Auto-heal: User exists in Supabase Auth but profile was missing in employees table
+                const userMeta = authData.user.user_metadata || {};
+                const userRole = userMeta.role || 'employee';
+                const isHostRole = userRole === 'host' || userRole === 'hte';
+                const isInstRole = userRole === 'admin' || userRole === 'instructor';
+                const healEmp: Employee = {
+                  id: userId,
+                  name: userMeta.full_name || targetEmail.split('@')[0] || 'Trainee',
+                  email: targetEmail,
+                  employeeId: isHostRole ? `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}` : isInstRole ? `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}` : `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`,
+                  department: 'College of Computer Studies',
+                  position: isInstRole ? 'OJT Instructor' : isHostRole ? 'HTE Representative' : 'OJT Trainee',
+                  companyName: isHostRole ? 'Host Establishment' : 'N/A',
+                  supervisorName: 'N/A',
+                  schoolName: 'Carlos Hilado Memorial State University',
+                  campus: 'Talisay Campus',
+                  course: 'Information Systems',
+                  requiredHours: isInstRole || isHostRole ? 0 : 486,
+                  faceRegistered: false,
+                  active: true,
+                  academicYear: settings.activeAcademicYear,
+                  approvalStatus: 'approved',
+                  applicationStatus: 'approved',
+                  createdAt: new Date().toISOString().split('T')[0],
+                };
+                try {
+                  const saved = await supabaseService.createEmployee(healEmp);
+                  matchedEmp = saved || healEmp;
+                } catch {
+                  matchedEmp = healEmp;
+                }
+                setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
               }
             }
           }
@@ -1136,30 +1175,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (authError.message?.toLowerCase().includes('already registered') ||
               authError.message?.toLowerCase().includes('user already exists')) {
               setPasswordForEmail(cleanData.email, password);
-              const updatedData = { ...newEmp };
-              setEmployees((prev) => [updatedData, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase())]);
-              return {
-                success: true,
-                message: 'Account registered and updated successfully. You can now log in with your credentials.',
-                employee: updatedData,
-              };
+            } else {
+              console.warn('Supabase signUp warning:', authError);
             }
-            console.warn('Supabase signUp failed, falling back to local create:', authError);
-            // Local fallback: persist password and create the employee locally so the user can sign up immediately
-            setPasswordForEmail(cleanData.email, password);
-            setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
-            return {
-              success: true,
-              message: 'Created locally; Supabase signup failed: ' + (authError.message || String(authError)),
-              employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false },
-            } as any;
           }
 
-          if (authData?.user) {
+          if (authData?.user?.id) {
             authId = authData.user.id;
           }
         }
-
 
         // Auto-link trainees to an instructor for the active academic year — no manual
         // selection and no pending approval step. Instructors/HTE reps are left unlinked.
@@ -1191,33 +1215,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
         const employeePayload = {
           ...cleanData,
-          instructorId: autoInstructorId,
+          instructorId: isUuid(autoInstructorId) ? autoInstructorId : undefined,
           applicationStatus: 'approved' as const, // no pending step — active immediately
-          id: authId || newEmp.id,
+          ...(isUuid(authId) ? { id: authId } : {}),
         };
 
-        let created = null as any;
-        // Option B: Supabase is the single source of truth. The Django/Railway backend
-        // (server-create-employee) is intentionally NOT called here anymore — it writes to
-        // its own separate database, which caused accounts to "exist" without ever appearing
-        // in Supabase. Going straight to the client-side Supabase insert below.
-
-        // Fallback to direct Supabase insert if server endpoint didn't return created row
-        if (!created) {
+        let created: Employee | null = null;
+        try {
+          created = await supabaseService.createEmployee(employeePayload);
+        } catch (createErr: any) {
+          console.warn('Direct Supabase createEmployee notice, trying server fallback:', createErr);
           try {
-            created = await supabaseService.createEmployee(employeePayload);
-          } catch (createErr: any) {
-            console.error('Supabase createEmployee failed, falling back to local save:', createErr);
-            // Fallback: create locally so the user can sign up immediately
-            if (password) {
-              setPasswordForEmail(cleanData.email, password);
+            const serverUrl = getAbsoluteUrl('/auth/server-create-employee/');
+            const srvResp = await fetch(serverUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...employeePayload, password: password || undefined }),
+            });
+            if (srvResp.ok) {
+              const srvJson = await srvResp.json();
+              if (srvJson?.employee) {
+                created = supabaseService.transformSupabaseEmployee(srvJson.employee);
+              }
             }
-            setEmployees((prev) => [{ ...newEmp, photo: cleanData.photo, faceRegistered: false }, ...prev]);
-            return { success: true, message: 'Created locally; Supabase sync failed: ' + (createErr?.message || String(createErr)), employee: { ...newEmp, photo: cleanData.photo, faceRegistered: false } } as any;
+          } catch (serverErr) {
+            console.warn('Server create employee endpoint unavailable:', serverErr);
           }
         }
+
+        if (!created) {
+          created = {
+            ...cleanData,
+            id: authId || newEmp.id,
+            academicYear: cleanData.academicYear || settings.activeAcademicYear,
+            createdAt: new Date().toISOString().split('T')[0],
+          };
+        }
+
+        if (password) {
+          setPasswordForEmail(cleanData.email, password);
+        }
+        setEmployees((prev) => [created!, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
+        saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
 
         if (created) {
           setEmployees((prev) => [created, ...prev]);

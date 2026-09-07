@@ -509,62 +509,69 @@ export default function RegisterScreen({
         throw authError;
       }
 
-      const userId = authData?.user?.id || `emp-${Date.now()}`;
+      const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+      const validUserId = isUuid(authData?.user?.id) ? authData?.user?.id : undefined;
 
-      // 2. Build Profile Data Partitioned by Academic Year
+      // 2. Build Profile Data Partitioned by Academic Year with valid schema columns
       const profileData: any = {
-        id: userId,
         name: fullName,
-        first_name: form.firstName.trim(),
-        last_name: form.lastName.trim(),
-        middle_initial: form.middleInitial.trim() || undefined,
         email: form.email.trim().toLowerCase(),
-        phone: form.phone.trim() || undefined,
         academic_year: activeAcademicYear,
         active: true,
         approval_status: 'approved',
         application_status: 'approved',
-        location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined,
-        registration_location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined,
-        registration_address: form.address,
-        company_address: form.companyAddress || form.address,
-        photo: form.photo || undefined,
+        registration_lat: location.lat || null,
+        registration_lng: location.lng || null,
+        registration_address: form.address || form.companyAddress || null,
+        photo: form.photo || null,
         face_registered: Boolean(form.photo),
       };
 
+      if (validUserId) {
+        profileData.id = validUserId;
+      }
+
       if (role === 'trainee') {
         profileData.position = 'OJT Trainee';
-        profileData.department = form.department;
-        profileData.course = form.course;
-        profileData.campus = form.campus;
-        profileData.school_name = form.schoolName;
-        profileData.year_level = form.yearLevel;
-        profileData.section = form.section || undefined;
-        profileData.company_name = form.companyName;
-        profileData.instructor_email = form.instructorEmail || undefined;
-        profileData.supervisor_name = form.supervisorName || undefined;
-        profileData.supervisor_phone = form.supervisorPhone || undefined;
+        profileData.department = form.department || 'College of Computer Studies';
+        profileData.course = form.course || 'Information Systems';
+        profileData.campus = form.campus || 'Talisay Campus';
+        profileData.school_name = form.schoolName || 'Carlos Hilado Memorial State University';
+        profileData.company_name = form.companyName || 'N/A';
+        profileData.supervisor_name = form.supervisorName || 'N/A';
         profileData.required_hours = parseInt(form.requiredHours, 10) || 486;
         profileData.start_date = form.startDate || new Date().toISOString().split('T')[0];
-        profileData.end_date = form.endDate || undefined;
+        profileData.end_date = form.endDate || new Date().toISOString().split('T')[0];
         profileData.employee_id = form.employeeId || `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
       } else if (role === 'admin') {
         profileData.position = 'OJT Instructor';
-        profileData.department = form.department;
-        profileData.campus = form.campus;
-        profileData.school_name = form.schoolName;
+        profileData.department = form.department || 'College of Computer Studies';
+        profileData.campus = form.campus || 'Talisay Campus';
+        profileData.school_name = form.schoolName || 'Carlos Hilado Memorial State University';
+        profileData.company_name = 'CHMSU';
+        profileData.supervisor_name = fullName;
+        profileData.course = 'N/A';
+        profileData.start_date = new Date().toISOString().split('T')[0];
+        profileData.end_date = new Date().toISOString().split('T')[0];
+        profileData.required_hours = 0;
         profileData.employee_id = form.employeeId || `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
       } else if (role === 'hte') {
         profileData.position = 'Training Supervisor';
-        profileData.company_name = form.companyName;
-        profileData.department = form.department;
+        profileData.company_name = form.companyName || 'HTE Partner';
+        profileData.department = form.department || 'Corporate';
+        profileData.supervisor_name = fullName;
+        profileData.school_name = 'N/A';
+        profileData.course = 'N/A';
+        profileData.start_date = new Date().toISOString().split('T')[0];
+        profileData.end_date = new Date().toISOString().split('T')[0];
+        profileData.required_hours = 0;
         profileData.employee_id = form.employeeId || `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
       }
 
       // Upsert into employees table
-      const { error: profileError } = await supabase.from('employees').upsert(profileData);
+      const { error: profileError } = await supabase.from('employees').upsert([profileData], { onConflict: 'email' });
       if (profileError) {
-        console.warn('Employees upsert warning:', profileError);
+        console.warn('Employees upsert warning on mobile:', profileError);
       }
 
       // If HTE supervisor, also sync to host_supervisors table
