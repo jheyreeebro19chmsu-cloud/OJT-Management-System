@@ -126,12 +126,17 @@ export function AdminGeofence() {
         const normEmp = normalizeName(emp.name);
         const personKey = `acc-${normEmp}`;
         if (!zoneMap.has(personKey)) {
-          const isInst = emp.position === 'OJT Instructor' || (emp.employeeId && emp.employeeId.startsWith('ADM-'));
+          const isInst = Boolean(
+            emp.position === 'OJT Instructor' ||
+            (emp.position && emp.position.toLowerCase().includes('instructor')) ||
+            (emp.employeeId && (emp.employeeId.startsWith('ADM-') || emp.employeeId.startsWith('INSTR-'))) ||
+            (emp.id && (emp.id.toLowerCase().startsWith('adm') || emp.id.toLowerCase().startsWith('instr')))
+          );
           const defaultName = isInst ? `${emp.name} - Official Station` : `${emp.name} - ${emp.companyName || 'Assigned Workplace'}`;
           zoneMap.set(personKey, {
             id: `personal-${emp.id}`,
             name: defaultName,
-            address: emp.registrationAddress || emp.companyAddress || 'Official Workplace GPS',
+            address: emp.registrationAddress || emp.companyAddress || 'Official Campus Station GPS',
             lat: Number(regLat),
             lng: Number(regLng),
             radius: 100,
@@ -147,19 +152,39 @@ export function AdminGeofence() {
 
   const isInstructorZone = (zone: any): boolean => {
     const acc = getTraineeForZone(zone);
+    const normPos = acc?.position?.toLowerCase() || '';
+    const empId = acc?.employeeId?.toLowerCase() || '';
+    const accId = (acc?.id || '').toLowerCase();
+    const zoneName = (zone?.name || '').toLowerCase();
+    const zoneId = (zone?.id || '').toLowerCase();
     return Boolean(
-      acc?.position === 'OJT Instructor' ||
-      (acc?.employeeId && acc.employeeId.startsWith('ADM-')) ||
-      (acc?.id && acc.id.startsWith('adm')) ||
-      zone.name?.toLowerCase().includes('instructor')
+      normPos.includes('instructor') ||
+      normPos.includes('faculty') ||
+      normPos.includes('admin') ||
+      empId.startsWith('adm-') ||
+      empId.startsWith('instr-') ||
+      accId.startsWith('adm') ||
+      accId.startsWith('instr') ||
+      zoneName.includes('instructor') ||
+      zoneName.includes('official station') ||
+      zoneName.includes('faculty') ||
+      zoneId.includes('instructor') ||
+      zoneId.includes('faculty')
     );
   };
 
   const isHTEZone = (zone: any): boolean => {
     const acc = getTraineeForZone(zone);
+    const normPos = acc?.position?.toLowerCase() || '';
+    const empId = acc?.employeeId?.toLowerCase() || '';
+    const zoneName = (zone?.name || '').toLowerCase();
     return Boolean(
-      acc?.position === 'HTE Representative' ||
-      (acc?.employeeId && acc.employeeId.startsWith('HTE-'))
+      normPos.includes('hte') ||
+      normPos.includes('host training') ||
+      empId.startsWith('hte-') ||
+      (acc?.id && acc.id.toLowerCase().startsWith('hte')) ||
+      zoneName.includes('hte') ||
+      zoneName.includes('host training')
     );
   };
 
@@ -610,7 +635,7 @@ export function AdminGeofence() {
 
                             {isInstructor ? (
                               <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1 border border-purple-200">
-                                <ShieldCheck size={10} /> OJT Instructor Workplace
+                                <ShieldCheck size={10} /> OJT Instructor Station
                               </span>
                             ) : isHTE ? (
                               <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1 border border-amber-200">
@@ -708,12 +733,23 @@ export function AdminGeofence() {
                         </button>
 
                         {openMenuId === zone.id && (
-                          <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 w-52 min-w-max">
+                          <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 w-56 min-w-max">
                             <div className="px-4 py-2 border-b border-gray-50 mb-1">
                               <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Zone Classification</p>
-                              <p className="text-xs font-semibold text-gray-700 truncate">
-                                {isInstructor ? `${account?.name} (OJT Instructor)` : isHTE ? `${account?.name} (HTE Supervisor)` : isTrainee ? (account?.name || 'Trainee Workplace') : 'Campus Institutional'}
+                              <p className="text-xs font-bold text-gray-800 truncate">
+                                {isInstructor
+                                  ? 'OJT Instructor Station'
+                                  : isHTE
+                                  ? 'HTE Partner Workplace'
+                                  : isTrainee
+                                  ? 'Trainee OJT Workplace'
+                                  : 'Campus Institutional Zone'}
                               </p>
+                              {account?.name && (
+                                <p className="text-[11px] text-gray-500 font-medium truncate mt-0.5">
+                                  {account.name}
+                                </p>
+                              )}
                             </div>
 
                             <button
