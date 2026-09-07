@@ -877,6 +877,7 @@ export function AdminEmployees() {
                               ]
                             : [
                                 { label: 'Email', val: selectedEmp.email },
+                                { label: 'Contact Phone', val: selectedEmp.contactPhone || selectedEmp.phone || 'Not specified' },
                                 { label: 'Department', val: selectedEmp.department },
                                 { label: 'Company', val: selectedEmp.companyName },
                                 { label: 'Supervisor', val: selectedEmp.supervisorName },

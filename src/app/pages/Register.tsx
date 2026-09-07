@@ -877,6 +877,11 @@ export function Register() {
       if (step === 0) {
         if (!hasName) errors.push('Please enter your First Name and Last Name');
         if (!hasEmail) errors.push('Please enter your Email Address');
+        if (!form.contactPhone?.trim()) {
+          errors.push('Please enter your Philippine contact number (+639...)');
+        } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
+          errors.push('Please enter a valid Philippine mobile number (e.g. +639123456789)');
+        }
         if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
       if (step === 1) {
@@ -894,6 +899,11 @@ export function Register() {
       }
       if (step === 1) {
         if (!hasEmail) errors.push('Please enter your contact email');
+        if (!form.contactPhone?.trim()) {
+          errors.push('Please enter your Philippine contact number (+639...)');
+        } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
+          errors.push('Please enter a valid Philippine mobile number (e.g. +639123456789)');
+        }
       }
     }
 
@@ -1666,6 +1676,47 @@ export function Register() {
                         </div>
                       )}
 
+                      {role === 'trainee' && (
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">
+                            Contact Number (Philippines +639...) *
+                          </label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                              <Phone size={14} />
+                            </div>
+                            <input
+                              type="tel"
+                              value={form.contactPhone}
+                              onChange={(e) => {
+                                let val = e.target.value;
+                                let digits = val.replace(/[^\d+]/g, '');
+                                if (digits.includes('+')) {
+                                  digits = '+' + digits.replace(/\+/g, '');
+                                }
+                                if (digits.startsWith('09')) {
+                                  digits = '+63' + digits.slice(1);
+                                } else if (digits.startsWith('9')) {
+                                  digits = '+63' + digits;
+                                } else if (digits.startsWith('639')) {
+                                  digits = '+' + digits;
+                                }
+                                if (digits.length > 13) {
+                                  digits = digits.slice(0, 13);
+                                }
+                                update('contactPhone', digits);
+                              }}
+                              placeholder="+639123456789"
+                              maxLength={13}
+                              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-mono tracking-wide"
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-1">
+                            Philippine mobile number only (+639..., 13 digits maximum)
+                          </p>
+                        </div>
+                      )}
+
                       {role === 'admin' && (
                         <div className="space-y-3 pt-1 border-t border-gray-100">
                           <div>
@@ -2187,14 +2238,41 @@ export function Register() {
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">
-                          Contact Phone / Mobile *
+                          Contact Phone / Mobile (Philippines +639...) *
                         </label>
-                        <input
-                          value={form.contactPhone}
-                          onChange={(e) => update('contactPhone', e.target.value)}
-                          placeholder="e.g. 09123456789"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                            <Phone size={14} />
+                          </div>
+                          <input
+                            type="tel"
+                            value={form.contactPhone}
+                            onChange={(e) => {
+                              let val = e.target.value;
+                              let digits = val.replace(/[^\d+]/g, '');
+                              if (digits.includes('+')) {
+                                digits = '+' + digits.replace(/\+/g, '');
+                              }
+                              if (digits.startsWith('09')) {
+                                digits = '+63' + digits.slice(1);
+                              } else if (digits.startsWith('9')) {
+                                digits = '+63' + digits;
+                              } else if (digits.startsWith('639')) {
+                                digits = '+' + digits;
+                              }
+                              if (digits.length > 13) {
+                                digits = digits.slice(0, 13);
+                              }
+                              update('contactPhone', digits);
+                            }}
+                            placeholder="+639123456789"
+                            maxLength={13}
+                            className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-mono tracking-wide"
+                          />
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Philippine mobile number only (+639..., 13 digits maximum)
+                        </p>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Position / Title</label>
