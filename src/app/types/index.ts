@@ -116,10 +116,20 @@ export interface HostSupervisor {
   id: string;
   name: string;
   email: string;
+  employeeId?: string;
   companyName: string;
+  companyAddress?: string;
+  contactPerson?: string;
+  phone?: string;
   position: string;
   active: boolean;
+  isApproved?: boolean;
   academicYear?: string;
+  registrationLocation?: { lat: number; lng: number };
+  registrationAddress?: string;
+  photo?: string;
+  faceRegistered?: boolean;
+  createdAt?: string;
 }
 
 export interface HostFeedback {

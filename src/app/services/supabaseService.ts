@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor } from '../types';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
 
@@ -1056,13 +1056,123 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
   }
 }
 
-export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ success: boolean; repairedEmployees: number; repairedRecords: number }> {
-  if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0 };
+// ─── Host Supervisors (HTE Establishment Accounts) ───────────────────────────
+
+export async function fetchHostSupervisors(): Promise<HostSupervisor[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabase.from('host_supervisors').select('*').order('created_at', { ascending: false });
+  if (error) {
+    console.error('Error fetching host_supervisors:', error);
+    return [];
+  }
+  return (data || []).map(transformSupabaseHostSupervisor);
+}
+
+export async function createHostSupervisor(host: HostSupervisor): Promise<HostSupervisor | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const payload: any = {
+    id: host.id,
+    name: host.name,
+    email: host.email?.trim().toLowerCase(),
+    company_name: host.companyName,
+    company_address: host.companyAddress || null,
+    contact_person: host.contactPerson || host.name,
+    phone: host.phone || null,
+    academic_year: host.academicYear || null,
+    is_approved: host.isApproved ?? true,
+  };
+
+  const { data, error } = await supabase.from('host_supervisors').upsert([payload], { onConflict: 'id' }).select().single();
+  if (error) {
+    console.error('Error creating host_supervisor in Supabase:', error);
+    throw new Error(error.message || JSON.stringify(error));
+  }
+  return transformSupabaseHostSupervisor(data);
+}
+
+export async function updateHostSupervisor(id: string, updates: Partial<HostSupervisor>): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+
+  const supabaseUpdates: any = {};
+  if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+  if (updates.email !== undefined) supabaseUpdates.email = updates.email.trim().toLowerCase();
+  if (updates.companyName !== undefined) supabaseUpdates.company_name = updates.companyName;
+  if (updates.companyAddress !== undefined) supabaseUpdates.company_address = updates.companyAddress;
+  if (updates.contactPerson !== undefined) supabaseUpdates.contact_person = updates.contactPerson;
+  if (updates.phone !== undefined) supabaseUpdates.phone = updates.phone;
+  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
+  if (updates.isApproved !== undefined) supabaseUpdates.is_approved = updates.isApproved;
+
+  const { error } = await supabase.from('host_supervisors').update(supabaseUpdates).eq('id', id);
+  if (error) {
+    console.error('Error updating host_supervisor:', error);
+    return false;
+  }
+  return true;
+}
+
+export async function deleteHostSupervisor(id: string): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  const { error } = await supabase.from('host_supervisors').delete().eq('id', id);
+  return !error;
+}
+
+export async function upsertHostSupervisors(hosts: HostSupervisor[]): Promise<boolean> {
+  if (!isSupabaseConfigured() || hosts.length === 0) return false;
+
+  try {
+    const payload = hosts.map((h) => ({
+      id: h.id,
+      name: h.name,
+      email: h.email?.trim().toLowerCase(),
+      company_name: h.companyName,
+      company_address: h.companyAddress || null,
+      contact_person: h.contactPerson || h.name,
+      phone: h.phone || null,
+      academic_year: h.academicYear || null,
+      is_approved: h.isApproved ?? true,
+    }));
+
+    const { error } = await supabase.from('host_supervisors').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.error('Error upserting host_supervisors:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('upsertHostSupervisors exception:', e);
+    return false;
+  }
+}
+
+function transformSupabaseHostSupervisor(data: any): HostSupervisor {
+  return {
+    id: data.id,
+    name: data.name || data.contact_person || 'HTE Supervisor',
+    email: data.email || '',
+    employeeId: data.employee_id || `HTE-${new Date().getFullYear()}-${String(data.id || '').slice(0, 3).toUpperCase()}`,
+    companyName: data.company_name || 'Host Training Establishment',
+    companyAddress: data.company_address || undefined,
+    contactPerson: data.contact_person || data.name || undefined,
+    phone: data.phone || undefined,
+    position: 'HTE Representative',
+    active: true,
+    isApproved: data.is_approved ?? true,
+    academicYear: data.academic_year || undefined,
+    createdAt: data.created_at,
+  };
+}
+
+export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ success: boolean; repairedEmployees: number; repairedRecords: number; migratedHTEs: number }> {
+  if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };
 
   try {
     // 1. Update any employee missing academic_year, legacy administrator position, or mismatched HTE/ADM employee_ids
-    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position, employee_id');
+    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position, employee_id, name, email, company_name, registration_address');
     let repairedEmployees = 0;
+    let migratedHTEs = 0;
     if (!empFetchErr && emps) {
       for (const e of emps) {
         let needsUpdate = false;
@@ -1077,9 +1187,29 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
         }
         const isHTE = e.position === 'HTE Representative' || e.position === 'Training Supervisor' || (e.position && e.position.toLowerCase().includes('hte'));
         const isInstructor = e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'));
-        if (isHTE && (!e.employee_id || e.employee_id.startsWith('OJT-'))) {
-          updates.employee_id = e.employee_id && e.employee_id.startsWith('OJT-') ? e.employee_id.replace(/^OJT-/, 'HTE-') : `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
-          needsUpdate = true;
+        
+        if (isHTE) {
+          // SEPARATE HTE ACCOUNTS INTO host_supervisors TABLE
+          try {
+            await supabase.from('host_supervisors').upsert({
+              id: e.id,
+              name: e.name || 'HTE Representative',
+              email: (e.email || '').trim().toLowerCase(),
+              company_name: e.company_name || 'Host Training Establishment',
+              company_address: e.registration_address || 'Company Workplace',
+              contact_person: e.name,
+              academic_year: e.academic_year || activeAY,
+              is_approved: true,
+            }, { onConflict: 'id' });
+            migratedHTEs++;
+          } catch (mErr) {
+            console.warn('HTE migration error:', mErr);
+          }
+
+          if (!e.employee_id || e.employee_id.startsWith('OJT-')) {
+            updates.employee_id = e.employee_id && e.employee_id.startsWith('OJT-') ? e.employee_id.replace(/^OJT-/, 'HTE-') : `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+            needsUpdate = true;
+          }
         } else if (isInstructor && (!e.employee_id || e.employee_id.startsWith('OJT-'))) {
           updates.employee_id = e.employee_id && e.employee_id.startsWith('OJT-') ? e.employee_id.replace(/^OJT-/, 'ADM-') : `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
           needsUpdate = true;
@@ -1103,9 +1233,9 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
       }
     }
 
-    return { success: true, repairedEmployees, repairedRecords };
+    return { success: true, repairedEmployees, repairedRecords, migratedHTEs };
   } catch (e) {
     console.error('repairDatabaseData error:', e);
-    return { success: false, repairedEmployees: 0, repairedRecords: 0 };
+    return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };
   }
 }

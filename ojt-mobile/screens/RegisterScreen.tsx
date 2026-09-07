@@ -571,6 +571,7 @@ export default function RegisterScreen({
       if (role === 'hte') {
         await supabase.from('host_supervisors').upsert({
           id: userId,
+          employee_id: profileData.employee_id,
           name: fullName,
           email: form.email.trim().toLowerCase(),
           company_name: form.companyName,
@@ -578,6 +579,11 @@ export default function RegisterScreen({
           contact_person: fullName,
           phone: form.phone || undefined,
           academic_year: activeAcademicYear,
+          registration_location: location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined,
+          registration_address: form.address,
+          photo: form.photo || undefined,
+          is_approved: true,
+          active: true,
         });
       }
 

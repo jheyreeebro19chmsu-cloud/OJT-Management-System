@@ -702,6 +702,25 @@ export function Register() {
 
     const newEmp = result.employee!;
 
+    // If HTE Representative, ensure saved into dedicated host_supervisors table in Supabase
+    if (role === 'hte') {
+      try {
+        await supabase.from('host_supervisors').upsert({
+          id: newEmp?.id || empId,
+          name: composedName,
+          email: (form.email || form.username || '').trim().toLowerCase(),
+          company_name: form.companyName || 'Host Training Establishment',
+          company_address: form.companyAddress || computedAddress || 'Company Workplace',
+          contact_person: form.contactPerson || composedName,
+          phone: form.contactPhone || undefined,
+          academic_year: settings.activeAcademicYear,
+          is_approved: true,
+        }, { onConflict: 'id' });
+      } catch (hErr) {
+        console.warn('HTE host_supervisors sync error:', hErr);
+      }
+    }
+
     // Auto-create/sync Trainee's official OJT Workplace Geofence Zone in the system
     if (registrationLocation?.lat && registrationLocation?.lng) {
       try {

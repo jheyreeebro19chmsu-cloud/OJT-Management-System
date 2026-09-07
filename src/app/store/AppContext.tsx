@@ -569,6 +569,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseSubmissions,
             supabaseComments,
             supabaseHostFeedback,
+            supabaseHostSupervisors,
           ] = await Promise.all([
             supabaseService.fetchEmployees(),
             supabaseService.fetchTimeRecords(),
@@ -579,6 +580,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchAnnouncementSubmissions(),
             supabaseService.fetchAnnouncementComments(),
             supabaseService.fetchHostFeedback(),
+            supabaseService.fetchHostSupervisors(),
           ]);
 
           if (!isMounted) return;
@@ -593,6 +595,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
           if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
           if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
+          if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
         } catch (error) {
           console.error('Error loading data from Supabase:', error);
         } finally {
@@ -1205,6 +1208,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setEmployees((prev) => [created, ...prev]);
           if (password) {
             setPasswordForEmail(cleanData.email, password);
+          }
+
+          // If registering an HTE supervisor, also persist to host_supervisors table
+          const isHTE = cleanData.position === 'HTE Representative' || cleanData.position === 'Training Supervisor' || (cleanData.position && cleanData.position.toLowerCase().includes('hte'));
+          if (isHTE) {
+            const hostPayload: HostSupervisor = {
+              id: created.id,
+              employeeId: created.employeeId || cleanData.employeeId,
+              name: created.name,
+              email: created.email,
+              companyName: created.companyName || cleanData.companyName || 'Host Training Establishment',
+              companyAddress: cleanData.companyAddress || cleanData.registrationAddress || '',
+              contactPerson: created.name,
+              phone: created.phone || cleanData.phone || '',
+              academicYear: created.academicYear || cleanData.academicYear || settings.activeAcademicYear,
+              isApproved: true,
+              active: true,
+              registrationLocation: cleanData.registrationLocation,
+              registrationAddress: cleanData.registrationAddress,
+              photo: cleanData.photo || created.photo,
+              createdAt: created.createdAt || new Date().toISOString(),
+            };
+            setHostSupervisors((prev) => [hostPayload, ...prev.filter((h) => h.id !== hostPayload.id && h.email !== hostPayload.email)]);
+            supabaseService.createHostSupervisor(hostPayload).catch((hErr) => {
+              console.debug('HostSupervisor creation notice:', hErr);
+            });
           }
 
           // Auto-create/upsert trainee workplace geofence zone in database and local state
@@ -1979,6 +2008,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 3. Persist to Supabase if configured
     if (useSupabase) {
       await supabaseService.upsertEmployees(updatedEmployees);
+      await supabaseService.upsertHostSupervisors(updatedHosts);
       await supabaseService.repairDatabaseData(ay);
     }
 
@@ -2021,9 +2051,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setEmployees(fixedEmployees);
     saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
 
+    // 3. Ensure host supervisors are also updated
+    const fixedHosts = hostSupervisors.map((h) => ({
+      ...h,
+      academicYear: h.academicYear || activeAY,
+      active: true,
+    }));
+    setHostSupervisors(fixedHosts);
+    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, fixedHosts);
+
     let supabaseResult = { repairedEmployees: 0, repairedRecords: 0 };
     if (useSupabase) {
       await supabaseService.upsertEmployees(fixedEmployees);
+      await supabaseService.upsertHostSupervisors(fixedHosts);
       await supabaseService.upsertTimeRecords(fixedRecords);
       supabaseResult = await supabaseService.repairDatabaseData(activeAY);
     }
