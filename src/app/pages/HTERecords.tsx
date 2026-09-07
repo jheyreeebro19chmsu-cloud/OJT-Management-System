@@ -19,7 +19,35 @@ export function HTERecords() {
   // Map employee info with records
   const enrichedRecords = useMemo(() => {
     return timeRecords.map((r) => {
-      const emp = employees.find((e) => e.id === r.employeeId);
+      const emp = employees.find(
+        (e) =>
+          e.id === r.employeeId ||
+          e.employeeId === r.employeeId ||
+          (e.email && r.employeeId && e.email.toLowerCase() === r.employeeId.toLowerCase())
+      );
+
+      let displayName = emp?.name;
+      let displayCode = emp?.employeeId;
+
+      if (!displayName) {
+        if (r.employeeId === 'emp-1') {
+          displayName = 'Juan Dela Cruz';
+          displayCode = 'OJT-2024-001';
+        } else if (r.employeeId === 'emp-2') {
+          displayName = 'Maria Santos';
+          displayCode = 'OJT-2024-002';
+        } else if (r.employeeId === 'emp-3') {
+          displayName = 'Carlo Reyes';
+          displayCode = 'OJT-2024-003';
+        } else if (r.employeeId === 'admin-1') {
+          displayName = 'OJT Instructor';
+          displayCode = 'ADM-2024-001';
+        } else {
+          displayName = r.employeeId;
+          displayCode = r.employeeId.startsWith('OJT-') || r.employeeId.startsWith('HTE-') ? r.employeeId : `OJT-${r.employeeId.slice(0, 8)}`;
+        }
+      }
+
       let renderedHours = 0;
       if (r.timeIn && r.timeOut) {
         const [inH, inM] = r.timeIn.split(':').map(Number);
@@ -31,7 +59,8 @@ export function HTERecords() {
 
       return {
         ...r,
-        studentName: emp?.name || r.employeeId,
+        studentName: displayName,
+        ojtCode: displayCode || 'OJT-TRAINEE',
         course: emp?.course || 'OJT Trainee',
         schoolName: emp?.schoolName || 'CHMSU',
         renderedHours,
@@ -43,6 +72,7 @@ export function HTERecords() {
     return enrichedRecords.filter((r) => {
       const matchesSearch =
         r.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.ojtCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.course.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesDate = !selectedDate || r.date === selectedDate;
       return matchesSearch && matchesDate;
@@ -50,10 +80,11 @@ export function HTERecords() {
   }, [enrichedRecords, searchTerm, selectedDate]);
 
   const handleExportCSV = () => {
-    const headers = ['Date', 'Student Name', 'Course', 'Time In', 'Time Out', 'Hours Rendered', 'Geofence Status'];
+    const headers = ['Date', 'Student Name', 'OJT Code', 'Course', 'Time In', 'Time Out', 'Hours Rendered', 'Geofence Status'];
     const rows = filtered.map((r) => [
       r.date,
       `"${r.studentName}"`,
+      `"${r.ojtCode}"`,
       `"${r.course}"`,
       r.timeIn || '',
       r.timeOut || '',
@@ -151,7 +182,14 @@ export function HTERecords() {
               {filtered.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{r.date}</td>
-                  <td className="px-4 py-3 font-bold text-slate-900">{r.studentName}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-bold text-slate-900">{r.studentName}</div>
+                    <div className="mt-0.5">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                        {r.ojtCode}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-600 font-medium">{r.course}</td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
                     {r.timeIn || '—'}

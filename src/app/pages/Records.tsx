@@ -28,7 +28,9 @@ const STATUS_COLORS: Record<string, string> = {
 export function Records() {
   const { getCurrentEmployee, getEmployeeRecords } = useApp();
   const employee = getCurrentEmployee();
-  const allRecords = employee ? getEmployeeRecords(employee.id) : [];
+  const currentEmp = employee || getCurrentEmployee();
+  const empLookupId = currentEmp?.id || currentEmp?.employeeId || '';
+  const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
   const [filterMonth, setFilterMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -74,7 +76,7 @@ export function Records() {
           <h2 className="font-bold">Daily Time Records</h2>
         </div>
         <p className="text-blue-200 text-xs mb-4">
-          {employee?.name} • {employee?.employeeId}
+          {currentEmp?.name} • {currentEmp?.employeeId || 'OJT Trainee'}
         </p>
 
         {/* Month summary */}

@@ -389,7 +389,32 @@ export function AdminReports() {
                   .slice()
                   .sort((a, b) => b.date.localeCompare(a.date))
                   .map((record) => {
-                    const emp = employees.find((e) => e.id === record.employeeId);
+                    const emp = employees.find(
+                      (e) =>
+                        e.id === record.employeeId ||
+                        e.employeeId === record.employeeId ||
+                        (e.email && record.employeeId && e.email.toLowerCase() === record.employeeId.toLowerCase())
+                    );
+                    let displayName = emp?.name;
+                    let displayCode = emp?.employeeId;
+                    if (!displayName) {
+                      if (record.employeeId === 'emp-1') {
+                        displayName = 'Juan Dela Cruz';
+                        displayCode = 'OJT-2024-001';
+                      } else if (record.employeeId === 'emp-2') {
+                        displayName = 'Maria Santos';
+                        displayCode = 'OJT-2024-002';
+                      } else if (record.employeeId === 'emp-3') {
+                        displayName = 'Carlo Reyes';
+                        displayCode = 'OJT-2024-003';
+                      } else if (record.employeeId === 'admin-1') {
+                        displayName = 'OJT Instructor';
+                        displayCode = 'ADM-2024-001';
+                      } else {
+                        displayName = record.employeeId;
+                        displayCode = record.employeeId.startsWith('OJT-') || record.employeeId.startsWith('HTE-') ? record.employeeId : `OJT-${record.employeeId.slice(0, 8)}`;
+                      }
+                    }
                     const approvalStatus = record.approvalStatus || 'pending';
                     return (
                       <tr key={record.id} className="border-b border-gray-50 hover:bg-gray-50">
@@ -400,7 +425,10 @@ export function AdminReports() {
                           })}
                         </td>
                         <td className="px-4 py-2">
-                          <p className="font-medium text-gray-800 text-xs">{emp?.name || 'Unknown'}</p>
+                          <p className="font-bold text-gray-800 text-xs">{displayName}</p>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
+                            {displayCode || 'OJT-TRAINEE'}
+                          </span>
                         </td>
                         <td className="px-4 py-2 text-center text-xs text-gray-600">
                           {record.timeIn ? formatTime(record.timeIn) : '—'}

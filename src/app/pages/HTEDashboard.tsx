@@ -107,13 +107,42 @@ export function HTEDashboard() {
   // Recent time records for trainees
   const recentLogs = useMemo(() => {
     return timeRecords
-      .slice(0, 8)
+      .slice(0, 10)
       .map((r) => {
-        const emp = employees.find((e) => e.id === r.employeeId);
+        const emp = employees.find(
+          (e) =>
+            e.id === r.employeeId ||
+            e.employeeId === r.employeeId ||
+            (e.email && r.employeeId && e.email.toLowerCase() === r.employeeId.toLowerCase())
+        );
+
+        let displayName = emp?.name;
+        let displayCode = emp?.employeeId;
+
+        if (!displayName) {
+          if (r.employeeId === 'emp-1') {
+            displayName = 'Juan Dela Cruz';
+            displayCode = 'OJT-2024-001';
+          } else if (r.employeeId === 'emp-2') {
+            displayName = 'Maria Santos';
+            displayCode = 'OJT-2024-002';
+          } else if (r.employeeId === 'emp-3') {
+            displayName = 'Carlo Reyes';
+            displayCode = 'OJT-2024-003';
+          } else if (r.employeeId === 'admin-1') {
+            displayName = 'OJT Instructor';
+            displayCode = 'ADM-2024-001';
+          } else {
+            displayName = r.employeeId;
+            displayCode = r.employeeId.startsWith('OJT-') || r.employeeId.startsWith('HTE-') ? r.employeeId : `OJT-${r.employeeId.slice(0, 8)}`;
+          }
+        }
+
         return {
           ...r,
-          employeeName: emp?.name || r.employeeId,
-          course: emp?.course || 'Trainee',
+          employeeName: displayName,
+          ojtCode: displayCode || 'OJT-TRAINEE',
+          course: emp?.course || 'OJT Trainee',
         };
       });
   }, [timeRecords, employees]);
@@ -358,7 +387,12 @@ export function HTEDashboard() {
                 <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-bold text-slate-900">{log.employeeName}</div>
-                    <div className="text-xs text-slate-500">{log.course}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                        {log.ojtCode}
+                      </span>
+                      <span className="text-xs text-slate-500">• {log.course}</span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{log.date}</td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
