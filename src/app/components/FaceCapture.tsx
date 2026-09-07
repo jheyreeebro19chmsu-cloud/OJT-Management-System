@@ -57,6 +57,22 @@ export function FaceCapture({
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
 
+  const stateRef = useRef<ScanState>(state);
+  const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
+  const mismatchErrorRef = useRef<string | null>(mismatchError);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    qualityReportRef.current = qualityReport;
+  }, [qualityReport]);
+
+  useEffect(() => {
+    mismatchErrorRef.current = mismatchError;
+  }, [mismatchError]);
+
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => {
@@ -75,6 +91,7 @@ export function FaceCapture({
 
   /**
    * Render custom human head-to-neck silhouette with oval face framing
+   * Optimized to avoid canvas buffer resets and eliminate all flickering/flashing
    */
   const drawOverlay = useCallback(() => {
     const canvas = canvasRef.current;
@@ -85,8 +102,10 @@ export function FaceCapture({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      canvas.width = video.videoWidth || 320;
-      canvas.height = video.videoHeight || 420;
+      const targetW = video.videoWidth || 320;
+      const targetH = video.videoHeight || 420;
+      if (canvas.width !== targetW) canvas.width = targetW;
+      if (canvas.height !== targetH) canvas.height = targetH;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -98,6 +117,10 @@ export function FaceCapture({
       const neckWidth = headRadiusX * 0.65;
       const shoulderBottomY = canvas.height;
       const shoulderWidth = canvas.width * 0.85;
+
+      const currentState = stateRef.current;
+      const currentQuality = qualityReportRef.current;
+      const currentMismatch = mismatchErrorRef.current;
 
       // 1. Dark Backdrop Outside Human Silhouette
       ctx.fillStyle = 'rgba(10, 15, 29, 0.65)';
@@ -134,24 +157,24 @@ export function FaceCapture({
 
       // 3. Scanning Laser Line within silhouette
       const lineColor =
-        state === 'success'
+        currentState === 'success'
           ? '#22c55e'
-          : state === 'failed' || mismatchError
+          : currentState === 'failed' || currentMismatch
             ? '#ef4444'
-            : qualityReport && !qualityReport.ok
+            : currentQuality && !currentQuality.ok
               ? '#f59e0b'
               : '#00e5ff';
 
       const scanRange = headRadiusY * 2.2;
-      scanLineRef.current = (scanLineRef.current + 3) % scanRange;
+      scanLineRef.current = (scanLineRef.current + 2.5) % scanRange;
       const currentScanY = cy - headRadiusY + scanLineRef.current;
 
-      const laserGrad = ctx.createLinearGradient(0, currentScanY - 18, 0, currentScanY + 18);
+      const laserGrad = ctx.createLinearGradient(0, currentScanY - 16, 0, currentScanY + 16);
       laserGrad.addColorStop(0, 'transparent');
-      laserGrad.addColorStop(0.5, lineColor + 'bb');
+      laserGrad.addColorStop(0.5, lineColor + 'aa');
       laserGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = laserGrad;
-      ctx.fillRect(0, currentScanY - 18, canvas.width, 36);
+      ctx.fillRect(0, currentScanY - 16, canvas.width, 32);
 
       // Laser thin bright center line
       ctx.strokeStyle = '#ffffff';
@@ -168,7 +191,7 @@ export function FaceCapture({
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 2.5;
       ctx.shadowColor = lineColor;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 8;
 
       // Draw Head Oval Outline
       ctx.beginPath();
@@ -217,7 +240,7 @@ export function FaceCapture({
       ctx.restore();
 
       // 5. Success Glow
-      if (state === 'success') {
+      if (currentState === 'success') {
         ctx.save();
         ctx.beginPath();
         ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
@@ -226,13 +249,13 @@ export function FaceCapture({
         ctx.restore();
       }
 
-      if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
+      if (currentState === 'scanning' || currentState === 'analyzing' || currentState === 'verifying') {
         animFrameRef.current = requestAnimationFrame(drawOverlay);
       }
     } catch {
       // silent overlay catch
     }
-  }, [state, qualityReport, mismatchError]);
+  }, []);
 
   const captureFrame = (): string | undefined => {
     const video = videoRef.current;
@@ -381,7 +404,7 @@ export function FaceCapture({
       setState('no-camera');
       setScanMessage('Camera unavailable. Please allow camera permissions.');
     }
-  }, [mode, stopCamera, onSuccess, registeredImage, mismatchError]);
+  }, [mode, stopCamera, onSuccess, registeredImage]);
 
   useEffect(() => {
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
