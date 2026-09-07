@@ -19,12 +19,13 @@ type ModalMode = 'view' | 'add' | null;
 const BLANK_FORM = {
   name: '',
   email: '',
+  contactPhone: '',
   employeeId: '',
   department: '',
   position: 'OJT Trainee',
   companyName: '',
   supervisorName: '',
-  schoolName: '',
+  schoolName: 'Carlos Hilado Memorial State University',
   campus: '',
   course: '',
   startDate: '',
@@ -1277,6 +1278,7 @@ export function AdminEmployees() {
                       {[
                         { label: 'Full Name', field: 'name', placeholder: 'Juan Dela Cruz' },
                         { label: 'Email', field: 'email', placeholder: 'email@example.com' },
+                        { label: 'Contact Number (Philippines +639...)', field: 'contactPhone', placeholder: '+639123456789' },
                         { label: 'Employee ID', field: 'employeeId', placeholder: 'OJT-2024-XXX (optional)' },
                         { label: 'Company Name', field: 'companyName', placeholder: 'Company Name' },
                         { label: 'Supervisor', field: 'supervisorName', placeholder: 'Mr./Ms. Supervisor' },
@@ -1285,7 +1287,21 @@ export function AdminEmployees() {
                         <label className="text-xs font-semibold text-gray-600 block mb-1">{label}</label>
                         <input
                           value={(form as Record<string, string | number>)[field] as string}
-                          onChange={(e) => upd(field, e.target.value)}
+                          onChange={(e) => {
+                            if (field === 'contactPhone') {
+                              let val = e.target.value.replace(/[^\d+]/g, '');
+                              if (val.startsWith('09')) val = '+639' + val.slice(2);
+                              else if (val.startsWith('9')) val = '+639' + val.slice(1);
+                              else if (val.startsWith('639')) val = '+639' + val.slice(3);
+                              if (!val.startsWith('+639') && val.length > 0) {
+                                if (val.startsWith('+')) val = '+639' + val.slice(1).replace(/^639?/, '');
+                                else val = '+639' + val;
+                              }
+                              upd(field, val.slice(0, 13));
+                            } else {
+                              upd(field, e.target.value);
+                            }
+                          }}
                           placeholder={placeholder}
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
