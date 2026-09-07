@@ -1465,24 +1465,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const newRecord: TimeRecord = { ...recordWithAY, id: `rec-${Date.now()}` };
 
+    // Synchronously place newRecord into local state so UI and subsequent calls have it immediately
+    setTimeRecords((prev) => [newRecord, ...prev.filter((r) => r.id !== newRecord.id)]);
+
     if (useSupabase) {
-      supabaseService.createTimeRecord(recordWithAY).then((created) => {
-        if (created) {
-          setTimeRecords((prev) => [created, ...prev.filter((r) => r.id !== created.id)]);
-        }
-      });
-    } else {
-      setTimeRecords((prev) => [...prev, newRecord]);
+      supabaseService
+        .createTimeRecord(recordWithAY)
+        .then((created) => {
+          if (created) {
+            // Replace temporary local record with database UUID record
+            setTimeRecords((prev) => [created, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)]);
+          }
+        })
+        .catch((err) => {
+          console.warn('[AppContext] Supabase createTimeRecord notice:', err);
+        });
     }
 
     return newRecord;
   };
 
   const updateTimeRecord = (id: string, data: Partial<TimeRecord>) => {
-    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...data } : r)));
+    // Look up existing record to enrich employeeId and date if missing in partial updates
+    const existing = timeRecords.find((r) => r.id === id);
+    const enrichedData = {
+      ...(existing ? { employeeId: existing.employeeId, date: existing.date } : {}),
+      ...data,
+    };
+
+    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...enrichedData } : r)));
 
     if (useSupabase) {
-      supabaseService.updateTimeRecord(id, data);
+      const targetId = existing?.id || id;
+      supabaseService.updateTimeRecord(targetId, enrichedData);
     }
   };
 

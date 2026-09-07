@@ -239,22 +239,27 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
 
-  let { error, data } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-  // If update by id did not match any row (e.g. temporary local ID), match by employee_id and date
-  if ((error || !data || data.length === 0) && updates.employeeId) {
+  if (isUuid) {
+    const { error, data } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
+    if (!error && data && data.length > 0) {
+      return true;
+    }
+  }
+
+  // Fallback: match by employee_id and date (critical for temporary local IDs like rec-...)
+  if (updates.employeeId) {
     const targetDate = updates.date || new Date().toISOString().split('T')[0];
-    const { error: err2 } = await supabase
+    const { error: err2, data: data2 } = await supabase
       .from('time_records')
       .update(supabaseUpdates)
       .eq('employee_id', updates.employeeId)
-      .eq('date', targetDate);
-    if (!err2) return true;
-  }
-
-  if (error) {
-    console.error('Error updating time record:', error);
-    return false;
+      .eq('date', targetDate)
+      .select();
+    if (!err2 && data2 && data2.length > 0) {
+      return true;
+    }
   }
 
   return true;

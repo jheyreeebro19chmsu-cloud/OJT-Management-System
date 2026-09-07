@@ -362,14 +362,14 @@ export function FaceCapture({
         } else {
           // Verify mode: strict biometric matching against enrolled image
           if (registeredImage) {
-            const bio = await strictBiometricVerify(registeredImage, currentFrame, 0.48);
+            const bio = await strictBiometricVerify(registeredImage, currentFrame, 0.55);
             if (bio.matched) {
               setMismatchError(null);
               detectedSuccess = true;
               break;
             } else {
               setMismatchError(`Biometric Mismatch: Face does not match registered profile.`);
-              setScanMessage(`❌ Face mismatch! Distance: ${bio.distance.toFixed(2)} (Must be ≤ 0.48)`);
+              setScanMessage(`❌ Face mismatch! Distance: ${bio.distance.toFixed(2)} (Must be ≤ 0.55)`);
             }
           } else {
             // First time enrollment check
@@ -449,7 +449,7 @@ export function FaceCapture({
     // 2. Strict Biometric Match in Verify Mode
     if (mode === 'verify') {
       if (registeredImage) {
-        const bio = await strictBiometricVerify(registeredImage, img, 0.48);
+        const bio = await strictBiometricVerify(registeredImage, img, 0.55);
         if (!bio.matched) {
           setState('failed');
           setMismatchError(`Face does not match registered biometrics for ${employeeName || 'this student'}.`);

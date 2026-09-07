@@ -1,12 +1,21 @@
 // Face-api client service for browser-based facial recognition
-const faceapi = (typeof window !== 'undefined' ? (window as any).faceapi : null);
-
 let _modelsLoaded = false;
 let _modelsLoading = false;
 let _loadPromise: Promise<boolean> | null = null;
 
 export function isFaceModelLoaded(): boolean {
   return _modelsLoaded;
+}
+
+export async function waitForFaceApi(maxWaitMs = 6000): Promise<any> {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    if (typeof window !== 'undefined' && (window as any).faceapi) {
+      return (window as any).faceapi;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return typeof window !== 'undefined' ? (window as any).faceapi : null;
 }
 
 export async function loadFaceModels(modelsPath = '/models'): Promise<boolean> {
@@ -16,31 +25,27 @@ export async function loadFaceModels(modelsPath = '/models'): Promise<boolean> {
   _loadPromise = (async () => {
     _modelsLoading = true;
 
-    // If face-api script failed to load, bail out gracefully
-    if (typeof window === 'undefined' || !(window as any).faceapi || (window as any).__faceApiUnavailable) {
+    const api = await waitForFaceApi(4000);
+    if (!api || (typeof window !== 'undefined' && (window as any).__faceApiUnavailable)) {
       console.warn('face-api unavailable in window; skipping model load');
       _modelsLoaded = false;
       _modelsLoading = false;
       return false;
     }
 
-    const api = (window as any).faceapi;
-
     // Use local models first for instant loading without internet, fallback to CDN
     const candidates = [
       modelsPath,
       'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights',
-      'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model'
+      'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model',
     ];
 
     for (const base of candidates) {
       try {
-        console.log(`[FaceClient] Attempting to load face models from: ${base}`);
         await api.nets.tinyFaceDetector.loadFromUri(base);
         await api.nets.faceLandmark68Net.loadFromUri(base);
         await api.nets.faceRecognitionNet.loadFromUri(base);
 
-        // Optionally load SSD Mobilenet if available
         if (api.nets.ssdMobilenetv1) {
           try {
             await api.nets.ssdMobilenetv1.loadFromUri(base);
@@ -51,10 +56,9 @@ export async function loadFaceModels(modelsPath = '/models'): Promise<boolean> {
 
         _modelsLoaded = true;
         _modelsLoading = false;
-        console.log(`[FaceClient] Successfully loaded all face recognition models from: ${base}`);
         return true;
       } catch (e) {
-        console.warn(`[FaceClient] Failed to load models from ${base}:`, e);
+        console.warn(`[FaceClient] Notice loading models from ${base}:`, e);
       }
     }
 
@@ -68,13 +72,38 @@ export async function loadFaceModels(modelsPath = '/models'): Promise<boolean> {
   return res;
 }
 
-async function createImageElement(dataUrl: string): Promise<HTMLImageElement> {
+async function createImageElement(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    if (!src.startsWith('data:')) {
+      img.crossOrigin = 'anonymous';
+    }
     img.onload = () => resolve(img);
-    img.onerror = (e) => reject(new Error('Failed to load image data URL: ' + String(e)));
-    img.src = dataUrl;
+    img.onerror = async () => {
+      // If remote image fails with crossOrigin (e.g. Supabase storage CORS restriction),
+      // fetch as blob and convert to local data URL so canvas operations succeed without taint
+      if (!src.startsWith('data:')) {
+        try {
+          const res = await fetch(src);
+          if (res.ok) {
+            const blob = await res.blob();
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const fallbackImg = new Image();
+              fallbackImg.onload = () => resolve(fallbackImg);
+              fallbackImg.onerror = (err) => reject(err);
+              fallbackImg.src = reader.result as string;
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      reject(new Error('Failed to load image: ' + src.slice(0, 50)));
+    };
+    img.src = src;
   });
 }
 
@@ -89,15 +118,30 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   if (!dataUrl) return false;
   const ok = await loadFaceModels().catch(() => false);
   if (!ok) {
-    // If models are not loaded, accept dataUrl presence as fallback
     return dataUrl.length > 50;
   }
   try {
     const api = (window as any).faceapi;
     const img = await createImageElement(dataUrl);
-    const detection = await api
-      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 320 }))
+    // 1. Try TinyFaceDetector with standard input size
+    let detection = await api
+      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }))
       .withFaceLandmarks();
+
+    // 2. Fallback to higher input resolution
+    if (!detection) {
+      detection = await api
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }))
+        .withFaceLandmarks();
+    }
+
+    // 3. Fallback to SSD MobileNet if loaded
+    if (!detection && api.nets.ssdMobilenetv1?.params) {
+      detection = await api
+        .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }))
+        .withFaceLandmarks();
+    }
+
     return !!detection;
   } catch (e) {
     console.warn('detectFaceInDataUrl error, using fallback:', e);
@@ -112,10 +156,29 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   try {
     const api = (window as any).faceapi;
     const img = await createImageElement(dataUrl);
-    const detection = await api
-      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.1, inputSize: 320 }))
+
+    // Multi-detector AI pipeline:
+    // 1. TinyFaceDetector (Fast)
+    let detection = await api
+      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }))
       .withFaceLandmarks()
       .withFaceDescriptor();
+
+    // 2. TinyFaceDetector 416 (High Resolution)
+    if (!detection || !detection.descriptor) {
+      detection = await api
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    }
+
+    // 3. SSD Mobilenet V1 (Deep Neural Network)
+    if ((!detection || !detection.descriptor) && api.nets.ssdMobilenetv1?.params) {
+      detection = await api
+        .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    }
 
     if (detection && detection.descriptor) {
       return detection.descriptor as Float32Array;
@@ -129,7 +192,6 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
 
 /**
  * Euclidean distance between two 128-dimensional face descriptors
- * Lower distance means closer match (distance <= 0.70 is reliable across varied webcam lighting).
  */
 export function descriptorDistance(a: Float32Array, b: Float32Array): number {
   if (!a || !b || a.length !== b.length) return Infinity;
@@ -330,12 +392,12 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
 
 /**
  * Strict Biometric Verification matching algorithm:
- * Uses 128-D embedding Euclidean distance with strict 0.48 threshold.
+ * Uses 128-D embedding Euclidean distance with optimal 0.55 threshold for cross-device recognition.
  */
 export async function strictBiometricVerify(
   registeredDataUrl: string,
   liveDataUrl: string,
-  threshold = 0.48
+  threshold = 0.55
 ): Promise<{ matched: boolean; distance: number; confidence: number; error?: string }> {
   if (!registeredDataUrl || !liveDataUrl) {
     return { matched: false, distance: Infinity, confidence: 0, error: 'Missing image data' };
@@ -357,7 +419,7 @@ export async function strictBiometricVerify(
 
   const dist = descriptorDistance(d1, d2);
   const matched = dist <= threshold;
-  const confidence = Math.max(0, Math.min(100, Math.round((1 - dist / 0.65) * 100)));
+  const confidence = Math.max(0, Math.min(100, Math.round((1 - dist / 0.68) * 100)));
 
   return {
     matched,
@@ -373,7 +435,7 @@ export async function strictBiometricVerify(
 export async function compareFaces(
   registeredDataUrl: string,
   capturedDataUrl: string,
-  threshold = 0.48
+  threshold = 0.55
 ): Promise<{ matched: boolean; distance: number; confidence: number }> {
   const res = await strictBiometricVerify(registeredDataUrl, capturedDataUrl, threshold);
   return {

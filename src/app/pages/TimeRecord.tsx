@@ -166,6 +166,8 @@ export function TimeRecord() {
     } else if (currentRecord) {
       const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
       updateTimeRecord(currentRecord.id, {
+        employeeId: employee.id,
+        date: currentRecord.date || getDTRSessionDate(now),
         timeOut: timeStr,
         timeOutGeofenced: geofencePassed,
         timeOutFaceVerified: true,
