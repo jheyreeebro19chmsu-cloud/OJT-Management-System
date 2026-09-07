@@ -267,11 +267,11 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     const avgLum = totalLum / count;
     result.brightness = Math.round(avgLum);
 
-    if (avgLum < 45) {
+    if (avgLum < 32) {
       result.tooDark = true;
       result.ok = false;
       result.issues.push('Area is too dark. Please move to a brighter location.');
-    } else if (avgLum > 230) {
+    } else if (avgLum > 242) {
       result.tooBright = true;
       result.ok = false;
       result.issues.push('Too much glare / overexposure. Please adjust lighting.');
@@ -296,7 +296,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     const sharpness = edgeSamples > 0 ? laplacianSum / edgeSamples : 30;
     result.sharpness = Math.round(sharpness);
 
-    if (sharpness < 9.5) {
+    if (sharpness < 6.5) {
       result.blurry = true;
       result.ok = false;
       result.issues.push('Camera/face is blurry. Please hold steady and look directly into the camera.');
@@ -306,9 +306,21 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     const ok = await loadFaceModels().catch(() => false);
     if (ok && (window as any).faceapi) {
       const api = (window as any).faceapi;
-      const detection = await api
-        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 320 }))
+      let detection = await api
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }))
         .withFaceLandmarks();
+
+      if (!detection) {
+        detection = await api
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }))
+          .withFaceLandmarks();
+      }
+
+      if (!detection && api.nets.ssdMobilenetv1?.params) {
+        detection = await api
+          .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }))
+          .withFaceLandmarks();
+      }
 
       if (detection) {
         result.faceDetected = true;
@@ -316,65 +328,66 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
         const landmarks = detection.landmarks;
         const positions = landmarks.positions;
 
-        // Centering check
+        // Centering check: reasonable range
         const faceCx = box.x + box.width / 2;
         const faceCy = box.y + box.height / 2;
         const distFromCenter = Math.hypot(faceCx - w / 2, faceCy - h / 2);
-        if (distFromCenter > Math.max(w, h) * 0.38) {
+        if (distFromCenter > Math.max(w, h) * 0.45) {
           result.faceCentered = false;
-          result.ok = false;
           result.issues.push('Please center your face inside the silhouette guide.');
         }
 
         // Cap / Headwear Detection:
-        // Compare upper forehead region (above eyebrows) with face center skin tone
+        // A true cap brim produces an artificial dark horizontal band directly covering the brow.
+        // If 68 landmarks are detected, sample skin tone at nose bridge vs brow line.
         if (positions && positions.length >= 68) {
-          const leftBrowY = positions[19].y;
-          const rightBrowY = positions[24].y;
-          const topBrowY = Math.min(leftBrowY, rightBrowY);
-          const topBoxY = box.y;
-          const foreheadHeight = topBrowY - topBoxY;
+          const noseX = Math.round(positions[30].x);
+          const noseY = Math.round(positions[30].y);
 
-          if (foreheadHeight < box.height * 0.12) {
-            // Brow is pressed against top edge of face box -> indicates cap brim / obstruction
-            result.capDetected = true;
-            result.ok = false;
-            result.issues.push('Cap or hat detected. Please remove headwear.');
+          let noseLum = 120;
+          if (noseX > 0 && noseX < w && noseY > 0 && noseY < h) {
+            const noseIdx = (noseY * w + noseX) * 4;
+            noseLum = 0.299 * data[noseIdx] + 0.587 * data[noseIdx + 1] + 0.114 * data[noseIdx + 2];
           }
 
-          // Glasses / Eye Reflection Occlusion:
-          // Check eye landmarks (36-41 left, 42-47 right)
-          const leftEyeX = positions[36].x;
-          const rightEyeX = positions[45].x;
-          const eyeY = (positions[37].y + positions[44].y) / 2;
-          const noseBridgeY = positions[27].y;
+          // Sample above brows
+          const browMidX = Math.round((positions[19].x + positions[24].x) / 2);
+          const topBrowY = Math.min(positions[19].y, positions[24].y);
+          const aboveBrowY = Math.round(topBrowY - 24);
 
-          // Sample pixels across eye bridge
-          const sampleY = Math.round(Math.min(eyeY, noseBridgeY));
-          const minX = Math.round(leftEyeX);
-          const maxX = Math.round(rightEyeX);
-          let darkFramePixelCount = 0;
-          let specularHighlightCount = 0;
-          let totalEyePixels = 0;
-
-          if (sampleY > 0 && sampleY < h && minX > 0 && maxX < w && maxX > minX) {
-            for (let x = minX; x <= maxX; x += 2) {
-              const idx = (sampleY * w + x) * 4;
-              const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-              if (lum < 35) darkFramePixelCount++;
-              if (lum > 240) specularHighlightCount++;
-              totalEyePixels++;
-            }
-          }
-
-          if (totalEyePixels > 10) {
-            const frameRatio = darkFramePixelCount / totalEyePixels;
-            const glareRatio = specularHighlightCount / totalEyePixels;
-            if (frameRatio > 0.40 || glareRatio > 0.35) {
-              result.glassesDetected = true;
+          if (aboveBrowY > 0 && aboveBrowY < h && browMidX > 0 && browMidX < w) {
+            const aboveIdx = (aboveBrowY * w + browMidX) * 4;
+            const aboveLum = 0.299 * data[aboveIdx] + 0.587 * data[aboveIdx + 1] + 0.114 * data[aboveIdx + 2];
+            // Only flag if there is an unmistakable dark visor/cap brim (< 15 lum) when skin is bright (> 80)
+            if (aboveLum < 15 && noseLum > 80 && topBrowY - box.y < 2) {
+              result.capDetected = true;
               result.ok = false;
-              result.issues.push('Eyeglasses / sunglasses detected. Please remove glasses for facial scan.');
+              result.issues.push('Cap or hat visor detected. Please remove headwear.');
             }
+          }
+
+          // Glasses / Dark Eyewear Detection:
+          // Check for dark sunglasses covering pupils
+          const leftPupilX = Math.round((positions[36].x + positions[39].x) / 2);
+          const leftPupilY = Math.round((positions[37].y + positions[41].y) / 2);
+          const rightPupilX = Math.round((positions[42].x + positions[45].x) / 2);
+          const rightPupilY = Math.round((positions[43].y + positions[47].y) / 2);
+
+          let eyeLums = 0;
+          let eyeSamples = 0;
+          [[leftPupilX, leftPupilY], [rightPupilX, rightPupilY]].forEach(([px, py]) => {
+            if (px > 0 && px < w && py > 0 && py < h) {
+              const idx = (py * w + px) * 4;
+              eyeLums += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+              eyeSamples++;
+            }
+          });
+          const avgEyeLum = eyeSamples > 0 ? eyeLums / eyeSamples : 100;
+          // Only flag if dark sunglasses completely block the pupils
+          if (avgEyeLum < 15 && noseLum > 80) {
+            result.glassesDetected = true;
+            result.ok = false;
+            result.issues.push('Dark sunglasses detected. Please remove sunglasses for facial scan.');
           }
         }
       } else {

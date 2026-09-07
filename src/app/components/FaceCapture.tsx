@@ -330,25 +330,23 @@ export function FaceCapture({
         const quality = await inspectFaceQuality(currentFrame);
         setQualityReport(quality);
 
-        if (!quality.ok) {
-          if (quality.tooDark) {
-            setScanMessage('⚠️ Too dark! Move to a well-lit area.');
-          } else if (quality.tooBright) {
-            setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
-          } else if (quality.capDetected) {
-            setScanMessage('⚠️ Cap / hat detected! Please remove headwear.');
-          } else if (quality.glassesDetected) {
-            setScanMessage('⚠️ Glasses detected! Please remove eyeglasses.');
-          } else if (quality.blurry) {
-            setScanMessage('⚠️ Blurry! Hold still and face the camera directly.');
-          } else if (!quality.faceDetected) {
-            setScanMessage('Align face & shoulders inside the silhouette...');
-          }
+        if (quality.tooDark) {
+          setScanMessage('⚠️ Too dark! Move to a well-lit area.');
+          await new Promise((r) => setTimeout(r, 450));
+          continue;
+        }
+        if (quality.tooBright) {
+          setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
+          await new Promise((r) => setTimeout(r, 450));
+          continue;
+        }
+        if (!quality.faceDetected) {
+          setScanMessage('Align face & shoulders inside the silhouette...');
           await new Promise((r) => setTimeout(r, 450));
           continue;
         }
 
-        // Quality is OK! Face is clear, well-lit, unobstructed
+        // Quality is OK and Face is detected!
         setScanMessage(
           mode === 'verify' ? 'Biometrics detected. Verifying trainee identity...' : 'Encoding biometric facial template...'
         );
@@ -430,20 +428,18 @@ export function FaceCapture({
     const quality = await inspectFaceQuality(img);
     setQualityReport(quality);
 
-    if (!quality.ok) {
+    if (quality.tooDark) {
       setState('scanning');
-      if (quality.tooDark) {
-        setScanMessage('❌ Rejected: Environment is too dark. Please move to a brighter location.');
-      } else if (quality.capDetected) {
-        setScanMessage('❌ Rejected: Cap / hat detected. Please remove headwear.');
-      } else if (quality.glassesDetected) {
-        setScanMessage('❌ Rejected: Glasses detected. Please remove glasses for facial scan.');
-      } else if (quality.blurry) {
-        setScanMessage('❌ Rejected: Face is blurry. Hold camera steady.');
-      } else {
-        setScanMessage('❌ Rejected: ' + quality.issues.join('; '));
-      }
+      setScanMessage('❌ Environment is too dark. Please move to a brighter location.');
       return;
+    }
+    if (!quality.faceDetected) {
+      const hasAnyFace = await detectFaceInDataUrl(img).catch(() => false);
+      if (!hasAnyFace) {
+        setState('scanning');
+        setScanMessage('❌ No face detected. Please position your head inside the silhouette.');
+        return;
+      }
     }
 
     // 2. Strict Biometric Match in Verify Mode
