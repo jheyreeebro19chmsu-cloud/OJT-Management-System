@@ -657,19 +657,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveToStorage(STORAGE_KEYS.HOST_FEEDBACK, hostFeedback);
   }, [hostFeedback]);
 
-  useEffect(() => {
-    saveToStorage(STORAGE_KEYS.PASSWORDS, passwords);
-  }, [passwords]);
-
+  // Passwords are NOT saved to localStorage — only the database stores authentication credentials.
   const setPasswordForEmail = (email: string, password: string) => {
     const norm = normalizeEmail(email);
-    setPasswords((prev) => {
-      const updated = { ...prev, [norm]: password };
-      try {
-        localStorage.setItem(STORAGE_KEYS.PASSWORDS, JSON.stringify(updated));
-      } catch { }
-      return updated;
-    });
+    setPasswords((prev) => ({ ...prev, [norm]: password }));
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
+      localStorage.removeItem('ojt_passwords');
+    } catch { }
   };
 
   const login = async (identifier: string, password: string): Promise<User | null> => {
@@ -871,74 +866,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Step 4: Fallback Verification & Database Account Authentication
-    // (Enables seamless cross-platform sign in even if registered on mobile or using default cohort credentials)
-    const storedPasswords = loadFromStorage<Record<string, string>>(STORAGE_KEYS.PASSWORDS, passwords);
-    const storedPassword = storedPasswords[normalizeEmail(targetEmail)] || passwords[normalizeEmail(targetEmail)];
-
-    if (matchedEmp) {
-      const isInstructor = matchedEmp.position === 'OJT Instructor' || matchedEmp.position === 'Administrator' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
-      const isHTE = matchedEmp.position === 'HTE Representative' || matchedEmp.position === 'Training Supervisor' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
-      const fallbackPassword = isInstructor ? 'admin123' : isHTE ? 'hte123' : 'ojt2024';
-
-      const passwordValid =
-        password === storedPassword ||
-        password === fallbackPassword ||
-        password === 'admin' ||
-        (Boolean(storedPassword) === false && password.length >= 6);
-
-      if (passwordValid && matchedEmp.active !== false) {
-        try {
-          const resp = await authAPI.login(matchedEmp.email, password);
-          if (resp?.data?.tokens) {
-            localStorage.setItem('ojt_jwt_access_token', resp.data.tokens.access);
-            localStorage.setItem('ojt_jwt_refresh_token', resp.data.tokens.refresh);
-          }
-        } catch (e) {
-          // ignore local JWT helper error
+    // Step 4: Backend API & Database Verification
+    if (targetEmail.includes('@')) {
+      try {
+        const resp = await authAPI.login(targetEmail, password);
+        if (resp?.data?.tokens) {
+          localStorage.setItem('ojt_jwt_access_token', resp.data.tokens.access);
+          localStorage.setItem('ojt_jwt_refresh_token', resp.data.tokens.refresh);
         }
 
-        const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
-        const user: User = {
-          id: matchedEmp.id,
-          name: matchedEmp.name,
-          role,
-          employeeId: matchedEmp.id,
-          email: normalizeEmail(matchedEmp.email),
-          photo: matchedEmp.photo,
-          faceRegistered: matchedEmp.faceRegistered,
-        };
-        setCurrentUser(user);
-        setPasswordForEmail(matchedEmp.email, password);
-        return user;
+        if (matchedEmp) {
+          const isInstructor = matchedEmp.position === 'OJT Instructor' || matchedEmp.position === 'Administrator' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
+          const isHTE = matchedEmp.position === 'HTE Representative' || matchedEmp.position === 'Training Supervisor' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
+          const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
+          const user: User = {
+            id: matchedEmp.id,
+            name: matchedEmp.name,
+            role,
+            employeeId: matchedEmp.id,
+            email: normalizeEmail(matchedEmp.email),
+            photo: matchedEmp.photo,
+            faceRegistered: matchedEmp.faceRegistered,
+          };
+          setCurrentUser(user);
+          return user;
+        }
+
+        if (matchedHost) {
+          const user: User = {
+            id: matchedHost.id,
+            name: matchedHost.name,
+            role: 'hte',
+            email: normalizeEmail(matchedHost.email),
+            photo: matchedHost.photo,
+            employeeId: matchedHost.employeeId || matchedHost.id,
+            faceRegistered: false,
+          };
+          setCurrentUser(user);
+          return user;
+        }
+
+        if (resp?.data?.user) {
+          const u = resp.data.user;
+          const user: User = {
+            id: String(u.id),
+            name: u.name || targetEmail.split('@')[0],
+            role: u.role === 'instructor' ? 'admin' : u.role === 'hte' ? 'hte' : 'employee',
+            email: normalizeEmail(u.email || targetEmail),
+            photo: u.avatar || undefined,
+            faceRegistered: Boolean(u.face_registered),
+          };
+          setCurrentUser(user);
+          return user;
+        }
+      } catch (backendAuthErr) {
+        // Backend DB authentication also rejected credentials
       }
     }
 
-    if (matchedHost) {
-      const storedHostPassword = storedPasswords[normalizeEmail(targetEmail)] || passwords[normalizeEmail(targetEmail)];
-      const passwordValid =
-        password === storedHostPassword ||
-        password === 'hte123' ||
-        password === 'admin123' ||
-        (Boolean(storedHostPassword) === false && password.length >= 6);
-
-      if (passwordValid && matchedHost.active !== false) {
-        const user: User = {
-          id: matchedHost.id,
-          name: matchedHost.name,
-          role: 'hte',
-          email: normalizeEmail(matchedHost.email),
-          photo: matchedHost.photo,
-          employeeId: matchedHost.employeeId || matchedHost.id,
-          faceRegistered: false,
-        };
-        setCurrentUser(user);
-        setPasswordForEmail(matchedHost.email, password);
-        return user;
-      }
-    }
-
-    // Default Administrator fallback
+    // Default Administrator fallback (in case offline development mode)
     if (normalizedId === 'admin@ojt.com' && (password === 'admin123' || password === 'admin')) {
       const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin', email: 'admin@ojt.com' };
       setCurrentUser(user);

@@ -101,12 +101,10 @@ export function Login() {
     try {
       const resp = await (await import('../services/authApi')).authAPI.resetPassword(email, newPassword);
       if (resp && resp.data && resp.data.success) {
-        // Optionally store password locally for local mode convenience
-        const stored = localStorage.getItem('ojt_passwords');
-        const map = stored ? JSON.parse(stored) : {};
-        map[email.toLowerCase()] = newPassword;
-        localStorage.setItem('ojt_passwords', JSON.stringify(map));
-        setError('Password updated successfully. Please sign in with your new password.');
+        try {
+          localStorage.removeItem('ojt_passwords');
+        } catch {}
+        setError('Password updated successfully in database. Please sign in with your new password.');
       } else {
         setError('Failed to reset password.');
       }
