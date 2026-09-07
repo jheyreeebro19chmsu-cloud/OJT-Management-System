@@ -17,11 +17,10 @@ import {
   AnnouncementComment,
   RequiredDocument,
   RequiredDocumentSubmission,
-  RequirementStatus,
   HostFeedback,
   HostSupervisor,
 } from '../types';
-import { GEOFENCE_RADIUS_METERS } from '../utils/geo';
+import { GEOFENCE_RADIUS_METERS, getDTRSessionDate } from '../utils/geo';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -1426,7 +1425,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getTodayRecord = (empIdentifier: string): TimeRecord | null => {
     if (!empIdentifier) return null;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getDTRSessionDate(new Date());
 
     // Find associated employee to resolve all possible IDs
     const emp = employees.find(

@@ -1,8 +1,26 @@
-import { CheckCircle, XCircle, Camera, RefreshCw, AlertCircle } from 'lucide-react';
+import {
+  CheckCircle,
+  XCircle,
+  Camera,
+  RefreshCw,
+  AlertCircle,
+  Sun,
+  Eye,
+  ShieldAlert,
+  Sparkles,
+  AlertTriangle,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 
-import { loadFaceModels, detectFaceInDataUrl, computeDescriptorFromDataUrl, descriptorDistance } from '../services/faceClient';
+import {
+  loadFaceModels,
+  detectFaceInDataUrl,
+  computeDescriptorFromDataUrl,
+  strictBiometricVerify,
+  inspectFaceQuality,
+  type FaceQualityReport,
+} from '../services/faceClient';
 import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
 
 type ScanState = 'idle' | 'requesting' | 'scanning' | 'analyzing' | 'verifying' | 'success' | 'failed' | 'no-camera';
@@ -29,20 +47,20 @@ export function FaceCapture({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number>(0);
+  const animFrameRef = useRef<number | null>(null);
   const scanLineRef = useRef<number>(0);
   const [state, setState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
   const [scanMessage, setScanMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
+  const [mismatchError, setMismatchError] = useState<string | null>(null);
 
   const stopCamera = useCallback(() => {
-    console.log('FaceCapture: stopping camera and clearing tracks');
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => {
         t.stop();
-        console.log('FaceCapture: stopped track', t.label);
       });
       streamRef.current = null;
     }
@@ -55,6 +73,9 @@ export function FaceCapture({
     }
   }, []);
 
+  /**
+   * Render custom human head-to-neck silhouette with oval face framing
+   */
   const drawOverlay = useCallback(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -64,84 +85,143 @@ export function FaceCapture({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      canvas.width = video.videoWidth || 300;
-      canvas.height = video.videoHeight || 400;
+      canvas.width = video.videoWidth || 320;
+      canvas.height = video.videoHeight || 420;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-      const fw = canvas.width * 0.55;
-      const fh = fw * 1.3;
-      const fx = cx - fw / 2;
-      const fy = cy - fh / 2;
-      const bLen = 28;
+      const cy = canvas.height * 0.40;
+      const headRadiusX = canvas.width * 0.26;
+      const headRadiusY = headRadiusX * 1.30;
+      const neckTopY = cy + headRadiusY * 0.70;
+      const neckWidth = headRadiusX * 0.65;
+      const shoulderBottomY = canvas.height;
+      const shoulderWidth = canvas.width * 0.85;
 
-      // Dark overlay outside face zone
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      // 1. Dark Backdrop Outside Human Silhouette
+      ctx.fillStyle = 'rgba(10, 15, 29, 0.65)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.clearRect(fx, fy, fw, fh);
 
-      // Oval cutout
+      // 2. Cutout Human Head-to-Neck Silhouette
       ctx.save();
       ctx.beginPath();
-      ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+      // Head Oval
+      ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
+      // Neck & Shoulders
+      ctx.moveTo(cx - neckWidth / 2, neckTopY);
+      ctx.lineTo(cx - neckWidth / 2, neckTopY + 35);
+      ctx.bezierCurveTo(
+        cx - neckWidth / 2 - 20,
+        neckTopY + 55,
+        cx - shoulderWidth / 2 + 30,
+        shoulderBottomY - 20,
+        cx - shoulderWidth / 2,
+        shoulderBottomY
+      );
+      ctx.lineTo(cx + shoulderWidth / 2, shoulderBottomY);
+      ctx.bezierCurveTo(
+        cx + shoulderWidth / 2 - 30,
+        shoulderBottomY - 20,
+        cx + neckWidth / 2 + 20,
+        neckTopY + 55,
+        cx + neckWidth / 2,
+        neckTopY + 35
+      );
+      ctx.lineTo(cx + neckWidth / 2, neckTopY);
       ctx.clip();
-      ctx.clearRect(fx, fy, fw, fh);
-      ctx.restore();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Scanning line
-      const lineColor = state === 'success' ? '#22c55e' : state === 'failed' ? '#ef4444' : '#38bdf8';
-      scanLineRef.current = (scanLineRef.current + 2.5) % fh;
-      const lineY = fy + scanLineRef.current;
+      // 3. Scanning Laser Line within silhouette
+      const lineColor =
+        state === 'success'
+          ? '#22c55e'
+          : state === 'failed' || mismatchError
+            ? '#ef4444'
+            : qualityReport && !qualityReport.ok
+              ? '#f59e0b'
+              : '#00e5ff';
 
-      ctx.save();
+      const scanRange = headRadiusY * 2.2;
+      scanLineRef.current = (scanLineRef.current + 3) % scanRange;
+      const currentScanY = cy - headRadiusY + scanLineRef.current;
+
+      const laserGrad = ctx.createLinearGradient(0, currentScanY - 18, 0, currentScanY + 18);
+      laserGrad.addColorStop(0, 'transparent');
+      laserGrad.addColorStop(0.5, lineColor + 'bb');
+      laserGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = laserGrad;
+      ctx.fillRect(0, currentScanY - 18, canvas.width, 36);
+
+      // Laser thin bright center line
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
-      ctx.clip();
-      const grad = ctx.createLinearGradient(0, lineY - 20, 0, lineY + 20);
-      grad.addColorStop(0, 'transparent');
-      grad.addColorStop(0.5, lineColor + 'aa');
-      grad.addColorStop(1, 'transparent');
-      ctx.fillStyle = grad;
-      ctx.fillRect(fx, lineY - 20, fw, 40);
+      ctx.moveTo(cx - headRadiusX - 10, currentScanY);
+      ctx.lineTo(cx + headRadiusX + 10, currentScanY);
+      ctx.stroke();
+
       ctx.restore();
 
-      // Corner brackets
+      // 4. Glowing Head-to-Neck Silhouette Contour Border
+      ctx.save();
       ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      // TL
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = lineColor;
+      ctx.shadowBlur = 10;
+
+      // Draw Head Oval Outline
       ctx.beginPath();
-      ctx.moveTo(fx, fy + bLen);
-      ctx.lineTo(fx, fy);
-      ctx.lineTo(fx + bLen, fy);
-      ctx.stroke();
-      // TR
-      ctx.beginPath();
-      ctx.moveTo(fx + fw - bLen, fy);
-      ctx.lineTo(fx + fw, fy);
-      ctx.lineTo(fx + fw, fy + bLen);
-      ctx.stroke();
-      // BL
-      ctx.beginPath();
-      ctx.moveTo(fx, fy + fh - bLen);
-      ctx.lineTo(fx, fy + fh);
-      ctx.lineTo(fx + bLen, fy + fh);
-      ctx.stroke();
-      // BR
-      ctx.beginPath();
-      ctx.moveTo(fx + fw - bLen, fy + fh);
-      ctx.lineTo(fx + fw, fy + fh);
-      ctx.lineTo(fx + fw, fy + fh - bLen);
+      ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Success overlay
+      // Draw Neck & Shoulders Outline
+      ctx.beginPath();
+      ctx.moveTo(cx - neckWidth / 2, neckTopY);
+      ctx.lineTo(cx - neckWidth / 2, neckTopY + 35);
+      ctx.bezierCurveTo(
+        cx - neckWidth / 2 - 20,
+        neckTopY + 55,
+        cx - shoulderWidth / 2 + 30,
+        shoulderBottomY - 20,
+        cx - shoulderWidth / 2,
+        shoulderBottomY
+      );
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(cx + neckWidth / 2, neckTopY);
+      ctx.lineTo(cx + neckWidth / 2, neckTopY + 35);
+      ctx.bezierCurveTo(
+        cx + neckWidth / 2 + 20,
+        neckTopY + 55,
+        cx + shoulderWidth / 2 - 30,
+        shoulderBottomY - 20,
+        cx + shoulderWidth / 2,
+        shoulderBottomY
+      );
+      ctx.stroke();
+
+      // Chin alignment notch
+      ctx.beginPath();
+      ctx.moveTo(cx - 15, cy + headRadiusY + 2);
+      ctx.lineTo(cx + 15, cy + headRadiusY + 2);
+      ctx.stroke();
+
+      // Forehead alignment notch
+      ctx.beginPath();
+      ctx.moveTo(cx - 15, cy - headRadiusY - 2);
+      ctx.lineTo(cx + 15, cy - headRadiusY - 2);
+      ctx.stroke();
+
+      ctx.restore();
+
+      // 5. Success Glow
       if (state === 'success') {
         ctx.save();
         ctx.beginPath();
-        ctx.ellipse(cx, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(34,197,94,0.18)';
+        ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.22)';
         ctx.fill();
         ctx.restore();
       }
@@ -149,150 +229,68 @@ export function FaceCapture({
       if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
         animFrameRef.current = requestAnimationFrame(drawOverlay);
       }
-    } catch (err) {
-      // silent overlay update
+    } catch {
+      // silent overlay catch
     }
-  }, [state, mode]);
+  }, [state, qualityReport, mismatchError]);
 
   const captureFrame = (): string | undefined => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !video.videoWidth) return;
     const maxWidth = 640;
     const ratio = Math.min(maxWidth / (video.videoWidth || 640), 1);
     const cap = document.createElement('canvas');
     cap.width = (video.videoWidth || 640) * ratio;
     cap.height = (video.videoHeight || 480) * ratio;
     cap.getContext('2d')?.drawImage(video, 0, 0, cap.width, cap.height);
-    return cap.toDataURL('image/jpeg', 0.88);
+    return cap.toDataURL('image/jpeg', 0.90);
   };
 
   const startScan = useCallback(async () => {
-    // Starting scan
-
-    // Safety: ensure any previous stream is closed first
     stopCamera();
     setState('requesting');
+    setMismatchError(null);
+    setQualityReport(null);
     setScanMessage('Requesting camera access...');
+
     try {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: 'user',
             width: { ideal: 640 },
             height: { ideal: 480 },
+            facingMode: 'user',
           },
-          audio: false,
         });
-      } catch (err) {
-        console.warn('FaceCapture: ideal constraints failed, trying fallback', err);
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
       }
 
-      // Camera stream acquired
       streamRef.current = stream;
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-
-        // Wait for video to be ready
-        await new Promise((resolve, reject) => {
-          if (!videoRef.current) return reject('Video ref lost');
-
-          // If already ready, resolve immediately
-          if (videoRef.current.readyState >= 2) {
-            // Video already ready
-            return resolve(true);
-          }
-
-          videoRef.current.onloadedmetadata = () => {
-            // Metadata loaded
-            resolve(true);
-          };
-          videoRef.current.onerror = (e) => reject(e);
-          // If it takes more than 3 seconds, something is wrong with the stream
-          setTimeout(() => {
-            if (videoRef.current && videoRef.current.readyState >= 2) {
-              console.log('FaceCapture: metadata load timeout - but readyState is OK');
-              resolve(true);
-            } else {
-              console.error('FaceCapture: metadata load timeout - video not ready');
-              reject('Camera initialization timed out. Please check your connection.');
-            }
-          }, 3500);
+        await new Promise<void>((resolve) => {
+          if (!videoRef.current) return resolve();
+          videoRef.current.onloadedmetadata = () => resolve();
+          setTimeout(resolve, 800);
         });
-
-        await videoRef.current.play();
-        console.log('FaceCapture: video playing');
+        await videoRef.current.play().catch(() => {});
       }
 
       setState('scanning');
-      setScanMessage('Position your face inside the frame...');
-      animFrameRef.current = requestAnimationFrame(drawOverlay);
+      setScanMessage('Position your head inside the silhouette guide...');
+      setProgress(15);
 
-      // Pre-load face models in parallel
-      loadFaceModels().catch((err) => console.warn('Background model preload:', err));
+      // Pre-load biometric recognition models in parallel
+      loadFaceModels().catch(() => {});
 
-      // Wait a moment for camera auto-exposure to stabilize
-      await new Promise((r) => setTimeout(r, 800));
-
-      const tryBiometricVerify = async (capturedImg: string): Promise<boolean> => {
-        // 1. Try Backend if configured
-        if (isSecurityApiConfigured() && (employeeId || registeredImage)) {
-          try {
-            const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
-              captured_image: capturedImg,
-            };
-            if (employeeId) payload.employee_id = employeeId;
-            else if (registeredImage) payload.registered_image = registeredImage;
-
-            const response = await verifyFace(payload);
-            if (response.success && response.matched) {
-              return true;
-            }
-          } catch (err) {
-            console.warn('Backend face verify failed, falling back to local biometric compare:', err);
-          }
-        }
-
-        // 2. Client-side Biometric Descriptor Match (if registered image exists)
-        if (registeredImage) {
-          try {
-            const [d1, d2] = await Promise.all([
-              computeDescriptorFromDataUrl(registeredImage),
-              computeDescriptorFromDataUrl(capturedImg),
-            ]);
-            if (d1 && d2) {
-              const dist = descriptorDistance(d1, d2);
-              if (dist <= 0.70) {
-                return true;
-              }
-            }
-          } catch (e) {
-            console.warn('Client biometric distance calculation warning:', e);
-          }
-        }
-
-        // 3. If employee has no prior photo registered yet, verify live human face presence
-        if (!registeredImage) {
-          try {
-            const hasFace = await detectFaceInDataUrl(capturedImg);
-            if (hasFace) return true;
-          } catch {
-            // fallback
-          }
-        }
-
-        return false;
-      };
-
-      // Continuous scanning loop: check every 400ms for up to 15 attempts (6 seconds)
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
-      for (let attempt = 1; attempt <= 15; attempt++) {
+      // Continuous scanning loop: inspect frame every 400ms for up to 25 attempts (~10 seconds)
+      for (let attempt = 1; attempt <= 25; attempt++) {
         if (!streamRef.current || !videoRef.current) break;
 
         const currentFrame = captureFrame();
@@ -303,13 +301,33 @@ export function FaceCapture({
         lastCaptured = currentFrame;
 
         // Visual progress update
-        setProgress(Math.min(20 + attempt * 5, 85));
+        setProgress(Math.min(20 + attempt * 3, 85));
+
+        // 1. Comprehensive Face Quality & Obstruction Inspection
+        const quality = await inspectFaceQuality(currentFrame);
+        setQualityReport(quality);
+
+        if (!quality.ok) {
+          if (quality.tooDark) {
+            setScanMessage('⚠️ Too dark! Move to a well-lit area.');
+          } else if (quality.tooBright) {
+            setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
+          } else if (quality.capDetected) {
+            setScanMessage('⚠️ Cap / hat detected! Please remove headwear.');
+          } else if (quality.glassesDetected) {
+            setScanMessage('⚠️ Glasses detected! Please remove eyeglasses.');
+          } else if (quality.blurry) {
+            setScanMessage('⚠️ Blurry! Hold still and face the camera directly.');
+          } else if (!quality.faceDetected) {
+            setScanMessage('Align face & shoulders inside the silhouette...');
+          }
+          await new Promise((r) => setTimeout(r, 450));
+          continue;
+        }
+
+        // Quality is OK! Face is clear, well-lit, unobstructed
         setScanMessage(
-          attempt < 3
-            ? 'Aligning face with biometric guide...'
-            : mode === 'verify'
-              ? 'Analyzing biometric landmarks...'
-              : 'Encoding face template...'
+          mode === 'verify' ? 'Biometrics detected. Verifying trainee identity...' : 'Encoding biometric facial template...'
         );
 
         if (mode === 'register') {
@@ -319,52 +337,51 @@ export function FaceCapture({
             break;
           }
         } else {
-          // verify mode
-          const verified = await tryBiometricVerify(currentFrame);
-          if (verified) {
+          // Verify mode: strict biometric matching against enrolled image
+          if (registeredImage) {
+            const bio = await strictBiometricVerify(registeredImage, currentFrame, 0.48);
+            if (bio.matched) {
+              setMismatchError(null);
+              detectedSuccess = true;
+              break;
+            } else {
+              setMismatchError(`Biometric Mismatch: Face does not match registered profile.`);
+              setScanMessage(`❌ Face mismatch! Distance: ${bio.distance.toFixed(2)} (Must be ≤ 0.48)`);
+            }
+          } else {
+            // First time enrollment check
             detectedSuccess = true;
             break;
           }
         }
 
-        await new Promise((r) => setTimeout(r, 400));
+        await new Promise((r) => setTimeout(r, 450));
       }
 
       if (detectedSuccess && lastCaptured) {
         setCapturedImage(lastCaptured);
         setProgress(100);
         setState('success');
-        setScanMessage(mode === 'verify' ? 'Identity verified successfully!' : 'Face biometrics registered!');
+        setScanMessage(mode === 'verify' ? '✓ Identity Verified! Timestamp Saved.' : '✓ Face Biometrics Registered!');
         stopCamera();
-        onSuccess(lastCaptured);
+        setTimeout(() => onSuccess(lastCaptured), 800);
         return;
       }
 
-      // If auto-detection timed out, let user use Manual Snap or Retry
+      // If loop ended without match or obstruction resolved
       setProgress(90);
       setState('scanning');
-      setScanMessage('Position face clearly and tap "Take Photo Now"');
-    } catch (err: unknown) {
-      console.warn('FaceCapture error:', err);
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        setState('no-camera');
-        setScanMessage('Camera access denied. Enabling photo fallback...');
-        await delay(1200);
-        setState('success');
-        setScanMessage(mode === 'verify' ? 'Identity verified (Fallback Mode)!' : 'Face registered (Fallback Mode)!');
-        setProgress(100);
-        setTimeout(() => onSuccess(undefined), 1200);
+      if (mismatchError) {
+        setScanMessage('Identity mismatch. Please look straight into camera or tap Take Photo.');
       } else {
-        setState('no-camera');
-        setScanMessage('Camera not available. Using fallback mode.');
-        await delay(1200);
-        setState('success');
-        setScanMessage(mode === 'verify' ? 'Identity verified (Fallback Mode)!' : 'Face registered (Fallback Mode)!');
-        setProgress(100);
-        setTimeout(() => onSuccess(undefined), 1200);
+        setScanMessage('Remove caps/glasses, ensure good lighting, and tap Take Photo.');
       }
+    } catch (err) {
+      console.warn('FaceCapture error:', err);
+      setState('no-camera');
+      setScanMessage('Camera unavailable. Please allow camera permissions.');
     }
-  }, [mode, retryCount, drawOverlay, stopCamera, onSuccess, registeredImage, employeeId]);
+  }, [mode, stopCamera, onSuccess, registeredImage, mismatchError]);
 
   useEffect(() => {
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
@@ -375,20 +392,50 @@ export function FaceCapture({
   const handleManualSnap = useCallback(async () => {
     if (state === 'success') return;
 
-    // Capture the frame FIRST before stopping camera!
     const img = captureFrame();
     if (!img) {
       setState('failed');
-      setScanMessage('Failed to capture camera frame. Please try again.');
+      setScanMessage('Failed to capture frame. Please try again.');
       return;
     }
 
     setState('verifying');
-    setScanMessage(mode === 'verify' ? 'Verifying biometric match...' : 'Registering face template...');
-    setProgress(85);
+    setScanMessage('Checking lighting, obstructions, and biometric match...');
+    setProgress(75);
 
+    // 1. Check Quality & Obstructions
+    const quality = await inspectFaceQuality(img);
+    setQualityReport(quality);
+
+    if (!quality.ok) {
+      setState('scanning');
+      if (quality.tooDark) {
+        setScanMessage('❌ Rejected: Environment is too dark. Please move to a brighter location.');
+      } else if (quality.capDetected) {
+        setScanMessage('❌ Rejected: Cap / hat detected. Please remove headwear.');
+      } else if (quality.glassesDetected) {
+        setScanMessage('❌ Rejected: Glasses detected. Please remove glasses for facial scan.');
+      } else if (quality.blurry) {
+        setScanMessage('❌ Rejected: Face is blurry. Hold camera steady.');
+      } else {
+        setScanMessage('❌ Rejected: ' + quality.issues.join('; '));
+      }
+      return;
+    }
+
+    // 2. Strict Biometric Match in Verify Mode
     if (mode === 'verify') {
-      // 1. Backend verify
+      if (registeredImage) {
+        const bio = await strictBiometricVerify(registeredImage, img, 0.48);
+        if (!bio.matched) {
+          setState('failed');
+          setMismatchError(`Face does not match registered biometrics for ${employeeName || 'this student'}.`);
+          setScanMessage(`❌ Access Denied: Biometrics mismatch (Distance: ${bio.distance.toFixed(2)})`);
+          return;
+        }
+      }
+
+      // Check backend security API if available
       if (isSecurityApiConfigured() && (employeeId || registeredImage)) {
         try {
           const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
@@ -398,79 +445,26 @@ export function FaceCapture({
           else if (registeredImage) payload.registered_image = registeredImage;
 
           const response = await verifyFace(payload);
-          if (response.success && response.matched) {
-            stopCamera();
-            setCapturedImage(img);
-            setProgress(100);
-            setState('success');
-            setScanMessage('Identity verified successfully!');
-            setTimeout(() => onSuccess(img), 800);
+          if (!response.matched) {
+            setState('failed');
+            setMismatchError('Server facial recognition rejected verification.');
+            setScanMessage('❌ Server verification: Identity mismatch.');
             return;
           }
-        } catch (err) {
-          console.warn('Manual snap backend error, falling back:', err);
+        } catch {
+          // fallback to client-verified descriptor
         }
       }
-
-      // 2. Client-side Biometric Descriptor Match
-      if (registeredImage) {
-        try {
-          const [d1, d2] = await Promise.all([
-            computeDescriptorFromDataUrl(registeredImage),
-            computeDescriptorFromDataUrl(img),
-          ]);
-          if (d1 && d2) {
-            const dist = descriptorDistance(d1, d2);
-            if (dist <= 0.70) {
-              stopCamera();
-              setCapturedImage(img);
-              setProgress(100);
-              setState('success');
-              setScanMessage('Identity verified successfully!');
-              setTimeout(() => onSuccess(img), 800);
-              return;
-            }
-          }
-        } catch (e) {
-          console.warn('Manual snap biometric distance warning:', e);
-        }
-      }
-
-      // 3. Fallback: Human face presence detected or first-time enrollment
-      const hasFace = await detectFaceInDataUrl(img).catch(() => true);
-      if (hasFace || !registeredImage) {
-        stopCamera();
-        setCapturedImage(img);
-        setProgress(100);
-        setState('success');
-        setScanMessage('Face verified successfully.');
-        setTimeout(() => onSuccess(img), 800);
-        return;
-      }
-
-      stopCamera();
-      setState('failed');
-      setScanMessage('Face not recognized. Please face the camera directly with good lighting.');
-      return;
     }
 
-    // Register mode
-    const hasFace = await detectFaceInDataUrl(img).catch(() => true);
-    if (!hasFace) {
-      stopCamera();
-      setProgress(100);
-      setState('failed');
-      setScanMessage('No face detected. Please ensure good lighting and try again.');
-      return;
-    }
-
+    // Success!
     stopCamera();
     setCapturedImage(img);
     setProgress(100);
     setState('success');
-    setScanMessage('Face registered successfully!');
+    setScanMessage(mode === 'verify' ? '✓ Identity Verified! Timestamp Saved.' : '✓ Face Registered Successfully!');
     setTimeout(() => onSuccess(img), 800);
-  }, [state, mode, employeeId, registeredImage, stopCamera, onSuccess]);
+  }, [state, mode, employeeId, registeredImage, employeeName, stopCamera, onSuccess]);
 
   useEffect(() => {
     if (autoStart) {
@@ -479,23 +473,67 @@ export function FaceCapture({
     return () => {
       stopCamera();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [autoStart, startScan, stopCamera]);
 
   const handleRetry = () => {
     setRetryCount((p) => p + 1);
     setProgress(0);
     setCapturedImage(null);
+    setMismatchError(null);
     startScan();
   };
 
-  const stateColor = state === 'success' ? 'text-green-500' : state === 'failed' ? 'text-red-500' : 'text-sky-400';
+  const stateColor =
+    state === 'success'
+      ? 'text-emerald-500'
+      : state === 'failed' || mismatchError
+        ? 'text-red-500'
+        : qualityReport && !qualityReport.ok
+          ? 'text-amber-500'
+          : 'text-sky-400';
+
   const isScanning = state === 'scanning' || state === 'analyzing' || state === 'verifying' || state === 'requesting';
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full">
+    <div className="flex flex-col items-center gap-3.5 w-full">
+      {/* Real-time Environment & Obstruction Badges */}
+      <div className="flex items-center justify-center gap-2 flex-wrap w-full max-w-[340px] text-[10px] font-bold">
+        <div
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
+            qualityReport?.tooDark
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+        >
+          <Sun size={11} />
+          <span>{qualityReport?.tooDark ? 'Too Dark' : 'Lighting OK'}</span>
+        </div>
+
+        <div
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
+            qualityReport?.capDetected
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+        >
+          <Sparkles size={11} />
+          <span>{qualityReport?.capDetected ? 'Cap Detected' : 'No Cap'}</span>
+        </div>
+
+        <div
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
+            qualityReport?.glassesDetected
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+        >
+          <Eye size={11} />
+          <span>{qualityReport?.glassesDetected ? 'Glasses Detected' : 'No Glasses'}</span>
+        </div>
+      </div>
+
       {/* Camera viewport */}
-      <div className="relative w-full max-w-[320px] aspect-[3/4] rounded-2xl overflow-hidden bg-gray-900 shadow-2xl border border-white/10">
+      <div className="relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800">
         <video
           ref={videoRef}
           autoPlay
@@ -506,112 +544,138 @@ export function FaceCapture({
         />
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ transform: 'scaleX(-1)' }} />
 
+        {/* Silhouette overlay instruction note */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
+          👤 Center Head to Neck in Silhouette
+        </div>
+
         {/* Idle / No Camera State */}
         {(state === 'idle' || state === 'no-camera' || state === 'requesting') && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900">
-            <Camera size={48} className="text-gray-600 mb-3" />
-            <p className="text-gray-400 text-sm text-center px-4">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-4 z-30">
+            <Camera size={44} className="text-slate-600 mb-2.5 animate-pulse" />
+            <p className="text-slate-300 text-xs font-semibold text-center">
               {state === 'no-camera'
-                ? 'Camera unavailable'
+                ? 'Camera access denied or unavailable'
                 : state === 'requesting'
-                  ? 'Initializing camera...'
-                  : 'Camera ready'}
+                  ? 'Initializing biometric scanner...'
+                  : 'Scanner ready'}
             </p>
             {state === 'requesting' && (
               <button
                 onClick={() => {
                   stopCamera();
-                  setTimeout(startScan, 500);
+                  setTimeout(startScan, 400);
                 }}
-                className="mt-4 text-xs bg-white/20 text-white px-3 py-1.5 rounded-lg hover:bg-white/30"
+                className="mt-3 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-xl hover:bg-blue-700"
               >
-                Reset Camera
+                Retry Camera
               </button>
             )}
           </div>
         )}
 
-        {/* Success overlay */}
+        {/* Success animation overlay */}
         <AnimatePresence>
           {state === 'success' && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="absolute inset-0 flex flex-col items-center justify-center bg-black/40"
+              className="absolute inset-0 flex flex-col items-center justify-center bg-emerald-950/70 backdrop-blur-sm z-30"
             >
-              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300 }}>
-                <CheckCircle size={64} className="text-green-400 drop-shadow-lg" />
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 350 }}>
+                <CheckCircle size={68} className="text-emerald-400 drop-shadow-lg" />
               </motion.div>
+              <p className="text-white text-sm font-bold mt-2">Biometrics Verified</p>
             </motion.div>
           )}
           {state === 'failed' && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="absolute inset-0 flex flex-col items-center justify-center bg-black/40"
+              className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/70 backdrop-blur-sm z-30 p-4 text-center"
             >
               <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                <XCircle size={64} className="text-red-400 drop-shadow-lg" />
+                <XCircle size={68} className="text-red-400 drop-shadow-lg" />
               </motion.div>
+              <p className="text-white text-xs font-bold mt-2">{mismatchError || 'Facial verification rejected'}</p>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Mode badge */}
-        <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1.5">
-          <div className={`w-2 h-2 rounded-full ${isScanning ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`} />
-          <span className="text-white text-xs font-medium">{mode === 'register' ? 'REGISTER' : 'VERIFY'}</span>
+        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md rounded-full px-3 py-1 flex items-center gap-1.5 border border-white/10 z-20">
+          <div className={`w-2 h-2 rounded-full ${isScanning ? 'bg-cyan-400 animate-pulse' : 'bg-gray-400'}`} />
+          <span className="text-white text-[10px] font-extrabold tracking-wider">
+            {mode === 'register' ? 'ENROLL FACE' : 'BIOMETRIC VERIFY'}
+          </span>
         </div>
 
         {/* Employee name badge */}
         {employeeName && (
-          <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1">
-            <span className="text-white text-xs">{employeeName}</span>
+          <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md rounded-full px-3 py-1 border border-white/10 z-20">
+            <span className="text-white text-[10px] font-semibold truncate max-w-[120px] block">{employeeName}</span>
           </div>
         )}
       </div>
 
       {/* Progress bar */}
       {progress > 0 && (
-        <div className="w-full max-w-[320px]">
-          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-full max-w-[340px]">
+          <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
             <motion.div
-              className={`h-full rounded-full ${state === 'success' ? 'bg-green-500' : state === 'failed' ? 'bg-red-500' : 'bg-sky-500'}`}
+              className={`h-full rounded-full ${
+                state === 'success'
+                  ? 'bg-emerald-500'
+                  : state === 'failed' || mismatchError
+                    ? 'bg-red-500'
+                    : 'bg-cyan-500'
+              }`}
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: 0.3 }}
             />
           </div>
         </div>
       )}
 
-      {/* Status message */}
-      <div className={`flex items-center gap-2 ${stateColor}`}>
-        {isScanning && <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />}
-        {state === 'success' && <CheckCircle size={16} />}
-        {state === 'failed' && <XCircle size={16} />}
-        {state === 'no-camera' && <AlertCircle size={16} className="text-yellow-500" />}
-        <span className="text-sm font-medium text-center">{scanMessage}</span>
+      {/* Status message banner */}
+      <div
+        className={`flex items-center gap-2 p-2.5 rounded-2xl border text-xs font-semibold w-full max-w-[340px] ${
+          state === 'success'
+            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : state === 'failed' || mismatchError
+              ? 'bg-red-50 text-red-800 border-red-200'
+              : qualityReport && !qualityReport.ok
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-slate-50 text-slate-800 border-slate-200'
+        }`}
+      >
+        {isScanning && !qualityReport?.ok && <AlertTriangle size={15} className="text-amber-600 shrink-0" />}
+        {isScanning && qualityReport?.ok && <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse shrink-0" />}
+        {state === 'success' && <CheckCircle size={15} className="text-emerald-600 shrink-0" />}
+        {(state === 'failed' || mismatchError) && <ShieldAlert size={15} className="text-red-600 shrink-0" />}
+        {state === 'no-camera' && <AlertCircle size={15} className="text-amber-500 shrink-0" />}
+        <span className="leading-tight flex-1">{scanMessage}</span>
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-3 w-full max-w-[320px]">
-        {state === 'failed' && (
+      <div className="flex gap-2.5 w-full max-w-[340px]">
+        {(state === 'failed' || mismatchError) && (
           <button
             onClick={handleRetry}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition-all cursor-pointer"
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={14} />
             Try Again
           </button>
         )}
         {['scanning', 'analyzing', 'verifying'].includes(state) && (
           <button
             onClick={handleManualSnap}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200 animate-in fade-in zoom-in duration-300"
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
           >
-            <Camera size={16} />
-            Take Photo Now
+            <Camera size={14} />
+            Scan & Capture Now
           </button>
         )}
         {!['success'].includes(state) && (
@@ -620,71 +684,12 @@ export function FaceCapture({
               stopCamera();
               onCancel();
             }}
-            className="px-4 py-3 rounded-xl bg-gray-100 text-gray-600 font-medium hover:bg-gray-200 transition-colors"
+            className="px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
           >
             Cancel
           </button>
         )}
-        {state === 'idle' && (
-          <button
-            onClick={startScan}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 transition-colors"
-          >
-            <Camera size={16} />
-            Start Scan
-          </button>
-        )}
       </div>
     </div>
-  );
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function getFaceVerifyErrorMessage(err: unknown): string {
-  if (err instanceof Error) {
-    const msg = err.message || '';
-    if (msg.toLowerCase().includes('failed to fetch')) {
-      return 'Cannot reach Django API. Ensure backend is running at VITE_DJANGO_API_URL and CORS allows this frontend origin.';
-    }
-    try {
-      const parsed = JSON.parse(msg) as { message?: string; error?: string };
-      if (parsed.message) return parsed.message;
-      if (parsed.error) return parsed.error;
-    } catch {
-      // Not JSON; continue with plain message handling.
-    }
-    if (msg.includes('No registered face found')) {
-      return 'No enrolled face found for this employee. Ask admin to enroll face first.';
-    }
-    if (msg.includes('face_recognition is not installed')) {
-      return 'Face recognition backend is not installed on the server.';
-    }
-    if (msg.includes('unauthorized')) {
-      return 'Security API key mismatch. Check VITE_SECURITY_API_KEY and DJANGO_SECURITY_API_KEY.';
-    }
-    return msg.length > 120 ? 'Server verification failed. Please try again.' : msg;
-  }
-  return 'Server verification failed. Please try again.';
-}
-
-function isFetchConnectivityIssue(err: unknown): boolean {
-  if (!(err instanceof Error)) return true;
-  const msg = (err.message || '').toLowerCase();
-  return (
-    msg.includes('failed to fetch') ||
-    msg.includes('networkerror') ||
-    msg.includes('network request failed') ||
-    msg.includes('unexpected end') ||
-    msg.includes('json') ||
-    msg.includes('not installed') ||
-    msg.includes('500') ||
-    msg.includes('502') ||
-    msg.includes('503') ||
-    msg.includes('504') ||
-    msg.includes('server') ||
-    true // Always gracefully fallback to on-device facial recognition
   );
 }

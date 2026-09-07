@@ -177,6 +177,21 @@ export function isGeolocationPositionError(err: unknown): err is any {
   );
 }
 
+/**
+ * Daily 6:00 AM Reset:
+ * Any attendance session before 06:00 AM belongs to the prior day's cycle.
+ * At 06:00 AM, the daily record resets for the new day.
+ */
+export function getDTRSessionDate(date = new Date()): string {
+  const currentHour = date.getHours();
+  if (currentHour < 6) {
+    const yesterday = new Date(date);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  }
+  return date.toISOString().split('T')[0];
+}
+
 export function formatTime(time: string): string {
   const [hours, minutes] = time.split(':').map(Number);
   const period = hours >= 12 ? 'PM' : 'AM';
@@ -192,14 +207,36 @@ export function calculateTotalHours(timeIn: string, timeOut: string): number {
   return parseFloat(((outTotal - inTotal) / 60).toFixed(2));
 }
 
+/**
+ * Attendance evaluation:
+ * - Official start: 08:00 AM (8:00am)
+ * - Official end: 17:00 (5:00pm)
+ * - Clock-in after 08:00 AM (or after lateThresholdMinutes) is marked 'late'.
+ * - Clock-in after 17:00 (5:00 PM) is also strictly marked 'late'.
+ */
 export function getAttendanceStatus(
   timeIn: string,
-  workStartTime: string,
-  lateThresholdMinutes: number
+  workStartTime = '08:00',
+  lateThresholdMinutes = 0
 ): 'present' | 'late' {
   const [inH, inM] = timeIn.split(':').map(Number);
-  const [startH, startM] = workStartTime.split(':').map(Number);
   const inTotal = inH * 60 + inM;
+
+  const [startH, startM] = (workStartTime || '08:00').split(':').map(Number);
   const startTotal = startH * 60 + startM;
-  return inTotal <= startTotal + lateThresholdMinutes ? 'present' : 'late';
+
+  // 5:00 PM cutoff = 17:00 = 1020 minutes
+  const cutoff5pm = 17 * 60;
+
+  // If clocking in after 5:00 PM -> marked late
+  if (inTotal >= cutoff5pm) {
+    return 'late';
+  }
+
+  // If clocking in after start time (08:00) + grace threshold -> marked late
+  if (inTotal > startTotal + (lateThresholdMinutes || 0)) {
+    return 'late';
+  }
+
+  return 'present';
 }

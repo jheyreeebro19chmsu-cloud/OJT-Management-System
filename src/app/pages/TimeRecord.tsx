@@ -12,7 +12,7 @@ import {
 } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { uploadFacePhoto } from '../services/supabaseService';
-import { formatTime, calculateTotalHours, getAttendanceStatus, getCurrentLocation } from '../utils/geo';
+import { formatTime, calculateTotalHours, getAttendanceStatus, getCurrentLocation, getDTRSessionDate } from '../utils/geo';
 import { authAPI } from '../services/authApi';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
@@ -114,7 +114,7 @@ export function TimeRecord() {
       const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
       const newRecord = addTimeRecord({
         employeeId: employee.id,
-        date: now.toISOString().split('T')[0],
+        date: getDTRSessionDate(now),
         timeIn: timeStr,
         timeInGeofenced: geofencePassed,
         timeOutGeofenced: false,
