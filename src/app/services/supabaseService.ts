@@ -293,16 +293,18 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
     return [];
   }
 
-  return (data || []).map((zone: any) => ({
-    id: zone.id,
-    name: zone.name,
-    address: zone.address,
-    lat: zone.lat,
-    lng: zone.lng,
-    radius: zone.radius,
-    active: zone.active,
-    academicYear: zone.academic_year,
-  }));
+  return (data || [])
+    .filter((zone: any) => !zone.name?.toLowerCase().includes('main training center') && zone.id !== 'zone-1')
+    .map((zone: any) => ({
+      id: zone.id,
+      name: zone.name,
+      address: zone.address,
+      lat: zone.lat,
+      lng: zone.lng,
+      radius: zone.radius,
+      active: zone.active !== false,
+      academicYear: zone.academic_year,
+    }));
 }
 
 export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?: string }): Promise<GeofenceZone | null> {

@@ -53,7 +53,9 @@ export function AdminGeofence() {
 
   // Combine explicit geofenceZones with any trainees who registered GPS locations
   const allCombinedZones = useMemo<GeofenceZone[]>(() => {
-    const combined = [...geofenceZones];
+    const combined = geofenceZones
+      .filter((z) => !z.name.toLowerCase().includes('main training center') && z.id !== 'zone-1')
+      .map((z) => ({ ...z, active: z.active !== false }));
     const existingIds = new Set(combined.map((z) => z.id));
 
     // Also include any trainee who has registered GPS location if not yet in geofenceZones
@@ -465,7 +467,7 @@ export function AdminGeofence() {
                               </span>
                             )}
 
-                            {zone.active ? (
+                            {zone.active !== false ? (
                               <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold border border-green-200">
                                 <CheckCircle size={10} /> Active
                               </span>

@@ -57,17 +57,7 @@ function getCurrentAcademicYear(): string {
   return `${year}-${year + 1}`;
 }
 
-const DEFAULT_GEOFENCE: GeofenceZone[] = [
-  {
-    id: 'zone-1',
-    name: 'Main Training Center',
-    address: 'Ayala Avenue, Makati City, Metro Manila',
-    lat: 14.5547,
-    lng: 121.0244,
-    radius: GEOFENCE_RADIUS_METERS,
-    active: true,
-  },
-];
+const DEFAULT_GEOFENCE: GeofenceZone[] = [];
 
 const MOCK_EMPLOYEES: Employee[] = [];
 
@@ -229,9 +219,13 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
     Number.isFinite(radius) &&
     radius > 0;
   if (!valid) return null;
+  const name = typeof raw.name === 'string' ? raw.name : 'Geofence Zone';
+  if (name.toLowerCase().includes('main training center') || raw.id === 'zone-1') {
+    return null;
+  }
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : `zone-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    name: typeof raw.name === 'string' ? raw.name : 'Geofence Zone',
+    name,
     address: typeof raw.address === 'string' ? raw.address : '',
     lat,
     lng,
@@ -242,7 +236,9 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
 
 function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
   if (!Array.isArray(inputs)) return [];
-  return inputs.map(sanitizeGeofenceZone).filter((zone): zone is GeofenceZone => zone !== null);
+  return inputs
+    .map(sanitizeGeofenceZone)
+    .filter((zone): zone is GeofenceZone => zone !== null && !zone.name.toLowerCase().includes('main training center') && zone.id !== 'zone-1');
 }
 
 function migrateGeofenceStorageOnce(): void {
@@ -320,9 +316,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return stored;
   });
   const [geofenceZones, setGeofenceZones] = useState<GeofenceZone[]>(() => {
-    const stored = loadFromStorage<unknown>(STORAGE_KEYS.GEOFENCE_ZONES, DEFAULT_GEOFENCE);
-    const sanitized = sanitizeGeofenceZones(stored);
-    return sanitized.length > 0 ? sanitized : DEFAULT_GEOFENCE;
+    const stored = loadFromStorage<unknown>(STORAGE_KEYS.GEOFENCE_ZONES, []);
+    return sanitizeGeofenceZones(stored);
   });
   const [settings, setSettings] = useState<AppSettings>(() => {
     const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
