@@ -124,12 +124,12 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
       documents: updates.submittedDocuments,
     };
   }
-  if (updates.registrationLocation !== undefined) {
-    supabaseUpdates.registration_lat = updates.registrationLocation?.lat;
-    supabaseUpdates.registration_lng = updates.registrationLocation?.lng;
+  if ('registrationLocation' in updates) {
+    supabaseUpdates.registration_lat = updates.registrationLocation?.lat ?? null;
+    supabaseUpdates.registration_lng = updates.registrationLocation?.lng ?? null;
   }
-  if (updates.registrationAddress !== undefined) {
-    supabaseUpdates.registration_address = updates.registrationAddress;
+  if ('registrationAddress' in updates) {
+    supabaseUpdates.registration_address = updates.registrationAddress ?? null;
   }
 
   const { error } = await supabase.from('employees').update(supabaseUpdates).eq('id', id);

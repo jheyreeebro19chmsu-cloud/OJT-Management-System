@@ -267,10 +267,23 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
 
 function migrateGeofenceStorageOnce(): void {
   try {
-    if (localStorage.getItem(STORAGE_KEYS.GEOFENCE_MIGRATION_V1) === 'done') return;
     const raw = localStorage.getItem(STORAGE_KEYS.GEOFENCE_ZONES);
-    const parsed = raw ? JSON.parse(raw) : [];
-    const sanitized = sanitizeGeofenceZones(parsed);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (z: any) => !z.name?.toLowerCase().includes('rainer') && !z.name?.toLowerCase().includes('dooms')
+        );
+        if (cleaned.length !== parsed.length) {
+          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, cleaned);
+        }
+      }
+    }
+
+    if (localStorage.getItem(STORAGE_KEYS.GEOFENCE_MIGRATION_V1) === 'done') return;
+    const rawOld = localStorage.getItem(STORAGE_KEYS.GEOFENCE_ZONES);
+    const parsedOld = rawOld ? JSON.parse(rawOld) : [];
+    const sanitized = sanitizeGeofenceZones(parsedOld);
     saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitized.length > 0 ? sanitized : DEFAULT_GEOFENCE);
     localStorage.setItem(STORAGE_KEYS.GEOFENCE_MIGRATION_V1, 'done');
   } catch {
@@ -1306,10 +1319,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateEmployee = (id: string, data: Partial<Employee>) => {
-    const updatedEmployees = employees.map((e) => (e.id === id ? { ...e, ...data } : e));
+    const updatedEmployees = employees.map((e) => {
+      if (e.id === id || e.employeeId === id) {
+        const next: any = { ...e, ...data };
+        if ('registrationLocation' in data && !data.registrationLocation) {
+          delete next.registrationLocation;
+          delete next.registration_lat;
+          delete next.registration_lng;
+        }
+        if ('registrationAddress' in data && !data.registrationAddress) {
+          delete next.registrationAddress;
+          delete next.registration_address;
+        }
+        return next as Employee;
+      }
+      return e;
+    });
     setEmployees(updatedEmployees);
+    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
 
-    const updatedEmployee = updatedEmployees.find((e) => e.id === id);
+    const updatedEmployee = updatedEmployees.find((e) => e.id === id || e.employeeId === id);
     if (updatedEmployee && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
       setCurrentUser((prev) =>
         prev
@@ -1326,6 +1355,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (useSupabase) {
       supabaseService.updateEmployee(id, data);
+    }
+
+    // If location is cleared, remove personal geofence zone
+    if ('registrationLocation' in data && !data.registrationLocation) {
+      setGeofenceZones((prev) => {
+        const filtered = prev.filter((z) => z.id !== `personal-${id}` && z.id !== id);
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+        return filtered;
+      });
+      if (useSupabase) {
+        supabaseService.deleteGeofenceZone(`personal-${id}`);
+      }
     }
 
     // If location is updated, also update/upsert the trainee's personal geofence zone
@@ -1632,7 +1673,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteGeofenceZone = (id: string) => {
-    setGeofenceZones((prev) => prev.filter((z) => z.id !== id));
+    // 1. Remove from local geofenceZones state and storage
+    setGeofenceZones((prev) => {
+      const filtered = prev.filter((z) => z.id !== id);
+      saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+      return filtered;
+    });
+
+    // 2. If it's a personal zone for an employee: personal-${empId}
+    if (id.startsWith('personal-')) {
+      const empId = id.replace('personal-', '');
+      updateEmployee(empId, {
+        registrationLocation: null as any,
+        registrationAddress: null as any,
+      });
+      return;
+    }
+
+    // 3. Check if target zone matches an employee by name or ID, and clear their location
+    const targetZone = geofenceZones.find((z) => z.id === id);
+    if (targetZone) {
+      const personPrefix = targetZone.name?.includes(' - ')
+        ? targetZone.name.split(' - ')[0].trim().toLowerCase()
+        : targetZone.name.toLowerCase();
+      const matchedEmp = employees.find(
+        (e) => e.id === id || (e.name && e.name.toLowerCase() === personPrefix)
+      );
+      if (matchedEmp) {
+        updateEmployee(matchedEmp.id, {
+          registrationLocation: null as any,
+          registrationAddress: null as any,
+        });
+      }
+    }
 
     if (useSupabase) {
       supabaseService.deleteGeofenceZone(id);

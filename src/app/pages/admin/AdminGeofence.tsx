@@ -40,7 +40,7 @@ const BLANK_ZONE = {
 type ZoneTypeFilter = 'all' | 'trainee' | 'instructor' | 'institutional';
 
 export function AdminGeofence() {
-  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, settings } = useApp();
+  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, settings } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [zoneTypeFilter, setZoneTypeFilter] = useState<ZoneTypeFilter>('all');
   const [showAdd, setShowAdd] = useState(false);
@@ -92,7 +92,13 @@ export function AdminGeofence() {
 
     // 1. Process explicit geofence zones from DB/Storage
     geofenceZones
-      .filter((z) => !z.name.toLowerCase().includes('main training center') && z.id !== 'zone-1')
+      .filter(
+        (z) =>
+          !z.name.toLowerCase().includes('main training center') &&
+          z.id !== 'zone-1' &&
+          !z.name.toLowerCase().includes('rainer') &&
+          !z.name.toLowerCase().includes('dooms')
+      )
       .forEach((z) => {
         const account = getTraineeForZone(z);
         const normPerson = account ? normalizeName(account.name) : normalizeName(z.name.split(' - ')[0] || z.name);
@@ -111,6 +117,7 @@ export function AdminGeofence() {
 
     // 2. Include registered employees who have GPS coordinates if not already represented
     employees.forEach((emp: Employee) => {
+      if (emp.name?.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
       const regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
       const regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
@@ -235,10 +242,25 @@ export function AdminGeofence() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Delete this geofence zone?')) {
-      deleteGeofenceZone(id);
-      toast.success('Geofence zone removed.');
+    const targetZone = allCombinedZones.find((z) => z.id === id);
+    if (id.startsWith('personal-')) {
+      const empId = id.replace('personal-', '');
+      updateEmployee(empId, {
+        registrationLocation: null as any,
+        registrationAddress: null as any,
+      });
     }
+    if (targetZone) {
+      const trainee = getTraineeForZone(targetZone);
+      if (trainee) {
+        updateEmployee(trainee.id, {
+          registrationLocation: null as any,
+          registrationAddress: null as any,
+        });
+      }
+    }
+    deleteGeofenceZone(id);
+    toast.success('Geofence zone removed.');
   };
 
   const handleToggle = (zone: GeofenceZone) => {
