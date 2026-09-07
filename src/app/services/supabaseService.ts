@@ -957,7 +957,7 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
 
 // ─── Transform Helpers ───────────────────────────────────────────────────────
 
-function transformSupabaseEmployee(data: any): Employee {
+export function transformSupabaseEmployee(data: any): Employee {
   const isHTE = data.position === 'HTE Representative' || data.position === 'Training Supervisor' || (data.position && data.position.toLowerCase().includes('hte'));
   const isInstructor = data.position === 'OJT Instructor' || (data.position && data.position.toLowerCase().includes('instructor'));
   let normalizedEmployeeId = data.employee_id;

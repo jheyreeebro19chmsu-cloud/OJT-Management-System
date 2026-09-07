@@ -770,7 +770,7 @@ export function Profile() {
                   const resolvedAddress = await reverseGeocode(latitude, longitude);
 
                   await updateEmployee(employee.id, {
-                    registrationLocation: { lat: latitude, lng: longitude, accuracy },
+                    registrationLocation: { lat: latitude, lng: longitude },
                     registrationAddress: resolvedAddress,
                   });
 

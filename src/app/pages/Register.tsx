@@ -42,6 +42,8 @@ import { Country, State, City } from 'country-state-city';
 
 
 import { authAPI } from '../services/authApi';
+import { supabase } from '../lib/supabase';
+import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode } from '../utils/geo';
 import { getAbsoluteUrl } from '../services/config';
@@ -953,7 +955,7 @@ export function Register() {
               <QRCodeSVG value={instructorQrData} size={200} level="H" includeMargin />
             </div>
             <p className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-1">Instructor ID</p>
-            <p className="text-sm font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200" selectable="true">
+            <p className="text-sm font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200 select-all">
               {registeredInstructorId || form.email}
             </p>
           </div>

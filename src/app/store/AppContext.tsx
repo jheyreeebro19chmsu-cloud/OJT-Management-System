@@ -17,10 +17,11 @@ import {
   AnnouncementComment,
   RequiredDocument,
   RequiredDocumentSubmission,
+  RequirementStatus,
   HostFeedback,
   HostSupervisor,
 } from '../types';
-import { GEOFENCE_RADIUS_METERS, getDTRSessionDate } from '../utils/geo';
+import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -125,6 +126,7 @@ interface AppContextType {
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   registerEmployee: (data: RegisterEmployeeInput) => Promise<{ success: boolean; message?: string; employee?: Employee }>;
   updateEmployee: (id: string, data: Partial<Employee>) => void;
+  updateHostSupervisor: (id: string, data: Partial<HostSupervisor>) => void;
   deleteEmployee: (id: string) => void;
   addTimeRecord: (record: Omit<TimeRecord, 'id'>) => TimeRecord;
   updateTimeRecord: (id: string, data: Partial<TimeRecord>) => void;
@@ -1289,6 +1291,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateHostSupervisor = (id: string, data: Partial<HostSupervisor>) => {
+    const updatedHosts = hostSupervisors.map((h) => (h.id === id || h.employeeId === id ? { ...h, ...data } : h));
+    setHostSupervisors(updatedHosts);
+    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+
+    const updatedHost = updatedHosts.find((h) => h.id === id || h.employeeId === id);
+    if (updatedHost && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: updatedHost.name || prev.name,
+              email: updatedHost.email || prev.email,
+              photo: updatedHost.photo || prev.photo,
+            }
+          : prev
+      );
+    }
+
+    if (useSupabase) {
+      supabaseService.updateHostSupervisor(id, data);
+    }
+  };
+
   const deleteEmployee = (id: string) => {
     const targetEmp = employees.find((e) => e.id === id || e.employeeId === id);
     const targetHost = hostSupervisors.find((h) => h.id === id || h.employeeId === id);
@@ -2135,6 +2161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         changeCurrentUserPassword,
         registerEmployee,
         updateEmployee,
+        updateHostSupervisor,
         deleteEmployee,
         approveEmployee,
         rejectEmployee,

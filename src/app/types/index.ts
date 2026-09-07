@@ -4,6 +4,7 @@ export interface Employee {
   employeeId: string;
   username?: string;
   email: string;
+  phone?: string;
   department: string;
   position: string;
   companyName: string;
@@ -32,13 +33,15 @@ export interface Employee {
   contactPhone?: string;
   academicYear?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
+  applicationStatus?: 'pending' | 'approved' | 'rejected';
   documentsPassed?: boolean;
-  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete';
+  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
   submittedDocuments?: TraineeDocuments;
 }
 
 export interface TraineeDocumentItem {
   name: string;
+  size?: string | number;
   dataUrl?: string;
   fileType?: string;
   uploadedAt: string;
@@ -135,7 +138,7 @@ export interface HostSupervisor {
   companyAddress?: string;
   contactPerson?: string;
   phone?: string;
-  position: string;
+  position?: string;
   active: boolean;
   isApproved?: boolean;
   academicYear?: string;

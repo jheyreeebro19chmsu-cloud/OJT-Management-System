@@ -921,7 +921,7 @@ export function AdminEmployees() {
                                         fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
                                         fileUrl: doc?.dataUrl || undefined,
                                         note: doc?.name
-                                          ? `Uploaded File: ${doc.name} (${(doc.size / 1024).toFixed(1)} KB)`
+                                          ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
                                           : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
                                         date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
                                       })
@@ -941,7 +941,7 @@ export function AdminEmployees() {
                                         [docItem.key]: {
                                           ...(currentDocs[docItem.key] || {
                                             name: `${docItem.title}.pdf`,
-                                            type: 'application/pdf',
+                                            fileType: 'application/pdf',
                                             size: 0,
                                             uploadedAt: new Date().toISOString(),
                                           }),

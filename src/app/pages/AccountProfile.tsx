@@ -138,7 +138,7 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
       }
 
       updateEmployee(targetId, {
-        registrationLocation: { lat: latitude, lng: longitude, accuracy },
+        registrationLocation: { lat: latitude, lng: longitude },
         registrationAddress: resolvedAddress,
       });
 
