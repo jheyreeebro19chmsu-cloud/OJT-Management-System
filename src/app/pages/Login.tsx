@@ -33,8 +33,10 @@ export function Login() {
     await new Promise((r) => setTimeout(r, 800));
     const user = (await login(email, password)) as any;
     if (user) {
-      if (user.role === 'admin' || user.role === 'hte') {
-        navigate('/app');
+      if (user.role === 'admin') {
+        navigate('/admin');
+      } else if (user.role === 'hte' || user.role === 'host') {
+        navigate('/hte');
       } else {
         const employee = employees.find(
           (e) =>

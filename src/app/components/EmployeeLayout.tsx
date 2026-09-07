@@ -25,6 +25,10 @@ export function EmployeeLayout() {
   useEffect(() => {
     if (!currentUser) {
       navigate('/login', { replace: true });
+    } else if (currentUser.role === 'admin') {
+      navigate('/admin', { replace: true });
+    } else if (currentUser.role === 'hte' || currentUser.role === 'host') {
+      navigate('/hte', { replace: true });
     }
   }, [currentUser, navigate]);
 

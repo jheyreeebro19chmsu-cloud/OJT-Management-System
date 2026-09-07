@@ -43,6 +43,16 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/login', { replace: true });
+    } else if (currentUser.role === 'admin') {
+      navigate('/admin', { replace: true });
+    } else if (currentUser.role === 'employee' || (currentUser as any).role === 'trainee') {
+      navigate('/app', { replace: true });
+    }
+  }, [currentUser, navigate]);
+
   const hteUser = React.useMemo(() => {
     try {
       const stored = localStorage.getItem('ojt_hte_user');
@@ -86,15 +96,8 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-xl" />
             </div>
             <div className="min-w-0">
-              <div className="text-white font-extrabold text-sm tracking-tight truncate flex items-center gap-1.5">
-                <span>HTE Portal</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  PARTNER
-                </span>
-              </div>
-              <div className="text-slate-400 text-xs truncate max-w-[140px] font-medium" title={companyName}>
-                {companyName}
-              </div>
+              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
+              <div className="text-blue-300 text-xs font-semibold">HTE Panel</div>
             </div>
           </div>
 
@@ -194,8 +197,8 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                   <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-lg" />
                 </div>
                 <div>
-                  <div className="text-white font-extrabold text-sm">HTE Portal</div>
-                  <div className="text-slate-400 text-xs truncate max-w-[150px]">{companyName}</div>
+                  <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
+                  <div className="text-blue-300 text-xs font-semibold">HTE Panel</div>
                 </div>
               </div>
               <button

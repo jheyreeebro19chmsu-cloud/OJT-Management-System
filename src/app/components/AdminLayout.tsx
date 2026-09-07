@@ -43,16 +43,27 @@ export function AdminLayout() {
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/login', { replace: true });
+    } else if (currentUser.role === 'employee' || (currentUser as any).role === 'trainee') {
+      navigate('/app', { replace: true });
+    } else if (currentUser.role === 'hte' || currentUser.role === 'host') {
+      navigate('/hte', { replace: true });
+    }
+  }, [currentUser, navigate]);
+
   // Determine whether the current user is an instructor
   const isInstructor = Boolean(
     (employee && (employee as any).role === 'instructor') ||
     (currentUser && (currentUser as any).role === 'instructor') ||
+    (currentUser && currentUser.role === 'admin') ||
     (() => {
       try {
         const u = localStorage.getItem('user');
         if (!u) return false;
         const parsed = JSON.parse(u);
-        return parsed && parsed.role === 'instructor';
+        return parsed && (parsed.role === 'instructor' || parsed.role === 'admin');
       } catch {
         return false;
       }
@@ -220,7 +231,7 @@ export function AdminLayout() {
             </div>
             <div>
               <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
-              <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
+              <div className="text-blue-300 text-xs font-semibold">Admin Panel</div>
             </div>
           </div>
           {/* Academic Year Environment Indicator */}
@@ -316,7 +327,7 @@ export function AdminLayout() {
                     </div>
                     <div>
                       <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
-                      <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
+                      <div className="text-blue-300 text-xs font-semibold">Admin Panel</div>
                     </div>
                   </div>
                   <button onClick={() => setSidebarOpen(false)} className="text-blue-300 hover:text-white">
