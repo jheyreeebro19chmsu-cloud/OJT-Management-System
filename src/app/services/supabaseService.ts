@@ -51,6 +51,19 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
   const rawInstructorId = (employee as any).instructorId;
   const rawHteId = (employee as any).hteId;
 
+  // If photo is a base64 string, automatically upload to Supabase Storage bucket first
+  let photoToStore = employee.photo || null;
+  if (photoToStore && typeof photoToStore === 'string' && !photoToStore.startsWith('http')) {
+    try {
+      const uploadedUrl = await uploadFacePhoto(assignedEmployeeId, photoToStore, 'profile');
+      if (uploadedUrl && uploadedUrl.startsWith('http')) {
+        photoToStore = uploadedUrl;
+      }
+    } catch (photoErr) {
+      console.warn('Face photo bucket upload notice during createEmployee:', photoErr);
+    }
+  }
+
   const supabaseEmployee: any = {
     name: employee.name,
     employee_id: assignedEmployeeId,
@@ -65,7 +78,7 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     start_date: employee.startDate || new Date().toISOString().split('T')[0],
     end_date: employee.endDate || new Date().toISOString().split('T')[0],
     required_hours: employee.requiredHours ?? 0,
-    photo: employee.photo || null,
+    photo: photoToStore,
     face_registered: Boolean(employee.faceRegistered),
     active: employee.active !== false,
     registration_lat: employee.registrationLocation?.lat || null,
@@ -165,7 +178,20 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.startDate !== undefined) supabaseUpdates.start_date = updates.startDate;
   if (updates.endDate !== undefined) supabaseUpdates.end_date = updates.endDate;
   if (updates.requiredHours !== undefined) supabaseUpdates.required_hours = updates.requiredHours;
-  if (updates.photo !== undefined) supabaseUpdates.photo = updates.photo;
+  if (updates.photo !== undefined) {
+    let photoVal = updates.photo;
+    if (photoVal && typeof photoVal === 'string' && !photoVal.startsWith('http')) {
+      try {
+        const uploadedUrl = await uploadFacePhoto(updates.employeeId || id, photoVal, 'profile');
+        if (uploadedUrl && uploadedUrl.startsWith('http')) {
+          photoVal = uploadedUrl;
+        }
+      } catch (pErr) {
+        console.warn('Face photo upload notice during updateEmployee:', pErr);
+      }
+    }
+    supabaseUpdates.photo = photoVal;
+  }
   if (updates.faceRegistered !== undefined) supabaseUpdates.face_registered = updates.faceRegistered;
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
@@ -337,16 +363,28 @@ export async function uploadFacePhoto(
     }
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: 'image/jpeg' });
-    const fileName = `${employeeId || 'unassigned'}/${type}_${Date.now()}.jpg`;
+    const cleanEmpId = (employeeId || 'unassigned').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${cleanEmpId}/${type}_${Date.now()}.jpg`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+    // Try 'face-photos' bucket first, with fallback to 'avatars'
+    const bucketsToTry = ['face-photos', 'avatars'];
+    for (const bucketName of bucketsToTry) {
+      try {
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from(bucketName)
+          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
 
-    if (!uploadError && uploadData) {
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-      if (urlData?.publicUrl) {
-        return urlData.publicUrl;
+        if (!uploadError && uploadData) {
+          const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+          if (urlData?.publicUrl) {
+            console.log(`[Storage] Uploaded face photo to bucket "${bucketName}":`, urlData.publicUrl);
+            return urlData.publicUrl;
+          }
+        } else if (uploadError) {
+          console.warn(`[Storage] Bucket "${bucketName}" upload failed, trying next bucket:`, uploadError.message || uploadError);
+        }
+      } catch (bErr) {
+        console.warn(`[Storage] Exception uploading to bucket "${bucketName}":`, bErr);
       }
     }
   } catch (err) {

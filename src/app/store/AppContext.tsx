@@ -1105,6 +1105,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       requiredHours: employeeData.requiredHours ?? 0,
     };
 
+    // If photo is a base64 string, upload to Supabase storage bucket (face-photos) first
+    if (useSupabase && cleanData.photo && typeof cleanData.photo === 'string' && !cleanData.photo.startsWith('http')) {
+      try {
+        const uploadedUrl = await supabaseService.uploadFacePhoto(resolvedEmployeeId || 'unassigned', cleanData.photo, 'profile');
+        if (uploadedUrl && uploadedUrl.startsWith('http')) {
+          cleanData.photo = uploadedUrl;
+        }
+      } catch (uploadErr) {
+        console.warn('Face photo upload warning during registerEmployee:', uploadErr);
+      }
+    }
+
     const newEmp: Employee = {
       ...cleanData,
       academicYear: cleanData.academicYear || settings.activeAcademicYear,
