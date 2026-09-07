@@ -36,6 +36,7 @@ export function AdminEmployees() {
   const {
     employees,
     timeRecords,
+    geofenceZones,
     registerEmployee,
     updateEmployee,
     deleteEmployee,
@@ -1057,7 +1058,17 @@ export function AdminEmployees() {
 
                         <div className="text-xs text-blue-800 space-y-1">
                           <p><span className="font-semibold text-blue-900">Workplace/HTE:</span> {selectedEmp.companyName || 'Not Assigned'}</p>
-                          <p><span className="font-semibold text-blue-900">Workplace Address:</span> {selectedEmp.registrationAddress || selectedEmp.companyAddress || 'Campus Location'}</p>
+                          {(() => {
+                            const matchingZone = geofenceZones.find((z) =>
+                              z.id === selectedEmp.id ||
+                              z.id === `personal-${selectedEmp.id}` ||
+                              (selectedEmp.name && z.name.toLowerCase().includes(selectedEmp.name.toLowerCase()))
+                            );
+                            const workplaceAddr = selectedEmp.companyAddress || matchingZone?.address || (selectedEmp.companyName && selectedEmp.companyName !== 'N/A' ? `${selectedEmp.companyName} Workplace` : 'Campus Location');
+                            return (
+                              <p><span className="font-semibold text-blue-900">Workplace Address:</span> {workplaceAddr}</p>
+                            );
+                          })()}
                           {selectedEmp.registrationLocation ? (
                             <div className="flex items-center justify-between gap-2 mt-1">
                               <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
@@ -1087,15 +1098,19 @@ export function AdminEmployees() {
                                 {
                                   id: `personal-${selectedEmp.id}`,
                                   name: `${selectedEmp.name} - ${selectedEmp.companyName || 'Workplace'}`,
-                                  address: selectedEmp.registrationAddress || 'Trainee Workplace',
-                                  lat: selectedEmp.registrationLocation.lat,
-                                  lng: selectedEmp.registrationLocation.lng,
-                                  radius: 250,
+                                  address: selectedEmp.companyAddress || `${selectedEmp.companyName || 'HTE'} Workplace`,
+                                  lat: Number(selectedEmp.registrationLocation.lat),
+                                  lng: Number(selectedEmp.registrationLocation.lng),
+                                  radius: 150,
                                   active: true,
                                 },
                               ]}
-                              focusCoords={{ lat: selectedEmp.registrationLocation.lat, lng: selectedEmp.registrationLocation.lng }}
-                              className="h-48"
+                              defaultCenter={[
+                                Number(selectedEmp.registrationLocation.lat),
+                                Number(selectedEmp.registrationLocation.lng),
+                              ]}
+                              zoom={15}
+                              height="100%"
                             />
                             <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-700 shadow border border-emerald-200 flex items-center gap-1">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

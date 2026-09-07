@@ -681,7 +681,8 @@ export function Register() {
         submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : undefined,
         // Ensure location info is always persisted even if GPS is missing
         registrationLocation: registrationLocation || undefined,
-        registrationAddress: computedAddress,
+        registrationAddress: buildAddrFromForm() || registrationAddress || undefined,
+        companyAddress: form.companyAddress || undefined,
         password: form.password,
       });
     } catch (err: any) {
