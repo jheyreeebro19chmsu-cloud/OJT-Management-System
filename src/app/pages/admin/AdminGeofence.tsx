@@ -17,9 +17,11 @@ import {
   Search,
   ShieldCheck,
   GraduationCap,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { GeofenceMap } from '../../components/GeofenceMap';
@@ -204,6 +206,27 @@ export function AdminGeofence() {
       return true;
     });
   }, [allCombinedZones, selectedAcademicYear, zoneTypeFilter, searchQuery, employees]);
+
+  // 5 accounts/zones per page pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedAcademicYear, zoneTypeFilter, searchQuery]);
+
+  const totalPages = Math.ceil(filteredZones.length / ITEMS_PER_PAGE) || 1;
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedZones = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredZones.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredZones, currentPage]);
 
   const upd = (f: string, v: string | number | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -485,7 +508,7 @@ export function AdminGeofence() {
             </p>
           </div>
         ) : (
-          filteredZones.map((zone, idx) => {
+          paginatedZones.map((zone, idx) => {
             const account = getTraineeForZone(zone);
             const isInstructor = isInstructorZone(zone);
             const isHTE = isHTEZone(zone);
@@ -734,6 +757,57 @@ export function AdminGeofence() {
           })
         )}
       </div>
+
+      {/* Pagination Controls (5 accounts per row/page) */}
+      {filteredZones.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-5 py-3.5 rounded-2xl border border-gray-100 shadow-sm mt-3">
+          <div className="text-xs text-gray-500 font-medium">
+            Showing <span className="font-bold text-gray-800">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+            <span className="font-bold text-gray-800">
+              {Math.min(currentPage * ITEMS_PER_PAGE, filteredZones.length)}
+            </span>{' '}
+            of <span className="font-bold text-gray-800">{filteredZones.length}</span> geofence accounts (5 per page)
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 self-center sm:self-auto">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                title="Previous Page"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all ${
+                      currentPage === page
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                        : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                title="Next Page"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add Zone Modal Form */}
       <AnimatePresence>
