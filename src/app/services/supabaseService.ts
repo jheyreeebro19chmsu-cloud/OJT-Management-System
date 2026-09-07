@@ -70,6 +70,14 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     instructor_id: (employee as any).instructorId || null,
     hte_id: (employee as any).hteId || null,
     application_status: (employee as any).applicationStatus || 'approved',
+    documents_passed: employee.documentsPassed !== undefined ? employee.documentsPassed : true,
+    documents_status: employee.documentsStatus || 'passed',
+    registration_location: {
+      lat: employee.registrationLocation?.lat,
+      lng: employee.registrationLocation?.lng,
+      address: employee.registrationAddress,
+      documents: employee.submittedDocuments || null,
+    },
   };
 
   if (employee.id) {
@@ -108,6 +116,14 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
   if (updates.applicationStatus !== undefined) supabaseUpdates.application_status = updates.applicationStatus;
+  if (updates.documentsPassed !== undefined) supabaseUpdates.documents_passed = updates.documentsPassed;
+  if (updates.documentsStatus !== undefined) supabaseUpdates.documents_status = updates.documentsStatus;
+  if (updates.submittedDocuments !== undefined) {
+    supabaseUpdates.registration_location = {
+      ...(updates.registrationLocation || {}),
+      documents: updates.submittedDocuments,
+    };
+  }
   if (updates.registrationLocation !== undefined) {
     supabaseUpdates.registration_lat = updates.registrationLocation?.lat;
     supabaseUpdates.registration_lng = updates.registrationLocation?.lng;
@@ -982,6 +998,7 @@ function transformSupabaseEmployee(data: any): Employee {
     applicationStatus: data.application_status || 'approved',
     documentsPassed: data.documents_passed !== undefined ? Boolean(data.documents_passed) : true,
     documentsStatus: data.documents_status || (data.documents_passed === false ? 'pending' : 'passed'),
+    submittedDocuments: data.registration_location?.documents || data.submitted_documents || undefined,
   };
 }
 

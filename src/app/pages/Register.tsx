@@ -15,6 +15,12 @@ import {
   Eye,
   EyeOff,
   Lock,
+  FileText,
+  FileCheck,
+  Shield,
+  Upload,
+  Trash2,
+  Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -26,6 +32,7 @@ import { toast } from 'sonner';
 
 import { FaceCapture } from '../components/FaceCapture';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
+import { TraineeDocuments, TraineeDocumentItem } from '../types';
 
 
 import { PH_ADDRESS_DATA } from '../data/ph_address_data';
@@ -123,6 +130,39 @@ export function Register() {
 
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
+  const [documents, setDocuments] = useState<TraineeDocuments>({});
+
+  const handleDocumentUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      setDocuments((prev) => ({
+        ...prev,
+        [docKey]: {
+          name: file.name,
+          dataUrl,
+          fileType: file.type || 'application/octet-stream',
+          uploadedAt: new Date().toISOString(),
+          status: 'passed',
+        },
+      }));
+      toast.success(`${file.name} attached — automatically marked as PASSED`);
+    };
+    reader.onerror = () => {
+      toast.error('Failed to read file. Please try again.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDocumentRemove = (docKey: keyof TraineeDocuments) => {
+    setDocuments((prev) => {
+      const next = { ...prev };
+      delete next[docKey];
+      return next;
+    });
+    toast.info('Document removed — status changed to PENDING');
+  };
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
@@ -611,6 +651,11 @@ export function Register() {
       [form.firstName, form.middleInitial, form.lastName].filter(Boolean).join(' ') ||
       (form.email ? form.email.split('@')[0] : 'User');
 
+    const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as (keyof TraineeDocuments)[];
+    const uploadedDocsCount = docKeys.filter((k) => Boolean(documents[k])).length;
+    const hasAnyDocs = uploadedDocsCount > 0;
+    const isAllDocsPassed = uploadedDocsCount === 4;
+
     let result: { success: boolean; message?: string; employee?: any };
     try {
       result = await registerEmployee({
@@ -624,8 +669,9 @@ export function Register() {
         active: true,
         approvalStatus: 'approved',
         applicationStatus: 'approved',
-        documentsPassed: role === 'trainee' ? true : undefined,
-        documentsStatus: role === 'trainee' ? 'passed' : undefined,
+        documentsPassed: role === 'trainee' ? (hasAnyDocs ? isAllDocsPassed : false) : undefined,
+        documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : undefined,
+        submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : undefined,
         // Ensure location info is always persisted even if GPS is missing
         registrationLocation: registrationLocation || undefined,
         registrationAddress: computedAddress,
@@ -670,6 +716,9 @@ export function Register() {
           photo: photo || (existing ? existing.photo : undefined),
           faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
           active: true,
+          submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : (existing ? existing.submittedDocuments : undefined),
+          documentsPassed: role === 'trainee' ? isAllDocsPassed : (existing ? existing.documentsPassed : true),
+          documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : (existing ? existing.documentsStatus : 'passed'),
         };
 
         if (existing) {
@@ -2188,71 +2237,130 @@ export function Register() {
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
                         <ShieldCheck size={14} className="text-blue-600" />
-                        <span>Required OJT Documents (Optional during Registration)</span>
+                        <span>Required OJT Documents (Auto-Verified)</span>
                       </label>
                       <span className="text-[10px] text-gray-400 font-medium">PDF / JPG / PNG</span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <label className="text-[11px] font-bold text-gray-700 block mb-1">1. Endorsement Letter</label>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              toast.success(`Attached ${file.name}`);
-                            }
-                          }}
-                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                        />
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {[
+                        {
+                          key: 'endorsement' as keyof TraineeDocuments,
+                          num: '1',
+                          title: 'Endorsement Letter',
+                          desc: 'Official institutional endorsement from Department Chair / Coordinator',
+                          icon: FileText,
+                        },
+                        {
+                          key: 'consent' as keyof TraineeDocuments,
+                          num: '2',
+                          title: 'Parental Consent Form',
+                          desc: 'Signed student waiver & parent/guardian emergency authorization',
+                          icon: FileCheck,
+                        },
+                        {
+                          key: 'medical' as keyof TraineeDocuments,
+                          num: '3',
+                          title: 'Medical Certificate',
+                          desc: 'Medical examination clearance & physical fitness certification',
+                          icon: Shield,
+                        },
+                        {
+                          key: 'resume' as keyof TraineeDocuments,
+                          num: '4',
+                          title: 'Student Bio-data / Resume',
+                          desc: 'Updated student profile, academic background & contact bio-data',
+                          icon: User,
+                        },
+                      ].map((item) => {
+                        const uploaded = documents[item.key];
+                        const Icon = item.icon;
+                        return (
+                          <div
+                            key={item.key}
+                            className={`p-3 rounded-2xl border transition-all ${
+                              uploaded
+                                ? 'bg-emerald-50/40 border-emerald-200 shadow-sm shadow-emerald-50'
+                                : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                    uploaded ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'
+                                  }`}
+                                >
+                                  {item.num}
+                                </div>
+                                <h4 className="text-xs font-bold text-gray-800">{item.title}</h4>
+                              </div>
+                              <span
+                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                                  uploaded
+                                    ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                                    : 'bg-amber-100 text-amber-700 border-amber-300'
+                                }`}
+                              >
+                                {uploaded ? (
+                                  <>
+                                    <Check size={11} className="stroke-[3]" /> PASSED
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock size={10} /> PENDING
+                                  </>
+                                )}
+                              </span>
+                            </div>
 
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <label className="text-[11px] font-bold text-gray-700 block mb-1">2. Parental Consent Form</label>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              toast.success(`Attached ${file.name}`);
-                            }
-                          }}
-                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                        />
-                      </div>
+                            <p className="text-[10px] text-gray-500 leading-tight mb-2.5">{item.desc}</p>
 
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <label className="text-[11px] font-bold text-gray-700 block mb-1">3. Medical Certificate</label>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              toast.success(`Attached ${file.name}`);
-                            }
-                          }}
-                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                        />
-                      </div>
+                            <div className="pt-2 border-t border-gray-100">
+                              <input
+                                type="file"
+                                id={`reg-doc-${item.key}`}
+                                accept=".pdf,.png,.jpg,.jpeg"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null;
+                                  handleDocumentUpload(item.key, file);
+                                }}
+                                className="hidden"
+                              />
 
-                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                        <label className="text-[11px] font-bold text-gray-700 block mb-1">4. Student Bio-data / Resume</label>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              toast.success(`Attached ${file.name}`);
-                            }
-                          }}
-                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                        />
-                      </div>
+                              {uploaded ? (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-medium text-emerald-700 truncate max-w-[130px]">
+                                    📎 {uploaded.name}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <label
+                                      htmlFor={`reg-doc-${item.key}`}
+                                      className="cursor-pointer text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                                    >
+                                      Replace
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDocumentRemove(item.key)}
+                                      className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <label
+                                  htmlFor={`reg-doc-${item.key}`}
+                                  className="cursor-pointer w-full py-1.5 px-3 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                                >
+                                  <Upload size={12} /> Upload Document
+                                </label>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

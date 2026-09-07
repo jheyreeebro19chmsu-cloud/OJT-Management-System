@@ -762,6 +762,7 @@ export function AdminEmployees() {
                           {[
                             {
                               id: 'doc-endorsement',
+                              key: 'endorsement' as const,
                               num: '1',
                               title: 'Endorsement Letter',
                               desc: 'Official institutional endorsement from Department Chair / Coordinator',
@@ -769,6 +770,7 @@ export function AdminEmployees() {
                             },
                             {
                               id: 'doc-consent',
+                              key: 'consent' as const,
                               num: '2',
                               title: 'Parental Consent Form',
                               desc: 'Signed student waiver & parent/guardian emergency authorization',
@@ -776,6 +778,7 @@ export function AdminEmployees() {
                             },
                             {
                               id: 'doc-medical',
+                              key: 'medical' as const,
                               num: '3',
                               title: 'Medical Certificate',
                               desc: 'Medical examination clearance & physical fitness certification',
@@ -783,13 +786,20 @@ export function AdminEmployees() {
                             },
                             {
                               id: 'doc-resume',
+                              key: 'resume' as const,
                               num: '4',
                               title: 'Student Bio-data / Resume',
                               desc: 'Updated student profile, academic background & contact bio-data',
                               icon: User,
                             },
                           ].map((docItem) => {
-                            const isPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                            const doc = selectedEmp.submittedDocuments?.[docItem.key];
+                            const isPassed = doc
+                              ? doc.status === 'passed'
+                              : selectedEmp.submittedDocuments
+                              ? false
+                              : selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                            const hasFile = !!doc?.dataUrl;
                             const IconComponent = docItem.icon;
                             return (
                               <div
@@ -809,7 +819,14 @@ export function AdminEmployees() {
                                     >
                                       {docItem.num}
                                     </div>
-                                    <p className="text-xs font-bold text-gray-800">{docItem.title}</p>
+                                    <div>
+                                      <p className="text-xs font-bold text-gray-800">{docItem.title}</p>
+                                      {doc?.name && (
+                                        <p className="text-[10px] text-blue-600 truncate max-w-[140px]" title={doc.name}>
+                                          📁 {doc.name}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                   <span
                                     className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
@@ -831,31 +848,53 @@ export function AdminEmployees() {
                                         studentName: selectedEmp.name,
                                         studentId: selectedEmp.employeeId,
                                         title: `${docItem.num}. ${docItem.title}`,
-                                        fileName: `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                        note: `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
-                                        date: new Date().toLocaleDateString(),
+                                        fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                        fileUrl: doc?.dataUrl || undefined,
+                                        note: doc?.name
+                                          ? `Uploaded File: ${doc.name} (${(doc.size / 1024).toFixed(1)} KB)`
+                                          : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
+                                        date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
                                       })
                                     }
                                     className="flex-1 py-1 px-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
                                   >
-                                    <Eye size={11} /> View Document
+                                    <Eye size={11} /> {hasFile ? 'View Uploaded File' : 'View Document'}
                                   </button>
 
                                   <button
                                     type="button"
                                     onClick={async () => {
-                                      const newStatus = !isPassed;
+                                      const newDocStatus = isPassed ? 'pending' : 'passed';
+                                      const currentDocs = selectedEmp.submittedDocuments || {};
+                                      const updatedDocs = {
+                                        ...currentDocs,
+                                        [docItem.key]: {
+                                          ...(currentDocs[docItem.key] || {
+                                            name: `${docItem.title}.pdf`,
+                                            type: 'application/pdf',
+                                            size: 0,
+                                            uploadedAt: new Date().toISOString(),
+                                          }),
+                                          status: newDocStatus,
+                                        },
+                                      };
+                                      const docKeys: (keyof typeof updatedDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
+                                      const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
+                                      const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
+
                                       await updateEmployee(selectedEmp.id, {
-                                        documentsPassed: newStatus,
-                                        documentsStatus: newStatus ? 'passed' : 'pending',
+                                        submittedDocuments: updatedDocs,
+                                        documentsPassed: allPassed,
+                                        documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
                                       });
                                       setSelectedEmp({
                                         ...selectedEmp,
-                                        documentsPassed: newStatus,
-                                        documentsStatus: newStatus ? 'passed' : 'pending',
+                                        submittedDocuments: updatedDocs,
+                                        documentsPassed: allPassed,
+                                        documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
                                       });
                                       toast.success(
-                                        newStatus
+                                        newDocStatus === 'passed'
                                           ? `${docItem.title} marked as PASSED`
                                           : `${docItem.title} marked as PENDING`
                                       );
@@ -887,18 +926,36 @@ export function AdminEmployees() {
                           <button
                             type="button"
                             onClick={async () => {
-                              const newStatus = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
+                              const willPass = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
+                              const targetStatus = willPass ? 'passed' : 'pending';
+                              const currentDocs = selectedEmp.submittedDocuments || {};
+                              const docKeys: (keyof typeof currentDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
+                              const updatedDocs = { ...currentDocs };
+                              docKeys.forEach((k) => {
+                                updatedDocs[k] = {
+                                  ...(currentDocs[k] || {
+                                    name: `${k}.pdf`,
+                                    type: 'application/pdf',
+                                    size: 0,
+                                    uploadedAt: new Date().toISOString(),
+                                  }),
+                                  status: targetStatus,
+                                };
+                              });
+
                               await updateEmployee(selectedEmp.id, {
-                                documentsPassed: newStatus,
-                                documentsStatus: newStatus ? 'passed' : 'pending',
+                                submittedDocuments: updatedDocs,
+                                documentsPassed: willPass,
+                                documentsStatus: willPass ? 'passed' : 'pending',
                               });
                               setSelectedEmp({
                                 ...selectedEmp,
-                                documentsPassed: newStatus,
-                                documentsStatus: newStatus ? 'passed' : 'pending',
+                                submittedDocuments: updatedDocs,
+                                documentsPassed: willPass,
+                                documentsStatus: willPass ? 'passed' : 'pending',
                               });
                               toast.success(
-                                newStatus
+                                willPass
                                   ? 'All 4 required documents marked as PASSED!'
                                   : 'Documents marked as PENDING verification.'
                               );

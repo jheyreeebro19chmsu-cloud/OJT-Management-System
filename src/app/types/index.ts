@@ -32,10 +32,24 @@ export interface Employee {
   contactPhone?: string;
   academicYear?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
-  /** Backed by the `application_status` column in Supabase. Source of truth for the login gate. */
-  applicationStatus?: 'unregistered' | 'pending' | 'approved' | 'rejected';
   documentsPassed?: boolean;
   documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete';
+  submittedDocuments?: TraineeDocuments;
+}
+
+export interface TraineeDocumentItem {
+  name: string;
+  dataUrl?: string;
+  fileType?: string;
+  uploadedAt: string;
+  status: 'passed' | 'pending';
+}
+
+export interface TraineeDocuments {
+  endorsement?: TraineeDocumentItem;
+  consent?: TraineeDocumentItem;
+  medical?: TraineeDocumentItem;
+  resume?: TraineeDocumentItem;
 }
 
 export interface TimeRecord {
