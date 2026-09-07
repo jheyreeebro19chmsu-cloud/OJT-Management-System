@@ -317,11 +317,13 @@ export function AdminAnnouncements() {
                       </div>
                       <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{ann.content}</p>
                       {ann.photo && (
-                        <img
-                          src={ann.photo}
-                          alt=""
-                          className="mt-2 rounded-xl border border-gray-200 max-h-48 object-cover"
-                        />
+                        <div className="my-2.5 flex justify-center bg-slate-50/80 rounded-2xl p-2 border border-slate-200/80 overflow-hidden max-w-sm mx-auto shadow-sm">
+                          <img
+                            src={ann.photo}
+                            alt=""
+                            className="max-h-72 w-full aspect-square rounded-xl object-contain"
+                          />
+                        </div>
                       )}
                       {ann.reminder && (
                         <p className="text-xs mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">

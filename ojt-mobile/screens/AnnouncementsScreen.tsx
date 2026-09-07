@@ -393,7 +393,9 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
                 <Text style={styles.cardContent}>{ann.content}</Text>
 
                 {ann.photo && (
-                  <Image source={{ uri: ann.photo }} style={styles.cardPhoto} resizeMode="cover" />
+                  <View style={styles.photoContainer}>
+                    <Image source={{ uri: ann.photo }} style={styles.cardPhoto} resizeMode="contain" />
+                  </View>
                 )}
 
                 <View style={styles.metaRow}>
@@ -634,7 +636,19 @@ const styles = StyleSheet.create({
   typeBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   cardTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a', marginBottom: 8 },
   cardContent: { fontSize: 14, color: '#475569', lineHeight: 22, marginBottom: 12 },
-  cardPhoto: { width: '100%', height: 180, borderRadius: 12, marginBottom: 12 },
+  photoContainer: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
+    marginBottom: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardPhoto: { width: '100%', height: '100%' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   metaText: { fontSize: 12, color: '#94a3b8' },
   expiringBadge: {

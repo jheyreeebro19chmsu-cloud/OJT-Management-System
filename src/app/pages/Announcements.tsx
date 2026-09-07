@@ -258,11 +258,13 @@ export function Announcements() {
                     </div>
               </div>
               {announcement.photo && (
-                <img
-                  src={announcement.photo}
-                  alt=""
-                  className="w-full rounded-xl border border-gray-200 max-h-56 object-cover"
-                />
+                <div className="my-3 flex justify-center bg-slate-50/80 rounded-2xl p-2 border border-slate-200/80 overflow-hidden max-w-sm mx-auto shadow-sm">
+                  <img
+                    src={announcement.photo}
+                    alt="Announcement photo"
+                    className="max-h-72 w-full aspect-square rounded-xl object-contain"
+                  />
+                </div>
               )}
               {announcement.reminder && (
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2">
