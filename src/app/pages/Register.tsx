@@ -677,13 +677,15 @@ export function Register() {
         }
 
         if (registrationLocation?.lat && registrationLocation?.lng) {
+          const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - ${form.companyName || 'Assigned Workplace'}`;
+          const zoneAddr = computedAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
           addGeofenceZone({
             id: `personal-${empToUpdateId}`,
-            name: `${composedName} - ${form.companyName || 'Assigned Workplace'}`,
-            address: computedAddress || form.companyAddress || 'Trainee Workplace',
+            name: zoneName,
+            address: zoneAddr,
             lat: registrationLocation.lat,
             lng: registrationLocation.lng,
-            radius: 250,
+            radius: 150,
             active: true,
             academicYear: settings.activeAcademicYear,
           });
@@ -721,16 +723,18 @@ export function Register() {
       }
     }
 
-    // Auto-create/sync Trainee's official OJT Workplace Geofence Zone in the system
+    // Auto-create/sync official Workplace Geofence Zone in the system
     if (registrationLocation?.lat && registrationLocation?.lng) {
       try {
+        const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - ${form.companyName || 'Assigned Workplace'}`;
+        const zoneAddr = computedAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
         addGeofenceZone({
           id: `personal-${newEmp.id}`,
-          name: `${composedName} - ${form.companyName || 'Assigned Workplace'}`,
-          address: computedAddress || form.companyAddress || 'Trainee Workplace',
+          name: zoneName,
+          address: zoneAddr,
           lat: registrationLocation.lat,
           lng: registrationLocation.lng,
-          radius: 250,
+          radius: 150,
           active: true,
           academicYear: settings.activeAcademicYear,
         });
