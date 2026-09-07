@@ -1323,12 +1323,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addTimeRecord = (record: Omit<TimeRecord, 'id'>): TimeRecord => {
     const recordWithAY = { ...record, academicYear: record.academicYear || settings.activeAcademicYear };
+    
+    // Check if an existing record for this employee and date already exists to preserve permanent timestamps
+    const empIdentifier = recordWithAY.employeeId;
+    const emp = employees.find(
+      (e) =>
+        e.id === empIdentifier ||
+        e.employeeId === empIdentifier ||
+        (e.email && empIdentifier && normalizeEmail(e.email) === normalizeEmail(empIdentifier))
+    );
+    const validIds = new Set<string>();
+    validIds.add(empIdentifier);
+    if (emp) {
+      if (emp.id) validIds.add(emp.id);
+      if (emp.employeeId) validIds.add(emp.employeeId);
+      if (emp.email) validIds.add(emp.email.toLowerCase());
+    }
+    if (currentUser) {
+      if (currentUser.id) validIds.add(currentUser.id);
+      if (currentUser.employeeId) validIds.add(currentUser.employeeId);
+      if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
+    }
+
+    const existing = timeRecords.find(
+      (r) => r.date === recordWithAY.date && (validIds.has(r.employeeId) || (r.employeeId && validIds.has(r.employeeId.toLowerCase())))
+    );
+
+    if (existing) {
+      // If an existing record exists, keep permanent timeIn and only update if empty or if fields provided
+      const updated: TimeRecord = {
+        ...existing,
+        timeIn: existing.timeIn || recordWithAY.timeIn,
+        timeInFaceVerified: existing.timeInFaceVerified || recordWithAY.timeInFaceVerified,
+        timeInGeofenced: existing.timeInGeofenced || recordWithAY.timeInGeofenced,
+        timeInPhoto: existing.timeInPhoto || recordWithAY.timeInPhoto,
+        academicYear: existing.academicYear || recordWithAY.academicYear,
+      };
+      updateTimeRecord(existing.id, updated);
+      return updated;
+    }
+
     const newRecord: TimeRecord = { ...recordWithAY, id: `rec-${Date.now()}` };
 
     if (useSupabase) {
       supabaseService.createTimeRecord(recordWithAY).then((created) => {
         if (created) {
-          setTimeRecords((prev) => [created, ...prev]);
+          setTimeRecords((prev) => [created, ...prev.filter((r) => r.id !== created.id)]);
         }
       });
     } else {
@@ -1370,17 +1410,74 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
 
-  const getTodayRecord = (employeeId: string): TimeRecord | null => {
+  const getTodayRecord = (empIdentifier: string): TimeRecord | null => {
+    if (!empIdentifier) return null;
     const today = new Date().toISOString().split('T')[0];
-    const todayRecords = timeRecords.filter((r) => r.employeeId === employeeId && r.date === today);
+
+    // Find associated employee to resolve all possible IDs
+    const emp = employees.find(
+      (e) =>
+        e.id === empIdentifier ||
+        e.employeeId === empIdentifier ||
+        (e.email && empIdentifier && normalizeEmail(e.email) === normalizeEmail(empIdentifier))
+    );
+
+    const validIds = new Set<string>();
+    validIds.add(empIdentifier);
+    if (emp) {
+      if (emp.id) validIds.add(emp.id);
+      if (emp.employeeId) validIds.add(emp.employeeId);
+      if (emp.email) validIds.add(emp.email.toLowerCase());
+    }
+    if (currentUser) {
+      if (currentUser.id) validIds.add(currentUser.id);
+      if (currentUser.employeeId) validIds.add(currentUser.employeeId);
+      if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
+    }
+
+    const todayRecords = timeRecords.filter((r) => {
+      if (r.date !== today) return false;
+      if (validIds.has(r.employeeId)) return true;
+      if (r.employeeId && validIds.has(r.employeeId.toLowerCase())) return true;
+      return false;
+    });
+
     if (todayRecords.length === 0) return null;
 
-    // Sort today's records reverse-chronologically (newest first) by their id
-    return todayRecords.sort((a, b) => b.id.localeCompare(a.id))[0];
+    // Prefer record that has both timeIn and timeOut, or timeIn
+    return todayRecords.sort((a, b) => {
+      const aComplete = a.timeIn && a.timeOut ? 2 : a.timeIn ? 1 : 0;
+      const bComplete = b.timeIn && b.timeOut ? 2 : b.timeIn ? 1 : 0;
+      if (bComplete !== aComplete) return bComplete - aComplete;
+      return (b.id || '').localeCompare(a.id || '');
+    })[0];
   };
 
-  const getEmployeeRecords = (employeeId: string): TimeRecord[] => {
-    return timeRecords.filter((r) => r.employeeId === employeeId).sort((a, b) => b.date.localeCompare(a.date));
+  const getEmployeeRecords = (empIdentifier: string): TimeRecord[] => {
+    if (!empIdentifier) return [];
+    const emp = employees.find(
+      (e) =>
+        e.id === empIdentifier ||
+        e.employeeId === empIdentifier ||
+        (e.email && empIdentifier && normalizeEmail(e.email) === normalizeEmail(empIdentifier))
+    );
+
+    const validIds = new Set<string>();
+    validIds.add(empIdentifier);
+    if (emp) {
+      if (emp.id) validIds.add(emp.id);
+      if (emp.employeeId) validIds.add(emp.employeeId);
+      if (emp.email) validIds.add(emp.email.toLowerCase());
+    }
+    if (currentUser) {
+      if (currentUser.id) validIds.add(currentUser.id);
+      if (currentUser.employeeId) validIds.add(currentUser.employeeId);
+      if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
+    }
+
+    return timeRecords
+      .filter((r) => validIds.has(r.employeeId) || (r.employeeId && validIds.has(r.employeeId.toLowerCase())))
+      .sort((a, b) => b.date.localeCompare(a.date));
   };
 
   const updateGeofenceZones = (zones: GeofenceZone[]) => {
@@ -1442,7 +1539,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (e) =>
         e.id === currentUser.employeeId ||
         e.id === currentUser.id ||
-        (currentUser.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
+        (e.employeeId && (e.employeeId === currentUser.employeeId || e.employeeId === currentUser.id)) ||
+        (currentUser.email && e.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
     );
     if (!employee && currentUser) {
       const currentUserAny = currentUser as any;

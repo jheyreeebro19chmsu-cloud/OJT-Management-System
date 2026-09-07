@@ -298,9 +298,10 @@ export const mobileDb = {
   },
 
   // Time Records / Attendance
-  async getTimeRecords(employeeId?: string, academicYear?: string): Promise<TimeRecord[]> {
+  async getTimeRecords(employeeId?: string, academicYear?: string, altId?: string): Promise<TimeRecord[]> {
     let query = supabase.from('time_records').select('*').order('date', { ascending: false });
-    if (employeeId) query = query.eq('employee_id', employeeId);
+    const ids = [employeeId, altId].filter(Boolean) as string[];
+    if (ids.length > 0) query = query.in('employee_id', ids);
     if (academicYear) query = query.or(`academic_year.eq.${academicYear},academic_year.is.null`);
     const { data, error } = await query;
     if (error) {
@@ -310,13 +311,16 @@ export const mobileDb = {
     return (data || []).map(transformTimeRecord);
   },
 
-  async getTodayTimeRecord(employeeId: string): Promise<TimeRecord | null> {
+  async getTodayTimeRecord(employeeId: string, altId?: string): Promise<TimeRecord | null> {
     const today = new Date().toISOString().split('T')[0];
+    const ids = [employeeId, altId].filter(Boolean) as string[];
     const { data, error } = await supabase
       .from('time_records')
       .select('*')
-      .eq('employee_id', employeeId)
+      .in('employee_id', ids)
       .eq('date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (error || !data) return null;
     return transformTimeRecord(data);

@@ -64,10 +64,11 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
 
   async function loadDTRData() {
     try {
-      const empId = profile?.id || profile?.employeeId || '';
+      const empId = profile?.id || '';
+      const altEmpId = profile?.employeeId || (profile as any)?.employee_id || '';
       const [today, allLogs] = await Promise.all([
-        mobileDb.getTodayTimeRecord(empId),
-        mobileDb.getTimeRecords(empId),
+        mobileDb.getTodayTimeRecord(empId, altEmpId),
+        mobileDb.getTimeRecords(empId, undefined, altEmpId),
       ]);
       setTodayRecord(today);
       setHistoryRecords(allLogs);

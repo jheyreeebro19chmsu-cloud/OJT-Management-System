@@ -20,7 +20,7 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [faceDisabled, setFaceDisabled] = useState(false);
-  const { employees, addTimeRecord, timeRecords, settings } = useApp();
+  const { employees, addTimeRecord, timeRecords, getTodayRecord, settings } = useApp();
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
@@ -33,20 +33,17 @@ export function Login() {
     await new Promise((r) => setTimeout(r, 800));
     const user = (await login(email, password)) as any;
     if (user) {
-      if (user.role === 'admin') {
-        navigate('/admin');
-      } else if (user.role === 'hte' || user.role === 'host') {
-        const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));
-        const enrichedUser = {
-          ...user,
-          photo: employee?.photo || user.photo,
-          faceRegistered: employee?.faceRegistered ?? user.faceRegistered ?? false,
-          employeeId: employee?.employeeId || user.employeeId || employee?.id || user.id,
-        };
-        localStorage.setItem('ojt_hte_user', JSON.stringify(enrichedUser));
-        navigate('/hte');
+      if (user.role === 'admin' || user.role === 'hte') {
+        navigate('/app');
       } else {
-        const employee = employees.find((e) => normalizeEmail(e.email) === normalizeEmail(email));
+        const employee = employees.find(
+          (e) =>
+            e.id === user.employeeId ||
+            e.id === user.id ||
+            e.employeeId === user.employeeId ||
+            e.employeeId === user.id ||
+            (user.email && e.email ? normalizeEmail(e.email) === normalizeEmail(user.email) : false)
+        );
         const enrichedUser = {
           ...user,
           photo: employee?.photo || user.photo,
@@ -59,8 +56,8 @@ export function Login() {
         if (targetEmpId) {
           try {
             const today = new Date().toISOString().split('T')[0];
-            const existingToday = timeRecords?.find((r) => r.employeeId === targetEmpId && r.date === today);
-            if (!existingToday) {
+            const existingToday = getTodayRecord(targetEmpId);
+            if (!existingToday?.timeIn) {
               const now = new Date();
               const timeIn = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
               const [inH, inM] = timeIn.split(':').map(Number);

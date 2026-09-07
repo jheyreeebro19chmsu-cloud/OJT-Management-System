@@ -73,10 +73,12 @@ export function Dashboard() {
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   
   // Original Dashboard State (for non-admin/students)
-  const displayName = employee?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
-  const displayId = employee?.employeeId || (isAdmin ? 'ADMIN' : '');
-  const todayRecord = employee ? getTodayRecord(employee.id) : null;
-  const allRecords = employee ? getEmployeeRecords(employee.id) : [];
+  const currentEmp = employee || getCurrentEmployee();
+  const empLookupId = currentEmp?.id || currentEmp?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+  const displayName = currentEmp?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
+  const displayId = currentEmp?.employeeId || (isAdmin ? 'ADMIN' : '');
+  const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
+  const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
   const [currentTime, setCurrentTime] = useState(new Date());
   const [dismissedAnn, setDismissedAnn] = useState<Set<string>>(new Set());
   const [pendingApps, setPendingApps] = useState<Employee[]>([]);
@@ -398,14 +400,36 @@ export function Dashboard() {
   };
 
   const todayStatus = () => {
-    if (!todayRecord) return { label: 'Not Clocked In', color: 'text-gray-500 bg-gray-100' };
-    if (todayRecord.timeIn && todayRecord.timeOut) return { label: 'Completed', color: 'text-green-700 bg-green-100' };
-    if (todayRecord.timeIn)
+    const currentH = currentTime.getHours();
+    const currentM = currentTime.getMinutes();
+    const currentTimeInMinutes = currentH * 60 + currentM;
+    const shiftOpenMinutes = 6 * 60; // 6:00 AM (06:00)
+    const shiftCloseMinutes = 17 * 60; // 5:00 PM (17:00)
+
+    if (todayRecord?.timeIn && todayRecord?.timeOut) {
+      return { label: 'Completed', color: 'text-green-700 bg-green-100' };
+    }
+    if (todayRecord?.timeIn) {
+      if (currentTimeInMinutes >= shiftCloseMinutes) {
+        return {
+          label: 'Shift Ended (Clock Out)',
+          color: 'text-amber-700 bg-amber-100',
+        };
+      }
       return {
         label: todayRecord.status === 'late' ? 'Clocked In (Late)' : 'Clocked In',
         color: todayRecord.status === 'late' ? 'text-orange-700 bg-orange-100' : 'text-sky-700 bg-sky-100',
       };
-    return { label: 'Absent', color: 'text-red-700 bg-red-100' };
+    }
+
+    if (currentTimeInMinutes < shiftOpenMinutes) {
+      return { label: 'Opens at 6:00 AM', color: 'text-indigo-700 bg-indigo-100' };
+    }
+    if (currentTimeInMinutes >= shiftCloseMinutes) {
+      return { label: 'Closed (5:00 PM)', color: 'text-gray-500 bg-gray-100' };
+    }
+
+    return { label: 'Not Clocked In', color: 'text-gray-500 bg-gray-100' };
   };
 
   // ── INSTRUCTOR DASHBOARD (HTE-style) ──
@@ -730,6 +754,11 @@ export function Dashboard() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-[11px] text-white/80 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+          <span>🕒 Attendance Window: <strong>6:00 AM – 5:00 PM</strong></span>
+          <span>🔄 Resets daily at 6:00 AM</span>
         </div>
 
         {todayRecord?.timeIn && todayRecord?.timeOut && todayRecord.totalHours && (

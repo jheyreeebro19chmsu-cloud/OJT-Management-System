@@ -18,9 +18,10 @@ import { authAPI } from '../services/authApi';
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
 export function TimeRecord() {
-  const { getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings } = useApp();
+  const { getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords } = useApp();
   const employee = getCurrentEmployee();
-  const todayRecord = employee ? getTodayRecord(employee.id) : null;
+  const empLookupId = employee?.id || employee?.employeeId || '';
+  const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
   const [pageState, setPageState] = useState<PageState>('check-geofence');
   const [geofencePassed, setGeofencePassed] = useState(false);
   const [geofenceCoords, setGeofenceCoords] = useState<{ lat: number; lng: number } | undefined>();
@@ -37,8 +38,8 @@ export function TimeRecord() {
   }, []);
 
   useEffect(() => {
-    if (employee) {
-      const rec = getTodayRecord(employee.id);
+    if (empLookupId) {
+      const rec = getTodayRecord(empLookupId);
       setCurrentRecord(rec);
       if (rec?.timeIn && !rec?.timeOut) {
         setAction('out');
@@ -46,7 +47,7 @@ export function TimeRecord() {
         setAction('in');
       }
     }
-  }, [employee]);
+  }, [employee, empLookupId, timeRecords]);
 
   useEffect(() => {
     let mounted = true;
@@ -293,6 +294,11 @@ export function TimeRecord() {
               </p>
             )}
           </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-[11px] text-blue-100 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+          <span>🕒 Attendance Window: <strong>6:00 AM – 5:00 PM</strong></span>
+          <span>🔄 Daily Reset: <strong>6:00 AM</strong></span>
         </div>
 
         {currentRecord?.totalHours && (
