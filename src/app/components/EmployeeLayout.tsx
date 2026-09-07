@@ -13,7 +13,6 @@ const navItems = [
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
-  { to: '/app/profile', label: 'Profile', icon: User, end: false },
 ];
 
 export function EmployeeLayout() {
@@ -139,16 +138,6 @@ export function EmployeeLayout() {
             <div className="text-blue-300 text-[10px] truncate">{displayId}</div>
           </div>
         </div>
-        <button
-          onClick={() => {
-            if (isMobile) setSidebarOpen(false);
-            navigate('/app/profile');
-          }}
-          className="w-full flex items-center gap-2.5 px-3 py-2 mb-1 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
-        >
-          <User size={15} />
-          Profile
-        </button>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
