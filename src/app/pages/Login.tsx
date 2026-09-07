@@ -138,46 +138,56 @@ export function Login() {
 
   return (
     <div
-      className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-sky-900 px-4 py-8"
+      className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 selection:bg-blue-600 selection:text-white"
     >
+      {/* Background Image */}
       <img
         src={backgroundImage}
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover scale-105 saturate-125 contrast-125 brightness-110 blur-[1px]"
+        className="absolute inset-0 h-full w-full object-cover scale-105 brightness-90 contrast-105"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 via-slate-900/20 to-slate-950/70 pointer-events-none" />
+
+      {/* Enhanced Multi-Layer Gradient Scrim for Crystal Clear Contrast */}
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-blue-950/65 to-slate-950/90 backdrop-blur-[1.5px] pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-500/15 via-transparent to-transparent pointer-events-none" />
 
       <motion.div
-        initial={{ opacity: 0, y: 30 }}
+        initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-sm relative"
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+        className="w-full max-w-sm relative z-10"
       >
-        {/* Logo */}
+        {/* Logo & System Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white rounded-3xl shadow-2xl mb-3 p-1.5 ring-4 ring-white/20">
-            <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full shadow-inner" />
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/95 rounded-3xl shadow-[0_10px_30px_rgba(0,0,0,0.4)] mb-3.5 p-2 ring-4 ring-white/30 backdrop-blur-md">
+            <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
           </div>
-          <h1 className="text-white text-2xl font-black drop-shadow-md tracking-tight">OJT Daily Time Record</h1>
-          <p className="text-sky-100 text-xs mt-1 font-medium drop-shadow">On-the-Job Training Management System</p>
+          <h1 className="text-white text-2xl sm:text-3xl font-black tracking-tight drop-shadow-[0_3px_12px_rgba(0,0,0,0.8)]">
+            OJT Daily Time Record
+          </h1>
+          <div className="mt-2">
+            <span className="inline-flex items-center px-3.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-sky-100 text-xs font-semibold tracking-wide border border-white/20 shadow-sm">
+              On-the-Job Training Management System
+            </span>
+          </div>
         </div>
 
         {/* Card */}
         {faceDisabled && (
-          <div className="mb-4 p-3 rounded-xl bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm">
-            Face-recognition features are currently disabled because the local face-api bundle is missing or blocked by the browser. Copy a local face-api.js to <span className="font-mono">public/vendor/face-api.js</span> or run the downloader in <span className="font-mono">scripts/</span> to enable biometric features.
+          <div className="mb-4 p-3 rounded-2xl bg-amber-500/90 backdrop-blur-md border border-amber-300 text-amber-950 text-xs font-medium shadow-lg">
+            Face-recognition features are currently disabled because the local face-api bundle is missing or blocked by the browser. Copy a local face-api.js to <span className="font-mono font-bold">public/vendor/face-api.js</span> or run the downloader in <span className="font-mono font-bold">scripts/</span> to enable biometric features.
           </div>
         )}
-        <div className="bg-white/88 backdrop-blur-sm rounded-3xl shadow-2xl ring-1 ring-black/10 p-6">
-          <h2 className="text-gray-800 font-bold text-lg mb-1">Welcome back</h2>
-          <p className="text-gray-500 text-sm mb-5">Sign in to your account</p>
+        <div className="bg-white/95 backdrop-blur-2xl rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.6)] ring-1 ring-black/5 p-7 border border-white">
+          <h2 className="text-gray-900 font-extrabold text-xl mb-1">Welcome back</h2>
+          <p className="text-gray-500 text-sm mb-6">Sign in to your account</p>
 
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm"
+              className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 mb-4 text-sm font-medium"
             >
               <AlertCircle size={16} className="shrink-0" />
               {error}
@@ -186,18 +196,18 @@ export function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email or Username</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Email or Username</label>
               <input
                 type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="email or username"
+                placeholder="name@example.com"
                 required
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 bg-gray-50/80 text-gray-900 placeholder:text-gray-400 font-medium transition-all"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Password</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Password</label>
               <div className="relative">
                 <input
                   type={showPass ? 'text' : 'password'}
@@ -205,12 +215,12 @@ export function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 pr-10"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 bg-gray-50/80 text-gray-900 placeholder:text-gray-400 font-medium transition-all pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass((p) => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -220,7 +230,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-700 hover:bg-blue-800 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-600/30 hover:shadow-blue-600/50 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm"
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -233,21 +243,21 @@ export function Login() {
             </button>
           </form>
 
-          <div className="mt-5 pt-5 border-t border-gray-100">
-            <p className="text-center text-sm text-gray-500">
+          <div className="mt-6 pt-5 border-t border-gray-100">
+            <p className="text-center text-sm text-gray-600">
               New user?{' '}
-              <Link to="/register" className="text-blue-600 font-medium hover:text-blue-800">
+              <Link to="/register" className="text-blue-600 font-bold hover:text-blue-800 transition-colors">
                 Create an account
               </Link>
             </p>
-            <p className="text-center text-xs text-gray-400 mt-2">
+            <p className="text-center text-xs text-gray-400 mt-2.5">
               Host supervisor? Sign in with your host account to access the feedback portal.
             </p>
             <div className="mt-3 text-center">
               <button
                 type="button"
                 onClick={() => setShowForgot((s) => !s)}
-                className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
               >
                 Forgot password?
               </button>
