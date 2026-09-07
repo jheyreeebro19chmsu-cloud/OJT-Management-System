@@ -105,12 +105,26 @@ export function AdminEvaluations() {
     getEmployeeRequiredDocuments,
     getEmployeeRequirementSummary,
     settings,
+    currentUser,
   } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState<EvaluationForm>(BLANK_FORM);
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
+
+  const instructorName = useMemo(() => {
+    if (selectedEmp?.instructorId) {
+      const linked = employees.find((e) => e.id === selectedEmp.instructorId || e.employeeId === selectedEmp.instructorId);
+      if (linked?.name) return linked.name;
+    }
+    if (currentUser?.name && (currentUser.role === 'admin' || (currentUser as any).position === 'OJT Instructor')) {
+      return currentUser.name;
+    }
+    const anyInst = employees.find((e) => e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor')));
+    if (anyInst?.name) return anyInst.name;
+    return 'OJT INSTRUCTOR';
+  }, [selectedEmp, employees, currentUser]);
 
   const activeEmployees = useMemo(() => {
     return employees.filter((e) => {
@@ -506,7 +520,7 @@ export function AdminEvaluations() {
 
               <div>
                 <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
-                  <span className="font-bold text-slate-800 text-sm uppercase">OJT INSTRUCTOR</span>
+                  <span className="font-bold text-slate-800 text-sm uppercase">{instructorName}</span>
                 </div>
                 <p className="font-semibold text-slate-600">CHMSU OJT Coordinator / Instructor</p>
                 <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
@@ -711,7 +725,7 @@ export function AdminEvaluations() {
 
               <div>
                 <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
-                  <span className="font-bold text-slate-800 text-sm uppercase">OJT INSTRUCTOR</span>
+                  <span className="font-bold text-slate-800 text-sm uppercase">{instructorName}</span>
                 </div>
                 <p className="font-semibold text-slate-600">CHMSU OJT Coordinator / Instructor</p>
                 <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
