@@ -471,39 +471,15 @@ export function Dashboard() {
         </div>
 
         {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
                 <Users className="text-blue-600" size={24} />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-500">Total Students</p>
+                <p className="text-sm font-medium text-gray-500">Total Trainees</p>
                 <p className="text-2xl font-bold text-gray-900">{metrics?.total_applications || 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
-                <CheckCircle2 className="text-green-600" size={24} />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Approved</p>
-                <p className="text-2xl font-bold text-gray-900">{metrics?.status_counts.approved || 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center">
-                <Clock className="text-amber-600" size={24} />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Pending</p>
-                <p className="text-2xl font-bold text-gray-900">{metrics?.status_counts.pending || 0}</p>
               </div>
             </div>
           </div>
@@ -514,7 +490,7 @@ export function Dashboard() {
                 <Users className="text-purple-600" size={24} />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-500">HTE Linked</p>
+                <p className="text-sm font-medium text-gray-500">HTE Linked Trainees</p>
                 <p className="text-2xl font-bold text-gray-900">{linkedStudents.length || 0}</p>
               </div>
             </div>
