@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
@@ -62,6 +62,7 @@ export function AdminEmployees() {
   const [docDueDate, setDocDueDate] = useState('');
 
   const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const getEmployeeGroup = (emp: Employee) => {
     const normalized = emp.position?.toLowerCase() || '';
@@ -144,7 +145,15 @@ export function AdminEmployees() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Deactivate this employee?')) deleteEmployee(id);
+    const emp = employees.find((e) => e.id === id || e.employeeId === id);
+    const name = emp?.name || 'this account';
+    if (confirm(`Permanently delete ${name} and remove all associated records from the system and database?`)) {
+      deleteEmployee(id);
+      if (selectedEmp?.id === id || selectedEmp?.employeeId === id) {
+        closeModal();
+      }
+      toast.success(`${name} was deleted successfully.`);
+    }
   };
 
   const handleApprove = (emp: Employee) => {
@@ -302,7 +311,7 @@ export function AdminEmployees() {
                       )}
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isPendingGroup ? (
                       <>
                         <button
@@ -335,21 +344,70 @@ export function AdminEmployees() {
                             e.stopPropagation();
                             openView(emp);
                           }}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                          title="View Profile"
+                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                          title="View Trainee Profile"
                         >
-                          <Eye size={14} />
+                          <Eye size={15} />
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(emp.id);
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                          title="Delete Employee"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+
+                        {/* 3-Dots Dropdown Menu */}
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenMenuId(openMenuId === emp.id ? null : emp.id);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all"
+                            title="More actions"
+                          >
+                            <MoreVertical size={16} />
+                          </button>
+
+                          {openMenuId === emp.id && (
+                            <div
+                              className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 w-48 text-left"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  openView(emp);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                              >
+                                <Eye size={14} className="text-blue-600" /> View Profile & Docs
+                              </button>
+
+                              <button
+                                onClick={async () => {
+                                  setOpenMenuId(null);
+                                  const newStatus = !(emp.documentsPassed !== false && emp.documentsStatus !== 'pending');
+                                  await updateEmployee(emp.id, {
+                                    documentsPassed: newStatus,
+                                    documentsStatus: newStatus ? 'passed' : 'pending',
+                                  });
+                                  toast.success(newStatus ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                              >
+                                <FileCheck size={14} className="text-emerald-600" />
+                                {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? 'Set Docs as Pending' : 'Approve All Documents'}
+                              </button>
+
+                              <div className="h-px bg-gray-100 my-1" />
+
+                              <button
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  handleDelete(emp.id);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                              >
+                                <Trash2 size={14} /> Delete Trainee
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
@@ -379,7 +437,7 @@ export function AdminEmployees() {
                           <p className="text-xs text-gray-400">{emp.employeeId || emp.email}</p>
                           <p className="text-xs text-gray-500 mt-0.5">{emp.department} • {emp.course}</p>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           {isPendingGroup ? (
                             <div className="flex flex-col gap-1">
                               <button
@@ -411,7 +469,7 @@ export function AdminEmployees() {
                                 className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
                                 title="View Profile"
                               >
-                                <Eye size={14} />
+                                <Eye size={15} />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -419,9 +477,9 @@ export function AdminEmployees() {
                                   handleDelete(emp.id);
                                 }}
                                 className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                                title="Delete Employee"
+                                title="Delete Trainee"
                               >
-                                <Trash2 size={14} />
+                                <Trash2 size={15} />
                               </button>
                             </>
                           )}
@@ -535,9 +593,21 @@ export function AdminEmployees() {
                 <h3 className="font-bold text-gray-800">
                   {modalMode === 'view' ? `${selectedEmp?.name}` : 'Add New Trainee'}
                 </h3>
-                <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                  {modalMode === 'view' && selectedEmp && (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(selectedEmp.id)}
+                      className="p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Permanently Delete Trainee"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                  <button onClick={closeModal} className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100">
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
               <div className="p-5">
