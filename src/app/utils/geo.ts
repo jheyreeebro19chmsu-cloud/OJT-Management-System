@@ -31,6 +31,39 @@ export function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)}km`;
 }
 
+// Real-time reverse geocoding via OpenStreetMap Nominatim
+export async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      {
+        headers: { 'Accept-Language': 'en' },
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.display_name) {
+        return data.display_name;
+      }
+      const addr = data?.address;
+      if (addr) {
+        const parts = [
+          addr.road || addr.suburb || addr.neighbourhood,
+          addr.village || addr.quarter || addr.city_district || addr.barangay,
+          addr.city || addr.town || addr.municipality,
+          addr.state || addr.province || addr.region,
+          addr.country,
+        ].filter(Boolean);
+        if (parts.length > 0) return parts.join(', ');
+      }
+    }
+  } catch (e) {
+    console.warn('reverseGeocode failed:', e);
+  }
+  return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+}
+
 // Multi-tiered high-res GPS locator with instant fallback for desktop browsers & Windows Location Services
 export function getCurrentLocation(): Promise<any> {
   return new Promise((resolve, reject) => {

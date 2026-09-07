@@ -12,14 +12,20 @@ import {
   Calendar,
   Building,
   CheckCircle,
+  Navigation,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
+import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { getCurrentLocation, reverseGeocode } from '../utils/geo';
 
 export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
-  const { currentUser, getCurrentEmployee, employees, settings } = useApp();
+  const { currentUser, getCurrentEmployee, employees, updateEmployee, updateHostSupervisor, addGeofenceZone, settings } = useApp();
+  const [syncingLocation, setSyncingLocation] = useState(false);
   const currentEmp = getCurrentEmployee();
 
   const hteUser = (() => {
@@ -112,6 +118,50 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     (role === 'hte' ? `HTE-${(currentUser?.id || '88392').slice(0, 6).toUpperCase()}` : 'INSTR-001');
 
   const isHte = role === 'hte';
+
+  const handleSyncRealTimeLocation = async () => {
+    const targetId = employee?.id || currentUser?.id;
+    if (!targetId) {
+      toast.error('Could not identify user account to update location.');
+      return;
+    }
+    setSyncingLocation(true);
+    try {
+      const position = await getCurrentLocation();
+      const { latitude, longitude, accuracy } = position.coords;
+      const resolvedAddress = await reverseGeocode(latitude, longitude);
+
+      if (role === 'hte') {
+        updateHostSupervisor(targetId, {
+          companyAddress: resolvedAddress,
+        });
+      }
+
+      updateEmployee(targetId, {
+        registrationLocation: { lat: latitude, lng: longitude, accuracy },
+        registrationAddress: resolvedAddress,
+      });
+
+      // Update personal geofence zone
+      addGeofenceZone({
+        id: `personal-${targetId}`,
+        name: isHte ? `${name} - ${company}` : `${name} - Official Station`,
+        address: resolvedAddress,
+        lat: latitude,
+        lng: longitude,
+        radius: 150,
+        active: true,
+        academicYear: settings?.activeAcademicYear || '2026-2027',
+      });
+
+      toast.success(`Location synced to real-time GPS: ${resolvedAddress}`);
+    } catch (err) {
+      console.error('Failed to sync location:', err);
+      toast.error('Could not acquire real-time GPS. Please allow location access in your browser.');
+    } finally {
+      setSyncingLocation(false);
+    }
+  };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 font-sans">
@@ -254,14 +304,36 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center">
-            <MapPin className="text-blue-700" size={18} />
+        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center">
+              <MapPin className="text-blue-700" size={18} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Permanent Geofence & Location</h3>
+              <p className="text-xs text-slate-500">Registered establishment location used for attendance verification</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-black text-slate-900 tracking-tight">Permanent Geofence & Location</h3>
-            <p className="text-xs text-slate-500">Registered establishment location used for attendance verification</p>
-          </div>
+
+          <button
+            type="button"
+            onClick={handleSyncRealTimeLocation}
+            disabled={syncingLocation}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-2xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+            title="Capture current live GPS and resolve address"
+          >
+            {syncingLocation ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                <span>Locking GPS...</span>
+              </>
+            ) : (
+              <>
+                <Navigation size={13} />
+                <span>Sync Real-Time GPS</span>
+              </>
+            )}
+          </button>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -271,11 +343,11 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
           </div>
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">GPS Coordinates</div>
-            <div className="text-sm font-semibold text-slate-800">{geofenceCoords}</div>
+            <div className="text-sm font-semibold text-slate-800 font-mono">{geofenceCoords}</div>
           </div>
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 sm:col-span-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Geofence Radius</div>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <span className="text-sm font-semibold text-slate-800">50 meters (Permanent Radius)</span>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <CheckCircle size={12} className="text-emerald-600" />

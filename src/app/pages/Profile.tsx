@@ -15,6 +15,8 @@ import {
   CheckCircle,
   Eye,
   Printer,
+  Navigation,
+  Loader2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState } from 'react';
@@ -25,6 +27,7 @@ import type { Employee } from '../types';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
+import { getCurrentLocation, reverseGeocode } from '../utils/geo';
 import { readAsDataUrl } from './Announcements';
 import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
@@ -93,7 +96,9 @@ export function Profile() {
     getRequiredDocumentSubmission,
     getRequirementStatus,
     settings,
+    addGeofenceZone,
   } = useApp();
+  const [syncingLocation, setSyncingLocation] = useState(false);
   const rawEmployee = getCurrentEmployee();
   const employee: Employee = rawEmployee || {
     id: currentUser?.id || currentUser?.employeeId || `emp-${Date.now()}`,
@@ -753,6 +758,57 @@ export function Profile() {
               </span>
             }
           />
+          <div className="pt-3 mt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-gray-500 font-medium">Real-time attendance calibration</span>
+            <button
+              type="button"
+              onClick={async () => {
+                setSyncingLocation(true);
+                try {
+                  const position = await getCurrentLocation();
+                  const { latitude, longitude, accuracy } = position.coords;
+                  const resolvedAddress = await reverseGeocode(latitude, longitude);
+
+                  await updateEmployee(employee.id, {
+                    registrationLocation: { lat: latitude, lng: longitude, accuracy },
+                    registrationAddress: resolvedAddress,
+                  });
+
+                  addGeofenceZone({
+                    id: `personal-${employee.id}`,
+                    name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
+                    address: resolvedAddress,
+                    lat: latitude,
+                    lng: longitude,
+                    radius: 150,
+                    active: true,
+                    academicYear: settings.activeAcademicYear,
+                  });
+
+                  toast.success(`Location calibrated to real-time GPS: ${resolvedAddress}`);
+                } catch (err) {
+                  console.error('Failed to sync location:', err);
+                  toast.error('Could not lock real-time GPS. Please allow location permissions in your browser.');
+                } finally {
+                  setSyncingLocation(false);
+                }
+              }}
+              disabled={syncingLocation}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+            >
+              {syncingLocation ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  <span>Locking GPS...</span>
+                </>
+              ) : (
+                <>
+                  <Navigation size={12} />
+                  <span>Sync Real-Time GPS</span>
+                </>
+              )}
+            </button>
+          </div>
         </Section>
       </motion.div>
 

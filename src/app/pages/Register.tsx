@@ -42,9 +42,8 @@ import { Country, State, City } from 'country-state-city';
 
 
 import { authAPI } from '../services/authApi';
-import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
-import { getCurrentLocation, isGeolocationPositionError } from '../utils/geo';
+import { getCurrentLocation, isGeolocationPositionError, reverseGeocode } from '../utils/geo';
 import { getAbsoluteUrl } from '../services/config';
 import { validateRegistrationData, validateSentenceLimit } from '../utils/validation';
 
@@ -274,6 +273,9 @@ export function Register() {
       const { latitude, longitude, accuracy } = position.coords;
       setRegistrationLocation({ lat: latitude, lng: longitude, accuracy });
       setLocationStatus('captured');
+      reverseGeocode(latitude, longitude).then((addr) => {
+        if (addr) setRegistrationAddress(addr);
+      });
       const accuracyLabel = accuracy < 10 ? 'High' : accuracy < 50 ? 'Good' : 'Low';
       toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
     } catch (err: unknown) {
@@ -302,6 +304,9 @@ export function Register() {
       (pos) => {
         setRegistrationLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
         setLocationStatus('captured');
+        reverseGeocode(pos.coords.latitude, pos.coords.longitude).then((addr) => {
+          if (addr) setRegistrationAddress(addr);
+        });
       },
       (err) => {
         console.error('watchPosition error', err);
