@@ -282,18 +282,19 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
   }));
 }
 
-export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'>): Promise<GeofenceZone | null> {
+export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?: string }): Promise<GeofenceZone | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const payload = {
+  const payload: any = {
     ...zone,
     academic_year: zone.academicYear,
   };
+  if (zone.id) payload.id = zone.id;
 
-  const { data, error } = await supabase.from('geofence_zones').insert([payload]).select().single();
+  const { data, error } = await supabase.from('geofence_zones').upsert([payload]).select().single();
 
   if (error) {
-    console.error('Error creating geofence zone:', error);
+    console.error('Error creating/upserting geofence zone:', error);
     return null;
   }
 

@@ -292,7 +292,7 @@ interface AppContextType {
   getTodayRecord: (employeeId: string) => TimeRecord | null;
   getEmployeeRecords: (employeeId: string) => TimeRecord[];
   updateGeofenceZones: (zones: GeofenceZone[]) => void;
-  addGeofenceZone: (zone: Omit<GeofenceZone, 'id'>) => void;
+  addGeofenceZone: (zone: Omit<GeofenceZone, 'id'> & { id?: string }) => void;
   updateGeofenceZone: (id: string, data: Partial<GeofenceZone>) => void;
   deleteGeofenceZone: (id: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
@@ -1193,10 +1193,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setPasswordForEmail(cleanData.email, password);
           }
 
-          // Face photo/descriptor are already saved to Supabase as part of `created` above
-          // (cleanData.photo / face_registered). The Django/Railway face-register call is
-          // skipped — Option B means Supabase is the only backend, and that Railway endpoint
-          // is CORS-blocked from this domain anyway.
+          // Auto-create/upsert trainee workplace geofence zone in database and local state
+          if (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) {
+            const traineeZone: GeofenceZone = {
+              id: `personal-${created.id}`,
+              name: `${created.name} - ${cleanData.companyName || 'Assigned Workplace'}`,
+              address: cleanData.registrationAddress || cleanData.companyAddress || 'Trainee Workplace',
+              lat: cleanData.registrationLocation.lat,
+              lng: cleanData.registrationLocation.lng,
+              radius: 250,
+              active: true,
+              academicYear: cleanData.academicYear || settings.activeAcademicYear,
+            };
+            setGeofenceZones((prev) => [traineeZone, ...prev.filter((z) => z.id !== traineeZone.id)]);
+            supabaseService.createGeofenceZone(traineeZone).catch((err) => {
+              console.debug('Trainee geofence zone auto-sync notice:', err);
+            });
+          }
+
           return { success: true, employee: created };
         } else {
           return { success: false, message: 'Failed to create database record in Supabase.' };
@@ -1259,6 +1273,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (useSupabase) {
       supabaseService.updateEmployee(id, data);
+    }
+
+    // If location is updated, also update/upsert the trainee's personal geofence zone
+    if (data.registrationLocation?.lat && data.registrationLocation?.lng) {
+      const emp = updatedEmployee || employees.find((e) => e.id === id);
+      if (emp) {
+        const traineeZone: GeofenceZone = {
+          id: `personal-${id}`,
+          name: `${emp.name} - ${emp.companyName || 'Assigned Workplace'}`,
+          address: emp.registrationAddress || emp.companyAddress || 'Trainee Workplace',
+          lat: data.registrationLocation.lat,
+          lng: data.registrationLocation.lng,
+          radius: 250,
+          active: true,
+          academicYear: emp.academicYear || settings.activeAcademicYear,
+        };
+        setGeofenceZones((prev) => [traineeZone, ...prev.filter((z) => z.id !== traineeZone.id)]);
+        if (useSupabase) {
+          supabaseService.createGeofenceZone(traineeZone).catch((err) => {
+            console.debug('Geofence zone sync notice on update:', err);
+          });
+        }
+      }
     }
   };
 
@@ -1337,20 +1374,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGeofenceZones(sanitized);
   };
 
-  const addGeofenceZone = (zone: Omit<GeofenceZone, 'id'>) => {
+  const addGeofenceZone = (zone: Omit<GeofenceZone, 'id'> & { id?: string }) => {
     const zoneWithAY = { ...zone, academicYear: (zone as any).academicYear || settings.activeAcademicYear };
-    const newZone = sanitizeGeofenceZone({ ...zoneWithAY, id: `zone-${Date.now()}` });
+    const newZone = sanitizeGeofenceZone({ ...zoneWithAY, id: zone.id || `zone-${Date.now()}` });
     if (!newZone) return;
 
     if (useSupabase) {
-      supabaseService.createGeofenceZone(zoneWithAY).then((created) => {
-        const sanitizedCreated = sanitizeGeofenceZone(created);
+      supabaseService.createGeofenceZone({ ...zoneWithAY, id: newZone.id }).then((created) => {
+        const sanitizedCreated = sanitizeGeofenceZone(created || newZone);
         if (sanitizedCreated) {
-          setGeofenceZones((prev) => [...prev, sanitizedCreated]);
+          setGeofenceZones((prev) => [...prev.filter((z) => z.id !== sanitizedCreated.id), sanitizedCreated]);
         }
       });
     } else {
-      setGeofenceZones((prev) => [...prev, newZone]);
+      setGeofenceZones((prev) => [...prev.filter((z) => z.id !== newZone.id), newZone]);
     }
   };
 

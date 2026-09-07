@@ -12,35 +12,73 @@ import {
   Info,
   MoreVertical,
   User,
+  Building,
+  ExternalLink,
+  Search,
+  ShieldCheck,
+  GraduationCap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 
 import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
-import { GeofenceZone } from '../../types';
+import { GeofenceZone, Employee } from '../../types';
 import { GEOFENCE_RADIUS_METERS } from '../../utils/geo';
-
-
+import { getPhotoUrl } from '../../services/config';
 
 const BLANK_ZONE = {
   name: '',
   address: '',
-  lat: 14.5547,
-  lng: 121.0244,
+  lat: 10.7410,
+  lng: 122.9702,
   radius: GEOFENCE_RADIUS_METERS,
   active: true,
 };
 
+type ZoneTypeFilter = 'all' | 'institutional' | 'trainee';
+
 export function AdminGeofence() {
   const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, settings } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
+  const [zoneTypeFilter, setZoneTypeFilter] = useState<ZoneTypeFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(BLANK_ZONE);
   const [focusCoords, setFocusCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  // Combine explicit geofenceZones with any trainees who registered GPS locations
+  const allCombinedZones = useMemo<GeofenceZone[]>(() => {
+    const combined = [...geofenceZones];
+    const existingIds = new Set(combined.map((z) => z.id));
+
+    // Also include any trainee who has registered GPS location if not yet in geofenceZones
+    employees.forEach((emp: Employee) => {
+      const regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
+      const regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
+      if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
+        const zoneId = `personal-${emp.id}`;
+        if (!existingIds.has(zoneId)) {
+          combined.push({
+            id: zoneId,
+            name: `${emp.name} - ${emp.companyName || 'Assigned Workplace'}`,
+            address: emp.registrationAddress || emp.companyAddress || 'Trainee Workplace',
+            lat: Number(regLat),
+            lng: Number(regLng),
+            radius: 250,
+            active: true,
+            academicYear: emp.academicYear || settings.activeAcademicYear,
+          });
+          existingIds.add(zoneId);
+        }
+      }
+    });
+    return combined;
+  }, [geofenceZones, employees, settings.activeAcademicYear]);
 
   const getZoneAcademicYear = (zone: any): string | null => {
     if (zone.academicYear) return zone.academicYear;
@@ -52,32 +90,63 @@ export function AdminGeofence() {
     return null;
   };
 
-  const filteredZones = geofenceZones.filter((zone) => {
-    if (selectedAcademicYear === 'all') return true;
-    const zoneAY = getZoneAcademicYear(zone);
-    // If it's a global institutional zone without specific AY, keep it visible in all years
-    if (!zoneAY && !zone.id?.startsWith('personal-')) return true;
-    return zoneAY === selectedAcademicYear;
-  });
-
-  const getZoneOwner = (zone: any): string => {
+  const getTraineeForZone = (zone: any): Employee | null => {
     if (zone.id?.startsWith('personal-')) {
       const empId = zone.id.replace('personal-', '');
-      const emp = (employees as any[]).find((e: any) => e.id === empId);
-      return emp ? emp.name : 'Trainee (Unknown)';
+      return employees.find((e) => e.id === empId) || null;
     }
-    return 'Carlos Hilado Memorial State University';
+    return null;
   };
+
+  const isTraineeZone = (zone: any): boolean => {
+    return Boolean(zone.id?.startsWith('personal-') || getTraineeForZone(zone));
+  };
+
+  const filteredZones = useMemo(() => {
+    return allCombinedZones.filter((zone) => {
+      // Academic year filter
+      if (selectedAcademicYear !== 'all') {
+        const zoneAY = getZoneAcademicYear(zone);
+        if (zoneAY && zoneAY !== selectedAcademicYear) return false;
+      }
+
+      // Zone category filter
+      if (zoneTypeFilter === 'institutional' && isTraineeZone(zone)) return false;
+      if (zoneTypeFilter === 'trainee' && !isTraineeZone(zone)) return false;
+
+      // Search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const trainee = getTraineeForZone(zone);
+        const matchName = zone.name.toLowerCase().includes(q);
+        const matchAddress = (zone.address || '').toLowerCase().includes(q);
+        const matchTrainee = trainee && (
+          trainee.name.toLowerCase().includes(q) ||
+          (trainee.employeeId || '').toLowerCase().includes(q) ||
+          (trainee.companyName || '').toLowerCase().includes(q) ||
+          (trainee.course || '').toLowerCase().includes(q)
+        );
+        if (!matchName && !matchAddress && !matchTrainee) return false;
+      }
+
+      return true;
+    });
+  }, [allCombinedZones, selectedAcademicYear, zoneTypeFilter, searchQuery, employees]);
 
   const upd = (f: string, v: string | number | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
   const handleAdd = () => {
+    if (!form.name.trim()) {
+      toast.error('Please enter a zone name.');
+      return;
+    }
     addGeofenceZone({
       ...form,
       academicYear: selectedAcademicYear !== 'all' ? selectedAcademicYear : settings.activeAcademicYear,
-    } as any);
+    });
     setForm(BLANK_ZONE);
     setShowAdd(false);
+    toast.success('Geofence zone added successfully!');
   };
 
   const handleEdit = (zone: GeofenceZone) => {
@@ -96,36 +165,48 @@ export function AdminGeofence() {
     if (editId) {
       updateGeofenceZone(editId, form);
       setEditId(null);
+      toast.success('Geofence zone updated successfully!');
     }
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Delete this geofence zone?')) deleteGeofenceZone(id);
+    if (confirm('Delete this geofence zone?')) {
+      deleteGeofenceZone(id);
+      toast.success('Geofence zone removed.');
+    }
   };
 
   const handleToggle = (zone: GeofenceZone) => {
     updateGeofenceZone(zone.id, { active: !zone.active });
+    toast.info(`Zone ${zone.active ? 'deactivated' : 'activated'}.`);
   };
+
   const invalidZones = filteredZones.filter((zone) => !zone || !isValidCoord(zone.lat, zone.lng));
 
   const availableYears = Array.from(
     new Set([
       settings?.activeAcademicYear || '2026-2027',
       ...(settings?.academicYears || []),
-      ...geofenceZones.map((z: any) => getZoneAcademicYear(z)).filter(Boolean),
+      ...allCombinedZones.map((z: any) => getZoneAcademicYear(z)).filter(Boolean),
     ])
   ).sort().reverse();
 
+  // Statistics
+  const totalActive = allCombinedZones.filter((z) => z.active).length;
+  const totalTraineeZones = allCombinedZones.filter((z) => isTraineeZone(z)).length;
+  const totalInstitutional = allCombinedZones.filter((z) => !isTraineeZone(z)).length;
+
   return (
     <div className="space-y-5">
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Geofence Zones</h2>
+          <h2 className="text-xl font-bold text-gray-800">Geofence Location Monitoring</h2>
           <p className="text-sm text-gray-500">
-            {filteredZones.filter((z) => z.active).length} active zones {selectedAcademicYear !== 'all' && `(${selectedAcademicYear})`}
+            Monitor trainee workplace coordinates and institutional boundaries for attendance verification.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Academic Year Selector */}
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm text-xs">
             <span className="font-semibold text-gray-600">Cohort AY:</span>
@@ -148,7 +229,7 @@ export function AdminGeofence() {
               setForm(BLANK_ZONE);
               setShowAdd(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
           >
             <Plus size={15} />
             Add Zone
@@ -156,16 +237,83 @@ export function AdminGeofence() {
         </div>
       </div>
 
-      {/* Info card */}
-      <div className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3">
-        <Info size={18} className="text-blue-600 shrink-0 mt-0.5" />
-        <div className="text-sm text-blue-700">
-          <p className="font-semibold mb-1">How Geofencing Works</p>
-          <p className="text-blue-600 text-xs leading-relaxed">
-            When a trainee attempts to clock in or out, the system checks their GPS coordinates against all active
-            geofence zones in their academic year. They must be within the specified radius (in meters) from the zone center to proceed with
-            face verification.
-          </p>
+      {/* Metric Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
+          <div className="w-11 h-11 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+            <MapPin size={22} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-500">Total Active Zones</p>
+            <p className="text-xl font-black text-gray-900">{totalActive}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center gap-3">
+          <div className="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+            <Building size={22} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-500">Trainee OJT Workplaces</p>
+            <p className="text-xl font-black text-emerald-700">{totalTraineeZones}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm flex items-center gap-3">
+          <div className="w-11 h-11 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center shrink-0">
+            <GraduationCap size={22} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-500">Campus Institutional Zones</p>
+            <p className="text-xl font-black text-purple-700">{totalInstitutional}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Tabs & Search */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+          <button
+            onClick={() => setZoneTypeFilter('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              zoneTypeFilter === 'all'
+                ? 'bg-white text-gray-900 shadow-xs'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            All Zones ({allCombinedZones.length})
+          </button>
+          <button
+            onClick={() => setZoneTypeFilter('trainee')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              zoneTypeFilter === 'trainee'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            Trainee Workplaces ({totalTraineeZones})
+          </button>
+          <button
+            onClick={() => setZoneTypeFilter('institutional')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              zoneTypeFilter === 'institutional'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            Institutional Zones ({totalInstitutional})
+          </button>
+        </div>
+
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search trainee, establishment, or zone..."
+            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          />
         </div>
       </div>
 
@@ -175,18 +323,30 @@ export function AdminGeofence() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
       >
-        <div className="p-4 border-b border-gray-100 flex items-center gap-2">
-          <Navigation size={16} className="text-blue-600" />
-          <div>
-            <h3 className="font-bold text-gray-800 text-sm">Zone Visualization (Leaflet)</h3>
-            <p className="text-xs text-gray-500">Click the map to set a zone center while adding or editing</p>
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Navigation size={16} className="text-blue-600" />
+            <div>
+              <h3 className="font-bold text-gray-800 text-sm">Interactive Geofence Map (Leaflet)</h3>
+              <p className="text-xs text-gray-500">Live visualization of all OJT workplace boundaries and campus pins</p>
+            </div>
           </div>
+          {selectedZoneId && (
+            <button
+              onClick={() => {
+                setSelectedZoneId(null);
+                setFocusCoords(undefined);
+              }}
+              className="text-xs text-blue-600 hover:underline font-semibold"
+            >
+              Reset View
+            </button>
+          )}
         </div>
         {invalidZones.length > 0 && (
           <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <span className="font-semibold">Warning:</span> {invalidZones.length} zone
-            {invalidZones.length > 1 ? 's' : ''} with invalid coordinates {invalidZones.length > 1 ? 'were' : 'was'}{' '}
-            skipped on the map.
+            {invalidZones.length > 1 ? 's' : ''} with invalid coordinates skipped on map.
           </div>
         )}
         <GeofenceMap
@@ -194,6 +354,7 @@ export function AdminGeofence() {
           picking={Boolean(showAdd || editId)}
           pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : undefined}
           focusCoords={focusCoords}
+          className="h-80"
           onPick={(lat, lng) => {
             upd('lat', lat);
             upd('lng', lng);
@@ -207,153 +368,224 @@ export function AdminGeofence() {
           <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center">
             <MapPin size={40} className="text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 font-medium">No geofence zones found</p>
-            <p className="text-gray-400 text-sm mt-1">Add a zone for this academic year to enable location-based attendance</p>
+            <p className="text-gray-400 text-sm mt-1">
+              When trainees register with GPS, their OJT workplace geofences will automatically appear here.
+            </p>
           </div>
         ) : (
-          filteredZones.map((zone, idx) => (
-            <motion.div
-              key={zone.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              onClick={() => {
-                if (editId !== zone.id) {
-                  setSelectedZoneId(zone.id);
-                  setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
-                }
-              }}
-              className={`bg-white rounded-2xl shadow-sm border transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${
-                selectedZoneId === zone.id ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/20' : 'border-gray-100'
-              } overflow-hidden`}
-            >
-              {editId === zone.id ? (
-                <div className="p-5" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-bold text-gray-800">Edit Zone</h4>
-                    <button onClick={() => setEditId(null)} className="text-gray-400 hover:text-gray-600">
-                      <X size={16} />
-                    </button>
-                  </div>
-                  <ZoneForm form={form} upd={upd} />
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={handleSaveEdit}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800"
-                    >
-                      <Save size={14} /> Save Changes
-                    </button>
-                    <button
-                      onClick={() => setEditId(null)}
-                      className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${zone.active ? 'bg-blue-100' : 'bg-gray-100'}`}
-                      >
-                        <MapPin size={18} className={zone.active ? 'text-blue-600' : 'text-gray-400'} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-gray-800 text-sm hover:text-blue-600 transition-colors">{zone.name}</h4>
-                          {zone.active ? (
-                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                              <CheckCircle size={10} /> Active
-                            </span>
-                          ) : (
-                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactive</span>
-                          )}
-                          {selectedZoneId === zone.id && (
-                            <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-semibold">
-                              Viewing on Map
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-0.5">{zone.address}</p>
-                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                          <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg font-medium">
-                            📍 {zone.lat.toFixed(4)}, {zone.lng.toFixed(4)}
-                          </span>
-                          <span>⭕ {zone.radius}m radius</span>
-                        </div>
-                        {/* Owner & AY badges */}
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <div className="flex items-center gap-1">
-                            <User size={10} className="text-purple-500" />
-                            <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full font-medium">
-                              Owner: {getZoneOwner(zone)}
-                            </span>
-                          </div>
-                          {getZoneAcademicYear(zone) ? (
-                            <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full font-medium">
-                              AY {getZoneAcademicYear(zone)}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
-                              Global / All Cohorts
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+          filteredZones.map((zone, idx) => {
+            const trainee = getTraineeForZone(zone);
+            const isPersonal = isTraineeZone(zone);
 
-                    {/* 3-Dots Action Menu */}
-                    <div className="relative" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => setOpenMenuId(openMenuId === zone.id ? null : zone.id)}
-                        className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all"
-                        title="More options"
-                      >
-                        <MoreVertical size={16} />
+            return (
+              <motion.div
+                key={zone.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                onClick={() => {
+                  if (editId !== zone.id) {
+                    setSelectedZoneId(zone.id);
+                    setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
+                  }
+                }}
+                className={`bg-white rounded-2xl shadow-sm border transition-all cursor-pointer hover:shadow-md ${
+                  selectedZoneId === zone.id
+                    ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/20'
+                    : isPersonal
+                    ? 'border-emerald-100 hover:border-emerald-300'
+                    : 'border-gray-100 hover:border-blue-300'
+                } overflow-hidden`}
+              >
+                {editId === zone.id ? (
+                  <div className="p-5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-bold text-gray-800">Edit Zone Settings</h4>
+                      <button onClick={() => setEditId(null)} className="text-gray-400 hover:text-gray-600">
+                        <X size={16} />
                       </button>
-
-                      {openMenuId === zone.id && (
-                        <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 w-52 min-w-max">
-                          {/* Owner info in dropdown */}
-                          <div className="px-4 py-2 border-b border-gray-50 mb-1">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Zone Owner</p>
-                            <p className="text-xs font-semibold text-gray-700 truncate">{getZoneOwner(zone)}</p>
-                          </div>
-
-                          <button
-                            onClick={() => { handleToggle(zone); setOpenMenuId(null); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                          >
-                            {zone.active ? <ToggleRight size={15} className="text-blue-500" /> : <ToggleLeft size={15} />}
-                            {zone.active ? 'Deactivate Zone' : 'Activate Zone'}
-                          </button>
-
-                          <button
-                            onClick={() => { handleEdit(zone); setOpenMenuId(null); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                          >
-                            <Edit2 size={15} /> Edit Zone
-                          </button>
-
-                          <button
-                            onClick={() => { handleDelete(zone.id); setOpenMenuId(null); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 size={15} /> Delete Zone
-                          </button>
-                        </div>
-                      )}
+                    </div>
+                    <ZoneForm form={form} upd={upd} />
+                    <div className="flex gap-2 mt-4">
+                      <button
+                        onClick={handleSaveEdit}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800"
+                      >
+                        <Save size={14} /> Save Changes
+                      </button>
+                      <button
+                        onClick={() => setEditId(null)}
+                        className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
-                </div>
-              )}
-            </motion.div>
-          ))
+                ) : (
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3.5">
+                        {/* Zone Icon or Trainee Avatar */}
+                        {isPersonal && trainee?.photo ? (
+                          <div className="w-12 h-12 rounded-2xl bg-emerald-100 overflow-hidden shrink-0 border border-emerald-200">
+                            <img
+                              src={getPhotoUrl(trainee.photo)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              style={{ transform: 'scaleX(-1)' }}
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                              isPersonal ? 'bg-emerald-50 border border-emerald-200' : 'bg-blue-50 border border-blue-200'
+                            }`}
+                          >
+                            {isPersonal ? (
+                              <Building size={20} className="text-emerald-600" />
+                            ) : (
+                              <MapPin size={20} className="text-blue-600" />
+                            )}
+                          </div>
+                        )}
+
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-gray-800 text-sm hover:text-blue-600 transition-colors">
+                              {zone.name}
+                            </h4>
+
+                            {isPersonal ? (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200">
+                                <Building size={10} /> Trainee OJT Workplace
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1 border border-purple-200">
+                                <GraduationCap size={10} /> Campus Institutional
+                              </span>
+                            )}
+
+                            {zone.active ? (
+                              <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold border border-green-200">
+                                <CheckCircle size={10} /> Active
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-semibold">
+                                Inactive
+                              </span>
+                            )}
+
+                            {selectedZoneId === zone.id && (
+                              <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
+                                Focused on Map
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-xs text-gray-600 mt-1">{zone.address || 'Designated Establishment Premises'}</p>
+
+                          {/* Trainee Meta strip */}
+                          {trainee && (
+                            <p className="text-xs text-emerald-700 font-medium mt-1">
+                              Trainee: <span className="font-bold">{trainee.name}</span> ({trainee.employeeId || trainee.email}) • {trainee.course || 'OJT Student'}
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-2.5 mt-2 flex-wrap text-xs text-gray-500">
+                            <span className="bg-slate-100 text-slate-700 font-mono px-2 py-0.5 rounded-md font-medium text-[11px] border border-slate-200">
+                              📍 {zone.lat.toFixed(5)}, {zone.lng.toFixed(5)}
+                            </span>
+                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold text-[11px] border border-blue-100">
+                              ⭕ {zone.radius}m boundary radius
+                            </span>
+                            <a
+                              href={`https://www.google.com/maps?q=${zone.lat},${zone.lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md transition-all"
+                            >
+                              <ExternalLink size={10} /> Google Maps
+                            </a>
+                          </div>
+
+                          {/* Owner & AY badges */}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            {getZoneAcademicYear(zone) ? (
+                              <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full font-medium border border-blue-100">
+                                Academic Year {getZoneAcademicYear(zone)}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-medium border border-emerald-100">
+                                Global All Cohorts
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3-Dots Action Menu */}
+                      <div className="relative" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === zone.id ? null : zone.id)}
+                          className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all"
+                          title="More options"
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+
+                        {openMenuId === zone.id && (
+                          <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 w-52 min-w-max">
+                            <div className="px-4 py-2 border-b border-gray-50 mb-1">
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Zone Classification</p>
+                              <p className="text-xs font-semibold text-gray-700 truncate">
+                                {isPersonal ? (trainee?.name || 'Trainee Workplace') : 'Campus Institutional'}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                handleToggle(zone);
+                                setOpenMenuId(null);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                            >
+                              {zone.active ? <ToggleRight size={15} className="text-blue-500" /> : <ToggleLeft size={15} />}
+                              {zone.active ? 'Deactivate Zone' : 'Activate Zone'}
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                handleEdit(zone);
+                                setOpenMenuId(null);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                            >
+                              <Edit2 size={15} /> Edit Zone
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                handleDelete(zone.id);
+                                setOpenMenuId(null);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 size={15} /> Delete Zone
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })
         )}
       </div>
 
-      {/* Add Zone Form */}
+      {/* Add Zone Modal Form */}
       <AnimatePresence>
         {showAdd && (
           <motion.div
@@ -412,7 +644,7 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
         <input
           value={form.name}
           onChange={(e) => upd('name', e.target.value)}
-          placeholder="e.g. Main Office"
+          placeholder="e.g. Main Office / Establishment Premises"
           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
         />
       </div>
@@ -421,7 +653,7 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
         <input
           value={form.address}
           onChange={(e) => upd('address', e.target.value)}
-          placeholder="Street, City"
+          placeholder="Street, City, Province"
           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
         />
       </div>
@@ -450,15 +682,15 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       <div className="space-y-2 p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-gray-800">
-            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 50} meters</span>
+            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 250} meters</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
               min={10}
-              max={500}
-              value={form.radius || 50}
-              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 50))}
+              max={1000}
+              value={form.radius || 250}
+              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 250))}
               className="w-16 px-2 py-1 bg-white border border-gray-300 rounded-lg text-center font-bold text-xs text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
             />
             <span className="text-xs text-gray-500 font-bold">m</span>
@@ -467,37 +699,37 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
 
         <input
           type="range"
-          min={20}
-          max={300}
-          step={5}
-          value={form.radius || 50}
-          onChange={(e) => upd('radius', parseInt(e.target.value) || 50)}
+          min={50}
+          max={500}
+          step={10}
+          value={form.radius || 250}
+          onChange={(e) => upd('radius', parseInt(e.target.value) || 250)}
           className="w-full accent-blue-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
         />
 
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {[30, 50, 75, 100, 150, 200].map((preset) => (
+          {[100, 150, 200, 250, 300, 500].map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => upd('radius', preset)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                (form.radius || 50) === preset
+                (form.radius || 250) === preset
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
               }`}
             >
-              {preset}m {preset === 50 ? '(Default)' : ''}
+              {preset}m {preset === 250 ? '(Standard)' : ''}
             </button>
           ))}
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
-          Default radius for trainees is 50 meters. You can adjust this for larger or smaller facilities.
+          Standard workplace radius is 250 meters. Adjust this according to the size of the establishment facility.
         </p>
       </div>
 
       <div className="flex items-center justify-between bg-gray-50 rounded-xl p-3">
-        <span className="text-sm font-medium text-gray-700">Active Zone</span>
+        <span className="text-sm font-medium text-gray-700">Active Monitoring Zone</span>
         <button onClick={() => upd('active', !form.active)} className="relative">
           {form.active ? (
             <ToggleRight size={28} className="text-blue-600" />
@@ -508,8 +740,8 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       </div>
 
       <div className="bg-yellow-50 rounded-xl p-3 text-xs text-yellow-700">
-        <p className="font-semibold mb-1">💡 Tip: Set Coordinates on Map</p>
-        <p>You can click anywhere on the visualization map above to instantly set the latitude and longitude.</p>
+        <p className="font-semibold mb-1">💡 Tip: Pick Coordinates from Map</p>
+        <p>You can click directly on the map above to instantly drop a pin and set the latitude and longitude.</p>
       </div>
     </div>
   );

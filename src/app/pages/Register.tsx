@@ -58,7 +58,7 @@ type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
 export function Register() {
-  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings } = useApp();
+  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings, addGeofenceZone } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
@@ -675,7 +675,20 @@ export function Register() {
           updateEmployee(existing.id, updatedPayload);
         }
 
-        toast.success('Registration completed! Profile updated with your biometric face and details. Please log in.');
+        if (registrationLocation?.lat && registrationLocation?.lng) {
+          addGeofenceZone({
+            id: `personal-${empToUpdateId}`,
+            name: `${composedName} - ${form.companyName || 'Assigned Workplace'}`,
+            address: computedAddress || form.companyAddress || 'Trainee Workplace',
+            lat: registrationLocation.lat,
+            lng: registrationLocation.lng,
+            radius: 250,
+            active: true,
+            academicYear: settings.activeAcademicYear,
+          });
+        }
+
+        toast.success('Registration completed! Profile and OJT geofence workplace updated. Please log in.');
         setIsSubmitting(false);
         navigate('/login');
         return;
@@ -687,6 +700,24 @@ export function Register() {
     }
 
     const newEmp = result.employee!;
+
+    // Auto-create/sync Trainee's official OJT Workplace Geofence Zone in the system
+    if (registrationLocation?.lat && registrationLocation?.lng) {
+      try {
+        addGeofenceZone({
+          id: `personal-${newEmp.id}`,
+          name: `${composedName} - ${form.companyName || 'Assigned Workplace'}`,
+          address: computedAddress || form.companyAddress || 'Trainee Workplace',
+          lat: registrationLocation.lat,
+          lng: registrationLocation.lng,
+          radius: 250,
+          active: true,
+          academicYear: settings.activeAcademicYear,
+        });
+      } catch (zoneSyncErr) {
+        console.debug('Geofence zone sync error in registration:', zoneSyncErr);
+      }
+    }
 
     // Store the same face template used by attendance verification.
     if (role === 'trainee' && photo && isSecurityApiConfigured()) {

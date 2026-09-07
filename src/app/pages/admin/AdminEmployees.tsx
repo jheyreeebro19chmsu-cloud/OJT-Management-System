@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { FaceCapture } from '../../components/FaceCapture';
+import { GeofenceMap } from '../../components/GeofenceMap';
 import { isSecurityApiConfigured, registerFace } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
 import { Employee } from '../../types';
@@ -916,7 +917,7 @@ export function AdminEmployees() {
                       </div>
 
                       {/* Geofencing & Workplace Attendance Zone */}
-                      <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 space-y-2">
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
                             <MapPin size={16} className="text-blue-600" />
@@ -926,13 +927,14 @@ export function AdminEmployees() {
                             Active Monitoring
                           </span>
                         </div>
+
                         <div className="text-xs text-blue-800 space-y-1">
                           <p><span className="font-semibold text-blue-900">Workplace/HTE:</span> {selectedEmp.companyName || 'Not Assigned'}</p>
-                          <p><span className="font-semibold text-blue-900">Workplace Address:</span> {selectedEmp.registrationAddress || selectedEmp.companyName || 'Campus Location'}</p>
+                          <p><span className="font-semibold text-blue-900">Workplace Address:</span> {selectedEmp.registrationAddress || selectedEmp.companyAddress || 'Campus Location'}</p>
                           {selectedEmp.registrationLocation ? (
                             <div className="flex items-center justify-between gap-2 mt-1">
                               <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
-                                📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±300m)
+                                📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±250m)
                               </p>
                               <a
                                 href={`https://www.google.com/maps?q=${selectedEmp.registrationLocation.lat},${selectedEmp.registrationLocation.lng}`}
@@ -945,10 +947,35 @@ export function AdminEmployees() {
                             </div>
                           ) : (
                             <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
-                              📍 Geofence Boundary: Institutional Campus Zone (Default 300m)
+                              📍 Geofence Boundary: Institutional Campus Zone (Default 250m)
                             </p>
                           )}
                         </div>
+
+                        {/* Interactive Leaflet Map Preview */}
+                        {selectedEmp.registrationLocation && (
+                          <div className="rounded-xl overflow-hidden border border-blue-200 shadow-sm h-48 relative bg-slate-100">
+                            <GeofenceMap
+                              zones={[
+                                {
+                                  id: `personal-${selectedEmp.id}`,
+                                  name: `${selectedEmp.name} - ${selectedEmp.companyName || 'Workplace'}`,
+                                  address: selectedEmp.registrationAddress || 'Trainee Workplace',
+                                  lat: selectedEmp.registrationLocation.lat,
+                                  lng: selectedEmp.registrationLocation.lng,
+                                  radius: 250,
+                                  active: true,
+                                },
+                              ]}
+                              focusCoords={{ lat: selectedEmp.registrationLocation.lat, lng: selectedEmp.registrationLocation.lng }}
+                              className="h-48"
+                            />
+                            <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-700 shadow border border-emerald-200 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>250m Workplace Attendance Radius</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {selectedEmp.registrationAddress && (
