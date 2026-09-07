@@ -67,8 +67,9 @@ export function AdminEmployees() {
 
   const getEmployeeGroup = (emp: Employee) => {
     const normalized = emp.position?.toLowerCase() || '';
-    if (normalized.includes('instructor')) return 'instructor';
-    if (normalized.includes('hte') || normalized.includes('host training')) return 'hte';
+    const empId = emp.employeeId?.toLowerCase() || '';
+    if (normalized.includes('instructor') || empId.startsWith('adm-') || empId.startsWith('instr-')) return 'instructor';
+    if (normalized.includes('hte') || normalized.includes('host training') || empId.startsWith('hte-')) return 'hte';
     return 'student';
   };
 
@@ -193,10 +194,10 @@ export function AdminEmployees() {
       badge: 'bg-blue-100 text-blue-700',
     },
     instructor: {
-      title: 'Instructors',
-      emptyText: 'No instructors found',
-      accent: 'purple',
-      badge: 'bg-purple-100 text-purple-700',
+      title: 'OJT Instructors',
+      emptyText: 'No instructor accounts found',
+      accent: 'indigo',
+      badge: 'bg-indigo-100 text-indigo-700',
     },
     hte: {
       title: 'HTE Supervisors',
@@ -210,6 +211,9 @@ export function AdminEmployees() {
     const items = filteredGroups[group];
     const config = groupConfig[group];
     const isPendingGroup = group === 'pending';
+    const isInstructorGroup = group === 'instructor';
+    const isHteGroup = group === 'hte';
+    const isTraineeGroup = !isInstructorGroup && !isHteGroup;
 
     // Hide pending section entirely if empty, unless it's the only search result
     if (isPendingGroup && items.length === 0 && search === '') return null;
@@ -232,7 +236,7 @@ export function AdminEmployees() {
         ) : (
           items.map((emp, idx) => {
             const stats = getEmpStats(emp.id);
-            const progress = Math.min((stats.totalHours / emp.requiredHours) * 100, 100);
+            const progress = Math.min((stats.totalHours / (emp.requiredHours || 1)) * 100, 100);
             return (
               <motion.div
                 key={emp.id}
@@ -262,7 +266,7 @@ export function AdminEmployees() {
                       <p className="text-xs text-gray-400">
                         {emp.employeeId} • {emp.email}
                       </p>
-                      {emp.academicYear && (
+                      {emp.academicYear && isTraineeGroup && (
                         <span className="inline-block mt-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
                           A.Y. {emp.academicYear}
                         </span>
@@ -271,26 +275,42 @@ export function AdminEmployees() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-700">{emp.department || 'General'}</p>
-                    <p className="text-xs text-gray-400">{emp.course || emp.position}</p>
+                    <p className="text-xs text-gray-400">{isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || emp.position)}</p>
                   </div>
-                  {!isPendingGroup ? (
+                  {isTraineeGroup ? (
+                    !isPendingGroup ? (
+                      <div>
+                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                          <span>{stats.totalHours.toFixed(0)}h</span>
+                          <span>{Math.round(progress)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">{emp.requiredHours}h required</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-700">{emp.companyName || 'No Company Yet'}</p>
+                        <p className="text-[11px] text-gray-400 truncate max-w-[200px]">{emp.registrationAddress || 'Live GPS Centered'}</p>
+                      </div>
+                    )
+                  ) : isInstructorGroup ? (
                     <div>
-                      <div className="flex justify-between text-xs text-gray-500 mb-1">
-                        <span>{stats.totalHours.toFixed(0)}h</span>
-                        <span>{Math.round(progress)}%</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
-                      </div>
-                      <p className="text-xs text-gray-400 mt-0.5">{emp.requiredHours}h required</p>
+                      <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                        Faculty Coordinator
+                      </span>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{emp.schoolName || 'CHMSU'}</p>
                     </div>
                   ) : (
                     <div>
-                      <p className="text-xs font-semibold text-gray-700">{emp.companyName || 'No Company Yet'}</p>
-                      <p className="text-[11px] text-gray-400 truncate max-w-[200px]">{emp.registrationAddress || 'Live GPS Centered'}</p>
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                        Industry Partner
+                      </span>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{emp.companyName || 'Partner Network'}</p>
                     </div>
                   )}
-                  {!isPendingGroup && (
+                  {isTraineeGroup && !isPendingGroup ? (
                     <div className="flex flex-col gap-1 items-start">
                       {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
                         <span className="text-[11px] font-bold flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
@@ -311,7 +331,13 @@ export function AdminEmployees() {
                         </span>
                       )}
                     </div>
-                  )}
+                  ) : !isTraineeGroup ? (
+                    <div>
+                      <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 px-2.5 py-0.5 rounded-full">
+                        {isInstructorGroup ? 'Instructor Account' : 'Supervisor Account'}
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isPendingGroup ? (
                       <>
@@ -346,7 +372,7 @@ export function AdminEmployees() {
                             openView(emp);
                           }}
                           className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                          title="View Trainee Profile"
+                          title={isInstructorGroup ? "View Instructor Profile" : "View Profile"}
                         >
                           <Eye size={15} />
                         </button>
@@ -376,24 +402,26 @@ export function AdminEmployees() {
                                 }}
                                 className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                               >
-                                <Eye size={14} className="text-blue-600" /> View Profile & Docs
+                                <Eye size={14} className="text-blue-600" /> View Details
                               </button>
 
-                              <button
-                                onClick={async () => {
-                                  setOpenMenuId(null);
-                                  const newStatus = !(emp.documentsPassed !== false && emp.documentsStatus !== 'pending');
-                                  await updateEmployee(emp.id, {
-                                    documentsPassed: newStatus,
-                                    documentsStatus: newStatus ? 'passed' : 'pending',
-                                  });
-                                  toast.success(newStatus ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
-                                }}
-                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                              >
-                                <FileCheck size={14} className="text-emerald-600" />
-                                {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? 'Set Docs as Pending' : 'Approve All Documents'}
-                              </button>
+                              {isTraineeGroup && (
+                                <button
+                                  onClick={async () => {
+                                    setOpenMenuId(null);
+                                    const newStatus = !(emp.documentsPassed !== false && emp.documentsStatus !== 'pending');
+                                    await updateEmployee(emp.id, {
+                                      documentsPassed: newStatus,
+                                      documentsStatus: newStatus ? 'passed' : 'pending',
+                                    });
+                                    toast.success(newStatus ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                >
+                                  <FileCheck size={14} className="text-emerald-600" />
+                                  {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? 'Set Docs as Pending' : 'Approve All Documents'}
+                                </button>
+                              )}
 
                               <div className="h-px bg-gray-100 my-1" />
 
@@ -404,7 +432,7 @@ export function AdminEmployees() {
                                 }}
                                 className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
                               >
-                                <Trash2 size={14} /> Delete Trainee
+                                <Trash2 size={14} /> {isInstructorGroup ? 'Delete Instructor' : 'Delete Trainee'}
                               </button>
                             </div>
                           )}
@@ -436,7 +464,9 @@ export function AdminEmployees() {
                         <div>
                           <p className="font-semibold text-gray-800 text-sm hover:text-blue-700">{emp.name}</p>
                           <p className="text-xs text-gray-400">{emp.employeeId || emp.email}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{emp.department} • {emp.course}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {emp.department} • {isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || emp.position)}
+                          </p>
                         </div>
                         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           {isPendingGroup ? (
@@ -468,7 +498,7 @@ export function AdminEmployees() {
                                   openView(emp);
                                 }}
                                 className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
-                                title="View Profile"
+                                title={isInstructorGroup ? "View Instructor Profile" : "View Profile"}
                               >
                                 <Eye size={15} />
                               </button>
@@ -478,7 +508,7 @@ export function AdminEmployees() {
                                   handleDelete(emp.id);
                                 }}
                                 className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
-                                title="Delete Trainee"
+                                title={isInstructorGroup ? "Delete Instructor" : "Delete Trainee"}
                               >
                                 <Trash2 size={15} />
                               </button>
@@ -486,7 +516,7 @@ export function AdminEmployees() {
                           )}
                         </div>
                       </div>
-                      {!isPendingGroup && (
+                      {isTraineeGroup && !isPendingGroup && (
                         <div className="mt-2">
                           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                             <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
@@ -592,7 +622,13 @@ export function AdminEmployees() {
             >
               <div className="flex items-center justify-between p-5 border-b border-gray-100">
                 <h3 className="font-bold text-gray-800">
-                  {modalMode === 'view' ? `${selectedEmp?.name}` : 'Add New Trainee'}
+                  {modalMode === 'view'
+                    ? selectedEmp && getEmployeeGroup(selectedEmp) === 'instructor'
+                      ? `${selectedEmp.name} (Instructor)`
+                      : selectedEmp && getEmployeeGroup(selectedEmp) === 'hte'
+                      ? `${selectedEmp.name} (HTE Supervisor)`
+                      : `${selectedEmp?.name}`
+                    : 'Add New Trainee'}
                 </h3>
                 <div className="flex items-center gap-2">
                   {modalMode === 'view' && selectedEmp && (
@@ -600,7 +636,13 @@ export function AdminEmployees() {
                       type="button"
                       onClick={() => handleDelete(selectedEmp.id)}
                       className="p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                      title="Permanently Delete Trainee"
+                      title={
+                        getEmployeeGroup(selectedEmp) === 'instructor'
+                          ? 'Permanently Delete Instructor'
+                          : getEmployeeGroup(selectedEmp) === 'hte'
+                          ? 'Permanently Delete HTE Supervisor'
+                          : 'Permanently Delete Trainee'
+                      }
                     >
                       <Trash2 size={18} />
                     </button>
@@ -662,501 +704,570 @@ export function AdminEmployees() {
                       />
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {/* Profile header */}
-                      <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl">
-                        <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden shrink-0">
-                          {selectedEmp.photo ? (
-                            <img
-                              src={getPhotoUrl(selectedEmp.photo)}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              style={{ transform: 'scaleX(-1)' }}
-                            />
-                          ) : (
-                            <User size={28} className="text-blue-700" />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-bold text-blue-900">{selectedEmp.name}</p>
-                          <p className="text-blue-600 text-sm">{selectedEmp.employeeId}</p>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? (
-                              <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
-                                <FileCheck size={11} className="text-emerald-600" /> Documents: Passed
-                              </span>
-                            ) : (
-                              <span className="text-xs flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold">
-                                <FileText size={11} className="text-amber-600" /> Documents: Pending
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const newStatus = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? false : true;
-                                await updateEmployee(selectedEmp.id, {
-                                  documentsPassed: newStatus,
-                                  documentsStatus: newStatus ? 'passed' : 'pending',
-                                });
-                                setSelectedEmp({
-                                  ...selectedEmp,
-                                  documentsPassed: newStatus,
-                                  documentsStatus: newStatus ? 'passed' : 'pending',
-                                });
-                                toast.success(newStatus ? 'Registration documents marked as PASSED!' : 'Registration documents marked as PENDING');
-                              }}
-                              className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline ml-1"
-                            >
-                              Toggle Status
-                            </button>
-                            {selectedEmp.faceRegistered ? (
-                              <span className="text-xs flex items-center gap-0.5 text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                                <Camera size={10} /> Face Enrolled
-                              </span>
-                            ) : (
-                              <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
-                                Not Enrolled
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                    (() => {
+                      const empGroup = getEmployeeGroup(selectedEmp);
+                      const isInstructor = empGroup === 'instructor';
+                      const isHTE = empGroup === 'hte';
+                      const isTrainee = !isInstructor && !isHTE;
 
-                      <div className="mt-3">
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Home Address</label>
-                        {!editingAddress ? (
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-sm text-gray-700">{selectedEmp.registrationAddress || '—'}</div>
-                            <button
-                              onClick={() => setEditingAddress(true)}
-                              className="text-sm text-blue-600 hover:text-blue-800"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex gap-2">
-                            <input
-                              value={addressValue}
-                              onChange={(e) => setAddressValue(e.target.value)}
-                              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
-                            />
-                            <button
-                              onClick={async () => {
-                                if (!selectedEmp) return;
-                                await updateEmployee(selectedEmp.id, { registrationAddress: addressValue });
-                                setSelectedEmp({ ...selectedEmp, registrationAddress: addressValue });
-                                setEditingAddress(false);
-                                toast.success('Address updated');
-                              }}
-                              className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => { setEditingAddress(false); setAddressValue(selectedEmp.registrationAddress || '') }}
-                              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Stats */}
-                      {(() => {
-                        const stats = getEmpStats(selectedEmp.id);
-                        const prog = Math.min((stats.totalHours / selectedEmp.requiredHours) * 100, 100);
-                        return (
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-green-50 rounded-xl p-3 text-center">
-                              <p className="font-bold text-green-700">{stats.present}</p>
-                              <p className="text-xs text-gray-500">Present</p>
+                      return (
+                        <div className="space-y-4">
+                          {/* Profile header */}
+                          <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl">
+                            <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden shrink-0">
+                              {selectedEmp.photo ? (
+                                <img
+                                  src={getPhotoUrl(selectedEmp.photo)}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  style={{ transform: 'scaleX(-1)' }}
+                                />
+                              ) : (
+                                <User size={28} className="text-blue-700" />
+                              )}
                             </div>
-                            <div className="bg-orange-50 rounded-xl p-3 text-center">
-                              <p className="font-bold text-orange-700">{stats.late}</p>
-                              <p className="text-xs text-gray-500">Late</p>
-                            </div>
-                            <div className="bg-blue-50 rounded-xl p-3 text-center">
-                              <p className="font-bold text-blue-700">{stats.totalHours.toFixed(0)}h</p>
-                              <p className="text-xs text-gray-500">Hours</p>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {[
-                        { label: 'Email', val: selectedEmp.email },
-                        { label: 'Department', val: selectedEmp.department },
-                        { label: 'Company', val: selectedEmp.companyName },
-                        { label: 'Supervisor', val: selectedEmp.supervisorName },
-                        { label: 'School', val: selectedEmp.schoolName },
-                        { label: 'Campus', val: selectedEmp.campus || 'Not specified' },
-                        { label: 'Course', val: selectedEmp.course },
-                        { label: 'OJT Period', val: `${selectedEmp.startDate} → ${selectedEmp.endDate}` },
-                        { label: 'Required Hours', val: `${selectedEmp.requiredHours} hrs` },
-                        { label: 'Requirements', val: (() => { const summary = getEmployeeRequirementSummary(selectedEmp.id); return `${summary.complete} complete, ${summary.incomplete} incomplete, ${summary.missing} missing`; })() },
-                      ].map(({ label, val }) => (
-                        <div key={label} className="flex gap-3 text-sm border-b border-gray-50 pb-2 last:border-0">
-                          <span className="text-gray-400 w-28 shrink-0">{label}</span>
-                          <span className="font-medium text-gray-700">{val}</span>
-                        </div>
-                      ))}
-
-                      {/* Standard Required OJT Documents Monitoring */}
-                      <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
-                              <FileCheck size={16} className="text-violet-600" />
-                              Required OJT Documents Monitoring
-                            </p>
-                            <p className="text-[11px] text-violet-600 mt-0.5">
-                              4 Standard Compliance Documents Required for Trainee Activation
-                            </p>
-                          </div>
-                          <span
-                            className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                              selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                ? 'bg-green-100 text-green-700 border-green-200'
-                                : 'bg-amber-100 text-amber-700 border-amber-200'
-                            }`}
-                          >
-                            {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                              ? '4/4 Passed (Compliant)'
-                              : 'Pending Verification'}
-                          </span>
-                        </div>
-
-                        {/* The 4 Standard Documents Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {[
-                            {
-                              id: 'doc-endorsement',
-                              key: 'endorsement' as const,
-                              num: '1',
-                              title: 'Endorsement Letter',
-                              desc: 'Official institutional endorsement from Department Chair / Coordinator',
-                              icon: FileText,
-                            },
-                            {
-                              id: 'doc-consent',
-                              key: 'consent' as const,
-                              num: '2',
-                              title: 'Parental Consent Form',
-                              desc: 'Signed student waiver & parent/guardian emergency authorization',
-                              icon: FileCheck,
-                            },
-                            {
-                              id: 'doc-medical',
-                              key: 'medical' as const,
-                              num: '3',
-                              title: 'Medical Certificate',
-                              desc: 'Medical examination clearance & physical fitness certification',
-                              icon: Shield,
-                            },
-                            {
-                              id: 'doc-resume',
-                              key: 'resume' as const,
-                              num: '4',
-                              title: 'Student Bio-data / Resume',
-                              desc: 'Updated student profile, academic background & contact bio-data',
-                              icon: User,
-                            },
-                          ].map((docItem) => {
-                            const doc = selectedEmp.submittedDocuments?.[docItem.key];
-                            const isPassed = doc
-                              ? doc.status === 'passed'
-                              : selectedEmp.submittedDocuments
-                              ? false
-                              : selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
-                            const hasFile = !!doc?.dataUrl;
-                            const IconComponent = docItem.icon;
-                            return (
-                              <div
-                                key={docItem.id}
-                                className={`rounded-xl bg-white p-3 border transition-all ${
-                                  isPassed
-                                    ? 'border-green-200 shadow-sm shadow-green-50/50'
-                                    : 'border-amber-200 shadow-sm shadow-amber-50/50'
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-2 mb-1.5">
-                                  <div className="flex items-center gap-1.5">
-                                    <div
-                                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
-                                        isPassed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                      }`}
-                                    >
-                                      {docItem.num}
-                                    </div>
-                                    <div>
-                                      <p className="text-xs font-bold text-gray-800">{docItem.title}</p>
-                                      {doc?.name && (
-                                        <p className="text-[10px] text-blue-600 truncate max-w-[140px]" title={doc.name}>
-                                          📁 {doc.name}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span
-                                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                                      isPassed
-                                        ? 'bg-green-100 text-green-700 border-green-200'
-                                        : 'bg-amber-100 text-amber-700 border-amber-200'
-                                    }`}
-                                  >
-                                    {isPassed ? '✓ PASSED' : 'PENDING'}
+                            <div className="flex-1">
+                              <p className="font-bold text-blue-900">{selectedEmp.name}</p>
+                              <p className="text-blue-600 text-sm">{selectedEmp.employeeId}</p>
+                              
+                              {isInstructor ? (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  <span className="text-xs flex items-center gap-1 text-indigo-700 bg-indigo-100 border border-indigo-200 px-2.5 py-0.5 rounded-full font-bold">
+                                    OJT Instructor (Faculty)
+                                  </span>
+                                  <span className="text-xs flex items-center gap-1 text-blue-700 bg-blue-100/70 border border-blue-200 px-2.5 py-0.5 rounded-full font-medium">
+                                    {selectedEmp.department || 'CCS Department'}
                                   </span>
                                 </div>
-                                <p className="text-[10px] text-gray-500 leading-tight mb-2.5">{docItem.desc}</p>
-
-                                <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setPreviewInstructorDoc({
-                                        studentName: selectedEmp.name,
-                                        studentId: selectedEmp.employeeId,
-                                        title: `${docItem.num}. ${docItem.title}`,
-                                        fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                        fileUrl: doc?.dataUrl || undefined,
-                                        note: doc?.name
-                                          ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
-                                          : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
-                                        date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
-                                      })
-                                    }
-                                    className="flex-1 py-1 px-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
-                                  >
-                                    <Eye size={11} /> {hasFile ? 'View Uploaded File' : 'View Document'}
-                                  </button>
-
+                              ) : isHTE ? (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+                                    HTE Supervisor
+                                  </span>
+                                  <span className="text-xs flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-medium">
+                                    {selectedEmp.companyName || 'Host Establishment'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? (
+                                    <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+                                      <FileCheck size={11} className="text-emerald-600" /> Documents: Passed
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold">
+                                      <FileText size={11} className="text-amber-600" /> Documents: Pending
+                                    </span>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={async () => {
-                                      const newDocStatus = isPassed ? 'pending' : 'passed';
-                                      const currentDocs = selectedEmp.submittedDocuments || {};
-                                      const updatedDocs = {
-                                        ...currentDocs,
-                                        [docItem.key]: {
-                                          ...(currentDocs[docItem.key] || {
-                                            name: `${docItem.title}.pdf`,
-                                            fileType: 'application/pdf',
-                                            size: 0,
-                                            uploadedAt: new Date().toISOString(),
-                                          }),
-                                          status: newDocStatus,
-                                        },
-                                      };
-                                      const docKeys: (keyof typeof updatedDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
-                                      const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-                                      const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
-
+                                      const newStatus = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? false : true;
                                       await updateEmployee(selectedEmp.id, {
-                                        submittedDocuments: updatedDocs,
-                                        documentsPassed: allPassed,
-                                        documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                        documentsPassed: newStatus,
+                                        documentsStatus: newStatus ? 'passed' : 'pending',
                                       });
                                       setSelectedEmp({
                                         ...selectedEmp,
-                                        submittedDocuments: updatedDocs,
-                                        documentsPassed: allPassed,
-                                        documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                        documentsPassed: newStatus,
+                                        documentsStatus: newStatus ? 'passed' : 'pending',
                                       });
-                                      toast.success(
-                                        newDocStatus === 'passed'
-                                          ? `${docItem.title} marked as PASSED`
-                                          : `${docItem.title} marked as PENDING`
-                                      );
+                                      toast.success(newStatus ? 'Registration documents marked as PASSED!' : 'Registration documents marked as PENDING');
                                     }}
-                                    className={`py-1 px-2.5 rounded-lg text-[10px] font-bold border transition-all ${
-                                      isPassed
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                        : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
-                                    }`}
+                                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline ml-1"
                                   >
-                                    {isPassed ? 'Revoke' : 'Approve'}
+                                    Toggle Status
                                   </button>
+                                  {selectedEmp.faceRegistered ? (
+                                    <span className="text-xs flex items-center gap-0.5 text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                                      <Camera size={10} /> Face Enrolled
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
+                                      Not Enrolled
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-3">
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Home Address</label>
+                            {!editingAddress ? (
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-sm text-gray-700">{selectedEmp.registrationAddress || '—'}</div>
+                                <button
+                                  onClick={() => setEditingAddress(true)}
+                                  className="text-sm text-blue-600 hover:text-blue-800"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <input
+                                  value={addressValue}
+                                  onChange={(e) => setAddressValue(e.target.value)}
+                                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                                />
+                                <button
+                                  onClick={async () => {
+                                    if (!selectedEmp) return;
+                                    await updateEmployee(selectedEmp.id, { registrationAddress: addressValue });
+                                    setSelectedEmp({ ...selectedEmp, registrationAddress: addressValue });
+                                    setEditingAddress(false);
+                                    toast.success('Address updated');
+                                  }}
+                                  className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => { setEditingAddress(false); setAddressValue(selectedEmp.registrationAddress || '') }}
+                                  className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Attendance Stats - Trainees ONLY */}
+                          {isTrainee && (() => {
+                            const stats = getEmpStats(selectedEmp.id);
+                            return (
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-green-50 rounded-xl p-3 text-center">
+                                  <p className="font-bold text-green-700">{stats.present}</p>
+                                  <p className="text-xs text-gray-500">Present</p>
+                                </div>
+                                <div className="bg-orange-50 rounded-xl p-3 text-center">
+                                  <p className="font-bold text-orange-700">{stats.late}</p>
+                                  <p className="text-xs text-gray-500">Late</p>
+                                </div>
+                                <div className="bg-blue-50 rounded-xl p-3 text-center">
+                                  <p className="font-bold text-blue-700">{stats.totalHours.toFixed(0)}h</p>
+                                  <p className="text-xs text-gray-500">Hours</p>
                                 </div>
                               </div>
                             );
-                          })}
-                        </div>
-
-                        {/* Bulk Toggle All Documents Action */}
-                        <div className="flex items-center justify-between pt-1 border-t border-violet-100">
-                          <p className="text-[11px] text-violet-700 font-medium">
-                            Status:{' '}
-                            <span className="font-bold">
-                              {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                ? 'All 4 Required Documents Certified'
-                                : 'Pending Verification of Registration Documents'}
-                            </span>
-                          </p>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const willPass = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
-                              const targetStatus = willPass ? 'passed' : 'pending';
-                              const currentDocs = selectedEmp.submittedDocuments || {};
-                              const docKeys: (keyof typeof currentDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
-                              const updatedDocs = { ...currentDocs };
-                              docKeys.forEach((k) => {
-                                updatedDocs[k] = {
-                                  ...(currentDocs[k] || {
-                                    name: `${k}.pdf`,
-                                    type: 'application/pdf',
-                                    size: 0,
-                                    uploadedAt: new Date().toISOString(),
-                                  }),
-                                  status: targetStatus,
-                                };
-                              });
-
-                              await updateEmployee(selectedEmp.id, {
-                                submittedDocuments: updatedDocs,
-                                documentsPassed: willPass,
-                                documentsStatus: willPass ? 'passed' : 'pending',
-                              });
-                              setSelectedEmp({
-                                ...selectedEmp,
-                                submittedDocuments: updatedDocs,
-                                documentsPassed: willPass,
-                                documentsStatus: willPass ? 'passed' : 'pending',
-                              });
-                              toast.success(
-                                willPass
-                                  ? 'All 4 required documents marked as PASSED!'
-                                  : 'Documents marked as PENDING verification.'
-                              );
-                            }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                              selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                                : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
-                            }`}
-                          >
-                            {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                              ? 'Set All as Pending'
-                              : '✓ Approve All 4 Documents'}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Geofencing & Workplace Attendance Zone */}
-                      <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
-                            <MapPin size={16} className="text-blue-600" />
-                            <span>Geofencing & Workplace Location</span>
-                          </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 text-blue-800">
-                            Active Monitoring
-                          </span>
-                        </div>
-
-                        <div className="text-xs text-blue-800 space-y-1">
-                          <p><span className="font-semibold text-blue-900">Workplace/HTE:</span> {selectedEmp.companyName || 'Not Assigned'}</p>
-                          {(() => {
-                            const matchingZone = geofenceZones.find((z) =>
-                              z.id === selectedEmp.id ||
-                              z.id === `personal-${selectedEmp.id}` ||
-                              (selectedEmp.name && z.name.toLowerCase().includes(selectedEmp.name.toLowerCase()))
-                            );
-                            const workplaceAddr = selectedEmp.companyAddress || matchingZone?.address || (selectedEmp.companyName && selectedEmp.companyName !== 'N/A' ? `${selectedEmp.companyName} Workplace` : 'Campus Location');
-                            return (
-                              <p><span className="font-semibold text-blue-900">Workplace Address:</span> {workplaceAddr}</p>
-                            );
                           })()}
-                          {selectedEmp.registrationLocation ? (
-                            <div className="flex items-center justify-between gap-2 mt-1">
-                              <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
-                                📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±250m)
-                              </p>
-                              <a
-                                href={`https://www.google.com/maps?q=${selectedEmp.registrationLocation.lat},${selectedEmp.registrationLocation.lng}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
-                              >
-                                <ExternalLink size={11} /> Open Map
-                              </a>
+
+                          {/* Account Detail Attributes */}
+                          {(isInstructor
+                            ? [
+                                { label: 'Email', val: selectedEmp.email },
+                                { label: 'Faculty ID', val: selectedEmp.employeeId },
+                                { label: 'Department', val: selectedEmp.department || 'College of Computer Studies' },
+                                { label: 'School', val: selectedEmp.schoolName || 'Carlos Hilado Memorial State University' },
+                                { label: 'Campus', val: selectedEmp.campus || 'Talisay (Main Campus)' },
+                                { label: 'Position', val: selectedEmp.position || 'OJT Instructor' },
+                              ]
+                            : isHTE
+                            ? [
+                                { label: 'Email', val: selectedEmp.email },
+                                { label: 'Supervisor ID', val: selectedEmp.employeeId },
+                                { label: 'Company', val: selectedEmp.companyName || 'Host Training Establishment' },
+                                { label: 'Department', val: selectedEmp.department || 'Internship Division' },
+                                { label: 'Campus / Branch', val: selectedEmp.campus || 'Partner Network' },
+                                { label: 'Position', val: selectedEmp.position || 'HTE Representative' },
+                              ]
+                            : [
+                                { label: 'Email', val: selectedEmp.email },
+                                { label: 'Department', val: selectedEmp.department },
+                                { label: 'Company', val: selectedEmp.companyName },
+                                { label: 'Supervisor', val: selectedEmp.supervisorName },
+                                { label: 'School', val: selectedEmp.schoolName },
+                                { label: 'Campus', val: selectedEmp.campus || 'Not specified' },
+                                { label: 'Course', val: selectedEmp.course },
+                                { label: 'OJT Period', val: `${selectedEmp.startDate} → ${selectedEmp.endDate}` },
+                                { label: 'Required Hours', val: `${selectedEmp.requiredHours} hrs` },
+                                {
+                                  label: 'Requirements',
+                                  val: (() => {
+                                    const summary = getEmployeeRequirementSummary(selectedEmp.id);
+                                    return `${summary.complete} complete, ${summary.incomplete} incomplete, ${summary.missing} missing`;
+                                  })(),
+                                },
+                              ]
+                          ).map(({ label, val }) => (
+                            <div key={label} className="flex gap-3 text-sm border-b border-gray-50 pb-2 last:border-0">
+                              <span className="text-gray-400 w-28 shrink-0">{label}</span>
+                              <span className="font-medium text-gray-700">{val}</span>
                             </div>
-                          ) : (
-                            <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
-                              📍 Geofence Boundary: Institutional Campus Zone (Default 250m)
-                            </p>
+                          ))}
+
+                          {/* Standard Required OJT Documents Monitoring - Trainees ONLY */}
+                          {isTrainee && (
+                            <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
+                                    <FileCheck size={16} className="text-violet-600" />
+                                    Required OJT Documents Monitoring
+                                  </p>
+                                  <p className="text-[11px] text-violet-600 mt-0.5">
+                                    4 Standard Compliance Documents Required for Trainee Activation
+                                  </p>
+                                </div>
+                                <span
+                                  className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                                    selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                      ? 'bg-green-100 text-green-700 border-green-200'
+                                      : 'bg-amber-100 text-amber-700 border-amber-200'
+                                  }`}
+                                >
+                                  {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                    ? '4/4 Passed (Compliant)'
+                                    : 'Pending Verification'}
+                                </span>
+                              </div>
+
+                              {/* The 4 Standard Documents Grid */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {[
+                                  {
+                                    id: 'doc-endorsement',
+                                    key: 'endorsement' as const,
+                                    num: '1',
+                                    title: 'Endorsement Letter',
+                                    desc: 'Official institutional endorsement from Department Chair / Coordinator',
+                                    icon: FileText,
+                                  },
+                                  {
+                                    id: 'doc-consent',
+                                    key: 'consent' as const,
+                                    num: '2',
+                                    title: 'Parental Consent Form',
+                                    desc: 'Signed student waiver & parent/guardian emergency authorization',
+                                    icon: FileCheck,
+                                  },
+                                  {
+                                    id: 'doc-medical',
+                                    key: 'medical' as const,
+                                    num: '3',
+                                    title: 'Medical Certificate',
+                                    desc: 'Medical examination clearance & physical fitness certification',
+                                    icon: Shield,
+                                  },
+                                  {
+                                    id: 'doc-resume',
+                                    key: 'resume' as const,
+                                    num: '4',
+                                    title: 'Student Bio-data / Resume',
+                                    desc: 'Updated student profile, academic background & contact bio-data',
+                                    icon: User,
+                                  },
+                                ].map((docItem) => {
+                                  const doc = selectedEmp.submittedDocuments?.[docItem.key];
+                                  const isPassed = doc
+                                    ? doc.status === 'passed'
+                                    : selectedEmp.submittedDocuments
+                                    ? false
+                                    : selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                                  const hasFile = !!doc?.dataUrl;
+                                  const IconComponent = docItem.icon;
+                                  return (
+                                    <div
+                                      key={docItem.id}
+                                      className={`rounded-xl bg-white p-3 border transition-all ${
+                                        isPassed
+                                          ? 'border-green-200 shadow-sm shadow-green-50/50'
+                                          : 'border-amber-200 shadow-sm shadow-amber-50/50'
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <div
+                                            className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                              isPassed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                            }`}
+                                          >
+                                            {docItem.num}
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-bold text-gray-800">{docItem.title}</p>
+                                            {doc?.name && (
+                                              <p className="text-[10px] text-blue-600 truncate max-w-[140px]" title={doc.name}>
+                                                📁 {doc.name}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <span
+                                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                                            isPassed
+                                              ? 'bg-green-100 text-green-700 border-green-200'
+                                              : 'bg-amber-100 text-amber-700 border-amber-200'
+                                          }`}
+                                        >
+                                          {isPassed ? '✓ PASSED' : 'PENDING'}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-gray-500 leading-tight mb-2.5">{docItem.desc}</p>
+
+                                      <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setPreviewInstructorDoc({
+                                              studentName: selectedEmp.name,
+                                              studentId: selectedEmp.employeeId,
+                                              title: `${docItem.num}. ${docItem.title}`,
+                                              fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                              fileUrl: doc?.dataUrl || undefined,
+                                              note: doc?.name
+                                                ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
+                                                : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
+                                              date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                            })
+                                          }
+                                          className="flex-1 py-1 px-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
+                                        >
+                                          <Eye size={11} /> {hasFile ? 'View Uploaded File' : 'View Document'}
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            const newDocStatus = isPassed ? 'pending' : 'passed';
+                                            const currentDocs = selectedEmp.submittedDocuments || {};
+                                            const updatedDocs = {
+                                              ...currentDocs,
+                                              [docItem.key]: {
+                                                ...(currentDocs[docItem.key] || {
+                                                  name: `${docItem.title}.pdf`,
+                                                  fileType: 'application/pdf',
+                                                  size: 0,
+                                                  uploadedAt: new Date().toISOString(),
+                                                }),
+                                                status: newDocStatus,
+                                              },
+                                            };
+                                            const docKeys: (keyof typeof updatedDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
+                                            const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
+                                            const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
+
+                                            await updateEmployee(selectedEmp.id, {
+                                              submittedDocuments: updatedDocs,
+                                              documentsPassed: allPassed,
+                                              documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                            });
+                                            setSelectedEmp({
+                                              ...selectedEmp,
+                                              submittedDocuments: updatedDocs,
+                                              documentsPassed: allPassed,
+                                              documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                            });
+                                            toast.success(
+                                              newDocStatus === 'passed'
+                                                ? `${docItem.title} marked as PASSED`
+                                                : `${docItem.title} marked as PENDING`
+                                            );
+                                          }}
+                                          className={`py-1 px-2.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                            isPassed
+                                              ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                              : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                                          }`}
+                                        >
+                                          {isPassed ? 'Revoke' : 'Approve'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Bulk Toggle All Documents Action */}
+                              <div className="flex items-center justify-between pt-1 border-t border-violet-100">
+                                <p className="text-[11px] text-violet-700 font-medium">
+                                  Status:{' '}
+                                  <span className="font-bold">
+                                    {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                      ? 'All 4 Required Documents Certified'
+                                      : 'Pending Verification of Registration Documents'}
+                                  </span>
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const willPass = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
+                                    const targetStatus = willPass ? 'passed' : 'pending';
+                                    const currentDocs = selectedEmp.submittedDocuments || {};
+                                    const docKeys: (keyof typeof currentDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
+                                    const updatedDocs = { ...currentDocs };
+                                    docKeys.forEach((k) => {
+                                      updatedDocs[k] = {
+                                        ...(currentDocs[k] || {
+                                          name: `${k}.pdf`,
+                                          type: 'application/pdf',
+                                          size: 0,
+                                          uploadedAt: new Date().toISOString(),
+                                        }),
+                                        status: targetStatus,
+                                      };
+                                    });
+
+                                    await updateEmployee(selectedEmp.id, {
+                                      submittedDocuments: updatedDocs,
+                                      documentsPassed: willPass,
+                                      documentsStatus: willPass ? 'passed' : 'pending',
+                                    });
+                                    setSelectedEmp({
+                                      ...selectedEmp,
+                                      submittedDocuments: updatedDocs,
+                                      documentsPassed: willPass,
+                                      documentsStatus: willPass ? 'passed' : 'pending',
+                                    });
+                                    toast.success(
+                                      willPass
+                                        ? 'All 4 required documents marked as PASSED!'
+                                        : 'Documents marked as PENDING verification.'
+                                    );
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                                    selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                      : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
+                                  }`}
+                                >
+                                  {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
+                                    ? 'Set All as Pending'
+                                    : '✓ Approve All 4 Documents'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Geofencing & Location Zone */}
+                          <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-blue-900 font-bold text-sm">
+                                <MapPin size={16} className="text-blue-600" />
+                                <span>{isInstructor ? 'Campus Station Location' : 'Geofencing & Workplace Location'}</span>
+                              </div>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 text-blue-800">
+                                {isInstructor ? 'Official Station' : 'Active Monitoring'}
+                              </span>
+                            </div>
+
+                            <div className="text-xs text-blue-800 space-y-1">
+                              {isInstructor ? (
+                                <>
+                                  <p><span className="font-semibold text-blue-900">Campus Station:</span> {selectedEmp.campus || 'CHMSU Talisay (Main Campus)'}</p>
+                                  <p><span className="font-semibold text-blue-900">Department / Office:</span> {selectedEmp.department || 'College of Computer Studies'}</p>
+                                </>
+                              ) : (
+                                <>
+                                  <p><span className="font-semibold text-blue-900">Workplace/HTE:</span> {selectedEmp.companyName || 'Not Assigned'}</p>
+                                  {(() => {
+                                    const matchingZone = geofenceZones.find((z) =>
+                                      z.id === selectedEmp.id ||
+                                      z.id === `personal-${selectedEmp.id}` ||
+                                      (selectedEmp.name && z.name.toLowerCase().includes(selectedEmp.name.toLowerCase()))
+                                    );
+                                    const workplaceAddr = selectedEmp.companyAddress || matchingZone?.address || (selectedEmp.companyName && selectedEmp.companyName !== 'N/A' ? `${selectedEmp.companyName} Workplace` : 'Campus Location');
+                                    return (
+                                      <p><span className="font-semibold text-blue-900">Workplace Address:</span> {workplaceAddr}</p>
+                                    );
+                                  })()}
+                                </>
+                              )}
+                              {selectedEmp.registrationLocation ? (
+                                <div className="flex items-center justify-between gap-2 mt-1">
+                                  <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
+                                    📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±100m)
+                                  </p>
+                                  <a
+                                    href={`https://www.google.com/maps?q=${selectedEmp.registrationLocation.lat},${selectedEmp.registrationLocation.lng}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
+                                  >
+                                    <ExternalLink size={11} /> Open Map
+                                  </a>
+                                </div>
+                              ) : (
+                                <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
+                                  📍 Campus Geofence Boundary: Institutional Campus Zone (100m)
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Interactive Leaflet Map Preview */}
+                            {selectedEmp.registrationLocation && (
+                              <div className="rounded-xl overflow-hidden border border-blue-200 shadow-sm h-48 relative bg-slate-100">
+                                <GeofenceMap
+                                  zones={[
+                                    {
+                                      id: `personal-${selectedEmp.id}`,
+                                      name: `${selectedEmp.name} - ${isInstructor ? 'Official Station' : (selectedEmp.companyName || 'Workplace')}`,
+                                      address: isInstructor ? (selectedEmp.campus || 'CHMSU Campus') : (selectedEmp.companyAddress || `${selectedEmp.companyName || 'HTE'} Workplace`),
+                                      lat: Number(selectedEmp.registrationLocation.lat),
+                                      lng: Number(selectedEmp.registrationLocation.lng),
+                                      radius: 100,
+                                      active: true,
+                                    },
+                                  ]}
+                                  defaultCenter={[
+                                    Number(selectedEmp.registrationLocation.lat),
+                                    Number(selectedEmp.registrationLocation.lng),
+                                  ]}
+                                  zoom={15}
+                                  height="100%"
+                                />
+                                <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-700 shadow border border-emerald-200 flex items-center gap-1">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                  <span>100m {isInstructor ? 'Station Radius' : 'Workplace Attendance Radius'}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {selectedEmp.registrationAddress && (
+                            <div className="flex gap-3 text-sm border-t border-gray-50 pt-2">
+                              <span className="text-gray-400 w-28 shrink-0 flex items-center gap-1">
+                                <MapPin size={11} /> Registered At
+                              </span>
+                              <span className="font-mono text-xs text-gray-600">{selectedEmp.registrationAddress}</span>
+                            </div>
+                          )}
+
+                          {/* Server Face Enrollment - Trainees ONLY */}
+                          {isTrainee && (
+                            isSecurityApiConfigured() ? (
+                              <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-4 space-y-2">
+                                <div className="flex items-center gap-2 text-sky-900">
+                                  <Shield size={16} className="shrink-0" />
+                                  <p className="text-sm font-semibold">Server face enrollment</p>
+                                </div>
+                                <p className="text-xs text-sky-800/90">
+                                  Registers this trainee’s face with{' '}
+                                  <code className="text-[11px] bg-white/70 px-1 rounded">/api/face/register/</code> so
+                                  clock-in uses <code className="text-[11px] bg-white/70 px-1 rounded">employee_id</code>{' '}
+                                  matching this app’s internal ID.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setFaceEnrollOpen(true)}
+                                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 transition-colors"
+                                >
+                                  <Camera size={16} />
+                                  {selectedEmp.faceRegistered ? 'Re-enroll face (camera)' : 'Enroll face (camera)'}
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-amber-700 bg-amber-50 rounded-xl p-3 border border-amber-100">
+                                Set <code className="text-[11px]">VITE_DJANGO_API_URL</code> (and API key if the server
+                                requires it) to enroll faces on the backend.
+                              </p>
+                            )
                           )}
                         </div>
-
-                        {/* Interactive Leaflet Map Preview */}
-                        {selectedEmp.registrationLocation && (
-                          <div className="rounded-xl overflow-hidden border border-blue-200 shadow-sm h-48 relative bg-slate-100">
-                            <GeofenceMap
-                              zones={[
-                                {
-                                  id: `personal-${selectedEmp.id}`,
-                                  name: `${selectedEmp.name} - ${selectedEmp.companyName || 'Workplace'}`,
-                                  address: selectedEmp.companyAddress || `${selectedEmp.companyName || 'HTE'} Workplace`,
-                                  lat: Number(selectedEmp.registrationLocation.lat),
-                                  lng: Number(selectedEmp.registrationLocation.lng),
-                                  radius: 150,
-                                  active: true,
-                                },
-                              ]}
-                              defaultCenter={[
-                                Number(selectedEmp.registrationLocation.lat),
-                                Number(selectedEmp.registrationLocation.lng),
-                              ]}
-                              zoom={15}
-                              height="100%"
-                            />
-                            <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-emerald-700 shadow border border-emerald-200 flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                              <span>250m Workplace Attendance Radius</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {selectedEmp.registrationAddress && (
-                        <div className="flex gap-3 text-sm border-t border-gray-50 pt-2">
-                          <span className="text-gray-400 w-28 shrink-0 flex items-center gap-1">
-                            <MapPin size={11} /> Registered At
-                          </span>
-                          <span className="font-mono text-xs text-gray-600">{selectedEmp.registrationAddress}</span>
-                        </div>
-                      )}
-
-                      {isSecurityApiConfigured() ? (
-                        <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-4 space-y-2">
-                          <div className="flex items-center gap-2 text-sky-900">
-                            <Shield size={16} className="shrink-0" />
-                            <p className="text-sm font-semibold">Server face enrollment</p>
-                          </div>
-                          <p className="text-xs text-sky-800/90">
-                            Registers this trainee’s face with{' '}
-                            <code className="text-[11px] bg-white/70 px-1 rounded">/api/face/register/</code> so
-                            clock-in uses <code className="text-[11px] bg-white/70 px-1 rounded">employee_id</code>{' '}
-                            matching this app’s internal ID.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setFaceEnrollOpen(true)}
-                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 transition-colors"
-                          >
-                            <Camera size={16} />
-                            {selectedEmp.faceRegistered ? 'Re-enroll face (camera)' : 'Enroll face (camera)'}
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-amber-700 bg-amber-50 rounded-xl p-3 border border-amber-100">
-                          Set <code className="text-[11px]">VITE_DJANGO_API_URL</code> (and API key if the server
-                          requires it) to enroll faces on the backend.
-                        </p>
-                      )}
-                    </div>
+                      );
+                    })()
                   )
                 ) : (
                   <div className="space-y-3">
