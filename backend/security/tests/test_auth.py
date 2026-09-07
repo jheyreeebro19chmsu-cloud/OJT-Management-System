@@ -62,4 +62,3 @@ class AuthTests(TestCase):
         self.assertIsNotNone(user)
         role = UserRole.objects.filter(user=user).first()
         self.assertEqual(role.role, 'student')
-*** End Patch

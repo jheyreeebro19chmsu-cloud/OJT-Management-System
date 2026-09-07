@@ -394,6 +394,17 @@ def register_hte(request: HttpRequest) -> JsonResponse:
             )
             # Note: face registration for HTE is intentionally disabled.
         # After creating user and HTE record
+        refresh = RefreshToken.for_user(user)
+        user_obj = {
+            'id': user.id,
+            'email': user.email,
+            'name': user.get_full_name(),
+            'role': 'hte',
+            'company_name': company_name,
+            'company_address': company_address,
+            'contact_person': contact_person,
+            'contact_phone': contact_phone,
+        }
         # Prepare response data including password if generated
         response_data = {'success': True, 'tokens': {'refresh': str(refresh), 'access': str(refresh.access_token)}, 'user': user_obj}
         if not password:
@@ -1157,6 +1168,9 @@ def server_create_employee(request: HttpRequest) -> JsonResponse:
             else:
                 # If Supabase returned error but Django user created, still return success with payload
                 return JsonResponse({'success': True, 'employee': payload, 'notice': 'Saved locally'})
+        except Exception as e:
+            logging.exception('server_create_employee failed: %s', e)
+            return JsonResponse({'error': str(e)}, status=500)
         
 @csrf_exempt
 @require_http_methods(["GET"])
