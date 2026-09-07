@@ -179,6 +179,14 @@ export default function App() {
           .maybeSingle();
 
         if (data) {
+          if (data.active === false) {
+            await supabase.auth.signOut();
+            await authStore.clearTokens();
+            setSession(null);
+            setProfile(null);
+            Alert.alert('Account Unavailable', 'This account has been deactivated or deleted from the system.');
+            return;
+          }
           setProfile(normalizeProfile(data));
         } else {
           // Check if user is an HTE host supervisor
@@ -187,7 +195,25 @@ export default function App() {
             .select('*')
             .or(`id.eq.${session.user.id},email.eq.${session.user.email}`)
             .maybeSingle();
-          if (hostData) setProfile(normalizeProfile({ ...hostData, role: 'hte' }));
+          if (hostData) {
+            if (hostData.active === false) {
+              await supabase.auth.signOut();
+              await authStore.clearTokens();
+              setSession(null);
+              setProfile(null);
+              Alert.alert('Account Unavailable', 'This account has been deactivated or deleted from the system.');
+              return;
+            }
+            setProfile(normalizeProfile({ ...hostData, role: 'hte' }));
+          } else {
+            // Account was deleted from both employees and host_supervisors tables
+            console.warn('Account was deleted in database. Terminating session.');
+            await supabase.auth.signOut();
+            await authStore.clearTokens();
+            setSession(null);
+            setProfile(null);
+            Alert.alert('Account Deleted', 'This account has been deleted from the database and can no longer log in.');
+          }
         }
       };
       fetchProfile();

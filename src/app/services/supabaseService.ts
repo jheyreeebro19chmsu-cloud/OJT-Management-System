@@ -129,15 +129,24 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
 export async function deleteEmployee(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  // Soft delete - set active to false
-  const { error } = await supabase.from('employees').update({ active: false }).eq('id', id);
+  try {
+    // Delete from employees table
+    const { error: empError } = await supabase.from('employees').delete().eq('id', id);
+    if (empError) {
+      console.warn('Error deleting employee row:', empError);
+    }
 
-  if (error) {
-    console.error('Error deleting employee:', error);
+    // Also delete any corresponding host supervisor entry
+    const { error: hostError } = await supabase.from('host_supervisors').delete().eq('id', id);
+    if (hostError) {
+      console.debug('No host_supervisor row to delete or notice:', hostError);
+    }
+
+    return true;
+  } catch (err) {
+    console.error('deleteEmployee exception:', err);
     return false;
   }
-
-  return true;
 }
 
 // ─── Time Records ────────────────────────────────────────────────────────────
@@ -1115,8 +1124,14 @@ export async function updateHostSupervisor(id: string, updates: Partial<HostSupe
 
 export async function deleteHostSupervisor(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
-  const { error } = await supabase.from('host_supervisors').delete().eq('id', id);
-  return !error;
+  try {
+    await supabase.from('host_supervisors').delete().eq('id', id);
+    await supabase.from('employees').delete().eq('id', id);
+    return true;
+  } catch (e) {
+    console.error('deleteHostSupervisor error:', e);
+    return false;
+  }
 }
 
 export async function upsertHostSupervisors(hosts: HostSupervisor[]): Promise<boolean> {

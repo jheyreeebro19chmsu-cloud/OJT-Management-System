@@ -631,6 +631,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseSubmissions,
             supabaseComments,
             supabaseHostFeedback,
+            supabaseHostSupervisors,
           ] = await Promise.all([
             supabaseService.fetchEmployees(),
             supabaseService.fetchTimeRecords(),
@@ -641,9 +642,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchAnnouncementSubmissions(),
             supabaseService.fetchAnnouncementComments(),
             supabaseService.fetchHostFeedback(),
+            supabaseService.fetchHostSupervisors(),
           ]);
 
-          if (supabaseEmployees.length > 0) setEmployees(supabaseEmployees);
+          setEmployees(supabaseEmployees);
           if (supabaseRecords.length > 0) setTimeRecords(supabaseRecords);
           const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
           if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
@@ -653,6 +655,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
           if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
           if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
+          if (supabaseHostSupervisors) setHostSupervisors(supabaseHostSupervisors);
+
+          // If current logged-in user was deleted in Supabase, force immediate logout & clear credentials
+          if (currentUser && currentUser.id !== 'admin') {
+            const stillExists =
+              supabaseEmployees.some((e) => (e.id === currentUser.id || normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')) && e.active !== false) ||
+              (supabaseHostSupervisors && supabaseHostSupervisors.some((h) => (h.id === currentUser.id || normalizeEmail(h.email) === normalizeEmail(currentUser.email || '')) && h.active !== false));
+
+            if (!stillExists) {
+              console.warn('Current user account deleted in database. Forcing logout.');
+              setCurrentUser(null);
+              supabase.auth.signOut().catch(() => {});
+              if (currentUser.email) {
+                const norm = normalizeEmail(currentUser.email);
+                setPasswords((prev) => {
+                  const next = { ...prev };
+                  delete next[norm];
+                  delete next[currentUser.email!.toLowerCase()];
+                  saveToStorage(STORAGE_KEYS.PASSWORDS, next);
+                  return next;
+                });
+              }
+            }
+          }
         } catch (err) {
           console.error('Supabase real-time sync error:', err);
         }
@@ -751,12 +777,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let targetEmail = normalizedId;
       const emp = employees.find(
         (e) =>
-          (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active
+          (normalizeEmail(e.email) === normalizedId || (e.username && e.username.toLowerCase() === normalizedId)) && e.active !== false
       );
       if (emp) {
         targetEmail = normalizeEmail(emp.email);
       } else {
-        const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedId && h.active);
+        const host = hostSupervisors.find((h) => normalizeEmail(h.email) === normalizedId && h.active !== false);
         if (host) {
           targetEmail = normalizeEmail(host.email);
         }
@@ -772,13 +798,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const userId = authData.user.id;
 
           // Try to match with loaded employees or host supervisors
-          const matchedEmp = employees.find(
+          let matchedEmp = employees.find(
             (e) =>
-              e.active &&
+              e.active !== false &&
               (e.id === userId ||
                 normalizeEmail(e.email) === normalizeEmail(targetEmail) ||
                 (e.username && e.username.toLowerCase() === normalizedId))
           );
+          let matchedHost = hostSupervisors.find(
+            (h) =>
+              h.active !== false &&
+              (h.id === userId || normalizeEmail(h.email) === normalizeEmail(targetEmail))
+          );
+
+          // Double check database directly if not matched in state
+          if (!matchedEmp && !matchedHost) {
+            const { data: dbEmp } = await supabase
+              .from('employees')
+              .select('*')
+              .or(`id.eq.${userId},email.eq.${targetEmail}`)
+              .maybeSingle();
+            if (dbEmp && dbEmp.active !== false) {
+              const { transformSupabaseEmployee } = await import('../services/supabaseService');
+              matchedEmp = transformSupabaseEmployee(dbEmp);
+              setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+            } else {
+              const { data: dbHost } = await supabase
+                .from('host_supervisors')
+                .select('*')
+                .or(`id.eq.${userId},email.eq.${targetEmail}`)
+                .maybeSingle();
+              if (dbHost && dbHost.active !== false) {
+                matchedHost = {
+                  id: dbHost.id,
+                  employeeId: dbHost.employee_id,
+                  name: dbHost.name,
+                  email: dbHost.email,
+                  companyName: dbHost.company_name,
+                  companyAddress: dbHost.company_address,
+                  contactPerson: dbHost.contact_person,
+                  phone: dbHost.phone,
+                  academicYear: dbHost.academic_year,
+                  isApproved: dbHost.is_approved ?? true,
+                  active: dbHost.active ?? true,
+                };
+                setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
+              }
+            }
+          }
+
+          // If the account has been deleted from the database (not in employees and not in host_supervisors):
+          // Refuse login immediately, sign out from Supabase Auth, and erase credentials from storage.
+          if (!matchedEmp && !matchedHost) {
+            console.warn('Account not found or has been deleted from database. Rejecting login.');
+            await supabase.auth.signOut().catch(() => {});
+            setPasswords((prev) => {
+              const next = { ...prev };
+              delete next[normalizeEmail(targetEmail)];
+              delete next[targetEmail.toLowerCase()];
+              saveToStorage(STORAGE_KEYS.PASSWORDS, next);
+              return next;
+            });
+            return null;
+          }
+
           if (matchedEmp) {
             const role: User['role'] =
               matchedEmp.position === 'OJT Instructor' ? 'admin' : matchedEmp.position === 'HTE Representative' ? 'hte' : 'employee';
@@ -796,7 +879,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return user;
           }
 
-          const matchedHost = hostSupervisors.find((h) => h.id === userId && h.active);
           if (matchedHost) {
             const user: User = { id: matchedHost.id, name: matchedHost.name, role: 'host', email: normalizeEmail(matchedHost.email) };
             setCurrentUser(user);
@@ -804,23 +886,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return user;
           }
 
-          // Fallback user construction from metadata
-          const roleFromMetadata = authData.user.user_metadata?.role;
-          const nameFromMetadata = authData.user.user_metadata?.full_name || authData.user.email || 'User';
-
-          const role: User['role'] = roleFromMetadata === 'admin' ? 'admin' : roleFromMetadata === 'host' ? 'host' : 'employee';
-          const user: User = {
-            id: userId,
-            name: nameFromMetadata,
-            role,
-            employeeId: role === 'employee' ? userId : undefined,
-            email: authData.user.email ? normalizeEmail(authData.user.email) : normalizeEmail(targetEmail),
-            photo: matchedEmp?.photo,
-            faceRegistered: matchedEmp?.faceRegistered,
-          };
-          setCurrentUser(user);
-          setPasswordForEmail(user.email, password);
-          return user;
+          return null;
         }
       } catch (err) {
         console.error('Supabase signInWithPassword exception, trying local fallback:', err);
@@ -1343,10 +1409,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteEmployee = (id: string) => {
-    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, active: false } : e)));
+    const targetEmp = employees.find((e) => e.id === id || e.employeeId === id);
+    const targetHost = hostSupervisors.find((h) => h.id === id || h.employeeId === id);
+    const targetEmail = targetEmp?.email || targetHost?.email;
 
+    // Remove from in-memory state and localStorage
+    const updatedEmployees = employees.filter((e) => e.id !== id && e.employeeId !== id);
+    const updatedHosts = hostSupervisors.filter((h) => h.id !== id && h.employeeId !== id);
+    setEmployees(updatedEmployees);
+    setHostSupervisors(updatedHosts);
+    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+
+    // Erase credentials from storage
+    if (targetEmail) {
+      const normEmail = normalizeEmail(targetEmail);
+      setPasswords((prev) => {
+        const next = { ...prev };
+        delete next[normEmail];
+        delete next[targetEmail.toLowerCase()];
+        saveToStorage(STORAGE_KEYS.PASSWORDS, next);
+        return next;
+      });
+    }
+
+    // Force logout if deleted account is currently logged in
+    if (
+      currentUser &&
+      (currentUser.id === id ||
+        currentUser.employeeId === id ||
+        (targetEmail && normalizeEmail(currentUser.email || '') === normalizeEmail(targetEmail)))
+    ) {
+      setCurrentUser(null);
+      if (useSupabase) {
+        supabase.auth.signOut().catch(() => {});
+      }
+    }
+
+    // Delete permanently from Supabase database
     if (useSupabase) {
       supabaseService.deleteEmployee(id);
+      supabaseService.deleteHostSupervisor(id);
     }
   };
 
