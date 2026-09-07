@@ -51,39 +51,6 @@ export function AdminGeofence() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // Combine explicit geofenceZones with any accounts who registered GPS locations
-  const allCombinedZones = useMemo<GeofenceZone[]>(() => {
-    const combined = geofenceZones
-      .filter((z) => !z.name.toLowerCase().includes('main training center') && z.id !== 'zone-1')
-      .map((z) => ({ ...z, active: z.active !== false }));
-    const existingIds = new Set(combined.map((z) => z.id));
-
-    // Also include any employee/instructor who has registered GPS location if not yet in geofenceZones
-    employees.forEach((emp: Employee) => {
-      const regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
-      const regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
-      if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
-        const isInst = emp.position === 'OJT Instructor' || (emp.employeeId && emp.employeeId.startsWith('ADM-'));
-        const defaultName = isInst ? `${emp.name} - Official Station` : `${emp.name} - ${emp.companyName || 'Assigned Workplace'}`;
-        const zoneId = `personal-${emp.id}`;
-        if (!existingIds.has(zoneId) && !existingIds.has(emp.id)) {
-          combined.push({
-            id: zoneId,
-            name: defaultName,
-            address: emp.registrationAddress || emp.companyAddress || 'Official Workplace',
-            lat: Number(regLat),
-            lng: Number(regLng),
-            radius: 150,
-            active: true,
-            academicYear: emp.academicYear || settings.activeAcademicYear,
-          });
-          existingIds.add(zoneId);
-        }
-      }
-    });
-    return combined;
-  }, [geofenceZones, employees, settings.activeAcademicYear]);
-
   const getTraineeForZone = (zone: any): Employee | null => {
     if (!zone) return null;
     if (zone.id?.startsWith('personal-')) {
@@ -101,6 +68,50 @@ export function AdminGeofence() {
 
     return null;
   };
+
+  // Combine explicit geofenceZones with any accounts who registered GPS locations with strict 1-account-1-zone deduplication
+  const allCombinedZones = useMemo<GeofenceZone[]>(() => {
+    const zoneMap = new Map<string, GeofenceZone>();
+
+    // 1. Process explicit geofence zones from DB/Storage
+    geofenceZones
+      .filter((z) => !z.name.toLowerCase().includes('main training center') && z.id !== 'zone-1')
+      .forEach((z) => {
+        const account = getTraineeForZone(z);
+        const personKey = account
+          ? `acc-${(account.name || account.email || account.id).toLowerCase().trim()}`
+          : `zone-${z.name.toLowerCase().trim()}`;
+
+        if (!zoneMap.has(personKey)) {
+          zoneMap.set(personKey, { ...z, active: z.active !== false });
+        }
+      });
+
+    // 2. Include registered employees who have GPS coordinates if not already represented
+    employees.forEach((emp: Employee) => {
+      const regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
+      const regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
+      if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
+        const personKey = `acc-${(emp.name || emp.email || emp.id).toLowerCase().trim()}`;
+        if (!zoneMap.has(personKey)) {
+          const isInst = emp.position === 'OJT Instructor' || (emp.employeeId && emp.employeeId.startsWith('ADM-'));
+          const defaultName = isInst ? `${emp.name} - Official Station` : `${emp.name} - ${emp.companyName || 'Assigned Workplace'}`;
+          zoneMap.set(personKey, {
+            id: `personal-${emp.id}`,
+            name: defaultName,
+            address: emp.registrationAddress || emp.companyAddress || 'Official Workplace GPS',
+            lat: Number(regLat),
+            lng: Number(regLng),
+            radius: 150,
+            active: true,
+            academicYear: emp.academicYear || settings.activeAcademicYear,
+          });
+        }
+      }
+    });
+
+    return Array.from(zoneMap.values());
+  }, [geofenceZones, employees, settings.activeAcademicYear]);
 
   const isInstructorZone = (zone: any): boolean => {
     const acc = getTraineeForZone(zone);

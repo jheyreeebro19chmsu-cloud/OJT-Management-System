@@ -236,9 +236,21 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
 
 function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
   if (!Array.isArray(inputs)) return [];
-  return inputs
+  const valid = inputs
     .map(sanitizeGeofenceZone)
     .filter((zone): zone is GeofenceZone => zone !== null && !zone.name.toLowerCase().includes('main training center') && zone.id !== 'zone-1');
+
+  // Strict deduplication: keep only one zone per person/account or coordinate cluster
+  const seen = new Map<string, GeofenceZone>();
+  for (const z of valid) {
+    const normName = z.name.trim().toLowerCase();
+    const personName = normName.includes(' - ') ? normName.split(' - ')[0].trim() : normName;
+    const key = personName || `${z.lat.toFixed(4)},${z.lng.toFixed(4)}`;
+    if (!seen.has(key)) {
+      seen.set(key, z);
+    }
+  }
+  return Array.from(seen.values());
 }
 
 function migrateGeofenceStorageOnce(): void {
