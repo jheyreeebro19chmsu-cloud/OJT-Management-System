@@ -418,7 +418,7 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
       address: zone.address,
       lat: Number(zone.lat),
       lng: Number(zone.lng),
-      radius: Number(zone.radius) || 150,
+      radius: Number(zone.radius) || 100,
       active: zone.active !== false,
       academicYear: zone.academic_year || undefined,
     }));
@@ -432,7 +432,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     address: zone.address || '',
     lat: Number(zone.lat),
     lng: Number(zone.lng),
-    radius: Number(zone.radius) || 150,
+    radius: Number(zone.radius) || 100,
     active: zone.active !== false,
   };
 

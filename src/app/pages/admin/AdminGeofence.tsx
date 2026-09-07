@@ -134,7 +134,7 @@ export function AdminGeofence() {
             address: emp.registrationAddress || emp.companyAddress || 'Official Workplace GPS',
             lat: Number(regLat),
             lng: Number(regLng),
-            radius: 150,
+            radius: 100,
             active: true,
             academicYear: emp.academicYear || settings.activeAcademicYear,
           });
@@ -906,15 +906,15 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       <div className="space-y-2 p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-gray-800">
-            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 250} meters</span>
+            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 100} meters</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
               min={10}
               max={1000}
-              value={form.radius || 250}
-              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 250))}
+              value={form.radius || 100}
+              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 100))}
               className="w-16 px-2 py-1 bg-white border border-gray-300 rounded-lg text-center font-bold text-xs text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
             />
             <span className="text-xs text-gray-500 font-bold">m</span>
@@ -923,32 +923,32 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
 
         <input
           type="range"
-          min={50}
+          min={30}
           max={500}
           step={10}
-          value={form.radius || 250}
-          onChange={(e) => upd('radius', parseInt(e.target.value) || 250)}
+          value={form.radius || 100}
+          onChange={(e) => upd('radius', parseInt(e.target.value) || 100)}
           className="w-full accent-blue-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
         />
 
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {[100, 150, 200, 250, 300, 500].map((preset) => (
+          {[50, 75, 100, 150, 200, 250, 300].map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => upd('radius', preset)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                (form.radius || 250) === preset
+                (form.radius || 100) === preset
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
               }`}
             >
-              {preset}m {preset === 250 ? '(Standard)' : ''}
+              {preset}m {preset === 100 ? '(Standard)' : ''}
             </button>
           ))}
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
-          Standard workplace radius is 250 meters. Adjust this according to the size of the establishment facility.
+          Standard workplace radius is 100 meters. Adjust this according to the size of the establishment facility.
         </p>
       </div>
 

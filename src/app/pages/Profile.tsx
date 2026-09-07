@@ -748,7 +748,7 @@ export function Profile() {
           />
           <InfoRow
             label="Geofence Radius"
-            value="50 meters (Permanent Radius)"
+            value="100 meters (Permanent Radius)"
           />
           <InfoRow
             label="Enrollment Status"
@@ -780,7 +780,7 @@ export function Profile() {
                     address: resolvedAddress,
                     lat: latitude,
                     lng: longitude,
-                    radius: 150,
+                    radius: 100,
                     active: true,
                     academicYear: settings.activeAcademicYear,
                   });

@@ -742,7 +742,7 @@ export function Register() {
             address: zoneAddr,
             lat: registrationLocation.lat,
             lng: registrationLocation.lng,
-            radius: 150,
+            radius: 100,
             active: true,
             academicYear: settings.activeAcademicYear,
           });

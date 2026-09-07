@@ -149,7 +149,7 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
         address: resolvedAddress,
         lat: latitude,
         lng: longitude,
-        radius: 150,
+        radius: 100,
         active: true,
         academicYear: settings?.activeAcademicYear || '2026-2027',
       });

@@ -1306,7 +1306,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               address: zoneAddr,
               lat: Number(cleanData.registrationLocation.lat),
               lng: Number(cleanData.registrationLocation.lng),
-              radius: 150,
+              radius: 100,
               active: true,
               academicYear: cleanData.academicYear || settings.activeAcademicYear,
             };
@@ -1420,7 +1420,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           address: emp.registrationAddress || emp.companyAddress || 'Trainee Workplace',
           lat: data.registrationLocation.lat,
           lng: data.registrationLocation.lng,
-          radius: 250,
+          radius: 100,
           active: true,
           academicYear: emp.academicYear || settings.activeAcademicYear,
         };
