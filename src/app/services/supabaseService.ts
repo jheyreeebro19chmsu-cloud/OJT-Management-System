@@ -283,6 +283,10 @@ export async function uploadFacePhoto(
 
 // ─── Geofence Zones ──────────────────────────────────────────────────────────
 
+const isValidUUID = (str?: string): boolean => {
+  return Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+};
+
 export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
   if (!isSupabaseConfigured()) return [];
 
@@ -299,11 +303,11 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
       id: zone.id,
       name: zone.name,
       address: zone.address,
-      lat: zone.lat,
-      lng: zone.lng,
-      radius: zone.radius,
+      lat: Number(zone.lat),
+      lng: Number(zone.lng),
+      radius: Number(zone.radius) || 150,
       active: zone.active !== false,
-      academicYear: zone.academic_year,
+      academicYear: zone.academic_year || undefined,
     }));
 }
 
@@ -311,15 +315,26 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
   if (!isSupabaseConfigured()) return null;
 
   const payload: any = {
-    ...zone,
-    academic_year: zone.academicYear,
+    name: zone.name,
+    address: zone.address || '',
+    lat: Number(zone.lat),
+    lng: Number(zone.lng),
+    radius: Number(zone.radius) || 150,
+    active: zone.active !== false,
   };
-  if (zone.id) payload.id = zone.id;
 
-  const { data, error } = await supabase.from('geofence_zones').upsert([payload]).select().single();
+  if (zone.id && isValidUUID(zone.id)) {
+    payload.id = zone.id;
+  }
+
+  const { data, error } = await supabase
+    .from('geofence_zones')
+    .upsert([payload], payload.id ? { onConflict: 'id' } : undefined)
+    .select()
+    .single();
 
   if (error) {
-    console.error('Error creating/upserting geofence zone:', error);
+    console.error('Error creating/upserting geofence zone in database:', error);
     return null;
   }
 
@@ -327,18 +342,31 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     id: data.id,
     name: data.name,
     address: data.address,
-    lat: data.lat,
-    lng: data.lng,
-    radius: data.radius,
-    active: data.active,
-    academicYear: data.academic_year,
+    lat: Number(data.lat),
+    lng: Number(data.lng),
+    radius: Number(data.radius),
+    active: data.active !== false,
+    academicYear: zone.academicYear,
   };
 }
 
 export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZone>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase.from('geofence_zones').update(updates).eq('id', id);
+  if (!isValidUUID(id)) {
+    console.debug('Skipping database update for non-UUID zone ID:', id);
+    return true;
+  }
+
+  const supabaseUpdates: any = {};
+  if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+  if (updates.address !== undefined) supabaseUpdates.address = updates.address;
+  if (updates.lat !== undefined) supabaseUpdates.lat = Number(updates.lat);
+  if (updates.lng !== undefined) supabaseUpdates.lng = Number(updates.lng);
+  if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
+  if (updates.active !== undefined) supabaseUpdates.active = updates.active;
+
+  const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
 
   if (error) {
     console.error('Error updating geofence zone:', error);
@@ -350,6 +378,10 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
 
 export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
+
+  if (!isValidUUID(id)) {
+    return true;
+  }
 
   const { error } = await supabase.from('geofence_zones').delete().eq('id', id);
 

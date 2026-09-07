@@ -82,26 +82,32 @@ export function AdminGeofence() {
     return combined;
   }, [geofenceZones, employees, settings.activeAcademicYear]);
 
-  const getZoneAcademicYear = (zone: any): string | null => {
-    if (zone.academicYear) return zone.academicYear;
+  const getTraineeForZone = (zone: any): Employee | null => {
+    if (!zone) return null;
     if (zone.id?.startsWith('personal-')) {
       const empId = zone.id.replace('personal-', '');
-      const emp = (employees as any[]).find((e: any) => e.id === empId);
-      return emp?.academicYear || null;
+      const found = employees.find((e) => e.id === empId || e.employeeId === empId);
+      if (found) return found;
     }
+    const directEmp = employees.find((e) => e.id === zone.id || e.employeeId === zone.id);
+    if (directEmp) return directEmp;
+
+    const matchByName = employees.find((e) =>
+      e.name && (zone.name.includes(e.name) || zone.name.startsWith(e.name))
+    );
+    if (matchByName) return matchByName;
+
     return null;
   };
 
-  const getTraineeForZone = (zone: any): Employee | null => {
-    if (zone.id?.startsWith('personal-')) {
-      const empId = zone.id.replace('personal-', '');
-      return employees.find((e) => e.id === empId) || null;
-    }
-    return null;
+  const getZoneAcademicYear = (zone: any): string | null => {
+    if (zone.academicYear) return zone.academicYear;
+    const trainee = getTraineeForZone(zone);
+    return trainee?.academicYear || null;
   };
 
   const isTraineeZone = (zone: any): boolean => {
-    return Boolean(zone.id?.startsWith('personal-') || getTraineeForZone(zone));
+    return Boolean(zone.id?.startsWith('personal-') || getTraineeForZone(zone) || zone.name?.includes(' - '));
   };
 
   const filteredZones = useMemo(() => {
