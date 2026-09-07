@@ -17,6 +17,7 @@ import {
 
 import { useApp } from '../../store/AppContext';
 import { formatTime } from '../../utils/geo';
+import { getPhotoUrl } from '../../services/config';
 
 
 export function AdminReports() {
@@ -323,12 +324,21 @@ export function AdminReports() {
                   return (
                     <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold text-blue-700">
-                            {emp.name.charAt(0)}
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold text-blue-700 overflow-hidden shrink-0 border border-blue-200">
+                            {emp.photo ? (
+                              <img
+                                src={getPhotoUrl(emp.photo)}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                style={{ transform: 'scaleX(-1)' }}
+                              />
+                            ) : (
+                              <span>{emp.name.charAt(0)}</span>
+                            )}
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-800">{emp.name}</p>
+                            <p className="text-sm font-semibold text-gray-800">{emp.name}</p>
                             <p className="text-xs text-gray-400">{emp.employeeId}</p>
                           </div>
                         </div>
@@ -425,10 +435,26 @@ export function AdminReports() {
                           })}
                         </td>
                         <td className="px-4 py-2">
-                          <p className="font-bold text-gray-800 text-xs">{displayName}</p>
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
-                            {displayCode || 'OJT-TRAINEE'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-700 overflow-hidden shrink-0 border border-blue-200">
+                              {emp?.photo ? (
+                                <img
+                                  src={getPhotoUrl(emp.photo)}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  style={{ transform: 'scaleX(-1)' }}
+                                />
+                              ) : (
+                                <span>{(displayName || 'U').charAt(0)}</span>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-gray-800 text-xs">{displayName}</p>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
+                                {displayCode || 'OJT-TRAINEE'}
+                              </span>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-4 py-2 text-center text-xs text-gray-600">
                           {record.timeIn ? formatTime(record.timeIn) : '—'}
