@@ -1716,40 +1716,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteGeofenceZone = (id: string) => {
     // 1. Remove from local geofenceZones state and storage
     setGeofenceZones((prev) => {
-      const filtered = prev.filter((z) => z.id !== id);
+      const filtered = prev.filter((z) => z.id !== id && z.id !== `personal-${id}`);
       saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
       return filtered;
     });
 
-    // 2. If it's a personal zone for an employee: personal-${empId}
-    if (id.startsWith('personal-')) {
-      const empId = id.replace('personal-', '');
-      updateEmployee(empId, {
-        registrationLocation: null as any,
-        registrationAddress: null as any,
-      });
-      return;
-    }
-
-    // 3. Check if target zone matches an employee by name or ID, and clear their location
+    // 2. Identify associated employee and clear their registration coordinates
+    let matchedEmpId = id.startsWith('personal-') ? id.replace('personal-', '') : id;
     const targetZone = geofenceZones.find((z) => z.id === id);
     if (targetZone) {
       const personPrefix = targetZone.name?.includes(' - ')
         ? targetZone.name.split(' - ')[0].trim().toLowerCase()
         : targetZone.name.toLowerCase();
       const matchedEmp = employees.find(
-        (e) => e.id === id || (e.name && e.name.toLowerCase() === personPrefix)
+        (e) => e.id === matchedEmpId || (e.name && e.name.toLowerCase() === personPrefix)
       );
       if (matchedEmp) {
-        updateEmployee(matchedEmp.id, {
-          registrationLocation: null as any,
-          registrationAddress: null as any,
-        });
+        matchedEmpId = matchedEmp.id;
       }
     }
 
+    const empToUpdate = employees.find((e) => e.id === matchedEmpId || e.id === id || `personal-${e.id}` === id);
+    if (empToUpdate) {
+      updateEmployee(empToUpdate.id, {
+        registrationLocation: null as any,
+        registrationAddress: null as any,
+      });
+    }
+
+    // 3. Always delete from Supabase database
     if (useSupabase) {
       supabaseService.deleteGeofenceZone(id);
+      if (matchedEmpId && matchedEmpId !== id) {
+        supabaseService.deleteGeofenceZone(matchedEmpId);
+      }
     }
   };
 

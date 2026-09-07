@@ -492,14 +492,28 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
 export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  if (!isValidUUID(id)) {
-    return true;
-  }
+  try {
+    // 1. Delete from geofence_zones table by ID
+    const { error: delErr } = await supabase.from('geofence_zones').delete().eq('id', id);
+    if (delErr) {
+      console.warn('Notice deleting from geofence_zones by id:', delErr.message);
+    }
 
-  const { error } = await supabase.from('geofence_zones').delete().eq('id', id);
+    // 2. If it's a personal zone or employee id, also delete matching personal ID & clear employee coordinates
+    const cleanId = id.startsWith('personal-') ? id.replace('personal-', '') : id;
+    if (cleanId !== id) {
+      await supabase.from('geofence_zones').delete().eq('id', cleanId);
+    }
 
-  if (error) {
-    console.error('Error deleting geofence zone:', error);
+    // 3. Clear workplace coordinates from matching employee in Supabase
+    await supabase.from('employees').update({
+      registration_lat: null,
+      registration_lng: null,
+      registration_address: null,
+      registration_location: null,
+    }).or(`id.eq.${cleanId},employee_id.eq.${cleanId}`);
+  } catch (err) {
+    console.error('Error in deleteGeofenceZone:', err);
     return false;
   }
 
