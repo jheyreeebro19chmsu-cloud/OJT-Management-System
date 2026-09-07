@@ -31,6 +31,7 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
 import { Announcement, Employee } from '../types';
 import { formatTime } from '../utils/geo';
+import { getPhotoUrl } from '../services/config';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -96,40 +97,77 @@ export function Dashboard() {
       setLoading(true);
       setDashboardError(null);
 
+      // Student trainees in the system
+      const studentEmployees = employees.filter(
+        (e) =>
+          e.position !== 'OJT Instructor' &&
+          e.position !== 'HTE Representative' &&
+          !e.employeeId?.startsWith('ADM-') &&
+          !e.employeeId?.startsWith('HTE-')
+      );
+
       try {
-        // Get all student trainees in the system
         const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
         let query = supabase.from('employees').select('*').neq('position', 'OJT Instructor').neq('position', 'HTE Representative');
         if (currentUser?.id && isUuid(currentUser.id)) {
           query = query.or(`instructor_id.eq.${currentUser.id},instructor_id.is.null`);
         }
         const { data: rawStudents } = await query;
-        const students = rawStudents || employees.filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative');
+        
+        // Merge Supabase employees and context student employees
+        const mergedStudentsMap = new Map<string, any>();
+        studentEmployees.forEach((emp) => {
+          mergedStudentsMap.set(emp.id, emp);
+          if (emp.employeeId) mergedStudentsMap.set(emp.employeeId, emp);
+        });
+
+        if (rawStudents && rawStudents.length > 0) {
+          rawStudents.forEach((rs: any) => {
+            const key = rs.id || rs.employee_id;
+            const existing = mergedStudentsMap.get(rs.id) || (rs.employee_id ? mergedStudentsMap.get(rs.employee_id) : undefined);
+            const unified = {
+              id: rs.id,
+              name: rs.name || `${rs.first_name || ''} ${rs.last_name || ''}`.trim() || rs.email || 'Student Trainee',
+              email: rs.email || '',
+              employeeId: rs.employee_id || rs.employeeId || 'OJT-TRAINEE',
+              department: rs.department || '',
+              course: rs.course || rs.department || 'OJT Trainee',
+              position: rs.position || 'OJT Trainee',
+              photo: rs.photo || rs.face_photo_url || rs.avatar_url || existing?.photo,
+              startDate: rs.start_date || rs.created_at || existing?.startDate,
+              active: rs.active !== false,
+              approvalStatus: rs.approval_status || rs.application_status || 'approved',
+              requiredHours: Number(rs.required_hours || rs.requiredHours) || 486,
+            };
+            mergedStudentsMap.set(unified.id, unified);
+            if (unified.employeeId) mergedStudentsMap.set(unified.employeeId, unified);
+          });
+        }
+
+        const allStudentsList: any[] = Array.from(new Set(Array.from(mergedStudentsMap.values())));
 
         // Calculate metrics
-        const totalApplications = students?.length || 0;
-        const approved = students?.filter((s: any) => s.application_status === 'approved' || s.approval_status === 'approved' || s.active !== false).length || 0;
-        const pending = students?.filter((s: any) => s.application_status === 'pending' || s.approval_status === 'pending').length || 0;
-        const rejected = students?.filter((s: any) => s.application_status === 'rejected' || s.approval_status === 'rejected').length || 0;
-        const completed = students?.filter((s: any) => s.application_status === 'completed').length || 0;
-        const cancelled = students?.filter((s: any) => s.application_status === 'cancelled').length || 0;
+        const totalApplications = allStudentsList.length;
+        const approved = allStudentsList.filter((s: any) => s.applicationStatus === 'approved' || s.approval_status === 'approved' || s.active !== false).length;
+        const pending = allStudentsList.filter((s: any) => s.applicationStatus === 'pending' || s.approval_status === 'pending').length;
+        const rejected = allStudentsList.filter((s: any) => s.applicationStatus === 'rejected' || s.approval_status === 'rejected').length;
+        const completed = allStudentsList.filter((s: any) => s.applicationStatus === 'completed').length;
+        const cancelled = allStudentsList.filter((s: any) => s.applicationStatus === 'cancelled').length;
 
         // Get time records
-        const { data: timeRecords } = await supabase
+        const { data: rawTimeRecords } = await supabase
           .from('time_records')
           .select('*')
-          .order('created_at', { ascending: false })
-          .limit(20);
+          .order('date', { ascending: false })
+          .limit(50);
+
+        const timeRecords = (rawTimeRecords && rawTimeRecords.length > 0) ? rawTimeRecords : contextTimeRecords;
 
         // Calculate hours
         let totalRenderedHours = 0;
-        let totalRequiredHours = 0;
-        if (students) {
-          totalRequiredHours = students.reduce((sum: number, s: any) => sum + (s.required_hours || 486), 0);
-          // Calculate from time records
-          if (timeRecords) {
-            totalRenderedHours = timeRecords.reduce((sum: number, r: any) => sum + (r.hours_rendered || 0), 0);
-          }
+        let totalRequiredHours = allStudentsList.reduce((sum: number, s: any) => sum + (Number(s.requiredHours || s.required_hours) || 486), 0);
+        if (timeRecords) {
+          totalRenderedHours = timeRecords.reduce((sum: number, r: any) => sum + (Number(r.total_hours || r.totalHours || r.hours_rendered) || 0), 0);
         }
 
         setMetrics({
@@ -147,14 +185,42 @@ export function Dashboard() {
           unique_students: totalApplications,
         });
 
-        // Format recent records for display
-        const formattedRecords = (timeRecords || []).map((r: any) => ({
-          id: r.id,
-          student_name: r.employee_name || 'Unknown',
-          date: r.created_at,
-          hours_rendered: r.hours_rendered || 0,
-          is_approved: r.is_approved || false,
-        }));
+        // 1. Build records for students who have logged time records
+        const studentTimeLogs = (timeRecords || []).map((r: any) => {
+          const empId = r.employee_id || r.employeeId;
+          const emp = allStudentsList.find((e) => e.id === empId || e.employeeId === empId || (e.email && empId && e.email.toLowerCase() === empId.toLowerCase()));
+          const totalHours = Number(r.total_hours || r.totalHours || r.hours_rendered || 0);
+          return {
+            id: r.id,
+            student_name: emp?.name || r.employee_name || r.employeeName || 'Student Trainee',
+            student_id: emp?.employeeId || empId || 'OJT-TRAINEE',
+            photo: emp?.photo || r.photo,
+            course: emp?.course || emp?.department || 'OJT Trainee',
+            date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+            hours_rendered: totalHours,
+            is_approved: r.approval_status === 'approved' || r.approvalStatus === 'approved' || r.is_approved || r.status === 'present',
+            status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approval_status === 'approved' || r.approvalStatus === 'approved' ? 'Approved' : 'Pending'),
+          };
+        });
+
+        // 2. Build rows for enrolled students who haven't clocked in yet so EVERY student is visible!
+        const studentsWithLogs = new Set(studentTimeLogs.map((l: any) => l.student_id).concat(studentTimeLogs.map((l: any) => l.student_name)));
+        const enrolledWithoutLogs = allStudentsList
+          .filter((s) => !studentsWithLogs.has(s.employeeId) && !studentsWithLogs.has(s.name))
+          .map((s) => ({
+            id: `enrolled-${s.id}`,
+            student_name: s.name,
+            student_id: s.employeeId || 'OJT-TRAINEE',
+            photo: s.photo,
+            course: s.course || s.department || 'OJT Trainee',
+            date: s.startDate || 'No clock-in yet',
+            hours_rendered: 0,
+            is_approved: s.active && s.approvalStatus !== 'pending',
+            status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
+          }));
+
+        const allStudentEntries = [...studentTimeLogs, ...enrolledWithoutLogs];
+        setRecentRecords(allStudentEntries);
         setLoading(false);
         fetchLinkedStudents();
         return;
@@ -162,12 +228,12 @@ export function Dashboard() {
         console.warn('Supabase metric query warning, using active AY context metrics:', error);
       }
 
-      // Context fallback includes trainees from every academic year so account sync is global.
-      const allStudents = employees.filter((e) => e.position !== 'OJT Instructor');
+      // Context fallback
+      const allStudents = studentEmployees;
       const approvedCount = allStudents.filter((e) => e.active && e.approvalStatus !== 'pending').length;
       const pendingCount = allStudents.filter((e) => !e.active || e.approvalStatus === 'pending').length;
       const totalReq = allStudents.reduce((sum, e) => sum + (e.requiredHours || 486), 0);
-      const activeIds = new Set(allStudents.map((e) => e.id));
+      const activeIds = new Set(allStudents.map((e) => e.id).concat(allStudents.map((e) => e.employeeId)));
       const activeTimeRecs = contextTimeRecords.filter((r) => activeIds.has(r.employeeId));
       const totalRendered = activeTimeRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0);
 
@@ -186,17 +252,37 @@ export function Dashboard() {
         unique_students: allStudents.length,
       });
 
-      const formatted = activeTimeRecs.slice(0, 10).map((r) => {
-        const emp = employees.find((e) => e.id === r.employeeId);
+      const formatted = activeTimeRecs.slice(0, 20).map((r) => {
+        const emp = allStudents.find((e) => e.id === r.employeeId || e.employeeId === r.employeeId);
         return {
           id: r.id,
           student_name: emp?.name || 'Student Trainee',
+          student_id: emp?.employeeId || r.employeeId || 'OJT-TRAINEE',
+          photo: emp?.photo,
+          course: emp?.course || emp?.department || 'OJT Trainee',
           date: r.date,
           hours_rendered: r.totalHours || 0,
-          is_approved: true,
+          is_approved: r.approvalStatus === 'approved' || r.status === 'present',
+          status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approvalStatus === 'approved' ? 'Approved' : 'Pending'),
         };
       });
-      setRecentRecords(formatted);
+
+      const seenStudents = new Set(formatted.map((f) => f.student_id).concat(formatted.map((f) => f.student_name)));
+      const noLogStudents = allStudents
+        .filter((s) => !seenStudents.has(s.employeeId) && !seenStudents.has(s.name))
+        .map((s) => ({
+          id: `enrolled-${s.id}`,
+          student_name: s.name,
+          student_id: s.employeeId || 'OJT-TRAINEE',
+          photo: s.photo,
+          course: s.course || s.department || 'OJT Trainee',
+          date: s.startDate || 'No clock-in yet',
+          hours_rendered: 0,
+          is_approved: s.active && s.approvalStatus !== 'pending',
+          status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
+        }));
+
+      setRecentRecords([...formatted, ...noLogStudents]);
       setLoading(false);
     };
 
@@ -584,43 +670,101 @@ export function Dashboard() {
         </div>
 
         {/* Recent Time Records */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900">Recent Time Records</h3>
-            <p className="text-sm text-gray-600 mt-1">Last entries from your students</p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Recent Time Records</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Last entries and enrolled status from your students</p>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full">
+              {recentRecords.length} student{recentRecords.length === 1 ? '' : 's'}
+            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr className="text-left text-xs font-semibold text-gray-600 uppercase">
-                  <th className="px-6 py-3">Student Name</th>
-                  <th className="px-6 py-3">Date</th>
-                  <th className="px-6 py-3">Hours</th>
-                  <th className="px-6 py-3">Status</th>
+              <thead className="bg-gray-50/75 border-b border-gray-100">
+                <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3.5">Student Name</th>
+                  <th className="px-6 py-3.5">Date</th>
+                  <th className="px-6 py-3.5">Hours</th>
+                  <th className="px-6 py-3.5">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-100">
                 {recentRecords.length > 0 ? (
                   recentRecords.map((record) => (
-                    <tr key={record.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900 font-medium">{record.student_name}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{new Date(record.date).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{record.hours_rendered.toFixed(2)}h</td>
+                    <tr key={record.id} className="hover:bg-gray-50/80 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          {record.photo ? (
+                            <img
+                              src={getPhotoUrl(record.photo)}
+                              alt={record.student_name}
+                              className="w-10 h-10 rounded-full object-cover border border-emerald-200 shadow-sm flex-shrink-0"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLElement).style.display = 'none';
+                                (e.currentTarget.nextElementSibling as HTMLElement)?.classList.remove('hidden');
+                              }}
+                            />
+                          ) : null}
+                          <div
+                            className={`w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center border border-emerald-200 text-sm flex-shrink-0 ${record.photo ? 'hidden' : ''}`}
+                          >
+                            {record.student_name ? record.student_name.charAt(0).toUpperCase() : 'S'}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900 leading-tight">{record.student_name}</p>
+                            <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[11px] font-medium">
+                                {record.student_id}
+                              </span>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-gray-600">{record.course}</span>
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {record.date && record.date !== 'No clock-in yet' && !isNaN(Date.parse(record.date)) ? (
+                          new Date(record.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })
+                        ) : (
+                          <span className="text-xs italic text-gray-400">No clock-in yet</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium">
+                        {Number(record.hours_rendered || 0) > 0 ? (
+                          <span className="text-emerald-700 font-semibold">{Number(record.hours_rendered).toFixed(1)} hrs</span>
+                        ) : (
+                          <span className="text-gray-400">0.0 hrs</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm">
                         <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            record.is_approved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            record.status === 'Present' || record.status === 'Approved'
+                              ? 'bg-green-100 text-green-800 border border-green-200'
+                              : record.status === 'Active / Enrolled'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : record.status === 'Late'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
                           }`}
                         >
-                          {record.is_approved ? 'Approved' : 'Pending'}
+                          {record.status || (record.is_approved ? 'Approved' : 'Pending')}
                         </span>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                      No time records yet
+                    <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                      <Users size={36} className="mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm font-medium text-gray-600">No student records yet</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Enrolled student trainees and their daily time entries will appear here.</p>
                     </td>
                   </tr>
                 )}
