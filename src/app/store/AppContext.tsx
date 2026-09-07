@@ -728,8 +728,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
 
           if (matchedEmp) {
-            const role: User['role'] =
-              matchedEmp.position === 'OJT Instructor' ? 'admin' : matchedEmp.position === 'HTE Representative' ? 'hte' : 'employee';
+            const isInstructor = matchedEmp.position === 'OJT Instructor' || matchedEmp.position === 'Administrator' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
+            const isHTE = matchedEmp.position === 'HTE Representative' || matchedEmp.position === 'Training Supervisor' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
+            const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
             const user: User = {
               id: matchedEmp.id,
               name: matchedEmp.name,
@@ -745,7 +746,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
 
           if (matchedHost) {
-            const user: User = { id: matchedHost.id, name: matchedHost.name, role: 'host', email: normalizeEmail(matchedHost.email) };
+            const user: User = { id: matchedHost.id, name: matchedHost.name, role: 'hte', email: normalizeEmail(matchedHost.email), employeeId: matchedHost.employeeId || matchedHost.id, photo: matchedHost.photo };
             setCurrentUser(user);
             setPasswordForEmail(matchedHost.email, password);
             return user;
@@ -805,9 +806,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const user: User = {
           id: host.id,
           name: host.name,
-          role: 'host',
+          role: 'hte',
           email: normalizeEmail(host.email),
-          photo: undefined,
+          photo: host.photo,
+          employeeId: host.employeeId || host.id,
           faceRegistered: false,
         };
         setCurrentUser(user);
@@ -1539,45 +1541,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (e.employeeId && (e.employeeId === currentUser.employeeId || e.employeeId === currentUser.id)) ||
         (currentUser.email && e.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
     );
-    if (!employee && currentUser) {
-      const currentUserAny = currentUser as any;
-      const registrationLocation =
-        currentUserAny.registrationLocation ||
-        (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('ojt_hte_user') || 'null')?.registrationLocation : null) ||
-        undefined;
-      const registrationAddress =
-        currentUserAny.registrationAddress ||
-        (typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('ojt_hte_user') || 'null')?.registrationAddress : null) ||
-        currentUserAny.companyAddress ||
-        undefined;
-      const fallbackEmp: Employee = {
-        id: currentUser.employeeId || currentUser.id || `emp-${Date.now()}`,
-        employeeId: currentUser.employeeId || currentUser.id || 'OJT-STUDENT',
-        name: currentUser.name || 'Trainee Student',
-        email: currentUser.email || '',
-        department: currentUserAny.department || 'College of Computer Studies',
-        position: currentUserAny.position || (currentUser.role === 'admin' ? 'OJT Instructor' : currentUser.role === 'hte' ? 'HTE Representative' : 'OJT Trainee'),
-        companyName: currentUserAny.companyName || 'Host Training Establishment',
-        supervisorName: currentUserAny.supervisorName || 'HTE Supervisor',
-        schoolName: currentUserAny.schoolName || 'Carlos Hilado Memorial State University',
-        campus: currentUserAny.campus || 'Talisay Campus',
-        course: currentUserAny.course || 'BS Information Technology',
-        startDate: currentUserAny.startDate || new Date().toISOString().split('T')[0],
-        endDate: currentUserAny.endDate || new Date().toISOString().split('T')[0],
-        requiredHours: currentUserAny.requiredHours || 486,
+
+    if (employee) return employee;
+
+    // Check host supervisors if current user is an HTE supervisor
+    const host = hostSupervisors.find(
+      (h) =>
+        h.id === currentUser.id ||
+        (h.employeeId && (h.employeeId === currentUser.employeeId || h.employeeId === currentUser.id)) ||
+        (currentUser.email && h.email ? normalizeEmail(h.email) === normalizeEmail(currentUser.email) : false)
+    );
+
+    if (host) {
+      const hostEmp: Employee = {
+        id: host.id,
+        employeeId: host.employeeId || host.id,
+        name: host.name,
+        email: host.email,
+        department: 'Host Training Establishment',
+        position: 'HTE Representative',
+        companyName: host.companyName || 'Host Training Establishment',
+        companyAddress: host.companyAddress || '',
+        supervisorName: host.contactPerson || host.name,
+        schoolName: 'Carlos Hilado Memorial State University',
+        campus: 'Talisay Campus',
+        course: 'N/A',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        requiredHours: 0,
+        photo: host.photo || currentUser.photo || '',
+        faceRegistered: host.faceRegistered ?? false,
+        registrationLocation: host.registrationLocation,
+        registrationAddress: host.registrationAddress || host.companyAddress,
+        active: host.active ?? true,
+        academicYear: host.academicYear || settings.activeAcademicYear,
+        approvalStatus: 'approved',
+        createdAt: host.createdAt || new Date().toISOString().split('T')[0],
+      };
+      return hostEmp;
+    }
+
+    if (currentUser.id === 'admin' || currentUser.role === 'admin') {
+      const adminEmp: Employee = {
+        id: currentUser.id,
+        employeeId: currentUser.employeeId || 'ADM-2026-001',
+        name: currentUser.name || 'OJT Instructor',
+        email: currentUser.email || 'admin@ojt.com',
+        department: 'College of Computer Studies',
+        position: 'OJT Instructor',
+        companyName: 'Carlos Hilado Memorial State University',
+        supervisorName: 'Administrator',
+        schoolName: 'Carlos Hilado Memorial State University',
+        campus: 'Talisay Campus',
+        course: 'Information Systems',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        requiredHours: 0,
         photo: currentUser.photo || '',
-        faceRegistered: currentUser.faceRegistered ?? false,
-        registrationLocation,
-        registrationAddress,
-        companyAddress: currentUserAny.companyAddress || registrationAddress,
+        faceRegistered: false,
         active: true,
-        academicYear: currentUserAny.academicYear || settings.activeAcademicYear,
+        academicYear: settings.activeAcademicYear,
         approvalStatus: 'approved',
         createdAt: new Date().toISOString().split('T')[0],
       };
-      return fallbackEmp;
+      return adminEmp;
     }
-    return employee || null;
+
+    return null;
   };
 
   // ─── Evaluations ─────────────────────────────────────────────────────────────
