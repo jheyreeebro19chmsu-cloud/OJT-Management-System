@@ -24,6 +24,7 @@ import {
   Phone,
   Mail,
   Camera,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
 
@@ -230,6 +231,36 @@ export default function ProfileScreen({ profile, session, onBack, onEnrollFace }
             <InfoRow icon={<Clock color="#64748b" size={15} />} label="Required Hours" value={`${requiredHours} hours`} />
           </View>
         )}
+
+        {/* Workplace Geofencing Details */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MapPin color="#0284c7" size={18} />
+            <Text style={styles.cardTitle}>Workplace Geofencing Details</Text>
+          </View>
+          <InfoRow
+            icon={<Building color="#64748b" size={15} />}
+            label="Assigned Workplace"
+            value={data?.company_name || data?.companyName || data?.school_name || 'Carlos Hilado Memorial State University'}
+          />
+          <InfoRow
+            icon={<MapPin color="#64748b" size={15} />}
+            label="Geofence Address"
+            value={data?.registration_address || data?.registrationAddress || data?.company_address || data?.companyAddress || 'CHMSU Main Campus, Talisay City'}
+          />
+          <InfoRow
+            icon={<MapPin color="#64748b" size={15} />}
+            label="GPS Coordinates"
+            value={
+              data?.registrationLocation?.lat && data?.registrationLocation?.lng
+                ? `${Number(data.registrationLocation.lat).toFixed(4)}, ${Number(data.registrationLocation.lng).toFixed(4)}`
+                : data?.registration_lat && data?.registration_lng
+                ? `${Number(data.registration_lat).toFixed(4)}, ${Number(data.registration_lng).toFixed(4)}`
+                : '10.7412, 122.9691 (Campus Default)'
+            }
+          />
+          <InfoRow icon={<ShieldCheck color="#64748b" size={15} />} label="Allowed Geofence Radius" value="300 meters perimeter" />
+        </View>
 
         {/* Required OJT Documents Monitoring Card */}
         {data?.role !== 'admin' && data?.role !== 'hte' && (

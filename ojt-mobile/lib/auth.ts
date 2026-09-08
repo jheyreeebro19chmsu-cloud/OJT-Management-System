@@ -4,6 +4,7 @@ import { setAuthToken } from './api';
 
 const ACCESS_KEY = 'dj_access_token';
 const REFRESH_KEY = 'dj_refresh_token';
+const USER_KEY = 'ojt_user_profile';
 
 const webStorage = {
   async getItemAsync(key: string) {
@@ -43,9 +44,25 @@ export async function loadTokens() {
   return { access, refresh };
 }
 
+export async function saveUser(user: any) {
+  if (user) await storage.setItemAsync(USER_KEY, JSON.stringify(user));
+  else await storage.deleteItemAsync(USER_KEY);
+}
+
+export async function loadUser() {
+  const raw = await storage.getItemAsync(USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function clearTokens() {
   await storage.deleteItemAsync(ACCESS_KEY);
   await storage.deleteItemAsync(REFRESH_KEY);
+  await storage.deleteItemAsync(USER_KEY);
   setAuthToken(null);
 }
 
@@ -73,6 +90,8 @@ export async function refreshAccessToken(apiBaseUrl: string) {
 export default {
   saveTokens,
   loadTokens,
+  saveUser,
+  loadUser,
   clearTokens,
   refreshAccessToken,
 };

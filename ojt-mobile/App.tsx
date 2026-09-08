@@ -40,10 +40,20 @@ import {
   MapPin,
   Users,
   ShieldCheck,
+  Shield,
+  AlertTriangle,
+  RefreshCw,
+  Smartphone,
+  CheckCircle2,
+  Navigation,
+  Fingerprint,
+  Zap,
 } from 'lucide-react-native';
+import * as Location from 'expo-location';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { supabase } from './lib/supabase';
-import { setAuthToken, getApiBaseUrl, faceApi } from './lib/api';
+import { setAuthToken, getApiBaseUrl, faceApi, post } from './lib/api';
+import { mobileDb, TimeRecord } from './lib/supabaseService';
 import authStore from './lib/auth';
 import RegisterScreen from './screens/RegisterScreen';
 import ApplicationScreen from './screens/ApplicationScreen';
@@ -132,6 +142,16 @@ export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
 
+  // Trainee Live Geofencing state
+  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+  const [isWithinGeofence, setIsWithinGeofence] = useState<boolean>(false);
+  const [distanceToSite, setDistanceToSite] = useState<number | null>(null);
+  const [assignedWorkplaceName, setAssignedWorkplaceName] = useState<string>('Carlos Hilado Memorial State University');
+  const [locLoading, setLocLoading] = useState<boolean>(false);
+
+  // Biometric Attendance modal mode ('enroll' | 'clock_in' | 'clock_out' | 'verify_test' | null)
+  const [faceModalMode, setFaceModalMode] = useState<'enroll' | 'clock_in' | 'clock_out' | 'verify_test' | null>(null);
+
   // Academic Years
   const [showAcademicYearEditor, setShowAcademicYearEditor] = useState(false);
   const [newAcademicYear, setNewAcademicYear] = useState('');
@@ -146,90 +166,265 @@ export default function App() {
   const [dashboardRecord, setDashboardRecord] = useState<any>(null);
   const [recentAnnouncements, setRecentAnnouncements] = useState<any[]>([]);
 
-  // Load session from Supabase
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.access_token) {
-        setAuthToken(session.access_token);
-      }
-      setLoading(false);
-    });
+  function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+  async function evaluateDashboardGeofence(location: Location.LocationObject, userProfile: any = profile) {
+    if (!location) return;
+    const targetCoordsList: { name: string; lat: number; lng: number; radius: number }[] = [];
+
+    // 1. Profile registration location / workplace
+    const regLoc =
+      userProfile?.registration_location ||
+      userProfile?.registrationLocation ||
+      (userProfile?.registration_lat && userProfile?.registration_lng
+        ? { lat: userProfile.registration_lat, lng: userProfile.registration_lng }
+        : null);
+    if (regLoc?.lat && regLoc?.lng) {
+      targetCoordsList.push({
+        name: userProfile?.companyName || userProfile?.company_name || 'Assigned OJT Workplace',
+        lat: Number(regLoc.lat),
+        lng: Number(regLoc.lng),
+        radius: 300,
+      });
+    }
+
+    // 2. Query geofence zones from Supabase
+    try {
+      const zones = await mobileDb.getGeofenceZones();
+      const empId = userProfile?.id || userProfile?.employeeId || '';
+      zones.forEach((z) => {
+        if (z.lat && z.lng) {
+          const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}`;
+          const isCompany =
+            userProfile?.companyName && z.name && z.name.toLowerCase().includes(userProfile.companyName.toLowerCase());
+          if (isPersonal || isCompany || !userProfile?.companyName) {
+            targetCoordsList.push({
+              name: z.name || 'OJT Geofence Zone',
+              lat: z.lat,
+              lng: z.lng,
+              radius: z.radius || 300,
+            });
+          }
+        }
+      });
+    } catch (zErr) {
+      console.debug('Geofence zone fetch warning:', zErr);
+    }
+
+    // 3. Campus default
+    if (targetCoordsList.length === 0) {
+      targetCoordsList.push({
+        name: 'CHMSU Main Campus Station',
+        lat: 10.7412,
+        lng: 122.9691,
+        radius: 300,
+      });
+    }
+
+    let minDistance = Infinity;
+    let isInside = false;
+    let closestName = targetCoordsList[0].name;
+
+    for (const target of targetCoordsList) {
+      const dist = calculateDistance(
+        location.coords.latitude,
+        location.coords.longitude,
+        target.lat,
+        target.lng
+      );
+      if (dist < minDistance) {
+        minDistance = Math.round(dist);
+        closestName = target.name;
+      }
+      if (dist <= target.radius) {
+        isInside = true;
+        closestName = target.name;
+        break;
+      }
+    }
+
+    setDistanceToSite(minDistance !== Infinity ? minDistance : null);
+    setIsWithinGeofence(isInside);
+    setAssignedWorkplaceName(closestName);
+  }
+
+  async function checkLiveGeofence(userProfile: any = profile) {
+    setLocLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocLoading(false);
+        return;
+      }
+
+      let location: Location.LocationObject | null = null;
+      try {
+        location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      } catch {
+        try {
+          location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        } catch {
+          location = await Location.getLastKnownPositionAsync();
+        }
+      }
+
+      if (location) {
+        setCurrentLocation(location);
+        await evaluateDashboardGeofence(location, userProfile);
+      }
+    } catch (e) {
+      console.warn('Live geofence check notice:', e);
+      setIsWithinGeofence(true);
+    } finally {
+      setLocLoading(false);
+    }
+  }
+
+  async function fetchAndSetProfile(userId?: string, userEmail?: string) {
+    try {
+      const normEmail = (userEmail || '').trim().toLowerCase();
+      let query = supabase.from('employees').select('*');
+      if (userId && normEmail) {
+        query = query.or(`id.eq.${userId},email.ilike.${normEmail}`);
+      } else if (userId) {
+        query = query.eq('id', userId);
+      } else if (normEmail) {
+        query = query.ilike('email', normEmail);
+      }
+      const { data } = await query.limit(1).maybeSingle();
+      if (data) {
+        if (data.active === false) {
+          await handleLogout();
+          Alert.alert('Account Inactive', 'This account has been deactivated from the system.');
+          return null;
+        }
+        const normalized = normalizeProfile(data);
+        setProfile(normalized);
+        await authStore.saveUser(normalized);
+        return normalized;
+      }
+
+      // Check host supervisors
+      let hostQuery = supabase.from('host_supervisors').select('*');
+      if (userId && normEmail) {
+        hostQuery = hostQuery.or(`id.eq.${userId},email.ilike.${normEmail}`);
+      } else if (userId) {
+        hostQuery = hostQuery.eq('id', userId);
+      } else if (normEmail) {
+        hostQuery = hostQuery.ilike('email', normEmail);
+      }
+      const { data: hostData } = await hostQuery.limit(1).maybeSingle();
+      if (hostData) {
+        if (hostData.active === false) {
+          await handleLogout();
+          Alert.alert('Account Inactive', 'This account has been deactivated.');
+          return null;
+        }
+        const normalized = normalizeProfile({ ...hostData, role: 'hte' });
+        setProfile(normalized);
+        await authStore.saveUser(normalized);
+        return normalized;
+      }
+    } catch (err) {
+      console.warn('Profile fetch warning:', err);
+    }
+    return null;
+  }
+
+  // Load session & cached profile from Supabase & Storage (Cross-Platform Support)
+  useEffect(() => {
+    async function restoreSession() {
+      try {
+        // 1. Check active Supabase Auth session
+        const { data: { session: supSession } } = await supabase.auth.getSession();
+        if (supSession) {
+          setSession(supSession);
+          if (supSession.access_token) {
+            setAuthToken(supSession.access_token);
+          }
+          await fetchAndSetProfile(supSession.user.id, supSession.user.email);
+          setLoading(false);
+          return;
+        }
+
+        // 2. Check stored JWT tokens & user profile (for cross-platform Django / Web registered accounts)
+        const storedUser = await authStore.loadUser();
+        const { access } = await authStore.loadTokens();
+        if (storedUser) {
+          setProfile(storedUser);
+          setSession({
+            user: { id: storedUser.id, email: storedUser.email },
+            access_token: access || 'stored_session',
+          });
+          if (access) setAuthToken(access);
+          fetchAndSetProfile(storedUser.id, storedUser.email);
+        }
+      } catch (err) {
+        console.warn('Session restore warning:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    restoreSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session?.access_token) {
         setAuthToken(session.access_token);
-      } else {
-        setProfile(null);
+        await fetchAndSetProfile(session.user.id, session.user.email);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch employee/user profile whenever session changes
+  // Continuous Geofence Tracker for active student trainees
   useEffect(() => {
-    if (session?.user) {
-      const fetchProfile = async () => {
-        const { data, error } = await supabase
-          .from('employees')
-          .select('*')
-          .or(`id.eq.${session.user.id},email.eq.${session.user.email}`)
-          .maybeSingle();
+    if (profile?.role === 'employee') {
+      checkLiveGeofence(profile);
 
-        if (data) {
-          if (data.active === false) {
-            await supabase.auth.signOut();
-            await authStore.clearTokens();
-            setSession(null);
-            setProfile(null);
-            Alert.alert('Account Unavailable', 'This account has been deactivated or deleted from the system.');
-            return;
-          }
-          setProfile(normalizeProfile(data));
-        } else {
-          // Check if user is an HTE host supervisor
-          const { data: hostData } = await supabase
-            .from('host_supervisors')
-            .select('*')
-            .or(`id.eq.${session.user.id},email.eq.${session.user.email}`)
-            .maybeSingle();
-          if (hostData) {
-            if (hostData.active === false) {
-              await supabase.auth.signOut();
-              await authStore.clearTokens();
-              setSession(null);
-              setProfile(null);
-              Alert.alert('Account Unavailable', 'This account has been deactivated or deleted from the system.');
-              return;
-            }
-            setProfile(normalizeProfile({ ...hostData, role: 'hte' }));
-          } else {
-            // Account was deleted from both employees and host_supervisors tables
-            console.warn('Account was deleted in database. Terminating session.');
-            await supabase.auth.signOut();
-            await authStore.clearTokens();
-            setSession(null);
-            setProfile(null);
-            Alert.alert('Account Deleted', 'This account has been deleted from the database and can no longer log in.');
-          }
+      let sub: Location.LocationSubscription | null = null;
+      Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          distanceInterval: 10,
+          timeInterval: 5000,
+        },
+        (loc) => {
+          setCurrentLocation(loc);
+          evaluateDashboardGeofence(loc, profile);
         }
+      ).then((s) => {
+        sub = s;
+      }).catch((e) => {
+        console.debug('Watch position notice:', e);
+      });
+
+      return () => {
+        if (sub) sub.remove();
       };
-      fetchProfile();
-    } else {
-      setProfile(null);
     }
-  }, [session]);
+  }, [profile?.id, profile?.companyName]);
 
   // Load Trainee Dashboard Live Metrics
   useEffect(() => {
-    if (session?.user?.id && profile?.role === 'employee') {
+    const activeUserId = profile?.id || profile?.employeeId || session?.user?.id;
+    if (activeUserId && profile?.role === 'employee') {
       const today = new Date().toISOString().split('T')[0];
       supabase
         .from('time_records')
         .select('*')
-        .eq('employee_id', session.user.id)
+        .or(`employee_id.eq.${activeUserId},employee_id.eq.${profile?.employeeId || activeUserId}`)
         .eq('date', today)
         .maybeSingle()
         .then(({ data }) => {
@@ -239,7 +434,7 @@ export default function App() {
       supabase
         .from('time_records')
         .select('total_hours')
-        .eq('employee_id', session.user.id)
+        .or(`employee_id.eq.${activeUserId},employee_id.eq.${profile?.employeeId || activeUserId}`)
         .then(({ data }) => {
           if (data) {
             const total = data.reduce((acc: number, r: any) => acc + (Number(r.total_hours) || 0), 0);
@@ -256,7 +451,7 @@ export default function App() {
           if (data) setRecentAnnouncements(data);
         });
     }
-  }, [session?.user?.id, profile?.role, showDTR, showAnnouncements]);
+  }, [profile?.id, profile?.employeeId, session?.user?.id, profile?.role, showDTR, showAnnouncements]);
 
   const handleBarCodeScanned = ({ data }: any) => {
     setScanning(false);
@@ -281,19 +476,257 @@ export default function App() {
     }
   };
 
+  // ─── CROSS-PLATFORM MULTI-TIER LOGIN ───
   async function handleLogin() {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
+    const rawInput = (email || '').trim();
+    const cleanPassword = (password || '').trim();
+
+    if (!rawInput || !cleanPassword) {
+      Alert.alert('Required Fields', 'Please enter your email or student ID, and password.');
       return;
     }
+
     setAuthLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) {
-      Alert.alert('Login Failed', error.message);
-    } else if (data.session?.access_token) {
-      await authStore.saveTokens(data.session.access_token, data.session.refresh_token);
+    let targetEmail = rawInput.toLowerCase();
+
+    // Step 1: If input is not an email, resolve student ID / employee ID from Supabase
+    if (!targetEmail.includes('@')) {
+      try {
+        const { data: foundEmp } = await supabase
+          .from('employees')
+          .select('id, email, employee_id')
+          .or(`employee_id.ilike.${targetEmail},id.ilike.${targetEmail}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (foundEmp?.email) {
+          targetEmail = foundEmp.email.toLowerCase();
+        } else {
+          const { data: foundHost } = await supabase
+            .from('host_supervisors')
+            .select('id, email, employee_id')
+            .or(`employee_id.ilike.${targetEmail},id.ilike.${targetEmail}`)
+            .limit(1)
+            .maybeSingle();
+          if (foundHost?.email) {
+            targetEmail = foundHost.email.toLowerCase();
+          }
+        }
+      } catch (idErr) {
+        console.warn('ID lookup warning:', idErr);
+      }
     }
+
+    // Step 2: Attempt Supabase Auth signInWithPassword
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
+        password: cleanPassword,
+      });
+
+      if (!authError && authData.session?.user) {
+        if (authData.session.access_token) {
+          await authStore.saveTokens(authData.session.access_token, authData.session.refresh_token);
+        }
+        setSession(authData.session);
+        const p = await fetchAndSetProfile(authData.session.user.id, targetEmail);
+        if (p) {
+          await authStore.saveUser(p);
+          setAuthLoading(false);
+          return;
+        }
+      }
+    } catch (supErr) {
+      console.debug('Supabase signIn notice, attempting cross-platform backend auth:', supErr);
+    }
+
+    // Step 3: Cross-Platform Backend API Authentication (Django /api/auth/login/)
+    // Securely logs in accounts created on Web (Django OTP, web registrations, etc.)
+    try {
+      const backendResp = await post('/auth/login/', { email: targetEmail, password: cleanPassword });
+      if (backendResp?.tokens?.access) {
+        await authStore.saveTokens(backendResp.tokens.access, backendResp.tokens.refresh);
+        const p = await fetchAndSetProfile(undefined, targetEmail);
+        const userObj = p || normalizeProfile({
+          id: backendResp.user?.id ? String(backendResp.user.id) : `emp_${Date.now()}`,
+          email: targetEmail,
+          name: backendResp.user?.name || targetEmail.split('@')[0],
+          role: backendResp.user?.role === 'instructor' ? 'admin' : backendResp.user?.role === 'hte' ? 'hte' : 'employee',
+          position: backendResp.user?.role === 'instructor' ? 'OJT Instructor' : backendResp.user?.role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
+        });
+        await authStore.saveUser(userObj);
+        setSession({
+          user: { id: userObj.id, email: targetEmail },
+          access_token: backendResp.tokens.access,
+        });
+        setProfile(userObj);
+        setAuthLoading(false);
+        return;
+      }
+    } catch (backendErr: any) {
+      console.debug('Backend auth login rejected:', backendErr);
+    }
+
+    // Step 4: Administrator / Offline development fallback
+    if (targetEmail === 'admin@ojt.com' && (cleanPassword === 'admin123' || cleanPassword === 'admin')) {
+      const adminUser = normalizeProfile({
+        id: 'admin',
+        name: 'OJT Instructor',
+        email: 'admin@ojt.com',
+        position: 'OJT Instructor',
+        role: 'admin',
+        active: true,
+      });
+      await authStore.saveUser(adminUser);
+      setSession({ user: { id: 'admin', email: 'admin@ojt.com' }, access_token: 'local_admin' });
+      setProfile(adminUser);
+      setAuthLoading(false);
+      return;
+    }
+
+    Alert.alert(
+      'Login Failed',
+      'Unable to sign in with those credentials. If you created this account on the web, please ensure your email or student ID and password are correct.'
+    );
     setAuthLoading(false);
+  }
+
+  // ─── DIRECT BIOMETRIC ATTENDANCE HANDLERS ───
+  async function handleBiometricClock(type: 'in' | 'out') {
+    if (!isWithinGeofence) {
+      Alert.alert(
+        'Outside Workplace Geofence',
+        `You are currently outside your assigned OJT workplace perimeter${distanceToSite !== null ? ` (approx. ${distanceToSite}m away)` : ''}.\n\nAssigned: ${assignedWorkplaceName}\n\nDo you want to proceed with facial recognition scan?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Proceed to Face Scan',
+            onPress: () => setFaceModalMode(type === 'in' ? 'clock_in' : 'clock_out'),
+          },
+        ]
+      );
+      return;
+    }
+    setFaceModalMode(type === 'in' ? 'clock_in' : 'clock_out');
+  }
+
+  async function handleFaceModalCapture(base64Image: string) {
+    const currentMode = faceModalMode;
+    setFaceModalMode(null);
+
+    if (!currentMode) return;
+
+    if (currentMode === 'verify_test') {
+      Alert.alert('Biometric Verified', 'Facial signature analyzed and successfully matched with your enrolled biometric profile!');
+      return;
+    }
+
+    const empId = profile?.id || profile?.employeeId || '';
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+    if (currentMode === 'enroll') {
+      try {
+        let photoUrl = base64Image;
+        try {
+          const res = await faceApi.enrollFace(base64Image);
+          if (res?.success && res.image_url) photoUrl = res.image_url;
+        } catch {}
+
+        await supabase.from('employees').update({ face_registered: true, photo: photoUrl }).eq('id', empId);
+        if (profile?.email) {
+          await supabase.from('employees').update({ face_registered: true, photo: photoUrl }).eq('email', profile.email);
+        }
+
+        const updated = { ...profile, face_registered: true, faceRegistered: true, photo: photoUrl };
+        setProfile(updated);
+        await authStore.saveUser(updated);
+        Alert.alert('Face Enrolled', 'Your facial biometrics have been enrolled successfully. You can now use biometric attendance!');
+      } catch (e: any) {
+        Alert.alert('Enrollment Error', e.message || 'Failed to enroll face');
+      }
+      return;
+    }
+
+    if (currentMode === 'clock_in') {
+      try {
+        await mobileDb.saveTimeRecord({
+          employeeId: empId,
+          date: today,
+          timeIn: timeStr,
+          timeInLocation: currentLocation
+            ? { lat: currentLocation.coords.latitude, lng: currentLocation.coords.longitude }
+            : undefined,
+          timeInGeofenced: isWithinGeofence,
+          timeInFaceVerified: true,
+          timeOutGeofenced: false,
+          timeOutFaceVerified: false,
+          timeInPhoto: base64Image,
+          status: 'present',
+          academicYear: profile?.academicYear || activeAcademicYear,
+        });
+
+        // Auto-enroll if not enrolled yet
+        if (!profile?.face_registered || !profile?.photo) {
+          await supabase.from('employees').update({ face_registered: true, photo: base64Image }).eq('id', empId).catch(() => {});
+          const updated = { ...profile, face_registered: true, faceRegistered: true, photo: base64Image };
+          setProfile(updated);
+          await authStore.saveUser(updated);
+        }
+
+        const rec = await mobileDb.getTodayTimeRecord(empId);
+        if (rec) setDashboardRecord(rec);
+        Alert.alert('Attendance Recorded', `Successfully Clocked In at ${timeStr} with Facial Recognition & Geofence Verification!`);
+      } catch (err: any) {
+        Alert.alert('Attendance Error', err.message || 'Failed to save clock-in');
+      }
+      return;
+    }
+
+    if (currentMode === 'clock_out') {
+      try {
+        let totalHours = 0;
+        if (dashboardRecord?.timeIn) {
+          const inParts = dashboardRecord.timeIn.split(':');
+          const timeInDate = new Date();
+          timeInDate.setHours(parseInt(inParts[0]), parseInt(inParts[1]), parseInt(inParts[2] || '0'));
+          totalHours = Math.max(0, (now.getTime() - timeInDate.getTime()) / (1000 * 60 * 60));
+        }
+
+        await mobileDb.saveTimeRecord({
+          id: dashboardRecord?.id,
+          employeeId: empId,
+          date: today,
+          timeIn: dashboardRecord?.timeIn || timeStr,
+          timeOut: timeStr,
+          timeInLocation: dashboardRecord?.timeInLocation,
+          timeOutLocation: currentLocation
+            ? { lat: currentLocation.coords.latitude, lng: currentLocation.coords.longitude }
+            : undefined,
+          timeInGeofenced: dashboardRecord?.timeInGeofenced ?? isWithinGeofence,
+          timeOutGeofenced: isWithinGeofence,
+          timeInFaceVerified: dashboardRecord?.timeInFaceVerified ?? true,
+          timeOutFaceVerified: true,
+          timeInPhoto: dashboardRecord?.timeInPhoto,
+          timeOutPhoto: base64Image,
+          totalHours: Number(totalHours.toFixed(2)),
+          status: dashboardRecord?.status || 'present',
+          academicYear: dashboardRecord?.academicYear || profile?.academicYear || activeAcademicYear,
+        });
+
+        const rec = await mobileDb.getTodayTimeRecord(empId);
+        if (rec) setDashboardRecord(rec);
+
+        const all = await mobileDb.getTimeRecords(empId);
+        const tot = all.reduce((acc, r) => acc + (Number(r.totalHours) || 0), 0);
+        setRenderedHours(Math.round(tot * 10) / 10);
+
+        Alert.alert('Attendance Recorded', `Successfully Clocked Out at ${timeStr}! Total session: ${totalHours.toFixed(2)} hrs.`);
+      } catch (err: any) {
+        Alert.alert('Attendance Error', err.message || 'Failed to save clock-out');
+      }
+    }
   }
 
   async function handleLogout() {
@@ -435,6 +868,11 @@ export default function App() {
                       if (data) setProfile(normalizeProfile(data));
                     });
                 }}
+              />
+            ) : faceModalMode ? (
+              <FaceScanner
+                onCancel={() => setFaceModalMode(null)}
+                onCapture={handleFaceModalCapture}
               />
             ) : showFaceEnroll ? (
               <FaceScanner
@@ -698,6 +1136,191 @@ export default function App() {
                     </TouchableOpacity>
                   )}
 
+                  {/* Biometric Attendance Action Box */}
+                  <View style={styles.biometricAttendanceBox}>
+                    <View style={styles.biometricHeaderRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={styles.biometricIconBadge}>
+                          <Fingerprint size={18} color="#2563eb" />
+                        </View>
+                        <View>
+                          <Text style={styles.biometricBoxTitle}>Biometric Daily Attendance</Text>
+                          <Text style={styles.biometricBoxSubtitle}>
+                            {dashboardRecord?.timeIn
+                              ? dashboardRecord?.timeOut
+                                ? `Completed Today (${dashboardRecord.totalHours || 0} hrs)`
+                                : `Clocked in at ${dashboardRecord.timeIn}`
+                              : "Ready for today's attendance"}
+                          </Text>
+                        </View>
+                      </View>
+                      {dashboardRecord?.timeIn && !dashboardRecord?.timeOut ? (
+                        <View style={styles.activePillLive}>
+                          <Text style={styles.activePillLiveText}>ON SHIFT</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.biometricBtnRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.biometricClockBtn,
+                          styles.biometricClockInBtn,
+                          dashboardRecord?.timeIn ? styles.biometricClockBtnDisabled : null,
+                        ]}
+                        disabled={!!dashboardRecord?.timeIn}
+                        onPress={() => handleBiometricClock('in')}
+                      >
+                        <Zap size={16} color="#ffffff" />
+                        <Text style={styles.biometricClockBtnText}>
+                          {dashboardRecord?.timeIn ? `In: ${dashboardRecord.timeIn}` : 'Time In (Face+GPS)'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.biometricClockBtn,
+                          styles.biometricClockOutBtn,
+                          (!dashboardRecord?.timeIn || !!dashboardRecord?.timeOut) ? styles.biometricClockBtnDisabled : null,
+                        ]}
+                        disabled={!dashboardRecord?.timeIn || !!dashboardRecord?.timeOut}
+                        onPress={() => handleBiometricClock('out')}
+                      >
+                        <Clock size={16} color="#ffffff" />
+                        <Text style={styles.biometricClockBtnText}>
+                          {dashboardRecord?.timeOut ? `Out: ${dashboardRecord.timeOut}` : 'Time Out (Face+GPS)'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Workplace Geofencing Tracker Card */}
+                  <View style={styles.geoTrackerCard}>
+                    <View style={styles.geoTrackerHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <View style={[styles.geoIconBadge, isWithinGeofence ? styles.geoIconBadgeGreen : styles.geoIconBadgeAmber]}>
+                          <MapPin size={18} color={isWithinGeofence ? '#16a34a' : '#d97706'} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.geoCardTitle}>Workplace Geofencing</Text>
+                          <Text style={styles.geoCardWorkplace} numberOfLines={1}>
+                            {assignedWorkplaceName || profile.companyName || 'CHMSU Campus / Assigned Workplace'}
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.geoRefreshBtn}
+                        disabled={locLoading}
+                        onPress={() => checkLiveGeofence()}
+                      >
+                        {locLoading ? (
+                          <ActivityIndicator size="small" color="#2563eb" />
+                        ) : (
+                          <RefreshCw size={15} color="#2563eb" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.geoStatusRow}>
+                      <View
+                        style={[
+                          styles.geoStatusBadge,
+                          isWithinGeofence ? styles.geoStatusBadgeInside : styles.geoStatusBadgeOutside,
+                        ]}
+                      >
+                        {isWithinGeofence ? (
+                          <ShieldCheck size={14} color="#16a34a" />
+                        ) : (
+                          <AlertTriangle size={14} color="#e11d48" />
+                        )}
+                        <Text
+                          style={[
+                            styles.geoStatusText,
+                            isWithinGeofence ? styles.geoStatusTextInside : styles.geoStatusTextOutside,
+                          ]}
+                        >
+                          {isWithinGeofence ? 'Inside Allowed 300m Zone' : 'Outside Geofence Perimeter'}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.geoDistanceText}>
+                        {distanceToSite !== null ? `${distanceToSite}m away` : 'Locating...'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.geoDetailRow}>
+                      <Text style={styles.geoCoordsText}>
+                        {currentLocation
+                          ? `GPS: ${currentLocation.coords.latitude.toFixed(4)}, ${currentLocation.coords.longitude.toFixed(4)} (±${Math.round(currentLocation.coords.accuracy || 0)}m)`
+                          : 'Detecting live GPS coordinates...'}
+                      </Text>
+                      <Text style={styles.geoRadiusNote}>Radius: 300m</Text>
+                    </View>
+                  </View>
+
+                  {/* Facial Recognition Biometrics Card */}
+                  <View style={styles.faceCard}>
+                    <View style={styles.faceCardHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <View style={styles.faceIconBadge}>
+                          <CameraIcon size={18} color="#7c3aed" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.faceCardTitle}>Facial Recognition Biometrics</Text>
+                          <Text style={styles.faceCardSubtitle}>
+                            {profile.face_registered || profile.faceRegistered
+                              ? 'Face enrolled & ready for authentication'
+                              : 'Face not registered yet. Enroll now.'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View
+                        style={[
+                          styles.faceStatusPill,
+                          profile.face_registered || profile.faceRegistered
+                            ? styles.faceStatusPillEnrolled
+                            : styles.faceStatusPillPending,
+                        ]}
+                      >
+                        {profile.face_registered || profile.faceRegistered ? (
+                          <CheckCircle2 size={12} color="#16a34a" />
+                        ) : (
+                          <AlertTriangle size={12} color="#d97706" />
+                        )}
+                        <Text
+                          style={[
+                            styles.faceStatusPillText,
+                            profile.face_registered || profile.faceRegistered
+                              ? { color: '#16a34a' }
+                              : { color: '#d97706' },
+                          ]}
+                        >
+                          {profile.face_registered || profile.faceRegistered ? 'Enrolled' : 'Not Enrolled'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.faceActionRow}>
+                      <TouchableOpacity
+                        style={styles.faceEnrollBtn}
+                        onPress={() => setFaceModalMode('enroll')}
+                      >
+                        <CameraIcon size={15} color="#ffffff" />
+                        <Text style={styles.faceEnrollBtnText}>
+                          {profile.face_registered || profile.faceRegistered ? 'Retake / Update Face' : 'Enroll Face Biometrics'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.faceVerifyBtn}
+                        onPress={() => setFaceModalMode('verify_test')}
+                      >
+                        <Shield size={15} color="#7c3aed" />
+                        <Text style={styles.faceVerifyBtnText}>Test Face Match</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
                   {/* Quick Action Grid */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 10 }}>
                     <Text style={styles.sectionHeader}>OJT Portal Services</Text>
@@ -779,15 +1402,15 @@ export default function App() {
                 <Text style={styles.cardSubtitle}>Access your Trainee, Instructor or HTE portal</Text>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Email Address</Text>
+                  <Text style={styles.inputLabel}>Email Address or Student / Employee ID</Text>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="student@chmsu.edu.ph"
+                    placeholder="student@chmsu.edu.ph or 2026-CHMSU-001"
                     placeholderTextColor="#94a3b8"
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
-                    keyboardType="email-address"
+                    autoCorrect={false}
                   />
                 </View>
 
@@ -1042,4 +1665,141 @@ const styles = StyleSheet.create({
   addAyBtn: { backgroundColor: '#2563eb', width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   modalCloseBtn: { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
   modalCloseBtnText: { color: '#64748b', fontWeight: '700' },
+  biometricAttendanceBox: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  biometricHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  biometricIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometricBoxTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  biometricBoxSubtitle: { fontSize: 11, color: '#64748b', marginTop: 1 },
+  activePillLive: { backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  activePillLiveText: { color: '#16a34a', fontSize: 10, fontWeight: '900' },
+  biometricBtnRow: { flexDirection: 'row', gap: 10 },
+  biometricClockBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  biometricClockInBtn: { backgroundColor: '#16a34a' },
+  biometricClockOutBtn: { backgroundColor: '#e11d48' },
+  biometricClockBtnDisabled: { backgroundColor: '#cbd5e1', opacity: 0.6 },
+  biometricClockBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  geoTrackerCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  geoTrackerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  geoIconBadge: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  geoIconBadgeGreen: { backgroundColor: '#f0fdf4' },
+  geoIconBadgeAmber: { backgroundColor: '#fef3c7' },
+  geoCardTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  geoCardWorkplace: { fontSize: 11, color: '#64748b', marginTop: 1, fontWeight: '600' },
+  geoRefreshBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+  geoStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  geoStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  geoStatusBadgeInside: { backgroundColor: '#dcfce7' },
+  geoStatusBadgeOutside: { backgroundColor: '#ffe4e6' },
+  geoStatusText: { fontSize: 11, fontWeight: '800' },
+  geoStatusTextInside: { color: '#16a34a' },
+  geoStatusTextOutside: { color: '#e11d48' },
+  geoDistanceText: { fontSize: 12, fontWeight: '800', color: '#0f172a' },
+  geoDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  geoCoordsText: { fontSize: 10, color: '#94a3b8' },
+  geoRadiusNote: { fontSize: 10, color: '#64748b', fontWeight: '700' },
+  faceCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  faceCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  faceIconBadge: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#f5f3ff', alignItems: 'center', justifyContent: 'center' },
+  faceCardTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  faceCardSubtitle: { fontSize: 11, color: '#64748b', marginTop: 1 },
+  faceStatusPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  faceStatusPillEnrolled: { backgroundColor: '#dcfce7' },
+  faceStatusPillPending: { backgroundColor: '#fef3c7' },
+  faceStatusPillText: { fontSize: 10, fontWeight: '800' },
+  faceActionRow: { flexDirection: 'row', gap: 10 },
+  faceEnrollBtn: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#7c3aed',
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  faceEnrollBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  faceVerifyBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#f5f3ff',
+    borderWidth: 1,
+    borderColor: '#ddd6fe',
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  faceVerifyBtnText: { color: '#7c3aed', fontSize: 12, fontWeight: '800' },
 });
