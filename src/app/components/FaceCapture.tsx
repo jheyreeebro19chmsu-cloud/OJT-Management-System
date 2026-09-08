@@ -129,7 +129,11 @@ export function FaceCapture({
   }, []);
 
   /**
-   * Render custom human head-to-neck silhouette with oval face framing
+   * Render vertical oval (ellipse) face framing layout
+   * - Height covers 60-70% of screen height
+   * - Height-to-width ratio ~1.3:1 to 1.5:1 (1.38:1)
+   * - Centered horizontally, slightly above center vertically
+   * - Minimum 10% margin padding from screen borders
    * Optimized to avoid canvas buffer resets and eliminate all flickering/flashing
    */
   const drawOverlay = useCallback(() => {
@@ -150,53 +154,43 @@ export function FaceCapture({
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // Oval dimensions & placement:
+      // 1. Centered horizontally (cx = W / 2)
+      // 2. Slightly above center vertically (cy = H * 0.46)
+      // 3. Covers 60–70% of screen height (radiusY = (H * 0.65) / 2)
+      // 4. Vertical oval ~1.3:1 to 1.5:1 ratio (aspect ratio = 1.38:1)
+      // 5. Margin from all edges >= 10%
       const cx = canvas.width / 2;
-      const cy = canvas.height * 0.40;
-      const headRadiusX = canvas.width * 0.26;
-      const headRadiusY = headRadiusX * 1.30;
-      const neckTopY = cy + headRadiusY * 0.70;
-      const neckWidth = headRadiusX * 0.65;
-      const shoulderBottomY = canvas.height;
-      const shoulderWidth = canvas.width * 0.85;
+      const cy = canvas.height * 0.46;
+
+      const maxRadiusY = canvas.height * 0.35; // leaves at least 11% top and 19% bottom margin
+      const maxRadiusX = canvas.width * 0.40;  // leaves at least 10% left and right margin
+
+      let radiusY = canvas.height * 0.325; // 65% of screen height
+      let radiusX = radiusY / 1.38;        // ~1.38:1 height-to-width ratio
+
+      if (radiusY > maxRadiusY) radiusY = maxRadiusY;
+      if (radiusX > maxRadiusX) {
+        radiusX = maxRadiusX;
+        radiusY = Math.min(radiusX * 1.38, maxRadiusY);
+      }
 
       const currentState = stateRef.current;
       const currentQuality = qualityReportRef.current;
       const currentMismatch = mismatchErrorRef.current;
 
-      // 1. Dark Backdrop Outside Human Silhouette
+      // 1. Dark Backdrop Outside Oval
       ctx.fillStyle = 'rgba(10, 15, 29, 0.65)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 2. Cutout Human Head-to-Neck Silhouette
+      // 2. Cutout Vertical Oval (Ellipse)
       ctx.save();
       ctx.beginPath();
-      // Head Oval
-      ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
-      // Neck & Shoulders
-      ctx.moveTo(cx - neckWidth / 2, neckTopY);
-      ctx.lineTo(cx - neckWidth / 2, neckTopY + 35);
-      ctx.bezierCurveTo(
-        cx - neckWidth / 2 - 20,
-        neckTopY + 55,
-        cx - shoulderWidth / 2 + 30,
-        shoulderBottomY - 20,
-        cx - shoulderWidth / 2,
-        shoulderBottomY
-      );
-      ctx.lineTo(cx + shoulderWidth / 2, shoulderBottomY);
-      ctx.bezierCurveTo(
-        cx + shoulderWidth / 2 - 30,
-        shoulderBottomY - 20,
-        cx + neckWidth / 2 + 20,
-        neckTopY + 55,
-        cx + neckWidth / 2,
-        neckTopY + 35
-      );
-      ctx.lineTo(cx + neckWidth / 2, neckTopY);
+      ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
       ctx.clip();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 3. Scanning Laser Line within silhouette
+      // 3. Scanning Laser Line within oval
       const lineColor =
         currentState === 'success'
           ? '#22c55e'
@@ -206,76 +200,61 @@ export function FaceCapture({
               ? '#f59e0b'
               : '#00e5ff';
 
-      const scanRange = headRadiusY * 2.2;
+      const scanRange = radiusY * 2;
       scanLineRef.current = (scanLineRef.current + 2.5) % scanRange;
-      const currentScanY = cy - headRadiusY + scanLineRef.current;
+      const currentScanY = cy - radiusY + scanLineRef.current;
 
       const laserGrad = ctx.createLinearGradient(0, currentScanY - 16, 0, currentScanY + 16);
       laserGrad.addColorStop(0, 'transparent');
       laserGrad.addColorStop(0.5, lineColor + 'aa');
       laserGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = laserGrad;
-      ctx.fillRect(0, currentScanY - 16, canvas.width, 32);
+      ctx.fillRect(cx - radiusX, currentScanY - 16, radiusX * 2, 32);
 
       // Laser thin bright center line
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cx - headRadiusX - 10, currentScanY);
-      ctx.lineTo(cx + headRadiusX + 10, currentScanY);
+      ctx.moveTo(cx - radiusX + 6, currentScanY);
+      ctx.lineTo(cx + radiusX - 6, currentScanY);
       ctx.stroke();
 
       ctx.restore();
 
-      // 4. Glowing Head-to-Neck Silhouette Contour Border
+      // 4. Glowing Oval Contour Border & Alignment Notches
       ctx.save();
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 2.5;
       ctx.shadowColor = lineColor;
       ctx.shadowBlur = 8;
 
-      // Draw Head Oval Outline
+      // Draw Vertical Oval Outline
       ctx.beginPath();
-      ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Draw Neck & Shoulders Outline
-      ctx.beginPath();
-      ctx.moveTo(cx - neckWidth / 2, neckTopY);
-      ctx.lineTo(cx - neckWidth / 2, neckTopY + 35);
-      ctx.bezierCurveTo(
-        cx - neckWidth / 2 - 20,
-        neckTopY + 55,
-        cx - shoulderWidth / 2 + 30,
-        shoulderBottomY - 20,
-        cx - shoulderWidth / 2,
-        shoulderBottomY
-      );
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(cx + neckWidth / 2, neckTopY);
-      ctx.lineTo(cx + neckWidth / 2, neckTopY + 35);
-      ctx.bezierCurveTo(
-        cx + neckWidth / 2 + 20,
-        neckTopY + 55,
-        cx + shoulderWidth / 2 - 30,
-        shoulderBottomY - 20,
-        cx + shoulderWidth / 2,
-        shoulderBottomY
-      );
+      ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
       ctx.stroke();
 
       // Chin alignment notch
       ctx.beginPath();
-      ctx.moveTo(cx - 15, cy + headRadiusY + 2);
-      ctx.lineTo(cx + 15, cy + headRadiusY + 2);
+      ctx.moveTo(cx - 16, cy + radiusY);
+      ctx.lineTo(cx + 16, cy + radiusY);
       ctx.stroke();
 
       // Forehead alignment notch
       ctx.beginPath();
-      ctx.moveTo(cx - 15, cy - headRadiusY - 2);
-      ctx.lineTo(cx + 15, cy - headRadiusY - 2);
+      ctx.moveTo(cx - 16, cy - radiusY);
+      ctx.lineTo(cx + 16, cy - radiusY);
+      ctx.stroke();
+
+      // Left cheek guide notch
+      ctx.beginPath();
+      ctx.moveTo(cx - radiusX, cy - 12);
+      ctx.lineTo(cx - radiusX, cy + 12);
+      ctx.stroke();
+
+      // Right cheek guide notch
+      ctx.beginPath();
+      ctx.moveTo(cx + radiusX, cy - 12);
+      ctx.lineTo(cx + radiusX, cy + 12);
       ctx.stroke();
 
       ctx.restore();
@@ -284,7 +263,7 @@ export function FaceCapture({
       if (currentState === 'success') {
         ctx.save();
         ctx.beginPath();
-        ctx.ellipse(cx, cy, headRadiusX, headRadiusY, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(34, 197, 94, 0.22)';
         ctx.fill();
         ctx.restore();
@@ -348,21 +327,20 @@ export function FaceCapture({
       setState('scanning');
       setScanMessage(
         currentMode === 'register'
-          ? 'Align your face in the silhouette guide and click "Capture Photo".'
-          : 'Position your face inside the silhouette for biometric verification...'
+          ? 'Position face inside the oval for facial recognition scan...'
+          : 'Position your face inside the oval for biometric verification...'
       );
       setProgress(20);
 
       // Pre-load biometric recognition models in parallel
       loadFaceModels().catch(() => {});
 
-      // For registration mode: auto-capture after face & lighting are stable for 3 consecutive checks (~1.3s)
+      // For registration mode: continuous facial recognition biometric scan that auto-completes
       if (currentMode === 'register') {
         let stableFrames = 0;
         const REQUIRED_STABLE_FRAMES = 3;
 
-        for (let i = 0; i < 60; i++) {
-          if (!streamRef.current || !videoRef.current || stateRef.current !== 'scanning') break;
+        while (streamRef.current && videoRef.current && stateRef.current === 'scanning') {
           const currentFrame = captureFrame();
           if (currentFrame) {
             const quality = await inspectFaceQuality(currentFrame).catch(() => null);
@@ -370,43 +348,57 @@ export function FaceCapture({
               setQualityReport(quality);
               if (quality.tooDark) {
                 stableFrames = 0;
+                setProgress(20);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
               } else if (quality.tooBright) {
                 stableFrames = 0;
+                setProgress(20);
                 setScanMessage('⚠️ Too bright! Avoid direct glare.');
               } else if (quality.capDetected) {
                 stableFrames = 0;
+                setProgress(20);
                 setScanMessage('⚠️ Cap detected! Please remove headwear.');
               } else if (quality.glassesDetected) {
                 stableFrames = 0;
+                setProgress(20);
                 setScanMessage('⚠️ Dark glasses detected! Please remove sunglasses.');
               } else if (quality.faceDetected) {
-                stableFrames++;
-                setProgress(Math.min(30 + stableFrames * 22, 95));
-
-                if (stableFrames < REQUIRED_STABLE_FRAMES) {
-                  setScanMessage(`✓ Face positioned well! Hold steady (${stableFrames}/${REQUIRED_STABLE_FRAMES})...`);
+                if (!quality.faceCentered) {
+                  stableFrames = 0;
+                  setProgress(25);
+                  setScanMessage('Align face inside the oval guide...');
                 } else {
-                  // Confirmed face stability: verify face with fail-closed check and auto-capture to preview
-                  const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => false);
-                  if (hasFace) {
-                    stopCamera();
-                    setCapturedImage(currentFrame);
-                    setState('preview');
-                    setProgress(100);
-                    setScanMessage('✓ Photo captured! Please review your photo below.');
-                    return;
+                  stableFrames++;
+                  setProgress(Math.min(30 + stableFrames * 22, 95));
+
+                  if (stableFrames < REQUIRED_STABLE_FRAMES) {
+                    setScanMessage(`Scanning face biometrics... Hold steady (${stableFrames}/${REQUIRED_STABLE_FRAMES})`);
                   } else {
-                    stableFrames = 0;
+                    // Confirmed face stability: verify face with fail-closed check and automatically complete enrollment!
+                    const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => false);
+                    if (hasFace) {
+                      stopCamera();
+                      setCapturedImage(currentFrame);
+                      setProgress(100);
+                      setState('success');
+                      setScanMessage('✓ Face Biometrics Enrolled Successfully!');
+                      setTimeout(() => {
+                        onSuccessRef.current?.(currentFrame);
+                      }, 900);
+                      return;
+                    } else {
+                      stableFrames = 0;
+                    }
                   }
                 }
               } else {
                 stableFrames = 0;
-                setScanMessage('Align face & shoulders inside the silhouette guide.');
+                setProgress(20);
+                setScanMessage('Align face inside the oval guide.');
               }
             }
           }
-          await new Promise((r) => setTimeout(r, 450));
+          await new Promise((r) => setTimeout(r, 350));
         }
         return;
       }
@@ -443,7 +435,7 @@ export function FaceCapture({
           continue;
         }
         if (!quality.faceDetected) {
-          setScanMessage('Align face inside the silhouette guide...');
+          setScanMessage('Align face inside the oval guide...');
           await new Promise((r) => setTimeout(r, 450));
           continue;
         }
@@ -486,7 +478,7 @@ export function FaceCapture({
       if (mismatchErrorRef.current) {
         setScanMessage('Identity mismatch. Please look straight into camera or tap Verify Now.');
       } else {
-        setScanMessage('Position face inside silhouette and tap Verify Now.');
+        setScanMessage('Position face inside the oval and tap Verify Now.');
       }
     } catch (err: any) {
       console.warn('FaceCapture error:', err);
@@ -554,16 +546,19 @@ export function FaceCapture({
       if (!quality || !quality.faceDetected) {
         const hasAnyFace = await detectFaceInDataUrl(img).catch(() => false);
         if (!hasAnyFace) {
-          setScanMessage('❌ No face detected. Please position your face inside the silhouette.');
+          setScanMessage('❌ No face detected. Please position your face inside the oval.');
           return;
         }
       }
 
       stopCamera();
       setCapturedImage(img);
-      setState('preview');
       setProgress(100);
-      setScanMessage('Photo captured! Please review your photo below.');
+      setState('success');
+      setScanMessage('✓ Face Biometrics Enrolled Successfully!');
+      setTimeout(() => {
+        onSuccessRef.current?.(img);
+      }, 900);
       return;
     }
 
@@ -633,8 +628,11 @@ export function FaceCapture({
         stopCamera();
         setCapturedImage(img);
         if (mode === 'register') {
-          setState('preview');
-          setScanMessage('Photo uploaded! Click Confirm to save for your account.');
+          setState('success');
+          setScanMessage('✓ Photo uploaded and biometrics enrolled!');
+          setTimeout(() => {
+            onSuccessRef.current?.(img);
+          }, 900);
         } else {
           setCapturedImage(img);
           handleManualSnap();
@@ -737,9 +735,9 @@ export function FaceCapture({
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ transform: 'scaleX(-1)' }} />
 
-            {/* Silhouette overlay instruction note */}
+            {/* Oval overlay instruction note */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
-              👤 Center Head to Neck in Silhouette
+              👤 Center Face inside the Oval
             </div>
           </>
         )}
@@ -915,7 +913,7 @@ export function FaceCapture({
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
             >
               <Camera size={15} />
-              {mode === 'register' ? 'Capture Photo' : 'Scan & Verify Now'}
+              {mode === 'register' ? 'Scan Face Now' : 'Scan & Verify Now'}
             </button>
             <button
               type="button"

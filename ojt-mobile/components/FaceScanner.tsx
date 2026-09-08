@@ -14,9 +14,10 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { X, ShieldCheck, Sparkles, Scan, CheckCircle2, Camera, RefreshCw, FlipHorizontal, Check } from 'lucide-react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const FRAME_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 280);
-const FRAME_HEIGHT = FRAME_WIDTH * 1.35;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Vertical oval (ellipse): ~60–65% screen height, ~1.38:1 height-to-width ratio, min 10% edge padding
+const FRAME_HEIGHT = Math.min(SCREEN_HEIGHT * 0.62, 430);
+const FRAME_WIDTH = Math.min(FRAME_HEIGHT / 1.38, SCREEN_WIDTH * 0.80);
 
 interface FaceScannerProps {
   onCapture: (base64Image: string) => void;
@@ -322,6 +323,7 @@ const styles = StyleSheet.create({
   frameContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: -20, // slightly above center to accommodate chin/neck
   },
   guideOval: {
     width: FRAME_WIDTH,

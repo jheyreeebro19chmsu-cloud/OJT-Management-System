@@ -328,13 +328,17 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
         const landmarks = detection.landmarks;
         const positions = landmarks.positions;
 
-        // Centering check: reasonable range
+        // Centering check: oval guide is centered at (w * 0.50, h * 0.46)
+        // Position tolerance: allow detected face bounding box within ~10–15% of oval center
+        const targetCx = w * 0.50;
+        const targetCy = h * 0.46;
         const faceCx = box.x + box.width / 2;
         const faceCy = box.y + box.height / 2;
-        const distFromCenter = Math.hypot(faceCx - w / 2, faceCy - h / 2);
-        if (distFromCenter > Math.max(w, h) * 0.45) {
+        const offsetX = Math.abs(faceCx - targetCx) / w;
+        const offsetY = Math.abs(faceCy - targetCy) / h;
+        if (offsetX > 0.15 || offsetY > 0.15) {
           result.faceCentered = false;
-          result.issues.push('Please center your face inside the silhouette guide.');
+          result.issues.push('Please center your face inside the oval guide.');
         }
 
         // Cap / Headwear Detection:
@@ -393,7 +397,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       } else {
         result.faceDetected = false;
         result.ok = false;
-        result.issues.push('No face detected. Position head inside the silhouette.');
+        result.issues.push('No face detected. Position head inside the oval guide.');
       }
     }
   } catch (err) {
