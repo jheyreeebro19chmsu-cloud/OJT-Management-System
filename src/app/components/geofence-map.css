@@ -1,3 +1,9 @@
+.leaflet-container {
+  isolation: isolate !important;
+  z-index: 0 !important;
+  position: relative !important;
+}
+
 .leaflet-zone-marker,
 .leaflet-picked-marker,
 .leaflet-user-marker {

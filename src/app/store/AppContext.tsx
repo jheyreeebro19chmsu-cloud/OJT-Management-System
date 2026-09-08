@@ -337,7 +337,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   migrateGeofenceStorageOnce();
   migrateInstructorPositionOnce();
   const [isLoading, setIsLoading] = useState(false);
-  const [useSupabase, setUseSupabase] = useState(false);
+  const [useSupabase, setUseSupabase] = useState(() => isSupabaseConfigured());
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadFromStorage(STORAGE_KEYS.CURRENT_USER, null));
   const [employees, setEmployees] = useState<Employee[]>(() => {
@@ -1051,39 +1051,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const registerEmployee = async (data: RegisterEmployeeInput): Promise<{ success: boolean; message?: string; employee?: Employee }> => {
     const { password, ...employeeData } = data;
-
-    // Check if email already exists locally (in memory state)
-    const existingLocalEmp = employees.find((e) => e.email.toLowerCase() === employeeData.email.toLowerCase());
-    if (existingLocalEmp) {
-      const updatedData: Employee = {
-        ...existingLocalEmp,
-        ...employeeData,
-        name: employeeData.name || existingLocalEmp.name,
-        companyName: employeeData.companyName || existingLocalEmp.companyName || 'N/A',
-        supervisorName: employeeData.supervisorName || existingLocalEmp.supervisorName || 'N/A',
-        schoolName: employeeData.schoolName || existingLocalEmp.schoolName || 'Carlos Hilado Memorial State University',
-        campus: employeeData.campus || existingLocalEmp.campus || 'Talisay (Main Campus)',
-        contactPhone: employeeData.contactPhone || existingLocalEmp.contactPhone || employeeData.phone || existingLocalEmp.phone,
-        phone: employeeData.contactPhone || employeeData.phone || existingLocalEmp.contactPhone || existingLocalEmp.phone,
-        course: employeeData.course || existingLocalEmp.course || 'N/A',
-        department: employeeData.department || existingLocalEmp.department || 'College of Computer Studies',
-        startDate: employeeData.startDate || existingLocalEmp.startDate || new Date().toISOString().split('T')[0],
-        endDate: employeeData.endDate || existingLocalEmp.endDate || new Date().toISOString().split('T')[0],
-        requiredHours: employeeData.requiredHours ?? existingLocalEmp.requiredHours ?? 486,
-        photo: employeeData.photo || existingLocalEmp.photo,
-        faceRegistered: employeeData.faceRegistered ?? existingLocalEmp.faceRegistered,
-        active: true,
-      };
-      if (password) {
-        setPasswordForEmail(employeeData.email, password);
-      }
-      setEmployees((prev) => [updatedData, ...prev.filter((e) => e.id !== existingLocalEmp.id)]);
-      return {
-        success: true,
-        message: 'Account profile updated with your registration details and face recognition.',
-        employee: updatedData,
-      };
-    }
+    const isCloud = isSupabaseConfigured() || useSupabase;
 
     // Set robust default values for non-trainee roles to avoid violating NOT NULL database constraints
     const isHTE = employeeData.position === 'HTE Representative' || employeeData.position === 'Training Supervisor' || (employeeData.position && employeeData.position.toLowerCase().includes('hte'));
@@ -1111,20 +1079,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       course: employeeData.course || 'N/A',
       startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
       endDate: employeeData.endDate || new Date().toISOString().split('T')[0],
-      requiredHours: employeeData.requiredHours ?? 0,
+      requiredHours: employeeData.requiredHours ?? (isInstructor || isHTE ? 0 : 486),
     };
-
-    // If photo is a base64 string, upload to Supabase storage bucket (face-photos) first
-    if (useSupabase && cleanData.photo && typeof cleanData.photo === 'string' && !cleanData.photo.startsWith('http')) {
-      try {
-        const uploadedUrl = await supabaseService.uploadFacePhoto(resolvedEmployeeId || 'unassigned', cleanData.photo, 'profile');
-        if (uploadedUrl && uploadedUrl.startsWith('http')) {
-          cleanData.photo = uploadedUrl;
-        }
-      } catch (uploadErr) {
-        console.warn('Face photo upload warning during registerEmployee:', uploadErr);
-      }
-    }
 
     const newEmp: Employee = {
       ...cleanData,
@@ -1133,102 +1089,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString().split('T')[0],
     };
 
-    if (useSupabase) {
+    if (isCloud) {
       try {
-        // Query Supabase to double-check email uniqueness (best-effort — RLS may block anon reads)
-        try {
-          const { data: existingEmp } = await supabase
-            .from('employees')
-            .select('id')
-            .ilike('email', cleanData.email)
-            .maybeSingle();
-
-          if (existingEmp) {
-            // Update the existing record with new details instead of rejecting
-            const updatedData: Employee = {
-              ...cleanData,
-              id: existingEmp.id,
-              academicYear: cleanData.academicYear || settings.activeAcademicYear,
-              createdAt: new Date().toISOString().split('T')[0],
-            };
-            if (password) setPasswordForEmail(cleanData.email, password);
-            setEmployees((prev) => [updatedData, ...prev.filter((e) => e.id !== existingEmp.id)]);
-            return {
-              success: true,
-              message: 'Account profile updated with your registration details and face recognition.',
-              employee: updatedData,
-            };
+        // Compress and upload face photo if base64
+        if (cleanData.photo && typeof cleanData.photo === 'string' && !cleanData.photo.startsWith('http')) {
+          try {
+            cleanData.photo = await supabaseService.compressBase64Image(cleanData.photo, 600, 0.82);
+            const uploadedUrl = await supabaseService.uploadFacePhoto(resolvedEmployeeId || 'unassigned', cleanData.photo, 'profile');
+            if (uploadedUrl && uploadedUrl.startsWith('http')) {
+              cleanData.photo = uploadedUrl;
+            }
+          } catch (uploadErr) {
+            console.warn('Face photo upload warning during registerEmployee:', uploadErr);
           }
-        } catch (checkErr) {
-          // RLS or network error — skip uniqueness pre-check; signUp will catch duplicates
-          console.warn('Email uniqueness pre-check failed (possibly RLS), proceeding with signUp:', checkErr);
         }
 
         let authId: string | undefined;
+
+        // Attempt Supabase Auth account creation if password provided
         if (password) {
-          const { data: authData, error: authError } = await supabase.auth.signUp({
-            email: cleanData.email,
-            password: password,
-            options: {
-              data: {
-                full_name: cleanData.name,
-                role: cleanData.position === 'OJT Instructor' ? 'admin' : cleanData.position === 'HTE Representative' ? 'host' : 'employee',
+          try {
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+              email: cleanData.email.trim().toLowerCase(),
+              password: password,
+              options: {
+                data: {
+                  full_name: cleanData.name,
+                  role: isInstructor ? 'admin' : isHTE ? 'host' : 'employee',
+                }
               }
+            });
+
+            if (authError) {
+              console.warn('Supabase auth.signUp note (proceeding to ensure employees row is saved):', authError.message);
+            } else if (authData?.user?.id) {
+              authId = authData.user.id;
             }
-          });
-
-          if (authError) {
-            const isAlreadyRegistered =
-              authError.message?.toLowerCase().includes('already registered') ||
-              authError.message?.toLowerCase().includes('user already exists');
-
-            if (!isAlreadyRegistered) {
-              console.error('Supabase auth.signUp failed:', authError);
-              return {
-                success: false,
-                message: `Account creation failed: ${authError.message || 'Unknown authentication error'}`,
-              };
-            }
-
-            // Auth account already exists — repair/create the employees row instead
-            // of assuming it already exists. This is the exact bug class being
-            // fixed in this audit: an auth account existing while its employees
-            // row is missing or was never created.
-            setPasswordForEmail(cleanData.email, password);
-            try {
-              const repaired = await supabaseService.createEmployee({
-                ...cleanData,
-                academicYear: cleanData.academicYear || settings.activeAcademicYear,
-                applicationStatus: 'approved',
-              });
-              setEmployees((prev) => [
-                repaired,
-                ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase()),
-              ]);
-              return {
-                success: true,
-                message: 'Account registered and updated successfully. You can now log in with your credentials.',
-                employee: repaired,
-              };
-            } catch (repairErr: any) {
-              console.error('Failed to repair employees row for existing auth user:', repairErr);
-              return {
-                success: false,
-                message: `Database registration failed: ${repairErr?.message || 'Unknown error'}`,
-              };
-            }
-          }
-
-          if (authData?.user) {
-            authId = authData.user.id;
+          } catch (authCatchErr) {
+            console.warn('Supabase auth.signUp exception (proceeding to save database record):', authCatchErr);
           }
         }
 
-        // Auto-link trainees to an instructor for the active academic year — no manual
-        // selection and no pending approval step. Instructors/HTE reps are left unlinked.
+        // Auto-link trainees to an instructor for the active academic year
         let autoInstructorId: string | undefined;
         const targetAcademicYear = cleanData.academicYear || newEmp.academicYear || settings.activeAcademicYear;
-        if (cleanData.position !== 'OJT Instructor' && cleanData.position !== 'HTE Representative') {
+        if (!isInstructor && !isHTE) {
           try {
             const { data: matchingInstructor } = await supabase
               .from('employees')
@@ -1240,7 +1145,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (matchingInstructor) {
               autoInstructorId = matchingInstructor.id;
             } else {
-              // Fallback: any instructor at all, if none match this academic year exactly
               const { data: anyInstructor } = await supabase
                 .from('employees')
                 .select('id')
@@ -1258,8 +1162,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const employeePayload = {
           ...cleanData,
+          academicYear: targetAcademicYear,
           instructorId: isUuid(autoInstructorId) ? autoInstructorId : undefined,
-          applicationStatus: 'approved' as const, // no pending step — active immediately
+          applicationStatus: 'approved' as const,
           ...(isUuid(authId) ? { id: authId } : {}),
         };
 
@@ -1274,76 +1179,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        if (!created) {
+          return { success: false, message: 'Failed to create database record in Supabase.' };
+        }
+
         if (password) {
           setPasswordForEmail(cleanData.email, password);
         }
+
+        // Update local React state and device localStorage with newly registered profile
         setEmployees((prev) => [created!, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
         saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
 
-        if (created) {
-          setEmployees((prev) => [created, ...prev]);
-          if (password) {
-            setPasswordForEmail(cleanData.email, password);
-          }
+        // If registering an HTE supervisor, also persist to host_supervisors table
+        if (isHTE) {
+          const hostPayload: HostSupervisor = {
+            id: created.id,
+            employeeId: created.employeeId || cleanData.employeeId,
+            name: created.name,
+            email: created.email,
+            companyName: created.companyName || cleanData.companyName || 'Host Training Establishment',
+            companyAddress: cleanData.companyAddress || cleanData.registrationAddress || '',
+            contactPerson: created.name,
+            phone: created.phone || cleanData.phone || '',
+            academicYear: created.academicYear || cleanData.academicYear || settings.activeAcademicYear,
+            isApproved: true,
+            active: true,
+            registrationLocation: cleanData.registrationLocation,
+            registrationAddress: cleanData.registrationAddress,
+            photo: cleanData.photo || created.photo,
+            createdAt: created.createdAt || new Date().toISOString(),
+          };
+          setHostSupervisors((prev) => [hostPayload, ...prev.filter((h) => h.id !== hostPayload.id && h.email !== hostPayload.email)]);
+          supabaseService.createHostSupervisor(hostPayload).catch((hErr) => {
+            console.debug('HostSupervisor creation notice:', hErr);
+          });
+        }
 
-          // If registering an HTE supervisor, also persist to host_supervisors table
-          const isHTE = cleanData.position === 'HTE Representative' || cleanData.position === 'Training Supervisor' || (cleanData.position && cleanData.position.toLowerCase().includes('hte'));
-          if (isHTE) {
-            const hostPayload: HostSupervisor = {
-              id: created.id,
-              employeeId: created.employeeId || cleanData.employeeId,
-              name: created.name,
-              email: created.email,
-              companyName: created.companyName || cleanData.companyName || 'Host Training Establishment',
-              companyAddress: cleanData.companyAddress || cleanData.registrationAddress || '',
-              contactPerson: created.name,
-              phone: created.phone || cleanData.phone || '',
-              academicYear: created.academicYear || cleanData.academicYear || settings.activeAcademicYear,
-              isApproved: true,
+        // Auto-create/upsert station geofence zone in database and local state for Instructors and HTEs
+        if (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) {
+          if (isInstructor || isHTE) {
+            const isCreatedUuid = created.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(created.id);
+            const zoneName = isInstructor ? `${created.name} - Official Station` : `${created.name} - ${cleanData.companyName || 'HTE Workplace'}`;
+            const zoneAddr = cleanData.registrationAddress || cleanData.companyAddress || (isInstructor ? 'Campus Station' : 'HTE Workplace');
+
+            const stationZone: GeofenceZone = {
+              id: isCreatedUuid ? created.id : `station-${created.id}`,
+              name: zoneName,
+              address: zoneAddr,
+              lat: Number(cleanData.registrationLocation.lat),
+              lng: Number(cleanData.registrationLocation.lng),
+              radius: 100,
               active: true,
-              registrationLocation: cleanData.registrationLocation,
-              registrationAddress: cleanData.registrationAddress,
-              photo: cleanData.photo || created.photo,
-              createdAt: created.createdAt || new Date().toISOString(),
+              academicYear: cleanData.academicYear || settings.activeAcademicYear,
             };
-            setHostSupervisors((prev) => [hostPayload, ...prev.filter((h) => h.id !== hostPayload.id && h.email !== hostPayload.email)]);
-            supabaseService.createHostSupervisor(hostPayload).catch((hErr) => {
-              console.debug('HostSupervisor creation notice:', hErr);
+            supabaseService.createGeofenceZone(stationZone).then((saved) => {
+              const zoneToUse = saved || stationZone;
+              setGeofenceZones((prev) => [zoneToUse, ...prev.filter((z) => z.id !== zoneToUse.id && z.id !== stationZone.id && z.id !== `station-${created!.id}`)]);
+            }).catch((err) => {
+              console.debug('Station geofence zone auto-sync notice:', err);
             });
           }
-
-          // Auto-create/upsert station geofence zone in database and local state for Instructors and HTEs (NOT trainees)
-          if (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) {
-            const isInst = cleanData.position === 'OJT Instructor' || (cleanData.employeeId && cleanData.employeeId.startsWith('ADM-'));
-            const isHteRep = cleanData.position === 'HTE Representative' || (cleanData.employeeId && cleanData.employeeId.startsWith('HTE-'));
-            if (isInst || isHteRep) {
-              const isUuid = created.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(created.id);
-              const zoneName = isInst ? `${created.name} - Official Station` : `${created.name} - ${cleanData.companyName || 'HTE Workplace'}`;
-              const zoneAddr = cleanData.registrationAddress || cleanData.companyAddress || (isInst ? 'Campus Station' : 'HTE Workplace');
-
-              const stationZone: GeofenceZone = {
-                id: isUuid ? created.id : `station-${created.id}`,
-                name: zoneName,
-                address: zoneAddr,
-                lat: Number(cleanData.registrationLocation.lat),
-                lng: Number(cleanData.registrationLocation.lng),
-                radius: 100,
-                active: true,
-                academicYear: cleanData.academicYear || settings.activeAcademicYear,
-              };
-              supabaseService.createGeofenceZone(stationZone).then((saved) => {
-                const zoneToUse = saved || stationZone;
-                setGeofenceZones((prev) => [zoneToUse, ...prev.filter((z) => z.id !== zoneToUse.id && z.id !== stationZone.id && z.id !== `station-${created.id}`)]);
-              }).catch((err) => {
-                console.debug('Station geofence zone auto-sync notice:', err);
-              });
-            }
-          }
-
-          return { success: true, employee: created };
-        } else {
-          return { success: false, message: 'Failed to create database record in Supabase.' };
         }
+
+        return { success: true, employee: created };
       } catch (err: any) {
         console.error('registerEmployee Supabase path error:', err);
         const errMsg = err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Unknown error during Supabase registration.';
@@ -1356,7 +1255,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setEmployees((prev) => [...prev, newEmp]);
 
       // Local storage face enrollment fallback
-      // Skip face registration for OJT Instructors and HTE Representatives
       if (
         cleanData.photo &&
         isSecurityApiConfigured() &&

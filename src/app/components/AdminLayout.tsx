@@ -310,14 +310,14 @@ export function AdminLayout() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden fixed inset-0 bg-black/50 z-30"
+              className="lg:hidden fixed inset-0 bg-black/50 z-[998]"
             />
             <motion.aside
               initial={{ x: -240 }}
               animate={{ x: 0 }}
               exit={{ x: -240 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="lg:hidden fixed left-0 top-0 bottom-0 w-60 bg-blue-900 flex flex-col z-40 no-print"
+              className="lg:hidden fixed left-0 top-0 bottom-0 w-60 bg-blue-900 flex flex-col z-[999] no-print"
             >
               <div className="p-5 border-b border-blue-800 flex flex-col gap-3">
                 <div className="flex items-center justify-between">

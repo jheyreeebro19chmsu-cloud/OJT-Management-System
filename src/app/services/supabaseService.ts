@@ -30,6 +30,56 @@ export async function fetchEmployees(): Promise<Employee[]> {
   return (data || []).map(transformSupabaseEmployee);
 }
 
+// Helper to compress high-resolution mobile photos to lightweight JPEG (~40-80KB)
+// Prevents mobile cellular upload timeouts and avoids database payload blowouts
+export async function compressBase64Image(base64Data: string, maxDim: number = 600, quality: number = 0.82): Promise<string> {
+  if (typeof window === 'undefined' || !base64Data || !base64Data.startsWith('data:image')) {
+    return base64Data;
+  }
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          if (width <= maxDim && height <= maxDim && base64Data.length < 150000) {
+            resolve(base64Data);
+            return;
+          }
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(base64Data);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed);
+        } catch {
+          resolve(base64Data);
+        }
+      };
+      img.onerror = () => resolve(base64Data);
+      img.src = base64Data;
+    } catch {
+      resolve(base64Data);
+    }
+  });
+}
+
 export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'> & { id?: string }): Promise<Employee> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase is not configured');
@@ -40,10 +90,11 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
   const rawInstructorId = (employee as any).instructorId;
   const rawHteId = (employee as any).hteId;
 
-  // Upload base64 face photo to storage bucket if needed
+  // Compress and upload base64 face photo to storage bucket if needed
   let photoToStore = employee.photo || null;
   if (photoToStore && typeof photoToStore === 'string' && !photoToStore.startsWith('http')) {
     try {
+      photoToStore = await compressBase64Image(photoToStore, 600, 0.82);
       const uploadedUrl = await uploadFacePhoto(employee.employeeId, photoToStore, 'profile');
       if (uploadedUrl && uploadedUrl.startsWith('http')) {
         photoToStore = uploadedUrl;
@@ -74,16 +125,16 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     photo: photoToStore,
     face_registered: Boolean(employee.faceRegistered),
     active: employee.active !== false,
-    registration_lat: employee.registrationLocation?.lat || null,
-    registration_lng: employee.registrationLocation?.lng || null,
+    registration_lat: employee.registrationLocation?.lat != null ? Number(employee.registrationLocation.lat) : null,
+    registration_lng: employee.registrationLocation?.lng != null ? Number(employee.registrationLocation.lng) : null,
     registration_address: employee.registrationAddress || null,
     academic_year: employee.academicYear || '2026-2027',
     instructor_id: isUuid(rawInstructorId) ? rawInstructorId : null,
     hte_id: isUuid(rawHteId) ? rawHteId : null,
     application_status: (employee as any).applicationStatus || 'approved',
     registration_location: {
-      lat: employee.registrationLocation?.lat || null,
-      lng: employee.registrationLocation?.lng || null,
+      lat: employee.registrationLocation?.lat != null ? Number(employee.registrationLocation.lat) : null,
+      lng: employee.registrationLocation?.lng != null ? Number(employee.registrationLocation.lng) : null,
       address: employee.registrationAddress || null,
       phone: phoneVal,
       contactPhone: phoneVal,
@@ -170,7 +221,18 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     };
   }
 
-  const { error } = await supabase.from('employees').update(supabaseUpdates).eq('id', id);
+  const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+  let query = supabase.from('employees').update(supabaseUpdates);
+  if (isUuid(id)) {
+    query = query.eq('id', id);
+  } else if (updates.email) {
+    query = query.eq('email', updates.email.trim().toLowerCase());
+  } else {
+    query = query.eq('employee_id', id);
+  }
+
+  const { error } = await query;
   if (error) {
     console.error('Error updating employee:', error);
     throw new Error(error.message || 'Failed to update employee in database');
@@ -311,6 +373,14 @@ export async function uploadFacePhoto(
 
   try {
     if (base64Data.startsWith('http')) return base64Data;
+
+    if (base64Data.startsWith('data:image')) {
+      try {
+        base64Data = await compressBase64Image(base64Data, 600, 0.82);
+      } catch (cErr) {
+        console.warn('Image compression note:', cErr);
+      }
+    }
 
     const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const byteCharacters = atob(base64Content);
@@ -1206,11 +1276,15 @@ export async function fetchHostSupervisors(): Promise<HostSupervisor[]> {
 export async function createHostSupervisor(host: HostSupervisor): Promise<HostSupervisor | null> {
   if (!isSupabaseConfigured()) return null;
 
+  const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+  const resolvedId = isUuid(host.id) ? host.id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined);
+
   const payload: any = {
-    id: host.id,
+    ...(resolvedId ? { id: resolvedId } : {}),
     name: host.contactPerson || host.name,
     email: host.email?.trim().toLowerCase(),
-    company_name: host.companyName,
+    company_name: host.companyName || 'Host Training Establishment',
+    position: (host as any).position || 'HTE Representative',
     is_approved: host.isApproved ?? true,
     active: host.active !== false,
   };

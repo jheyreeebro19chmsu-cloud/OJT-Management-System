@@ -176,7 +176,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[998] lg:hidden"
           />
         )}
       </AnimatePresence>
@@ -189,7 +189,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             animate={{ x: 0 }}
             exit={{ x: -280 }}
             transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-            className="fixed inset-y-0 left-0 w-72 bg-slate-900 z-50 flex flex-col lg:hidden shadow-2xl border-r border-slate-800"
+            className="fixed inset-y-0 left-0 w-72 bg-slate-900 z-[999] flex flex-col lg:hidden shadow-2xl border-r border-slate-800"
           >
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
               <div className="flex items-center gap-3">

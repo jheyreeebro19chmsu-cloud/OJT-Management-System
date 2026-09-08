@@ -172,14 +172,14 @@ export function EmployeeLayout() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 lg:hidden no-print"
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[998] lg:hidden no-print"
             />
             <motion.aside
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              className="fixed inset-y-0 left-0 z-50 w-72 bg-blue-900 flex flex-col shadow-2xl lg:hidden no-print border-r border-blue-800"
+              className="fixed inset-y-0 left-0 z-[999] w-72 bg-blue-900 flex flex-col shadow-2xl lg:hidden no-print border-r border-blue-800"
             >
               {renderSidebarContent(true)}
             </motion.aside>

@@ -44,6 +44,7 @@ import { Country, State, City } from 'country-state-city';
 
 import { authAPI } from '../services/authApi';
 import { supabase } from '../lib/supabase';
+import { createEmployee as createEmployeeDb } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode } from '../utils/geo';
@@ -695,64 +696,73 @@ export function Register() {
 
     if (!result.success) {
       const msg = result.message || '';
-      // If email already exists, update/save the record instead of blocking the user
+      // If email already exists, update/save the record directly in Supabase instead of failing
       if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already in use') || msg.toLowerCase().includes('user already exists')) {
-        const emailToFind = (form.email || form.username || '').toLowerCase();
-        const existing = employees.find((e) => e.email.toLowerCase() === emailToFind);
-        const empToUpdateId = existing ? existing.id : empId;
-        const updatedPayload = {
-          id: empToUpdateId,
-          employeeId: form.employeeId || (existing?.employeeId ? (role === 'hte' && existing.employeeId.startsWith('OJT-') ? existing.employeeId.replace(/^OJT-/, 'HTE-') : existing.employeeId) : empId),
-          name: composedName,
-          firstName: form.firstName,
-          lastName: form.lastName,
-          middleInitial: form.middleInitial,
-          email: form.email,
-          department: form.department,
-          position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-          companyName: form.companyName,
-          companyAddress: form.companyAddress,
-          contactPerson: form.contactPerson,
-          contactPhone: form.contactPhone,
-          schoolName: form.schoolName,
-          campus: form.campus,
-          course: form.course,
-          startDate: form.startDate,
-          endDate: form.endDate,
-          requiredHours: Number(form.requiredHours) || 300,
-          registrationLocation: registrationLocation || undefined,
-          registrationAddress: computedAddress,
-          photo: photo || (existing ? existing.photo : undefined),
-          faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
-          active: true,
-          submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : (existing ? existing.submittedDocuments : undefined),
-          documentsPassed: role === 'trainee' ? isAllDocsPassed : (existing ? existing.documentsPassed : true),
-          documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : (existing ? existing.documentsStatus : 'passed'),
-        };
-
-        if (existing) {
-          updateEmployee(existing.id, updatedPayload);
-        }
-
-        if (registrationLocation?.lat && registrationLocation?.lng) {
-          const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - ${form.companyName || 'Assigned Workplace'}`;
-          const zoneAddr = computedAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
-          addGeofenceZone({
-            id: `personal-${empToUpdateId}`,
-            name: zoneName,
-            address: zoneAddr,
-            lat: registrationLocation.lat,
-            lng: registrationLocation.lng,
-            radius: 100,
+        try {
+          const emailToFind = (form.email || form.username || '').toLowerCase();
+          const existing = employees.find((e) => e.email.toLowerCase() === emailToFind);
+          const empToUpdateId = existing ? existing.id : empId;
+          const updatedPayload: any = {
+            id: empToUpdateId,
+            employeeId: form.employeeId || (existing?.employeeId ? (role === 'hte' && existing.employeeId.startsWith('OJT-') ? existing.employeeId.replace(/^OJT-/, 'HTE-') : existing.employeeId) : empId),
+            name: composedName,
+            firstName: form.firstName,
+            lastName: form.lastName,
+            middleInitial: form.middleInitial,
+            email: form.email,
+            department: form.department,
+            position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
+            companyName: form.companyName,
+            companyAddress: form.companyAddress,
+            contactPerson: form.contactPerson,
+            contactPhone: form.contactPhone,
+            schoolName: form.schoolName,
+            campus: form.campus,
+            course: form.course,
+            startDate: form.startDate,
+            endDate: form.endDate,
+            requiredHours: Number(form.requiredHours) || (role === 'admin' || role === 'hte' ? 0 : 486),
+            registrationLocation: registrationLocation || undefined,
+            registrationAddress: computedAddress,
+            photo: photo || (existing ? existing.photo : undefined),
+            faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
             active: true,
-            academicYear: settings.activeAcademicYear,
-          });
-        }
+            submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : (existing ? existing.submittedDocuments : undefined),
+            documentsPassed: role === 'trainee' ? isAllDocsPassed : (existing ? existing.documentsPassed : true),
+            documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : (existing ? existing.documentsStatus : 'passed'),
+          };
 
-        toast.success('Registration completed! Profile and OJT geofence workplace updated. Please log in.');
-        setIsSubmitting(false);
-        navigate('/login');
-        return;
+          // Guarantee persistent write to Supabase database
+          await createEmployeeDb(updatedPayload);
+          if (existing) {
+            updateEmployee(existing.id, updatedPayload);
+          }
+
+          if (registrationLocation?.lat && registrationLocation?.lng) {
+            const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - ${form.companyName || 'Assigned Workplace'}`;
+            const zoneAddr = computedAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
+            addGeofenceZone({
+              id: `personal-${empToUpdateId}`,
+              name: zoneName,
+              address: zoneAddr,
+              lat: registrationLocation.lat,
+              lng: registrationLocation.lng,
+              radius: 100,
+              active: true,
+              academicYear: settings.activeAcademicYear,
+            });
+          }
+
+          toast.success('Registration completed! Profile and OJT details saved in database. Please log in.');
+          setIsSubmitting(false);
+          navigate('/login');
+          return;
+        } catch (repairErr: any) {
+          console.error('Failed to update registration record in database:', repairErr);
+          toast.error(`Database registration failed: ${repairErr?.message || 'Error'}`);
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       toast.error(msg || 'Registration failed. Please check your inputs.');
@@ -765,11 +775,14 @@ export function Register() {
     // If HTE Representative, ensure saved into dedicated host_supervisors table in Supabase
     if (role === 'hte') {
       try {
+        const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+        const hostId = isUuid(newEmp?.id) ? newEmp.id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined);
         await supabase.from('host_supervisors').upsert({
-          id: newEmp?.id || empId,
+          ...(hostId ? { id: hostId } : {}),
           name: composedName,
           email: (form.email || form.username || '').trim().toLowerCase(),
           company_name: form.companyName || 'Host Training Establishment',
+          position: 'HTE Representative',
           is_approved: true,
           active: true,
         }, { onConflict: 'id' });

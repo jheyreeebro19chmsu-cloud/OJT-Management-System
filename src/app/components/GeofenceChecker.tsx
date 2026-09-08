@@ -393,7 +393,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       )}
 
       {mapCenter && (
-        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+        <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm relative z-0 isolate">
           <div className="px-3 py-2 border-b border-gray-100 bg-slate-50">
             <p className="text-xs font-semibold text-slate-800">Live location map (Leaflet)</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
@@ -408,8 +408,8 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
               </p>
             )}
           </div>
-          <div className="h-64">
-            <MapContainer center={mapCenter} zoom={16} scrollWheelZoom className="h-full w-full">
+          <div className="h-64 relative z-0 isolate overflow-hidden">
+            <MapContainer center={mapCenter} zoom={16} scrollWheelZoom className="h-full w-full relative z-0">
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

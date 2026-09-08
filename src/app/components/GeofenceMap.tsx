@@ -93,7 +93,7 @@ export function GeofenceMap({
   }, [safeLiveUser]);
 
   return (
-    <div className={`relative ${className} min-h-[200px]`}>
+    <div className={`relative ${className} min-h-[200px] z-0 isolate overflow-hidden`}>
       <MapContainer center={defaultCenter} zoom={16} scrollWheelZoom className="absolute inset-0 z-0">
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
