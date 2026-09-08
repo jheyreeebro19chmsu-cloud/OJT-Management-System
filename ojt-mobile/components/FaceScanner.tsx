@@ -5,15 +5,16 @@ import {
   View,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   Dimensions,
+  Image,
+  Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { X, ShieldCheck, Sparkles, Scan, CheckCircle2 } from 'lucide-react-native';
+import { X, ShieldCheck, Sparkles, Scan, CheckCircle2, Camera, RefreshCw, FlipHorizontal, Check } from 'lucide-react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FRAME_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 280);
 const FRAME_HEIGHT = FRAME_WIDTH * 1.35;
 
@@ -25,13 +26,13 @@ interface FaceScannerProps {
 export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(false);
-  const [scanStage, setScanStage] = useState<'aligning' | 'analyzing' | 'matched'>('aligning');
-  const [progress, setProgress] = useState(0);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [facing, setFacing] = useState<'front' | 'back'>('front');
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const cameraRef = useRef<CameraView | null>(null);
 
   // Scanning laser animation
   const scanAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (!permission) {
@@ -39,19 +40,19 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
     }
   }, [permission, requestPermission]);
 
-  // Start laser loop
+  // Start smooth laser loop (no pulsing scaling to avoid flicker)
   useEffect(() => {
     const laserLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(scanAnim, {
           toValue: 1,
-          duration: 1400,
+          duration: 1600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(scanAnim, {
           toValue: 0,
-          duration: 1400,
+          duration: 1600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -59,82 +60,50 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
     );
     laserLoop.start();
 
-    // Pulse animation for the frame
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.03,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulseLoop.start();
-
     return () => {
       laserLoop.stop();
-      pulseLoop.stop();
     };
   }, []);
 
-  // Fast Automatic Facial Recognition Sequence (No sluggish delays)
-  useEffect(() => {
-    if (!permission?.granted) return;
-
-    // Stage 1: Fast initial lock (0 - 250ms)
-    const t1 = setTimeout(() => {
-      setScanStage('analyzing');
-      setProgress(50);
-    }, 250);
-
-    // Stage 2: Biometrics Analyzed & Matched (500ms)
-    const t2 = setTimeout(() => {
-      setScanStage('matched');
-      setProgress(100);
-    }, 500);
-
-    // Stage 3: Immediate Auto-Capture on match (750ms)
-    const t3 = setTimeout(() => {
-      autoCapture();
-    }, 750);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [permission?.granted]);
-
-  async function autoCapture() {
+  async function handleTakePicture() {
     if (!cameraRef.current || isCapturing) return;
     setIsCapturing(true);
 
     try {
-      if (!cameraRef.current || typeof cameraRef.current.takePictureAsync !== 'function') {
-        throw new Error('Camera not ready');
+      if (typeof cameraRef.current.takePictureAsync !== 'function') {
+        throw new Error('Camera is still warming up. Please hold steady.');
       }
 
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.75,
+        quality: 0.85,
         base64: true,
       });
 
       if (!photo || !photo.base64) {
-        throw new Error('Could not capture facial biometrics. Please hold steady and try again.');
+        throw new Error('No image captured. Please try again.');
       }
 
-      onCapture(`data:image/jpeg;base64,${photo.base64}`);
+      const base64Data = `data:image/jpeg;base64,${photo.base64}`;
+      setCapturedPhoto(base64Data);
     } catch (error: any) {
-      console.debug('Face capture error:', error);
+      console.warn('Face capture notice:', error?.message || error);
+    } finally {
       setIsCapturing(false);
     }
+  }
+
+  function handleConfirmPhoto() {
+    if (capturedPhoto) {
+      onCapture(capturedPhoto);
+    }
+  }
+
+  function handleRetake() {
+    setCapturedPhoto(null);
+  }
+
+  function toggleFacing() {
+    setFacing((prev) => (prev === 'front' ? 'back' : 'front'));
   }
 
   if (!permission) {
@@ -168,15 +137,54 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
     outputRange: [10, FRAME_HEIGHT - 20],
   });
 
+  // Photo Preview Screen after capture
+  if (capturedPhoto) {
+    return (
+      <View style={styles.container}>
+        <Image source={{ uri: capturedPhoto }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <View style={styles.overlay}>
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.closeBtn} onPress={handleRetake}>
+              <X color="#fff" size={22} />
+            </TouchableOpacity>
+            <View style={[styles.statusBadge, styles.statusMatched]}>
+              <CheckCircle2 size={14} color="#10b981" />
+              <Text style={styles.statusText}>Face Captured</Text>
+            </View>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <View style={styles.previewBottomSection}>
+            <Text style={styles.previewHeading}>Review Your Face Photo</Text>
+            <Text style={styles.previewSubtitle}>Ensure your face is well-lit, clearly visible, and centered.</Text>
+
+            <View style={styles.previewBtnRow}>
+              <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
+                <RefreshCw size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.retakeButtonText}>Retake Photo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmPhoto}>
+                <Check size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                <Text style={styles.confirmButtonText}>Confirm & Use</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {/* Full-screen Camera View behind everything */}
+      {/* Full-screen Camera View */}
       <CameraView
         ref={(r) => {
           cameraRef.current = r;
         }}
         style={StyleSheet.absoluteFill}
-        facing="front"
+        facing={facing}
+        onCameraReady={() => setCameraReady(true)}
       />
 
       {/* Darkened Vignette Overlay with Centered Oval Frame */}
@@ -187,99 +195,61 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
             <X color="#fff" size={22} />
           </TouchableOpacity>
 
-          <View
-            style={[
-              styles.statusBadge,
-              scanStage === 'matched'
-                ? styles.statusMatched
-                : scanStage === 'analyzing'
-                ? styles.statusAnalyzing
-                : styles.statusAligning,
-            ]}
-          >
-            {scanStage === 'matched' ? (
-              <CheckCircle2 size={14} color="#10b981" />
-            ) : scanStage === 'analyzing' ? (
-              <Sparkles size={14} color="#38bdf8" />
-            ) : (
-              <Scan size={14} color="#facc15" />
-            )}
-            <Text style={styles.statusText}>
-              {scanStage === 'matched'
-                ? 'Biometrics Verified'
-                : scanStage === 'analyzing'
-                ? 'Analyzing Face Landmarks...'
-                : 'Align Face in Frame'}
-            </Text>
+          <View style={[styles.statusBadge, cameraReady ? styles.statusAnalyzing : styles.statusAligning]}>
+            {cameraReady ? <Sparkles size={14} color="#38bdf8" /> : <Scan size={14} color="#facc15" />}
+            <Text style={styles.statusText}>{cameraReady ? 'Align Face in Oval' : 'Starting Camera...'}</Text>
           </View>
 
-          <View style={{ width: 40 }} />
+          <TouchableOpacity style={styles.flipBtn} onPress={toggleFacing}>
+            <FlipHorizontal color="#fff" size={20} />
+          </TouchableOpacity>
         </View>
 
         {/* Center Oval Biometric Recognition Guide Frame */}
         <View style={styles.frameContainer} pointerEvents="box-none">
-          <Animated.View
-            style={[
-              styles.guideOval,
-              {
-                borderColor:
-                  scanStage === 'matched'
-                    ? '#10b981'
-                    : scanStage === 'analyzing'
-                    ? '#38bdf8'
-                    : 'rgba(255,255,255,0.7)',
-                transform: [{ scale: pulseAnim }],
-              },
-            ]}
-          >
+          <View style={styles.guideOval}>
             {/* Animated Laser Scanning Line */}
             <Animated.View
               style={[
                 styles.laserLine,
                 {
                   transform: [{ translateY }],
-                  backgroundColor: scanStage === 'matched' ? '#10b981' : '#38bdf8',
-                  shadowColor: scanStage === 'matched' ? '#10b981' : '#38bdf8',
+                  backgroundColor: '#38bdf8',
+                  shadowColor: '#38bdf8',
                 },
               ]}
             />
 
-            {/* Corner / Landmark brackets */}
+            {/* Corner Landmark brackets */}
             <View style={[styles.corner, styles.cornerTL]} />
             <View style={[styles.corner, styles.cornerTR]} />
             <View style={[styles.corner, styles.cornerBL]} />
             <View style={[styles.corner, styles.cornerBR]} />
-          </Animated.View>
+          </View>
         </View>
 
         {/* Bottom Biometric Status & Controls */}
         <View style={styles.bottomSection} pointerEvents="box-none">
           <View style={styles.instructionBox}>
             <ShieldCheck size={18} color="#38bdf8" />
-            <Text style={styles.instructionText}>
-              {scanStage === 'matched'
-                ? 'Hold steady, capturing facial signature...'
-                : scanStage === 'analyzing'
-                ? 'Stay still while scanning biometric contours...'
-                : 'Position your face directly inside the oval'}
-            </Text>
+            <Text style={styles.instructionText}>Position your face inside the oval and tap Capture</Text>
           </View>
 
-          {/* Quick Instant Scan Button */}
+          {/* Primary Manual Shutter Button */}
           <TouchableOpacity
-            style={styles.instantScanBtn}
-            onPress={autoCapture}
+            style={[styles.captureShutterBtn, isCapturing && { opacity: 0.6 }]}
+            onPress={handleTakePicture}
             disabled={isCapturing}
           >
-            {isCapturing ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Sparkles size={16} color="#fff" />
-                <Text style={styles.instantScanText}>Instant Recognition</Text>
-              </>
-            )}
+            <View style={styles.captureShutterInner}>
+              {isCapturing ? (
+                <ActivityIndicator color="#0284c7" size="small" />
+              ) : (
+                <Camera size={26} color="#0284c7" />
+              )}
+            </View>
           </TouchableOpacity>
+          <Text style={styles.shutterHintText}>Tap to Capture Face Photo</Text>
         </View>
       </View>
     </View>
@@ -298,8 +268,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    paddingVertical: 50,
+    backgroundColor: 'rgba(0, 0, 0, 0.40)',
+    paddingVertical: Platform.OS === 'ios' ? 60 : 40,
   },
   topBar: {
     flexDirection: 'row',
@@ -308,10 +278,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flipBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -320,9 +298,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     borderWidth: 1,
   },
   statusAligning: {
@@ -350,6 +328,7 @@ const styles = StyleSheet.create({
     height: FRAME_HEIGHT,
     borderRadius: FRAME_WIDTH / 2,
     borderWidth: 3,
+    borderColor: 'rgba(56, 189, 248, 0.9)',
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
@@ -375,13 +354,13 @@ const styles = StyleSheet.create({
   bottomSection: {
     alignItems: 'center',
     paddingHorizontal: 24,
-    gap: 14,
+    gap: 12,
   },
   instructionBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 14,
@@ -393,25 +372,87 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  instantScanBtn: {
+  captureShutterBtn: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+    borderWidth: 4,
+    borderColor: '#38bdf8',
+  },
+  captureShutterInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#f0f9ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shutterHintText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  previewBottomSection: {
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    marginHorizontal: 16,
+    borderRadius: 24,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  previewHeading: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  previewSubtitle: {
+    color: '#94a3b8',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  previewBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  retakeButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#0284c7',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    backgroundColor: '#334155',
+    paddingVertical: 14,
     borderRadius: 14,
-    shadowColor: '#0284c7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  instantScanText: {
+  retakeButtonText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',
+  },
+  confirmButton: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16a34a',
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  confirmButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
   },
   permissionContainer: {
     flex: 1,

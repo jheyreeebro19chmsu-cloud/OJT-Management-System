@@ -20,7 +20,7 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [faceDisabled, setFaceDisabled] = useState(false);
-  const { employees, addTimeRecord, timeRecords, getTodayRecord, settings } = useApp();
+  const { employees } = useApp();
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
@@ -53,39 +53,6 @@ export function Login() {
           employeeId: employee?.employeeId || user.employeeId || employee?.id || user.id,
         };
         localStorage.setItem('ojt_user', JSON.stringify(enrichedUser));
-
-        const targetEmpId = employee?.id || enrichedUser.employeeId || enrichedUser.id;
-        if (targetEmpId) {
-          try {
-            const today = new Date().toISOString().split('T')[0];
-            const existingToday = getTodayRecord(targetEmpId);
-            if (!existingToday?.timeIn) {
-              const now = new Date();
-              const timeIn = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-              const [inH, inM] = timeIn.split(':').map(Number);
-              const [startH, startM] = (settings?.workStartTime || '08:00').split(':').map(Number);
-              const inTotal = inH * 60 + inM;
-              const startTotal = startH * 60 + startM;
-              const status = inTotal <= startTotal + (settings?.lateThresholdMinutes || 15) ? 'present' : 'late';
-
-              addTimeRecord({
-                employeeId: targetEmpId,
-                date: today,
-                timeIn,
-                timeInGeofenced: true,
-                timeInFaceVerified: Boolean(employee?.faceRegistered || user.faceRegistered),
-                timeOutGeofenced: false,
-                timeOutFaceVerified: false,
-                status,
-                approvalStatus: 'pending',
-                notes: 'Recorded via trainee sign in / facial verification',
-                academicYear: settings?.activeAcademicYear || '2026-2027',
-              });
-            }
-          } catch (attErr) {
-            console.warn('Auto-attendance timestamp warning:', attErr);
-          }
-        }
 
         navigate('/app');
       }
