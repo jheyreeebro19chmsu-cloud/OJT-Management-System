@@ -356,9 +356,11 @@ export function FaceCapture({
       // Pre-load biometric recognition models in parallel
       loadFaceModels().catch(() => {});
 
-      // For registration mode: keep live feed stable, guide user, do NOT auto-snap or auto-close!
+      // For registration mode: auto-capture after face & lighting are stable for 3 consecutive checks (~1.3s)
       if (currentMode === 'register') {
-        // Run light quality monitor loop without breaking or closing
+        let stableFrames = 0;
+        const REQUIRED_STABLE_FRAMES = 3;
+
         for (let i = 0; i < 60; i++) {
           if (!streamRef.current || !videoRef.current || stateRef.current !== 'scanning') break;
           const currentFrame = captureFrame();
@@ -367,17 +369,44 @@ export function FaceCapture({
             if (quality) {
               setQualityReport(quality);
               if (quality.tooDark) {
+                stableFrames = 0;
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
               } else if (quality.tooBright) {
+                stableFrames = 0;
                 setScanMessage('⚠️ Too bright! Avoid direct glare.');
+              } else if (quality.capDetected) {
+                stableFrames = 0;
+                setScanMessage('⚠️ Cap detected! Please remove headwear.');
+              } else if (quality.glassesDetected) {
+                stableFrames = 0;
+                setScanMessage('⚠️ Dark glasses detected! Please remove sunglasses.');
               } else if (quality.faceDetected) {
-                setScanMessage('✓ Face positioned well! Click "Capture Photo" below.');
+                stableFrames++;
+                setProgress(Math.min(30 + stableFrames * 22, 95));
+
+                if (stableFrames < REQUIRED_STABLE_FRAMES) {
+                  setScanMessage(`✓ Face positioned well! Hold steady (${stableFrames}/${REQUIRED_STABLE_FRAMES})...`);
+                } else {
+                  // Confirmed face stability: verify face with fail-closed check and auto-capture to preview
+                  const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => false);
+                  if (hasFace) {
+                    stopCamera();
+                    setCapturedImage(currentFrame);
+                    setState('preview');
+                    setProgress(100);
+                    setScanMessage('✓ Photo captured! Please review your photo below.');
+                    return;
+                  } else {
+                    stableFrames = 0;
+                  }
+                }
               } else {
+                stableFrames = 0;
                 setScanMessage('Align face & shoulders inside the silhouette guide.');
               }
             }
           }
-          await new Promise((r) => setTimeout(r, 600));
+          await new Promise((r) => setTimeout(r, 450));
         }
         return;
       }
@@ -498,17 +527,38 @@ export function FaceCapture({
       return;
     }
 
-    // 1. Check Quality & Obstructions
-    const quality = await inspectFaceQuality(img).catch(() => null);
-    if (quality) {
-      setQualityReport(quality);
-      if (quality.tooDark) {
-        setScanMessage('⚠️ Photo is too dark. Please ensure better lighting before saving.');
-      }
-    }
-
-    // When registering: stop camera, show review preview, do NOT auto-close!
+    // When registering: enforce lighting, obstructions, and face presence before entering preview
     if (modeRef.current === 'register') {
+      const quality = await inspectFaceQuality(img).catch(() => null);
+      if (quality) {
+        setQualityReport(quality);
+        if (quality.tooDark) {
+          setScanMessage('❌ Photo is too dark. Please ensure better lighting before saving.');
+          return;
+        }
+        if (quality.tooBright) {
+          setScanMessage('❌ Too much glare. Please adjust lighting.');
+          return;
+        }
+        if (quality.capDetected) {
+          setScanMessage('❌ Cap or hat detected. Please remove headwear.');
+          return;
+        }
+        if (quality.glassesDetected) {
+          setScanMessage('❌ Dark sunglasses detected. Please remove sunglasses.');
+          return;
+        }
+      }
+
+      // Fail-closed face detection check (blocks capture if camera is covered)
+      if (!quality || !quality.faceDetected) {
+        const hasAnyFace = await detectFaceInDataUrl(img).catch(() => false);
+        if (!hasAnyFace) {
+          setScanMessage('❌ No face detected. Please position your face inside the silhouette.');
+          return;
+        }
+      }
+
       stopCamera();
       setCapturedImage(img);
       setState('preview');
