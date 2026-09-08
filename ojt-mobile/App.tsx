@@ -324,12 +324,8 @@ export default function App() {
         hostQuery = hostQuery.or(`id.eq.${userId},email.ilike.${normEmail}`);
       } else if (isUuid) {
         hostQuery = hostQuery.eq('id', userId);
-      } else if (userId && normEmail) {
-        hostQuery = hostQuery.or(`employee_id.ilike.${userId},email.ilike.${normEmail}`);
       } else if (normEmail) {
         hostQuery = hostQuery.ilike('email', normEmail);
-      } else if (userId) {
-        hostQuery = hostQuery.ilike('employee_id', userId);
       }
       const { data: hostData } = await hostQuery.limit(1).maybeSingle();
       if (hostData) {
@@ -525,11 +521,11 @@ export default function App() {
         if (foundEmp?.email) {
           targetEmail = foundEmp.email.toLowerCase();
         } else {
-          let hostQuery = supabase.from('host_supervisors').select('id, email, employee_id');
+          let hostQuery = supabase.from('host_supervisors').select('id, email, name');
           if (isUuid) {
-            hostQuery = hostQuery.or(`employee_id.ilike.${targetEmail},id.eq.${targetEmail}`);
+            hostQuery = hostQuery.or(`email.ilike.${targetEmail},id.eq.${targetEmail}`);
           } else {
-            hostQuery = hostQuery.ilike('employee_id', targetEmail);
+            hostQuery = hostQuery.ilike('email', targetEmail);
           }
           const { data: foundHost } = await hostQuery.limit(1).maybeSingle();
           if (foundHost?.email) {
@@ -555,7 +551,7 @@ export default function App() {
         const { data: hostRecord } = await supabase
           .from('host_supervisors')
           .select('*')
-          .or(`email.ilike.${targetEmail},employee_id.ilike.${rawInput}`)
+          .or(`email.ilike.${targetEmail},name.ilike.${rawInput}`)
           .limit(1)
           .maybeSingle();
         if (hostRecord) dbProfile = { ...hostRecord, role: 'hte' };

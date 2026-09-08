@@ -718,7 +718,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const { data: dbHost } = await supabase
             .from('host_supervisors')
             .select('*')
-            .or(`email.ilike.${normalizedId},employee_id.ilike.${normalizedId}`)
+            .eq('email', normalizedId)
             .limit(1)
             .maybeSingle();
 
@@ -1178,16 +1178,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
 
           if (authError) {
-            // If user already exists in auth, allow them to complete registration by updating local profile
-            if (authError.message?.toLowerCase().includes('already registered') ||
-              authError.message?.toLowerCase().includes('user already exists')) {
-              setPasswordForEmail(cleanData.email, password);
-            } else {
-              console.warn('Supabase signUp warning:', authError);
+            const isAlreadyRegistered =
+              authError.message?.toLowerCase().includes('already registered') ||
+              authError.message?.toLowerCase().includes('user already exists');
+
+            if (!isAlreadyRegistered) {
+              console.error('Supabase auth.signUp failed:', authError);
+              return {
+                success: false,
+                message: `Account creation failed: ${authError.message || 'Unknown authentication error'}`,
+              };
+            }
+
+            // Auth account already exists — repair/create the employees row instead
+            // of assuming it already exists. This is the exact bug class being
+            // fixed in this audit: an auth account existing while its employees
+            // row is missing or was never created.
+            setPasswordForEmail(cleanData.email, password);
+            try {
+              const repaired = await supabaseService.createEmployee({
+                ...cleanData,
+                academicYear: cleanData.academicYear || settings.activeAcademicYear,
+                applicationStatus: 'approved',
+              });
+              setEmployees((prev) => [
+                repaired,
+                ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase()),
+              ]);
+              return {
+                success: true,
+                message: 'Account registered and updated successfully. You can now log in with your credentials.',
+                employee: repaired,
+              };
+            } catch (repairErr: any) {
+              console.error('Failed to repair employees row for existing auth user:', repairErr);
+              return {
+                success: false,
+                message: `Database registration failed: ${repairErr?.message || 'Unknown error'}`,
+              };
             }
           }
 
-          if (authData?.user?.id) {
+          if (authData?.user) {
             authId = authData.user.id;
           }
         }
@@ -1235,31 +1267,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           created = await supabaseService.createEmployee(employeePayload);
         } catch (createErr: any) {
-          console.warn('Direct Supabase createEmployee notice, trying server fallback:', createErr);
-          try {
-            const serverUrl = getAbsoluteUrl('/auth/server-create-employee/');
-            const srvResp = await fetch(serverUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...employeePayload, password: password || undefined }),
-            });
-            if (srvResp.ok) {
-              const srvJson = await srvResp.json();
-              if (srvJson?.employee) {
-                created = supabaseService.transformSupabaseEmployee(srvJson.employee);
-              }
-            }
-          } catch (serverErr) {
-            console.warn('Server create employee endpoint unavailable:', serverErr);
-          }
-        }
-
-        if (!created) {
-          created = {
-            ...cleanData,
-            id: authId || newEmp.id,
-            academicYear: cleanData.academicYear || settings.activeAcademicYear,
-            createdAt: new Date().toISOString().split('T')[0],
+          console.error('createEmployee failed:', createErr);
+          return {
+            success: false,
+            message: `Database registration failed: ${createErr?.message || 'Unknown error'}`,
           };
         }
 

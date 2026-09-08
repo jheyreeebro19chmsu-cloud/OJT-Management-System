@@ -770,11 +770,8 @@ export function Register() {
           name: composedName,
           email: (form.email || form.username || '').trim().toLowerCase(),
           company_name: form.companyName || 'Host Training Establishment',
-          company_address: form.companyAddress || computedAddress || 'Company Workplace',
-          contact_person: form.contactPerson || composedName,
-          phone: form.contactPhone || undefined,
-          academic_year: settings.activeAcademicYear,
           is_approved: true,
+          active: true,
         }, { onConflict: 'id' });
       } catch (hErr) {
         console.warn('HTE host_supervisors sync error:', hErr);
