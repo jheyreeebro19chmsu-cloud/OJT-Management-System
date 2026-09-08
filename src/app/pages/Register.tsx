@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { GeofenceMap } from '../components/GeofenceMap';
 import { useNavigate, Link } from 'react-router-dom';
@@ -504,11 +504,11 @@ export function Register() {
     if (step > 0) setStep((s) => s - 1);
   };
 
-  const handleFaceSuccess = (img?: string) => {
+  const handleFaceSuccess = useCallback((img?: string) => {
     setFaceRegistered(true);
     setPhoto(img);
     setFaceCapturing(false);
-  };
+  }, []);
 
   const handleSubmit = async () => {
     setIsSubmitting(true);

@@ -66,6 +66,36 @@ export function FaceCapture({
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
 
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  const onCancelRef = useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
+
+  const registeredImageRef = useRef(registeredImage);
+  useEffect(() => {
+    registeredImageRef.current = registeredImage;
+  }, [registeredImage]);
+
+  const modeRef = useRef(mode);
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  const employeeNameRef = useRef(employeeName);
+  useEffect(() => {
+    employeeNameRef.current = employeeName;
+  }, [employeeName]);
+
+  const employeeIdRef = useRef(employeeId);
+  useEffect(() => {
+    employeeIdRef.current = employeeId;
+  }, [employeeId]);
+
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -314,9 +344,10 @@ export function FaceCapture({
         await videoRef.current.play().catch(() => {});
       }
 
+      const currentMode = modeRef.current;
       setState('scanning');
       setScanMessage(
-        mode === 'register'
+        currentMode === 'register'
           ? 'Align your face in the silhouette guide and click "Capture Photo".'
           : 'Position your face inside the silhouette for biometric verification...'
       );
@@ -326,7 +357,7 @@ export function FaceCapture({
       loadFaceModels().catch(() => {});
 
       // For registration mode: keep live feed stable, guide user, do NOT auto-snap or auto-close!
-      if (mode === 'register') {
+      if (currentMode === 'register') {
         // Run light quality monitor loop without breaking or closing
         for (let i = 0; i < 60; i++) {
           if (!streamRef.current || !videoRef.current || stateRef.current !== 'scanning') break;
@@ -390,8 +421,9 @@ export function FaceCapture({
 
         setScanMessage('Verifying trainee biometrics...');
 
-        if (registeredImage) {
-          const bio = await strictBiometricVerify(registeredImage, currentFrame, 0.55);
+        const enrolledImage = registeredImageRef.current;
+        if (enrolledImage) {
+          const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.55);
           if (bio.matched) {
             setMismatchError(null);
             detectedSuccess = true;
@@ -415,14 +447,14 @@ export function FaceCapture({
         setState('success');
         setScanMessage('✓ Identity Verified! Timestamp Saved.');
         stopCamera();
-        setTimeout(() => onSuccess(lastCaptured), 800);
+        setTimeout(() => onSuccessRef.current?.(lastCaptured), 800);
         return;
       }
 
       // If loop ended without match
       setProgress(90);
       setState('scanning');
-      if (mismatchError) {
+      if (mismatchErrorRef.current) {
         setScanMessage('Identity mismatch. Please look straight into camera or tap Verify Now.');
       } else {
         setScanMessage('Position face inside silhouette and tap Verify Now.');
@@ -440,7 +472,7 @@ export function FaceCapture({
         setScanMessage('Camera unavailable. Check permissions or upload a photo.');
       }
     }
-  }, [mode, stopCamera, onSuccess, registeredImage]);
+  }, [stopCamera]);
 
   useEffect(() => {
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
@@ -476,7 +508,7 @@ export function FaceCapture({
     }
 
     // When registering: stop camera, show review preview, do NOT auto-close!
-    if (mode === 'register') {
+    if (modeRef.current === 'register') {
       stopCamera();
       setCapturedImage(img);
       setState('preview');
@@ -490,24 +522,26 @@ export function FaceCapture({
     setScanMessage('Verifying biometric match...');
     setProgress(75);
 
-    if (registeredImage) {
-      const bio = await strictBiometricVerify(registeredImage, img, 0.55);
+    const enrolledImage = registeredImageRef.current;
+    if (enrolledImage) {
+      const bio = await strictBiometricVerify(enrolledImage, img, 0.55);
       if (!bio.matched) {
         setState('failed');
-        setMismatchError(`Face does not match registered biometrics for ${employeeName || 'this student'}.`);
+        setMismatchError(`Face does not match registered biometrics for ${employeeNameRef.current || 'this student'}.`);
         setScanMessage(`❌ Access Denied: Biometrics mismatch (Distance: ${bio.distance.toFixed(2)})`);
         return;
       }
     }
 
     // Check backend security API if available
-    if (isSecurityApiConfigured() && (employeeId || registeredImage)) {
+    const empId = employeeIdRef.current;
+    if (isSecurityApiConfigured() && (empId || enrolledImage)) {
       try {
         const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
           captured_image: img,
         };
-        if (employeeId) payload.employee_id = employeeId;
-        else if (registeredImage) payload.registered_image = registeredImage;
+        if (empId) payload.employee_id = empId;
+        else if (enrolledImage) payload.registered_image = enrolledImage;
 
         const response = await verifyFace(payload);
         if (!response.matched) {
@@ -527,17 +561,17 @@ export function FaceCapture({
     setProgress(100);
     setState('success');
     setScanMessage('✓ Identity Verified! Attendance Time Recorded.');
-    setTimeout(() => onSuccess(img), 800);
-  }, [state, mode, employeeId, registeredImage, employeeName, stopCamera, onSuccess]);
+    setTimeout(() => onSuccessRef.current?.(img), 800);
+  }, [state, stopCamera]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
     setState('success');
-    setScanMessage(mode === 'register' ? '✓ Face Photo Saved for Account Profile!' : '✓ Identity Verified!');
+    setScanMessage(modeRef.current === 'register' ? '✓ Face Photo Saved for Account Profile!' : '✓ Identity Verified!');
     setTimeout(() => {
-      onSuccess(capturedImage);
+      onSuccessRef.current?.(capturedImage);
     }, 400);
-  }, [capturedImage, mode, onSuccess]);
+  }, [capturedImage]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -671,25 +705,32 @@ export function FaceCapture({
                   ? 'Initializing biometric scanner...'
                   : 'Scanner ready'}
             </p>
-            <div className="flex flex-col gap-2 w-full max-w-[200px]">
-              <button
-                type="button"
-                onClick={() => {
-                  stopCamera();
-                  setTimeout(startScan, 300);
-                }}
-                className="w-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl transition-colors shadow-md"
-              >
-                Retry Camera
-              </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Upload size={13} /> Upload Photo
-              </button>
-            </div>
+            {state === 'requesting' ? (
+              <div className="flex items-center gap-2 text-cyan-400 text-xs font-semibold">
+                <RefreshCw size={16} className="animate-spin" />
+                <span>Starting camera...</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 w-full max-w-[200px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    setTimeout(startScan, 300);
+                  }}
+                  className="w-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl transition-colors shadow-md cursor-pointer"
+                >
+                  Retry Camera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Upload size={13} /> Upload Photo
+                </button>
+              </div>
+            )}
           </div>
         )}
 
