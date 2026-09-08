@@ -518,7 +518,6 @@ export default function RegisterScreen({
         email: form.email.trim().toLowerCase(),
         academic_year: activeAcademicYear,
         active: true,
-        approval_status: 'approved',
         application_status: 'approved',
         registration_lat: location.lat || null,
         registration_lng: location.lng || null,

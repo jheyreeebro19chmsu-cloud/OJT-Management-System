@@ -20,14 +20,7 @@ function resolveApiBaseUrl(): string {
     return envUrl.replace(/\/+$/, '');
   }
 
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:8000/api';
-    }
-  }
-
-  return Platform.OS === 'web' ? 'http://localhost:8000/api' : DEFAULT_PROD_API_URL;
+  return DEFAULT_PROD_API_URL;
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -55,9 +48,16 @@ export async function post(endpoint: string, data: any) {
       body: JSON.stringify(data),
     });
     
-    const result = await response.json();
+    const text = await response.text();
+    let result: any = null;
+    try {
+      result = text ? JSON.parse(text) : {};
+    } catch {
+      result = { error: text || `HTTP ${response.status}` };
+    }
+
     if (!response.ok) {
-      throw new Error(result.error || 'Request failed');
+      throw new Error(result?.error || result?.message || `Request failed with status ${response.status}`);
     }
     // keep tokens up-to-date when server returns new tokens
     if (result && result.tokens && result.tokens.access) {
@@ -68,8 +68,8 @@ export async function post(endpoint: string, data: any) {
       } catch (e) {}
     }
     return result;
-  } catch (error) {
-    console.error(`API Error (${endpoint}):`, error);
+  } catch (error: any) {
+    console.debug(`API Notice (${endpoint}):`, error?.message || error);
     throw error;
   }
 }
@@ -84,9 +84,16 @@ export async function get(endpoint: string) {
       headers,
     });
     
-    const result = await response.json();
+    const text = await response.text();
+    let result: any = null;
+    try {
+      result = text ? JSON.parse(text) : {};
+    } catch {
+      result = { error: text || `HTTP ${response.status}` };
+    }
+
     if (!response.ok) {
-      throw new Error(result.error || 'Request failed');
+      throw new Error(result?.error || result?.message || `Request failed with status ${response.status}`);
     }
     if (result && result.tokens && result.tokens.access) {
       try {
@@ -95,8 +102,8 @@ export async function get(endpoint: string) {
       } catch (e) {}
     }
     return result;
-  } catch (error) {
-    console.error(`API Error (${endpoint}):`, error);
+  } catch (error: any) {
+    console.debug(`API Notice (${endpoint}):`, error?.message || error);
     throw error;
   }
 }

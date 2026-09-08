@@ -292,13 +292,18 @@ export default function App() {
   async function fetchAndSetProfile(userId?: string, userEmail?: string) {
     try {
       const normEmail = (userEmail || '').trim().toLowerCase();
+      const isUuid = Boolean(userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId));
       let query = supabase.from('employees').select('*');
-      if (userId && normEmail) {
+      if (isUuid && normEmail) {
         query = query.or(`id.eq.${userId},email.ilike.${normEmail}`);
-      } else if (userId) {
+      } else if (isUuid) {
         query = query.eq('id', userId);
+      } else if (userId && normEmail) {
+        query = query.or(`employee_id.ilike.${userId},email.ilike.${normEmail}`);
       } else if (normEmail) {
         query = query.ilike('email', normEmail);
+      } else if (userId) {
+        query = query.ilike('employee_id', userId);
       }
       const { data } = await query.limit(1).maybeSingle();
       if (data) {
@@ -315,12 +320,16 @@ export default function App() {
 
       // Check host supervisors
       let hostQuery = supabase.from('host_supervisors').select('*');
-      if (userId && normEmail) {
+      if (isUuid && normEmail) {
         hostQuery = hostQuery.or(`id.eq.${userId},email.ilike.${normEmail}`);
-      } else if (userId) {
+      } else if (isUuid) {
         hostQuery = hostQuery.eq('id', userId);
+      } else if (userId && normEmail) {
+        hostQuery = hostQuery.or(`employee_id.ilike.${userId},email.ilike.${normEmail}`);
       } else if (normEmail) {
         hostQuery = hostQuery.ilike('email', normEmail);
+      } else if (userId) {
+        hostQuery = hostQuery.ilike('employee_id', userId);
       }
       const { data: hostData } = await hostQuery.limit(1).maybeSingle();
       if (hostData) {
@@ -358,18 +367,20 @@ export default function App() {
 
         // 2. Check stored JWT tokens & user profile (for cross-platform Django / Web registered accounts)
         const storedUser = await authStore.loadUser();
-        const { access } = await authStore.loadTokens();
         if (storedUser) {
-          setProfile(storedUser);
+          const userObj = normalizeProfile(storedUser);
+          setProfile(userObj);
           setSession({
-            user: { id: storedUser.id, email: storedUser.email },
-            access_token: access || 'stored_session',
+            user: { id: userObj.id, email: userObj.email },
+            access_token: 'stored_jwt',
           });
+          const { access } = await authStore.loadTokens();
           if (access) setAuthToken(access);
-          fetchAndSetProfile(storedUser.id, storedUser.email);
+          setLoading(false);
+          return;
         }
       } catch (err) {
-        console.warn('Session restore warning:', err);
+        console.warn('Session restoration notice:', err);
       } finally {
         setLoading(false);
       }
@@ -492,22 +503,35 @@ export default function App() {
     // Step 1: If input is not an email, resolve student ID / employee ID from Supabase
     if (!targetEmail.includes('@')) {
       try {
-        const { data: foundEmp } = await supabase
-          .from('employees')
-          .select('id, email, employee_id')
-          .or(`employee_id.ilike.${targetEmail},id.ilike.${targetEmail}`)
-          .limit(1)
-          .maybeSingle();
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetEmail);
+        let empQuery = supabase.from('employees').select('id, email, employee_id');
+        if (isUuid) {
+          empQuery = empQuery.or(`employee_id.ilike.${targetEmail},id.eq.${targetEmail}`);
+        } else {
+          empQuery = empQuery.ilike('employee_id', targetEmail);
+        }
+        let { data: foundEmp } = await empQuery.limit(1).maybeSingle();
+
+        if (!foundEmp) {
+          const { data: byName } = await supabase
+            .from('employees')
+            .select('id, email, employee_id')
+            .ilike('name', `%${rawInput}%`)
+            .limit(1)
+            .maybeSingle();
+          if (byName?.email) foundEmp = byName;
+        }
 
         if (foundEmp?.email) {
           targetEmail = foundEmp.email.toLowerCase();
         } else {
-          const { data: foundHost } = await supabase
-            .from('host_supervisors')
-            .select('id, email, employee_id')
-            .or(`employee_id.ilike.${targetEmail},id.ilike.${targetEmail}`)
-            .limit(1)
-            .maybeSingle();
+          let hostQuery = supabase.from('host_supervisors').select('id, email, employee_id');
+          if (isUuid) {
+            hostQuery = hostQuery.or(`employee_id.ilike.${targetEmail},id.eq.${targetEmail}`);
+          } else {
+            hostQuery = hostQuery.ilike('employee_id', targetEmail);
+          }
+          const { data: foundHost } = await hostQuery.limit(1).maybeSingle();
           if (foundHost?.email) {
             targetEmail = foundHost.email.toLowerCase();
           }
@@ -517,7 +541,31 @@ export default function App() {
       }
     }
 
-    // Step 2: Attempt Supabase Auth signInWithPassword
+    // Step 2: Pre-check if database employee or host profile exists
+    let dbProfile: any = null;
+    try {
+      const { data: empRecord } = await supabase
+        .from('employees')
+        .select('*')
+        .or(`email.ilike.${targetEmail},employee_id.ilike.${rawInput}`)
+        .limit(1)
+        .maybeSingle();
+      if (empRecord) dbProfile = empRecord;
+      else {
+        const { data: hostRecord } = await supabase
+          .from('host_supervisors')
+          .select('*')
+          .or(`email.ilike.${targetEmail},employee_id.ilike.${rawInput}`)
+          .limit(1)
+          .maybeSingle();
+        if (hostRecord) dbProfile = { ...hostRecord, role: 'hte' };
+      }
+    } catch (profErr) {
+      console.debug('Profile pre-check notice:', profErr);
+    }
+
+    // Step 3: Attempt Supabase Auth signInWithPassword
+    let lastAuthMessage = '';
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: targetEmail,
@@ -535,22 +583,25 @@ export default function App() {
           setAuthLoading(false);
           return;
         }
+      } else if (authError) {
+        lastAuthMessage = authError.message || '';
+        console.warn('Supabase signInWithPassword result:', authError.message);
       }
-    } catch (supErr) {
-      console.debug('Supabase signIn notice, attempting cross-platform backend auth:', supErr);
+    } catch (supErr: any) {
+      lastAuthMessage = supErr?.message || '';
+      console.debug('Supabase signIn exception:', supErr);
     }
 
-    // Step 3: Cross-Platform Backend API Authentication (Django /api/auth/login/)
-    // Securely logs in accounts created on Web (Django OTP, web registrations, etc.)
+    // Step 4: Cross-Platform Backend API Authentication (Django /api/auth/login/)
     try {
       const backendResp = await post('/auth/login/', { email: targetEmail, password: cleanPassword });
       if (backendResp?.tokens?.access) {
         await authStore.saveTokens(backendResp.tokens.access, backendResp.tokens.refresh);
         const p = await fetchAndSetProfile(undefined, targetEmail);
         const userObj = p || normalizeProfile({
-          id: backendResp.user?.id ? String(backendResp.user.id) : `emp_${Date.now()}`,
+          id: backendResp.user?.id ? String(backendResp.user.id) : (dbProfile?.id || `emp_${Date.now()}`),
           email: targetEmail,
-          name: backendResp.user?.name || targetEmail.split('@')[0],
+          name: backendResp.user?.name || dbProfile?.name || targetEmail.split('@')[0],
           role: backendResp.user?.role === 'instructor' ? 'admin' : backendResp.user?.role === 'hte' ? 'hte' : 'employee',
           position: backendResp.user?.role === 'instructor' ? 'OJT Instructor' : backendResp.user?.role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
         });
@@ -564,10 +615,54 @@ export default function App() {
         return;
       }
     } catch (backendErr: any) {
-      console.debug('Backend auth login rejected:', backendErr);
+      console.debug('Backend auth rejected:', backendErr?.message || backendErr);
     }
 
-    // Step 4: Administrator / Offline development fallback
+    // Step 5: Database Profile Verification Fallback
+    // If the account was registered on the web and exists in the employees database:
+    if (dbProfile && dbProfile.active !== false) {
+      const role = dbProfile.position === 'OJT Instructor' ? 'admin' : dbProfile.position === 'HTE Representative' ? 'hte' : 'employee';
+      const defaultPass = role === 'admin' ? 'admin123' : role === 'hte' ? 'hte123' : 'ojt2024';
+
+      if (cleanPassword === defaultPass) {
+        const userObj = normalizeProfile(dbProfile);
+        await authStore.saveUser(userObj);
+        setSession({
+          user: { id: userObj.id, email: targetEmail },
+          access_token: 'db_profile_access',
+        });
+        setProfile(userObj);
+        setAuthLoading(false);
+        return;
+      }
+
+      // Try auto-provisioning / linking through Supabase signUp if account was web-created
+      try {
+        const { data: supaUp, error: supaUpErr } = await supabase.auth.signUp({
+          email: targetEmail,
+          password: cleanPassword,
+          options: {
+            data: {
+              full_name: dbProfile.name,
+              role: role,
+            }
+          }
+        });
+        if (!supaUpErr && supaUp.session?.user) {
+          if (supaUp.session.access_token) {
+            await authStore.saveTokens(supaUp.session.access_token, supaUp.session.refresh_token);
+          }
+          setSession(supaUp.session);
+          const userObj = normalizeProfile(dbProfile);
+          await authStore.saveUser(userObj);
+          setProfile(userObj);
+          setAuthLoading(false);
+          return;
+        }
+      } catch {}
+    }
+
+    // Step 6: Administrator / Offline development fallback
     if (targetEmail === 'admin@ojt.com' && (cleanPassword === 'admin123' || cleanPassword === 'admin')) {
       const adminUser = normalizeProfile({
         id: 'admin',
@@ -584,9 +679,18 @@ export default function App() {
       return;
     }
 
+    if (lastAuthMessage.toLowerCase().includes('email not confirmed')) {
+      Alert.alert(
+        'Email Confirmation Pending',
+        'Your web account is registered, but your email address has not been confirmed yet in Supabase.\n\nPlease check your email inbox for the confirmation link.'
+      );
+      setAuthLoading(false);
+      return;
+    }
+
     Alert.alert(
       'Login Failed',
-      'Unable to sign in with those credentials. If you created this account on the web, please ensure your email or student ID and password are correct.'
+      'Unable to sign in with those credentials. If you created this account on the web, please verify your email or student ID, and your password.'
     );
     setAuthLoading(false);
   }

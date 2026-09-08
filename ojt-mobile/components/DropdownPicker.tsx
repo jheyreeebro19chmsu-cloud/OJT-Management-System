@@ -7,10 +7,10 @@ import {
   Modal,
   FlatList,
   TextInput,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronDown, Check, Search, X } from 'lucide-react-native';
 
 export interface DropdownOption {
