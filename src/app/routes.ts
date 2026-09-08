@@ -63,6 +63,7 @@ const QRScanner = lazyWithRetry(() => import('./pages/QRScanner'), 'QRScanner');
 const Records = lazyWithRetry(() => import('./pages/Records').then(m => ({ default: m.Records })), 'Records');
 const Register = lazyWithRetry(() => import('./pages/Register').then(m => ({ default: m.Register })), 'Register');
 const TimeRecord = lazyWithRetry(() => import('./pages/TimeRecord').then(m => ({ default: m.TimeRecord })), 'TimeRecord');
+const Documents = lazyWithRetry(() => import('./pages/Documents').then(m => ({ default: m.Documents })), 'Documents');
 
 function RouteErrorFallback() {
   const error = useRouteError();
@@ -171,6 +172,7 @@ export const router = createBrowserRouter([
       { index: true, element: withSuspense(Dashboard) },
       { path: 'time-record', element: withSuspense(TimeRecord) },
       { path: 'records', element: withSuspense(Records) },
+      { path: 'documents', element: withSuspense(Documents) },
       { path: 'announcements', element: withSuspense(Announcements) },
       { path: 'hte-feedback', element: withSuspense(HostFeedback) },
       { path: 'profile', element: withSuspense(Profile) },

@@ -1315,7 +1315,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (useSupabase) {
-      supabaseService.updateEmployee(id, data);
+      supabaseService.updateEmployee(id, {
+        ...data,
+        email: updatedEmployee?.email || data.email,
+        registrationLocation: updatedEmployee?.registrationLocation,
+        registrationAddress: updatedEmployee?.registrationAddress,
+        submittedDocuments: updatedEmployee?.submittedDocuments,
+        documentsPassed: updatedEmployee?.documentsPassed,
+        documentsStatus: updatedEmployee?.documentsStatus,
+      });
     }
 
     // If location is cleared, remove personal geofence zone

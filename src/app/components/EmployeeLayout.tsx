@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell, Star, Menu, X } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Star, Menu, X, FileCheck, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
+  { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
 ];
 
@@ -56,6 +57,11 @@ export function EmployeeLayout() {
   const displayId = employee?.employeeId || currentUser?.employeeId || 'OJT-STUDENT';
   const displayEmail = employee?.email || currentUser?.email || '';
 
+  const submittedDocs = employee?.submittedDocuments || {};
+  const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as const;
+  const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
+  const missingDocsCount = 4 - uploadedDocsCount;
+
   const renderSidebarContent = (isMobile = false) => (
     <>
       {/* Brand Header */}
@@ -92,34 +98,48 @@ export function EmployeeLayout() {
 
       {/* Navigation Items */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {navItems.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            onClick={() => isMobile && setSidebarOpen(false)}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
-                isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-sky-600/40' : ''}`}>
-                  <Icon size={18} />
-                  {isActive && (
-                    <motion.div
-                      layoutId="nav-indicator"
-                      className="absolute inset-0 bg-sky-600/40 rounded-xl -z-10"
-                    />
+        {navItems.map((item) => {
+          const { to, label, icon: Icon, end } = item;
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              onClick={() => isMobile && setSidebarOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
+                  isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-sky-600/40' : ''}`}>
+                    <Icon size={18} />
+                    {isActive && (
+                      <motion.div
+                        layoutId="nav-indicator"
+                        className="absolute inset-0 bg-sky-600/40 rounded-xl -z-10"
+                      />
+                    )}
+                  </div>
+                  <span className="text-sm font-medium">{label}</span>
+                  {(item as any).isDocNav && (
+                    <span
+                      className={`ml-auto text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
+                        missingDocsCount > 0
+                          ? 'bg-amber-400 text-slate-950 shadow-sm'
+                          : 'bg-emerald-400/25 text-emerald-300 border border-emerald-400/40'
+                      }`}
+                    >
+                      {missingDocsCount > 0 ? `${missingDocsCount} left` : '4/4'}
+                    </span>
                   )}
-                </div>
-                <span className="text-sm font-medium">{label}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* User Profile Footer */}

@@ -20,6 +20,15 @@ import {
   Plus,
   Link as LinkIcon,
   Search,
+  FileCheck,
+  FileText,
+  Shield,
+  Eye,
+  Upload,
+  Download,
+  Printer,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
@@ -29,9 +38,10 @@ import { toast } from 'sonner';
 import { sendWelcomeEmail } from '../lib/resend';
 import { supabase } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
-import { Announcement, Employee } from '../types';
+import { Announcement, Employee, TraineeDocuments, TraineeDocumentItem } from '../types';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
+import { STANDARD_REQUIRED_DOCS } from './Documents';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -85,6 +95,65 @@ export function Dashboard() {
   const [pendingApps, setPendingApps] = useState<Employee[]>([]);
   const [hteRequests, setHteRequests] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Trainee Required Documents state
+  const [dashboardPreviewDoc, setDashboardPreviewDoc] = useState<any | null>(null);
+  const [dashboardUploadingKey, setDashboardUploadingKey] = useState<string | null>(null);
+
+  const submittedDocs: TraineeDocuments = currentEmp?.submittedDocuments || {};
+  const docKeys: (keyof TraineeDocuments)[] = ['endorsement', 'consent', 'medical', 'resume'];
+  const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
+  const missingDocsCount = 4 - uploadedDocsCount;
+  const isAllDocsPassed = uploadedDocsCount === 4;
+  const docsProgressPercent = Math.round((uploadedDocsCount / 4) * 100);
+
+  const handleDashboardDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+    if (!file || !currentEmp) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size exceeds 10MB limit.');
+      return;
+    }
+
+    setDashboardUploadingKey(docKey);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      const currentDocs: TraineeDocuments = currentEmp.submittedDocuments || {};
+      const newDocItem: TraineeDocumentItem = {
+        name: file.name,
+        size: file.size,
+        dataUrl,
+        fileType: file.type || 'application/octet-stream',
+        uploadedAt: new Date().toISOString(),
+        status: 'passed',
+      };
+
+      const updatedDocs: TraineeDocuments = {
+        ...currentDocs,
+        [docKey]: newDocItem,
+      };
+
+      const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
+      const newIsAllPassed = newUploadedCount === 4;
+
+      updateEmployee(currentEmp.id, {
+        submittedDocuments: updatedDocs,
+        documentsPassed: newIsAllPassed,
+        documentsStatus: newIsAllPassed ? 'passed' : 'partial',
+      });
+
+      setDashboardUploadingKey(null);
+      const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
+      toast.success(`${meta?.title || 'Document'} submitted & marked as PASSED!`);
+    };
+
+    reader.onerror = () => {
+      setDashboardUploadingKey(null);
+      toast.error('Failed to read file. Please try again.');
+    };
+
+    reader.readAsDataURL(file);
+  };
 
   // Load instructor dashboard metrics
   useEffect(() => {
@@ -1061,6 +1130,190 @@ export function Dashboard() {
         </Link>
       </motion.div>
 
+      {/* Trainee Required Documents Compliance Card */}
+      {!isAdmin && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12 }}
+          className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100"
+        >
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm">
+                <FileCheck size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-800 text-sm">Required OJT Documents</h3>
+                <p className="text-xs text-gray-500">
+                  {uploadedDocsCount}/4 Documents Submitted ({docsProgressPercent}%)
+                </p>
+              </div>
+            </div>
+
+            <span
+              className={`text-xs font-bold px-3 py-1 rounded-full border flex items-center gap-1 ${
+                isAllDocsPassed
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-amber-50 text-amber-800 border-amber-200'
+              }`}
+            >
+              {isAllDocsPassed ? (
+                <>
+                  <Check size={13} className="stroke-[3]" /> 4/4 Passed
+                </>
+              ) : (
+                <>
+                  <Clock size={12} className="animate-pulse" />
+                  {missingDocsCount === 1 ? '1 Document Left' : `${missingDocsCount} Left to Pass`}
+                </>
+              )}
+            </span>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+            <motion.div
+              className={`h-full rounded-full ${
+                isAllDocsPassed
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                  : 'bg-gradient-to-r from-amber-500 to-orange-500'
+              }`}
+              initial={{ width: 0 }}
+              animate={{ width: `${docsProgressPercent}%` }}
+              transition={{ duration: 0.8 }}
+            />
+          </div>
+
+          {/* Missing docs warning alert banner if any are missing */}
+          {!isAllDocsPassed && (
+            <div className="mb-3.5 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-start gap-2.5">
+              <AlertTriangle size={15} className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-900 leading-relaxed">
+                <strong>Compliance Alert:</strong> You have {missingDocsCount} document{missingDocsCount > 1 ? 's' : ''} that {missingDocsCount > 1 ? 'have' : 'has'} not yet passed. You can submit directly below to complete your registration requirements.
+              </div>
+            </div>
+          )}
+
+          {/* The 4 Document Items List */}
+          <div className="space-y-2">
+            {STANDARD_REQUIRED_DOCS.map((docItem) => {
+              const doc = submittedDocs[docItem.key];
+              const hasFile = Boolean(doc?.dataUrl || doc?.name);
+              const isPassed = doc?.status === 'passed' && hasFile;
+              const isUploading = dashboardUploadingKey === docItem.key;
+              const DocIcon = docItem.icon;
+
+              return (
+                <div
+                  key={docItem.key}
+                  className={`p-3 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                    isPassed
+                      ? 'bg-emerald-50/40 border-emerald-200/80'
+                      : 'bg-slate-50/80 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                        isPassed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <DocIcon size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-bold text-gray-800 truncate">{docItem.title}</p>
+                        <span
+                          className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${
+                            isPassed
+                              ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                              : 'bg-amber-100 text-amber-700 border-amber-200'
+                          }`}
+                        >
+                          {isPassed ? 'PASSED' : 'PENDING'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 truncate">
+                        {hasFile && doc?.name ? `📁 ${doc.name}` : docItem.desc}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Inline Actions */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {hasFile ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDashboardPreviewDoc({
+                              title: docItem.title,
+                              fileName: doc?.name || `${docItem.key}.pdf`,
+                              dataUrl: doc?.dataUrl,
+                              uploadedAt: doc?.uploadedAt,
+                            })
+                          }
+                          className="py-1 px-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center gap-1 transition-all"
+                        >
+                          <Eye size={12} /> View
+                        </button>
+                        <label
+                          htmlFor={`dash-replace-${docItem.key}`}
+                          className="py-1 px-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <RefreshCw size={11} className={isUploading ? 'animate-spin' : ''} />
+                          {isUploading ? 'Uploading...' : 'Replace'}
+                        </label>
+                        <input
+                          type="file"
+                          id={`dash-replace-${docItem.key}`}
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => handleDashboardDocUpload(docItem.key, e.target.files?.[0] || null)}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </>
+                    ) : (
+                      <label
+                        htmlFor={`dash-upload-${docItem.key}`}
+                        className={`py-1.5 px-3 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                          isUploading
+                            ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        <Upload size={12} className={isUploading ? 'animate-spin' : ''} />
+                        {isUploading ? 'Uploading...' : 'Submit Document'}
+                        <input
+                          type="file"
+                          id={`dash-upload-${docItem.key}`}
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => handleDashboardDocUpload(docItem.key, e.target.files?.[0] || null)}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Navigation Link Footer */}
+          <div className="mt-3.5 pt-3 border-t border-gray-100 flex items-center justify-between">
+            <span className="text-[11px] text-gray-500">Need full view, print, or download?</span>
+            <Link
+              to="/app/documents"
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+            >
+              Open Required Docs Hub <ChevronRight size={14} />
+            </Link>
+          </div>
+        </motion.div>
+      )}
+
       {/* OJT Progress */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -1194,6 +1447,92 @@ export function Dashboard() {
           </div>
         </motion.div>
       )}
+
+      {/* Trainee Dashboard Document Preview Modal */}
+      <AnimatePresence>
+        {dashboardPreviewDoc && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">{dashboardPreviewDoc.title}</h3>
+                  <p className="text-xs text-slate-500 truncate max-w-xs sm:max-w-md">{dashboardPreviewDoc.fileName}</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-200 transition-colors"
+                  >
+                    <Printer size={13} /> Print
+                  </button>
+
+                  {dashboardPreviewDoc.dataUrl && (
+                    <a
+                      href={dashboardPreviewDoc.dataUrl}
+                      download={dashboardPreviewDoc.fileName || 'ojt-document'}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm"
+                    >
+                      <Download size={13} /> Download
+                    </a>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setDashboardPreviewDoc(null)}
+                    className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-1"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Preview Content */}
+              <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex items-center justify-center min-h-[350px]">
+                {dashboardPreviewDoc.dataUrl ? (
+                  dashboardPreviewDoc.dataUrl.startsWith('data:image/') || dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                    <img
+                      src={dashboardPreviewDoc.dataUrl}
+                      alt={dashboardPreviewDoc.title}
+                      className="max-h-[520px] max-w-full object-contain rounded-2xl shadow-lg border border-slate-200 bg-white"
+                    />
+                  ) : (
+                    <iframe
+                      src={dashboardPreviewDoc.dataUrl}
+                      className="w-full h-[520px] rounded-2xl border border-slate-200 bg-white shadow"
+                      title="Document Preview"
+                    />
+                  )
+                ) : (
+                  <div className="text-center py-12 text-slate-400">
+                    <FileText size={48} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-medium">No preview available for this file.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">Carlos Hilado Memorial State University</span>
+                <button
+                  type="button"
+                  onClick={() => setDashboardPreviewDoc(null)}
+                  className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
