@@ -298,6 +298,13 @@ function migrateGeofenceStorageOnce(): void {
 
 function migrateInstructorPositionOnce(): void {
   try {
+    if (isSupabaseConfigured()) {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
+      } catch {}
+      localStorage.setItem('ojt_migrated_instructor_positions', 'done');
+      return;
+    }
     if (localStorage.getItem('ojt_migrated_instructor_positions') === 'done') return;
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     const parsed = raw ? JSON.parse(raw) : [];
@@ -352,11 +359,25 @@ function sanitizeValueForStorage(key: string, value: any): any {
       return copy;
     });
   }
+  if (key === STORAGE_KEYS.CURRENT_USER && value && typeof value === 'object') {
+    const copy = { ...value };
+    if (typeof copy.photo === 'string' && copy.photo.startsWith('data:')) {
+      copy.photo = '';
+    }
+    return copy;
+  }
   return value;
 }
 
 function cleanupStorageQuota(): void {
   try {
+    if (isSupabaseConfigured()) {
+      localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
+      localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
+      localStorage.removeItem(STORAGE_KEYS.HOST_SUPERVISORS);
+      localStorage.removeItem('ojt_passwords');
+      return;
+    }
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     if (raw && raw.length > 300000) {
       const parsed = JSON.parse(raw);
@@ -371,6 +392,19 @@ function cleanupStorageQuota(): void {
 }
 
 function saveToStorage<T>(key: string, value: T): void {
+  // Pure database mode: User accounts, passwords, and credentials MUST NEVER be stored in localStorage when Supabase is active
+  if (
+    isSupabaseConfigured() &&
+    (key === STORAGE_KEYS.EMPLOYEES ||
+      key === STORAGE_KEYS.PASSWORDS ||
+      key === STORAGE_KEYS.HOST_SUPERVISORS)
+  ) {
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+    return;
+  }
+
   try {
     const payload = sanitizeValueForStorage(key, value);
     localStorage.setItem(key, JSON.stringify(payload));
@@ -399,6 +433,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadFromStorage(STORAGE_KEYS.CURRENT_USER, null));
   const [employees, setEmployees] = useState<Employee[]>(() => {
+    if (isSupabaseConfigured()) {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
+      } catch {}
+      return [];
+    }
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
     if (stored.length === 0) {
       saveToStorage(STORAGE_KEYS.EMPLOYEES, MOCK_EMPLOYEES);
@@ -452,6 +492,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     loadFromStorage<RequiredDocumentSubmission[]>(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, [])
   );
   const [hostSupervisors, setHostSupervisors] = useState<HostSupervisor[]>(() => {
+    if (isSupabaseConfigured()) {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.HOST_SUPERVISORS);
+      } catch {}
+      return [];
+    }
     const stored = loadFromStorage<HostSupervisor[]>(STORAGE_KEYS.HOST_SUPERVISORS, []);
     if (stored.length === 0) {
       saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, DEFAULT_HOST_SUPERVISORS);
@@ -468,6 +514,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return stored;
   });
   const [passwords, setPasswords] = useState<Record<string, string>>(() => {
+    if (isSupabaseConfigured()) {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
+        localStorage.removeItem('ojt_passwords');
+      } catch {}
+      return {};
+    }
     const stored = loadFromStorage<Record<string, string>>(STORAGE_KEYS.PASSWORDS, {});
     const normalized = normalizePasswordMap(stored);
     if (Object.keys(normalized).length === 0) {
@@ -691,28 +744,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [announcements, useSupabase]);
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, announcementSubmissions);
-  }, [announcementSubmissions]);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, announcementSubmissions);
+    }
+  }, [announcementSubmissions, useSupabase]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, announcementComments);
-  }, [announcementComments]);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, announcementComments);
+    }
+  }, [announcementComments, useSupabase]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, requiredDocuments);
-  }, [requiredDocuments]);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, requiredDocuments);
+    }
+  }, [requiredDocuments, useSupabase]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, requiredDocumentSubmissions);
-  }, [requiredDocumentSubmissions]);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, requiredDocumentSubmissions);
+    }
+  }, [requiredDocumentSubmissions, useSupabase]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, hostSupervisors);
-  }, [hostSupervisors]);
+    if (!useSupabase && hostSupervisors.length > 0) {
+      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, hostSupervisors);
+    }
+  }, [hostSupervisors, useSupabase]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.HOST_FEEDBACK, hostFeedback);
-  }, [hostFeedback]);
+    if (!useSupabase && hostFeedback.length > 0) {
+      saveToStorage(STORAGE_KEYS.HOST_FEEDBACK, hostFeedback);
+    }
+  }, [hostFeedback, useSupabase]);
 
   // Passwords are NOT saved to localStorage — only the database stores authentication credentials.
   const setPasswordForEmail = (email: string, password: string) => {
@@ -1239,9 +1304,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setPasswordForEmail(cleanData.email, password);
         }
 
-        // Update local React state and device localStorage with newly registered profile
+        // Update local React state with newly registered profile (database is the single source of truth)
         setEmployees((prev) => [created!, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
-        saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
+        if (!isCloud) {
+          saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
+        }
 
         // If registering an HTE supervisor, also persist to host_supervisors table
         if (isHTE) {
@@ -1349,7 +1416,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return e;
     });
     setEmployees(updatedEmployees);
-    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+    }
 
     const updatedEmployee = updatedEmployees.find((e) => e.id === id || e.employeeId === id);
     if (updatedEmployee && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
@@ -1382,7 +1451,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if ('registrationLocation' in data && !data.registrationLocation) {
       setGeofenceZones((prev) => {
         const filtered = prev.filter((z) => z.id !== `personal-${id}` && z.id !== id);
-        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+        if (!useSupabase) {
+          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+        }
         return filtered;
       });
       if (useSupabase) {
@@ -1394,7 +1465,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGeofenceZones((prev) => {
       const filtered = prev.filter((z) => z.id !== `personal-${id}`);
       if (filtered.length !== prev.length) {
-        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+        if (!useSupabase) {
+          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+        }
         if (useSupabase) {
           supabaseService.deleteGeofenceZone(`personal-${id}`).catch(() => {});
         }
@@ -1406,7 +1479,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateHostSupervisor = (id: string, data: Partial<HostSupervisor>) => {
     const updatedHosts = hostSupervisors.map((h) => (h.id === id || h.employeeId === id ? { ...h, ...data } : h));
     setHostSupervisors(updatedHosts);
-    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+    }
 
     const updatedHost = updatedHosts.find((h) => h.id === id || h.employeeId === id);
     if (updatedHost && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
@@ -1437,8 +1512,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const updatedHosts = hostSupervisors.filter((h) => h.id !== id && h.employeeId !== id);
     setEmployees(updatedEmployees);
     setHostSupervisors(updatedHosts);
-    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
-    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+    }
 
     // Erase credentials from storage
     if (targetEmail) {
@@ -1447,7 +1524,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const next = { ...prev };
         delete next[normEmail];
         delete next[targetEmail.toLowerCase()];
-        saveToStorage(STORAGE_KEYS.PASSWORDS, next);
+        if (!useSupabase) {
+          saveToStorage(STORAGE_KEYS.PASSWORDS, next);
+        }
         return next;
       });
     }
@@ -2283,7 +2362,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     setEmployees(updatedEmployees);
-    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+    }
 
     // 2. Ensure all Host Supervisors remain active
     const updatedHosts = hostSupervisors.map((h) => ({
@@ -2292,7 +2373,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       academicYear: h.academicYear || ay,
     }));
     setHostSupervisors(updatedHosts);
-    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
+    }
 
     // 3. Persist to Supabase if configured
     if (useSupabase) {
@@ -2318,7 +2401,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       academicYear: r.academicYear || activeAY,
     }));
     setTimeRecords(fixedRecords);
-    saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
+    }
 
     // 2. Ensure all employees have academicYear, normalized positions, and correct ID prefixes
     const fixedEmployees = employees.map((e) => {
@@ -2338,7 +2423,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
     });
     setEmployees(fixedEmployees);
-    saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
+    }
 
     // 3. Ensure host supervisors are also updated
     const fixedHosts = hostSupervisors.map((h) => ({
@@ -2347,7 +2434,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       active: true,
     }));
     setHostSupervisors(fixedHosts);
-    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, fixedHosts);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, fixedHosts);
+    }
 
     let supabaseResult = { repairedEmployees: 0, repairedRecords: 0 };
     if (useSupabase) {

@@ -46,9 +46,11 @@ export function Login() {
             e.employeeId === user.id ||
             (user.email && e.email ? normalizeEmail(e.email) === normalizeEmail(user.email) : false)
         );
+        const photoCandidate = employee?.photo || user.photo || '';
+        const safePhoto = typeof photoCandidate === 'string' && photoCandidate.startsWith('data:') ? '' : photoCandidate;
         const enrichedUser = {
           ...user,
-          photo: employee?.photo || user.photo,
+          photo: safePhoto,
           faceRegistered: employee?.faceRegistered ?? user.faceRegistered ?? false,
           employeeId: employee?.employeeId || user.employeeId || employee?.id || user.id,
         };
