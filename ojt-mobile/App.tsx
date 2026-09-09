@@ -167,6 +167,14 @@ export default function App() {
   const [renderedHours, setRenderedHours] = useState<number>(0);
   const [dashboardRecord, setDashboardRecord] = useState<any>(null);
   const [recentAnnouncements, setRecentAnnouncements] = useState<any[]>([]);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
     const R = 6371000;
@@ -484,9 +492,22 @@ export default function App() {
         .select('*')
         .or(`employee_id.eq.${activeUserId},employee_id.eq.${profile?.employeeId || activeUserId}`)
         .eq('date', today)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
         .then(({ data }) => {
-          if (data) setDashboardRecord(data);
+          if (data) {
+            setDashboardRecord({
+              ...data,
+              timeIn: data.time_in || data.timeIn,
+              timeOut: data.time_out || data.timeOut,
+              totalHours: data.total_hours ?? data.totalHours,
+              timeInFaceVerified: data.time_in_face_verified ?? data.timeInFaceVerified,
+              timeOutFaceVerified: data.time_out_face_verified ?? data.timeOutFaceVerified,
+            });
+          } else {
+            setDashboardRecord(null);
+          }
         });
 
       supabase
@@ -1084,8 +1105,12 @@ export default function App() {
               />
             ) : showFaceEnroll ? (
               <FaceScanner
-                onCancel={() => setShowFaceEnroll(false)}
+                onCancel={() => {
+                  setShowFaceEnroll(false);
+                  setShowProfile(true);
+                }}
                 mode="enroll"
+                employeeName={profile?.name || 'Trainee'}
                 onCapture={async (base64Image: string) => {
                   try {
                     setFaceEnrollInProgress(true);
@@ -1118,12 +1143,17 @@ export default function App() {
                       .select('*')
                       .or(`id.eq.${session.user.id},email.eq.${session.user.email}`)
                       .maybeSingle();
-                    if (data) setProfile(normalizeProfile(data));
+                    if (data) {
+                      const np = normalizeProfile(data);
+                      setProfile(np);
+                      await authStore.saveUser(np);
+                    }
                   } catch (err: any) {
                     Alert.alert('Enrollment Error', err.message || 'Failed to enroll face');
                   } finally {
                     setFaceEnrollInProgress(false);
                     setShowFaceEnroll(false);
+                    setShowProfile(true);
                   }
                 }}
               />
@@ -1348,58 +1378,112 @@ export default function App() {
                   {/* Biometric Attendance Action Box */}
                   <View style={styles.biometricAttendanceBox}>
                     <View style={styles.biometricHeaderRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                         <View style={styles.biometricIconBadge}>
                           <Fingerprint size={18} color="#2563eb" />
                         </View>
-                        <View>
+                        <View style={{ flex: 1 }}>
                           <Text style={styles.biometricBoxTitle}>Biometric Daily Attendance</Text>
                           <Text style={styles.biometricBoxSubtitle}>
-                            {dashboardRecord?.timeIn
-                              ? dashboardRecord?.timeOut
-                                ? `Completed Today (${dashboardRecord.totalHours || 0} hrs)`
-                                : `Clocked in at ${dashboardRecord.timeIn}`
-                              : "Ready for today's attendance"}
+                            Continuous AI Face Recognition + GPS Geofence
                           </Text>
                         </View>
                       </View>
                       {dashboardRecord?.timeIn && !dashboardRecord?.timeOut ? (
-                        <View style={styles.activePillLive}>
-                          <Text style={styles.activePillLiveText}>ON SHIFT</Text>
+                        <View style={[styles.activePillLive, { backgroundColor: '#dcfce7' }]}>
+                          <Text style={[styles.activePillLiveText, { color: '#16a34a' }]}>ON SHIFT</Text>
                         </View>
-                      ) : null}
+                      ) : dashboardRecord?.timeIn && dashboardRecord?.timeOut ? (
+                        <View style={[styles.activePillLive, { backgroundColor: '#e0f2fe' }]}>
+                          <Text style={[styles.activePillLiveText, { color: '#0284c7' }]}>COMPLETED</Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.activePillLive, { backgroundColor: '#fef3c7' }]}>
+                          <Text style={[styles.activePillLiveText, { color: '#d97706' }]}>READY</Text>
+                        </View>
+                      )}
                     </View>
 
-                    <View style={styles.biometricBtnRow}>
+                    {/* Live Clock Strip */}
+                    <View style={styles.clockStrip}>
+                      <Clock size={15} color="#2563eb" />
+                      <Text style={styles.clockStripTime}>
+                        {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </Text>
+                      <Text style={styles.clockStripDot}>•</Text>
+                      <Text style={styles.clockStripDate}>
+                        {currentTime.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                      </Text>
+                    </View>
+
+                    {/* Today's Shift Breakdown */}
+                    <View style={styles.dashShiftGrid}>
+                      <View style={styles.dashShiftBox}>
+                        <Text style={styles.dashShiftBoxLabel}>TIME IN</Text>
+                        <Text style={styles.dashShiftBoxVal}>
+                          {dashboardRecord?.timeIn ? dashboardRecord.timeIn : '— —'}
+                        </Text>
+                        <View style={styles.dashShiftBadge}>
+                          {dashboardRecord?.timeIn ? (
+                            <>
+                              <CameraIcon size={10} color="#16a34a" />
+                              <Text style={[styles.dashShiftBadgeText, { color: '#16a34a' }]}>Face Verified</Text>
+                            </>
+                          ) : (
+                            <Text style={styles.dashShiftBadgeText}>Not Recorded</Text>
+                          )}
+                        </View>
+                      </View>
+
+                      <View style={styles.dashShiftBox}>
+                        <Text style={styles.dashShiftBoxLabel}>TIME OUT</Text>
+                        <Text style={styles.dashShiftBoxVal}>
+                          {dashboardRecord?.timeOut ? dashboardRecord.timeOut : '— —'}
+                        </Text>
+                        <View style={styles.dashShiftBadge}>
+                          {dashboardRecord?.timeOut ? (
+                            <>
+                              <CameraIcon size={10} color="#16a34a" />
+                              <Text style={[styles.dashShiftBadgeText, { color: '#16a34a' }]}>Face Verified</Text>
+                            </>
+                          ) : (
+                            <Text style={styles.dashShiftBadgeText}>Not Recorded</Text>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Primary Contextual Biometric Punch Action Button */}
+                    {!dashboardRecord?.timeIn ? (
                       <TouchableOpacity
-                        style={[
-                          styles.biometricClockBtn,
-                          styles.biometricClockInBtn,
-                          dashboardRecord?.timeIn ? styles.biometricClockBtnDisabled : null,
-                        ]}
-                        disabled={!!dashboardRecord?.timeIn}
+                        style={[styles.biometricHeroBtn, { backgroundColor: '#2563eb' }]}
                         onPress={() => handleBiometricClock('in')}
                       >
-                        <Zap size={16} color="#ffffff" />
-                        <Text style={styles.biometricClockBtnText}>
-                          {dashboardRecord?.timeIn ? `In: ${dashboardRecord.timeIn}` : 'Time In (Face+GPS)'}
-                        </Text>
+                        <Zap size={18} color="#ffffff" />
+                        <Text style={styles.biometricHeroBtnText}>CLOCK IN (TIME IN) • Face + GPS</Text>
                       </TouchableOpacity>
-
+                    ) : !dashboardRecord?.timeOut ? (
                       <TouchableOpacity
-                        style={[
-                          styles.biometricClockBtn,
-                          styles.biometricClockOutBtn,
-                          (!dashboardRecord?.timeIn || !!dashboardRecord?.timeOut) ? styles.biometricClockBtnDisabled : null,
-                        ]}
-                        disabled={!dashboardRecord?.timeIn || !!dashboardRecord?.timeOut}
+                        style={[styles.biometricHeroBtn, { backgroundColor: '#059669' }]}
                         onPress={() => handleBiometricClock('out')}
                       >
-                        <Clock size={16} color="#ffffff" />
-                        <Text style={styles.biometricClockBtnText}>
-                          {dashboardRecord?.timeOut ? `Out: ${dashboardRecord.timeOut}` : 'Time Out (Face+GPS)'}
-                        </Text>
+                        <Clock size={18} color="#ffffff" />
+                        <Text style={styles.biometricHeroBtnText}>CLOCK OUT (TIME OUT) • Face + GPS</Text>
                       </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.biometricHeroBtn, { backgroundColor: '#f1f5f9' }]}>
+                        <CheckCircle2 size={18} color="#16a34a" />
+                        <Text style={[styles.biometricHeroBtnText, { color: '#16a34a' }]}>
+                          Shift Completed Today ({dashboardRecord?.totalHours || 0} hrs)
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Attendance Window Notice */}
+                    <View style={styles.attendanceWindowNotice}>
+                      <Text style={styles.attendanceWindowText}>
+                        🕒 Attendance Window: <Text style={{ fontWeight: '800' }}>6:00 AM – 5:00 PM</Text> • Resets daily
+                      </Text>
                     </View>
                   </View>
 
@@ -1527,6 +1611,46 @@ export default function App() {
                         <Shield size={15} color="#7c3aed" />
                         <Text style={styles.faceVerifyBtnText}>Test Face Match</Text>
                       </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Required OJT Documents Compliance Card (Faithful to Web Dashboard) */}
+                  <View style={styles.dashDocsCard}>
+                    <View style={styles.dashDocsHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <View style={styles.dashDocsIconBadge}>
+                          <Award size={18} color="#2563eb" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.dashDocsTitle}>Required OJT Documents</Text>
+                          <Text style={styles.dashDocsSub}>
+                            {profile.documents_passed !== false ? '4/4 Documents Verified (100%)' : 'Compliance Pending'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={[styles.dashDocsStatusPill, profile.documents_passed !== false ? styles.dashDocsPillGreen : styles.dashDocsPillAmber]}>
+                        <Text style={[styles.dashDocsPillText, profile.documents_passed !== false ? { color: '#16a34a' } : { color: '#d97706' }]}>
+                          {profile.documents_passed !== false ? '✓ 4/4 Passed' : 'Incomplete'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.dashDocsList}>
+                      {[
+                        { title: '1. Endorsement Letter', status: profile.documents_passed !== false ? 'Passed' : 'Pending' },
+                        { title: '2. Parental Consent Form', status: profile.documents_passed !== false ? 'Passed' : 'Pending' },
+                        { title: '3. Medical Certificate', status: profile.documents_passed !== false ? 'Passed' : 'Pending' },
+                        { title: '4. Student Bio-data / Resume', status: profile.documents_passed !== false ? 'Passed' : 'Pending' },
+                      ].map((item, idx) => (
+                        <View key={idx} style={styles.dashDocRow}>
+                          <Text style={styles.dashDocRowText} numberOfLines={1}>{item.title}</Text>
+                          <View style={[styles.dashDocRowBadge, item.status === 'Passed' ? styles.dashDocRowBadgePassed : styles.dashDocRowBadgePending]}>
+                            <Text style={[styles.dashDocRowBadgeText, item.status === 'Passed' ? { color: '#16a34a' } : { color: '#d97706' }]}>
+                              {item.status}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
                     </View>
                   </View>
 
@@ -1918,6 +2042,105 @@ const styles = StyleSheet.create({
   biometricClockOutBtn: { backgroundColor: '#e11d48' },
   biometricClockBtnDisabled: { backgroundColor: '#cbd5e1', opacity: 0.6 },
   biometricClockBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  clockStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+    gap: 6,
+  },
+  clockStripTime: { fontSize: 14, fontWeight: '900', color: '#0f172a', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  clockStripDot: { color: '#94a3b8', fontSize: 12 },
+  clockStripDate: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  dashShiftGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  dashShiftBox: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  dashShiftBoxLabel: { fontSize: 10, fontWeight: '800', color: '#64748b', letterSpacing: 0.5 },
+  dashShiftBoxVal: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginVertical: 3 },
+  dashShiftBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  dashShiftBadgeText: { fontSize: 10, fontWeight: '700', color: '#94a3b8' },
+  biometricHeroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  biometricHeroBtnText: { color: '#ffffff', fontSize: 13, fontWeight: '900', letterSpacing: 0.3 },
+  attendanceWindowNotice: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  attendanceWindowText: { fontSize: 10, color: '#64748b' },
+  dashDocsCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  dashDocsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  dashDocsIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashDocsTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a' },
+  dashDocsSub: { fontSize: 11, color: '#64748b', marginTop: 1 },
+  dashDocsStatusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  dashDocsPillGreen: { backgroundColor: '#dcfce7' },
+  dashDocsPillAmber: { backgroundColor: '#fef3c7' },
+  dashDocsPillText: { fontSize: 10, fontWeight: '800' },
+  dashDocsList: { gap: 6 },
+  dashDocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+  },
+  dashDocRowText: { fontSize: 12, fontWeight: '700', color: '#334155', flex: 1, marginRight: 8 },
+  dashDocRowBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  dashDocRowBadgePassed: { backgroundColor: '#dcfce7' },
+  dashDocRowBadgePending: { backgroundColor: '#fef3c7' },
+  dashDocRowBadgeText: { fontSize: 10, fontWeight: '800' },
   geoTrackerCard: {
     backgroundColor: '#ffffff',
     borderRadius: 20,

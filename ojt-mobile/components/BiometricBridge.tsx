@@ -144,6 +144,8 @@ const BRIDGE_HTML = `
         const img = await loadImage(photo);
         const canvas = document.getElementById('offscreenCanvas');
         const ctx = canvas.getContext('2d');
+        canvas.width = 320;
+        canvas.height = 240;
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -154,22 +156,35 @@ const BRIDGE_HTML = `
         }
         const avgLum = Math.round(totalLum / totalPixels);
 
-        let hasFace = true;
+        let hasFace = false;
+        let faceCentered = true;
         if (modelsReady) {
-          const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 224 });
+          const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.14, inputSize: 224 });
           const det = await faceapi.detectSingleFace(img, detectorOpts);
-          hasFace = !!det;
+          if (det) {
+            hasFace = true;
+            const box = det.box;
+            const faceCx = (box.x + box.width / 2) / canvas.width;
+            const faceCy = (box.y + box.height / 2) / canvas.height;
+            // Face should be roughly centered within oval guide
+            if (Math.abs(faceCx - 0.50) > 0.22 || Math.abs(faceCy - 0.48) > 0.25) {
+              faceCentered = false;
+            }
+          }
+        } else {
+          hasFace = true;
         }
 
         sendToNative({
           id,
           hasFace,
+          faceCentered,
           tooDark: avgLum < 30,
           tooBright: avgLum > 240,
           brightness: avgLum
         });
       } catch (err) {
-        sendToNative({ id, hasFace: true, tooDark: false, tooBright: false, brightness: 128 });
+        sendToNative({ id, hasFace: true, faceCentered: true, tooDark: false, tooBright: false, brightness: 128 });
       }
     }
 

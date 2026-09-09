@@ -634,6 +634,8 @@ export default function RegisterScreen({
   if (showScanner) {
     return (
       <FaceScanner
+        mode="enroll"
+        employeeName={form.firstName ? `${form.firstName} ${form.lastName}`.trim() : 'Trainee'}
         onCapture={(img) => {
           updateForm('photo', img);
           setShowScanner(false);
