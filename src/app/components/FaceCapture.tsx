@@ -145,8 +145,13 @@ export function FaceCapture({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const targetW = video.videoWidth || 320;
-      const targetH = video.videoHeight || 420;
+      const rect = canvas.getBoundingClientRect();
+      const displayW = Math.round(rect.width) || canvas.clientWidth || 340;
+      const displayH = Math.round(rect.height) || canvas.clientHeight || 453;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      const targetW = Math.round(displayW * dpr);
+      const targetH = Math.round(displayH * dpr);
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.width = targetW;
         canvas.height = targetH;
@@ -156,23 +161,23 @@ export function FaceCapture({
 
       // Oval dimensions & placement:
       // 1. Centered horizontally (cx = W / 2)
-      // 2. Slightly above center vertically (cy = H * 0.46)
-      // 3. Covers 60–70% of screen height (radiusY = (H * 0.65) / 2)
-      // 4. Vertical oval ~1.3:1 to 1.5:1 ratio (aspect ratio = 1.38:1)
-      // 5. Margin from all edges >= 10%
+      // 2. Centered at 48.5% height to position eyes/nose in center and chin naturally above bottom border
+      // 3. Covers ~62% of viewport height (radiusY = H * 0.31)
+      // 4. Natural human face aspect ratio of ~1.30:1 (radiusX = radiusY / 1.30)
+      //    In 340x453 viewport, oval is ~215px wide x 280px high, comfortably framing forehead, cheeks, and chin.
       const cx = canvas.width / 2;
-      const cy = canvas.height * 0.46;
+      const cy = canvas.height * 0.485;
 
-      const maxRadiusY = canvas.height * 0.35; // leaves at least 11% top and 19% bottom margin
-      const maxRadiusX = canvas.width * 0.40;  // leaves at least 10% left and right margin
+      const maxRadiusY = canvas.height * 0.35; // leaves ~13.5% top and ~16.5% bottom margin
+      const maxRadiusX = canvas.width * 0.40;  // leaves 10% left and right margin
 
-      let radiusY = canvas.height * 0.325; // 65% of screen height
-      let radiusX = radiusY / 1.38;        // ~1.38:1 height-to-width ratio
+      let radiusY = canvas.height * 0.31;
+      let radiusX = radiusY / 1.30;
 
       if (radiusY > maxRadiusY) radiusY = maxRadiusY;
       if (radiusX > maxRadiusX) {
         radiusX = maxRadiusX;
-        radiusY = Math.min(radiusX * 1.38, maxRadiusY);
+        radiusY = Math.min(radiusX * 1.30, maxRadiusY);
       }
 
       const currentState = stateRef.current;
@@ -201,22 +206,23 @@ export function FaceCapture({
               : '#00e5ff';
 
       const scanRange = radiusY * 2;
-      scanLineRef.current = (scanLineRef.current + 2.5) % scanRange;
+      scanLineRef.current = (scanLineRef.current + (2.5 * dpr)) % scanRange;
       const currentScanY = cy - radiusY + scanLineRef.current;
 
-      const laserGrad = ctx.createLinearGradient(0, currentScanY - 16, 0, currentScanY + 16);
+      const laserThickness = 16 * dpr;
+      const laserGrad = ctx.createLinearGradient(0, currentScanY - laserThickness, 0, currentScanY + laserThickness);
       laserGrad.addColorStop(0, 'transparent');
       laserGrad.addColorStop(0.5, lineColor + 'aa');
       laserGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = laserGrad;
-      ctx.fillRect(cx - radiusX, currentScanY - 16, radiusX * 2, 32);
+      ctx.fillRect(cx - radiusX, currentScanY - laserThickness, radiusX * 2, laserThickness * 2);
 
       // Laser thin bright center line
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
-      ctx.moveTo(cx - radiusX + 6, currentScanY);
-      ctx.lineTo(cx + radiusX - 6, currentScanY);
+      ctx.moveTo(cx - radiusX + (6 * dpr), currentScanY);
+      ctx.lineTo(cx + radiusX - (6 * dpr), currentScanY);
       ctx.stroke();
 
       ctx.restore();
@@ -224,9 +230,9 @@ export function FaceCapture({
       // 4. Glowing Oval Contour Border & Alignment Notches
       ctx.save();
       ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2.5 * dpr;
       ctx.shadowColor = lineColor;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 8 * dpr;
 
       // Draw Vertical Oval Outline
       ctx.beginPath();
@@ -235,26 +241,26 @@ export function FaceCapture({
 
       // Chin alignment notch
       ctx.beginPath();
-      ctx.moveTo(cx - 16, cy + radiusY);
-      ctx.lineTo(cx + 16, cy + radiusY);
+      ctx.moveTo(cx - (18 * dpr), cy + radiusY);
+      ctx.lineTo(cx + (18 * dpr), cy + radiusY);
       ctx.stroke();
 
       // Forehead alignment notch
       ctx.beginPath();
-      ctx.moveTo(cx - 16, cy - radiusY);
-      ctx.lineTo(cx + 16, cy - radiusY);
+      ctx.moveTo(cx - (18 * dpr), cy - radiusY);
+      ctx.lineTo(cx + (18 * dpr), cy - radiusY);
       ctx.stroke();
 
       // Left cheek guide notch
       ctx.beginPath();
-      ctx.moveTo(cx - radiusX, cy - 12);
-      ctx.lineTo(cx - radiusX, cy + 12);
+      ctx.moveTo(cx - radiusX, cy - (14 * dpr));
+      ctx.lineTo(cx - radiusX, cy + (14 * dpr));
       ctx.stroke();
 
       // Right cheek guide notch
       ctx.beginPath();
-      ctx.moveTo(cx + radiusX, cy - 12);
-      ctx.lineTo(cx + radiusX, cy + 12);
+      ctx.moveTo(cx + radiusX, cy - (14 * dpr));
+      ctx.lineTo(cx + radiusX, cy + (14 * dpr));
       ctx.stroke();
 
       ctx.restore();

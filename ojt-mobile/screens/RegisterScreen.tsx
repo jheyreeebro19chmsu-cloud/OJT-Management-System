@@ -510,7 +510,8 @@ export default function RegisterScreen({
       }
 
       const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
-      const validUserId = isUuid(authData?.user?.id) ? authData?.user?.id : undefined;
+      const userId = authData?.user?.id || '';
+      const validUserId = isUuid(userId) ? userId : undefined;
 
       // 2. Build Profile Data Partitioned by Academic Year with valid schema columns
       const profileData: any = {

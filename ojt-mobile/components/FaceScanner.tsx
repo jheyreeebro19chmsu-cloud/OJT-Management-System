@@ -12,7 +12,8 @@ import {
   Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { X, ShieldCheck, Sparkles, Scan, CheckCircle2, Camera, RefreshCw, FlipHorizontal, Check } from 'lucide-react-native';
+import { X, ShieldCheck, Sparkles, Scan, CheckCircle2, Camera, RefreshCw, FlipHorizontal, Check, AlertTriangle } from 'lucide-react-native';
+import { biometricService } from '../services/biometricService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Vertical oval (ellipse): ~60–65% screen height, ~1.38:1 height-to-width ratio, min 10% edge padding
@@ -22,14 +23,19 @@ const FRAME_WIDTH = Math.min(FRAME_HEIGHT / 1.38, SCREEN_WIDTH * 0.80);
 interface FaceScannerProps {
   onCapture: (base64Image: string) => void;
   onCancel: () => void;
+  mode?: 'enroll' | 'clock_in' | 'clock_out' | 'verify_test' | null;
+  enrolledPhoto?: string | null;
+  employeeName?: string;
 }
 
-export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
+export default function FaceScanner({ onCapture, onCancel, mode, enrolledPhoto, employeeName }: FaceScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView | null>(null);
 
   // Scanning laser animation
@@ -69,6 +75,7 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
   async function handleTakePicture() {
     if (!cameraRef.current || isCapturing) return;
     setIsCapturing(true);
+    setVerifyError(null);
 
     try {
       if (typeof cameraRef.current.takePictureAsync !== 'function') {
@@ -93,14 +100,58 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
     }
   }
 
-  function handleConfirmPhoto() {
-    if (capturedPhoto) {
-      onCapture(capturedPhoto);
+  async function handleConfirmPhoto() {
+    if (!capturedPhoto || isVerifying) return;
+
+    // If in clock_in or clock_out mode with enrolled photo, verify biometrics
+    if ((mode === 'clock_in' || mode === 'clock_out') && enrolledPhoto) {
+      setIsVerifying(true);
+      setVerifyError(null);
+      try {
+        const bio = await biometricService.verifyBiometrics(enrolledPhoto, capturedPhoto, 0.55);
+        if (bio.matched) {
+          onCapture(capturedPhoto);
+          return;
+        } else {
+          setVerifyError(
+            `Biometric Mismatch: Face does not match enrolled profile for ${employeeName || 'this student'} (Distance: ${bio.distance.toFixed(2)}, threshold: 0.55). Please retake with your full face centered.`
+          );
+          setIsVerifying(false);
+          return;
+        }
+      } catch (err: any) {
+        setVerifyError(err.message || 'Failed to verify face biometrics.');
+        setIsVerifying(false);
+        return;
+      }
     }
+
+    // If enrolling, run image quality checks
+    if (mode === 'enroll') {
+      setIsVerifying(true);
+      try {
+        const quality = await biometricService.inspectQuality(capturedPhoto);
+        if (quality.tooDark) {
+          setVerifyError('Photo is too dark. Please ensure better lighting before saving.');
+          setIsVerifying(false);
+          return;
+        }
+        if (quality.tooBright) {
+          setVerifyError('Photo has too much glare. Please adjust lighting.');
+          setIsVerifying(false);
+          return;
+        }
+      } catch {}
+      setIsVerifying(false);
+    }
+
+    onCapture(capturedPhoto);
   }
 
   function handleRetake() {
     setCapturedPhoto(null);
+    setVerifyError(null);
+    setIsVerifying(false);
   }
 
   function toggleFacing() {
@@ -157,17 +208,36 @@ export default function FaceScanner({ onCapture, onCancel }: FaceScannerProps) {
 
           <View style={styles.previewBottomSection}>
             <Text style={styles.previewHeading}>Review Your Face Photo</Text>
-            <Text style={styles.previewSubtitle}>Ensure your face is well-lit, clearly visible, and centered.</Text>
+            <Text style={styles.previewSubtitle}>
+              {mode === 'enroll'
+                ? 'Ensure your face is well-lit and facing forward to enroll your template.'
+                : 'Biometric signature will be verified against your enrolled profile.'}
+            </Text>
+
+            {verifyError && (
+              <View style={styles.errorBanner}>
+                <AlertTriangle size={18} color="#ef4444" style={{ marginTop: 2 }} />
+                <Text style={styles.errorBannerText}>{verifyError}</Text>
+              </View>
+            )}
 
             <View style={styles.previewBtnRow}>
-              <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
+              <TouchableOpacity style={styles.retakeButton} onPress={handleRetake} disabled={isVerifying}>
                 <RefreshCw size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                <Text style={styles.retakeButtonText}>Retake Photo</Text>
+                <Text style={styles.retakeButtonText}>Retake</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmPhoto}>
-                <Check size={20} color="#ffffff" style={{ marginRight: 6 }} />
-                <Text style={styles.confirmButtonText}>Confirm & Use</Text>
+              <TouchableOpacity
+                style={[styles.confirmButton, isVerifying && { opacity: 0.7 }]}
+                onPress={handleConfirmPhoto}
+                disabled={isVerifying}
+              >
+                {isVerifying ? (
+                  <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 6 }} />
+                ) : (
+                  <Check size={20} color="#ffffff" style={{ marginRight: 6 }} />
+                )}
+                <Text style={styles.confirmButtonText}>{isVerifying ? 'Verifying...' : 'Confirm & Use'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -455,6 +525,25 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '900',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.6)',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    width: '100%',
+  },
+  errorBannerText: {
+    color: '#fca5a5',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 16,
   },
   permissionContainer: {
     flex: 1,

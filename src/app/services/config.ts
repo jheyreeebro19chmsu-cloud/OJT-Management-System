@@ -7,25 +7,24 @@ export const getApiBase = (): string => {
   const envUrl = import.meta.env.VITE_DJANGO_API_URL;
   const securityKey = import.meta.env.VITE_SECURITY_API_KEY;
 
-  // 1. If VITE_DJANGO_API_URL is configured and starts with http, use it
-  if (envUrl && envUrl.startsWith('http')) {
+  // 1. If VITE_DJANGO_API_URL is configured, valid, and not the dead Railway deployment
+  if (envUrl && envUrl.startsWith('http') && !envUrl.includes('railway.app')) {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // 2. Fallback: If VITE_SECURITY_API_KEY was misconfigured with the backend URL
-  if (securityKey && securityKey.startsWith('http')) {
+  // 2. Fallback: If VITE_SECURITY_API_KEY was misconfigured with a backend URL (excluding Railway)
+  if (securityKey && securityKey.startsWith('http') && !securityKey.includes('railway.app')) {
     return `${securityKey.replace(/\/+$/, '')}/api`;
   }
 
-  // 3. Fallback: If running in production or on Render, use local proxy (/api routes)
-  // The frontend Node server proxies /api/* requests to the backend with CORS headers
+  // 3. If running on Vercel or similar static hosts without a Node reverse proxy,
+  // return empty string so Option A (pure Supabase + on-device biometrics) activates cleanly.
   if (
     typeof window !== 'undefined' &&
     window.location &&
-    window.location.hostname !== 'localhost' &&
-    window.location.hostname !== '127.0.0.1'
+    (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('pages.dev'))
   ) {
-    return '/api';
+    return '';
   }
 
   // 4. Default for local development

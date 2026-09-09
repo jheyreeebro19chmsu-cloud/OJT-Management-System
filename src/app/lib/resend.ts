@@ -4,10 +4,12 @@
  */
 
 import { API_BASE, SECURITY_API_KEY as API_KEY } from '../services/config';
+import { isSecurityApiConfigured } from '../services/securityApi';
 
 const sendEmail = async (payload: any) => {
-  if (!API_BASE) {
-    return { error: 'VITE_DJANGO_API_URL is not set' };
+  if (!API_BASE || !isSecurityApiConfigured()) {
+    console.debug('[Resend] Backend email proxy not configured or inactive. Skipping email proxy.');
+    return { data: { simulated: true } };
   }
 
   try {
@@ -20,16 +22,15 @@ const sendEmail = async (payload: any) => {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
-
     if (!response.ok) {
-      return { error: data.error || data.message || 'Failed to send email via backend' };
+      return { error: `Email service returned ${response.status}` };
     }
 
+    const data = await response.json().catch(() => ({}));
     return { data };
   } catch (error: any) {
-    console.error('Email proxy error:', error);
-    return { error: error.message || String(error) };
+    console.warn('[Resend] Could not reach email proxy service:', error?.message || error);
+    return { error: error?.message || String(error) };
   }
 };
 

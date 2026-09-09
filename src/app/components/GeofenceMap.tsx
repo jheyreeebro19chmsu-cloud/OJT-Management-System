@@ -88,13 +88,28 @@ export function GeofenceMap({
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;
 
+  const initialCenter = useMemo<[number, number]>(() => {
+    if (safeLiveUser) return [safeLiveUser.lat, safeLiveUser.lng];
+    if (safePickedCoords) return [safePickedCoords.lat, safePickedCoords.lng];
+    if (focusCoords && isValidCoord(focusCoords.lat, focusCoords.lng)) return [focusCoords.lat, focusCoords.lng];
+    if (safeZones.length > 0) return [safeZones[0].lat, safeZones[0].lng];
+    return defaultCenter;
+  }, [safeLiveUser, safePickedCoords, focusCoords, safeZones, defaultCenter]);
+
   useEffect(() => {
     if (!safeLiveUser) fittedLiveUserRef.current = false;
   }, [safeLiveUser]);
 
   return (
     <div className={`relative ${className} min-h-[200px] z-0 isolate overflow-hidden`}>
-      <MapContainer center={defaultCenter} zoom={16} scrollWheelZoom className="absolute inset-0 z-0">
+      <MapContainer
+        center={initialCenter}
+        zoom={16}
+        scrollWheelZoom
+        className="w-full h-full relative z-0"
+        style={{ width: '100%', height: '100%' }}
+      >
+        <MapAutoResizer />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -205,6 +220,47 @@ export function GeofenceMap({
   );
 }
 
+function MapAutoResizer() {
+  const map = useMap();
+
+  useEffect(() => {
+    // Immediate size check
+    map.invalidateSize();
+
+    // Staggered size checks to catch CSS transitions / Framer Motion expansion
+    const timers = [
+      setTimeout(() => map.invalidateSize(), 80),
+      setTimeout(() => map.invalidateSize(), 200),
+      setTimeout(() => map.invalidateSize(), 400),
+      setTimeout(() => map.invalidateSize(), 800),
+    ];
+
+    // Native ResizeObserver on container to react immediately whenever its size changes
+    let ro: ResizeObserver | null = null;
+    try {
+      const container = map.getContainer();
+      if (typeof ResizeObserver !== 'undefined' && container) {
+        ro = new ResizeObserver(() => {
+          map.invalidateSize();
+        });
+        ro.observe(container);
+        if (container.parentElement) {
+          ro.observe(container.parentElement);
+        }
+      }
+    } catch {
+      // Ignore if ResizeObserver is unsupported or throws
+    }
+
+    return () => {
+      timers.forEach(clearTimeout);
+      if (ro) ro.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
 function MapClickHandler({ picking, onPick }: { picking: boolean; onPick?: (lat: number, lng: number) => void }) {
   useMapEvents({
     click(event) {
@@ -246,7 +302,8 @@ function FitMapView({
     if (liveUser && isValidCoord(liveUser.lat, liveUser.lng)) {
       if (zones.length === 0) {
         // In registration / single live GPS tracking mode, constantly center to live GPS
-        map.setView([liveUser.lat, liveUser.lng], 16, { animate: true });
+        map.setView([liveUser.lat, liveUser.lng], 16, { animate: false });
+        map.invalidateSize();
         return;
       }
       if (!fittedLiveUserRef.current) {

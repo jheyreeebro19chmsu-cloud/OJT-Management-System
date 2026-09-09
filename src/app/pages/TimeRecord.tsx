@@ -1,6 +1,7 @@
 import { Clock, CheckCircle, MapPin, Camera, AlertCircle, XCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { FaceCapture } from '../components/FaceCapture';
 import { GeofenceChecker } from '../components/GeofenceChecker';
@@ -18,6 +19,7 @@ import { authAPI } from '../services/authApi';
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
 export function TimeRecord() {
+  const navigate = useNavigate();
   const { getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords } = useApp();
   const employee = getCurrentEmployee();
   const empLookupId = employee?.id || employee?.employeeId || '';
@@ -26,6 +28,7 @@ export function TimeRecord() {
   const [geofencePassed, setGeofencePassed] = useState(false);
   const [geofenceCoords, setGeofenceCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [action, setAction] = useState<'in' | 'out'>('in');
+  const [completedAction, setCompletedAction] = useState<'in' | 'out'>('in');
   const [currentRecord, setCurrentRecord] = useState(todayRecord);
   const [completedMessage, setCompletedMessage] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -41,13 +44,16 @@ export function TimeRecord() {
     if (empLookupId) {
       const rec = getTodayRecord(empLookupId);
       setCurrentRecord(rec);
-      if (rec?.timeIn && !rec?.timeOut) {
-        setAction('out');
-      } else if (!rec?.timeIn) {
-        setAction('in');
+      // Guard: do not flip the action state while viewing the completed confirmation
+      if (pageState !== 'completed') {
+        if (rec?.timeIn && !rec?.timeOut) {
+          setAction('out');
+        } else if (!rec?.timeIn) {
+          setAction('in');
+        }
       }
     }
-  }, [employee, empLookupId, timeRecords]);
+  }, [employee, empLookupId, timeRecords, pageState]);
 
   useEffect(() => {
     let mounted = true;
@@ -79,6 +85,9 @@ export function TimeRecord() {
 
   const handleFaceSuccess = async (imageData?: string) => {
     if (!employee) return;
+    const currentAction = action;
+    setCompletedAction(currentAction);
+
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     let storedImage = imageData;
@@ -88,7 +97,7 @@ export function TimeRecord() {
         const uploadedUrl = await uploadFacePhoto(
           employee.id,
           imageData,
-          action === 'in' ? 'time_in' : 'time_out'
+          currentAction === 'in' ? 'time_in' : 'time_out'
         );
         if (uploadedUrl) {
           storedImage = uploadedUrl;
@@ -110,7 +119,7 @@ export function TimeRecord() {
       }
     }
 
-    if (action === 'in') {
+    if (currentAction === 'in') {
       const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
       const newRecord = addTimeRecord({
         employeeId: employee.id,
@@ -349,10 +358,36 @@ export function TimeRecord() {
               <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center">
                 <MapPin size={18} className="text-blue-700" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="font-bold text-gray-800">Step 1: Location Verification</h3>
                 <p className="text-xs text-gray-500">Checking if you're within the geofence zone</p>
               </div>
+            </div>
+
+            {/* Attendance Action Mode Switcher */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
+              <button
+                type="button"
+                onClick={() => setAction('in')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  action === 'in'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Clock In
+              </button>
+              <button
+                type="button"
+                onClick={() => setAction('out')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  action === 'out'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Clock Out
+              </button>
             </div>
 
             <GeofenceChecker onResult={handleGeofenceResult} autoCheck />
@@ -386,7 +421,7 @@ export function TimeRecord() {
                 <Camera size={18} className="text-purple-700" />
               </div>
               <div>
-                <h3 className="font-bold text-gray-800">Step 2: Face Verification</h3>
+                <h3 className="font-bold text-gray-800">Step 2: Face Verification ({action === 'in' ? 'Clock In' : 'Clock Out'})</h3>
                 <p className="text-xs text-gray-500">Verifying identity via facial recognition</p>
               </div>
             </div>
@@ -445,7 +480,7 @@ export function TimeRecord() {
             >
               <CheckCircle size={40} className="text-green-600" />
             </motion.div>
-            <h3 className="font-bold text-gray-800 text-lg mb-2">Clock {action === 'in' ? 'In' : 'Out'} Successful!</h3>
+            <h3 className="font-bold text-gray-800 text-lg mb-2">Clock {completedAction === 'in' ? 'In' : 'Out'} Successful!</h3>
             <p className="text-sm text-gray-500 mb-4">{completedMessage}</p>
 
             <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
@@ -466,12 +501,22 @@ export function TimeRecord() {
             </div>
 
             <button
-              onClick={handleReset}
+              onClick={() => navigate('/app/dashboard')}
               className="w-full py-3 bg-blue-700 text-white rounded-2xl font-semibold text-sm hover:bg-blue-800 transition-all flex items-center justify-center gap-2 shadow-sm"
             >
-              <RefreshCw size={14} />
-              {currentRecord?.timeIn && !currentRecord?.timeOut ? 'Clock Out' : 'Done'}
+              <CheckCircle size={15} />
+              Done (Return to Dashboard)
             </button>
+
+            {completedAction === 'in' && currentRecord?.timeIn && !currentRecord?.timeOut && (
+              <button
+                onClick={handleReset}
+                className="w-full mt-2.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-semibold text-xs transition-all flex items-center justify-center gap-2"
+              >
+                <RefreshCw size={13} />
+                Need to Clock Out? Click here
+              </button>
+            )}
 
             {currentRecord?.timeIn && currentRecord?.timeOut && (
               <button

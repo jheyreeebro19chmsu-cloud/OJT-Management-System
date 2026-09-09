@@ -20,6 +20,9 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
+import { isSecurityApiConfigured } from '../services/securityApi';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { getPendingTraineeRequests, subscribeToPendingRequests } from '../services/accountSync';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 
 
@@ -36,7 +39,7 @@ const navItems = [
 ];
 
 export function AdminLayout() {
-  const { logout, announcements, currentUser, getCurrentEmployee, settings } = useApp();
+  const { logout, announcements, currentUser, getCurrentEmployee, employees, settings } = useApp();
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -81,129 +84,61 @@ export function AdminLayout() {
         return null;
       })();
       if (!instrId) return setPendingCount(0);
-      const res = await fetch(getAbsoluteUrl(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${instrId}`));
-      if (!res.ok) return;
-      const data = await res.json();
-      const count = Array.isArray(data.requests) ? data.requests.length : 0;
-      setPendingCount(count);
-    } catch (e) {
+
+      // 1. Direct Supabase query (instant, no CORS, authentic)
+      if (isSupabaseConfigured()) {
+        const list = await getPendingTraineeRequests(instrId).catch(() => []);
+        setPendingCount(list.length);
+        return;
+      }
+
+      // 2. Active security API fallback if configured
+      if (isSecurityApiConfigured()) {
+        const res = await fetch(getAbsoluteUrl(`/api/security/auth/get-pending-trainee-requests/?instructor_id=${instrId}`));
+        if (!res.ok) return;
+        const data = await res.json();
+        const count = Array.isArray(data.requests) ? data.requests.length : 0;
+        setPendingCount(count);
+        return;
+      }
+
+      // 3. Local fallback
+      const localPending = employees.filter(
+        (e) => (e.instructorId === instrId || !e.instructorId) && e.applicationStatus === 'pending'
+      ).length;
+      setPendingCount(localPending);
+    } catch {
       // silent
     }
-  }, [employee, isInstructor]);
+  }, [employee, isInstructor, employees]);
 
   useEffect(() => {
     if (!isInstructor) return;
 
-    let ws: WebSocket | null = null;
-    let es: EventSource | null = null;
-    let pollId: any = null;
-    let reconnectTimer: any = null;
-    let retries = 0;
-
-    const startPolling = () => {
-      void fetchPendingCount();
-      pollId = setInterval(() => void fetchPendingCount(), 10000);
-    };
-    const stopPolling = () => {
-      if (pollId) {
-        clearInterval(pollId);
-        pollId = null;
-      }
-    };
-
-    const setupEventSource = () => {
+    const instrId = employee?.id || (() => {
       try {
-        const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch { } return null; })();
-        if (!instrId || typeof window === 'undefined' || !('EventSource' in window)) return;
-        const url = getAbsoluteUrl(`/api/security/auth/pending-requests/stream/?instructor_id=${instrId}`);
-        es = new EventSource(url);
-        es.onmessage = (ev) => {
-          try {
-            const payload = JSON.parse(ev.data);
-            if (typeof payload.count === 'number') setPendingCount(payload.count);
-          } catch {
-            // ignore
-          }
-        };
-        es.onerror = () => {
-          if (es) { try { es.close(); } catch { } es = null; }
-          // fallback to polling
-          if (!pollId) startPolling();
-        };
-      } catch (e) {
-        // fallback to polling
-        if (!pollId) startPolling();
-      }
-    };
+        const u = localStorage.getItem('user');
+        if (u) return JSON.parse(u).id;
+      } catch { }
+      return null;
+    })();
 
-    const setupWebSocket = () => {
-      try {
-        const instrId = employee?.id || (() => { try { const u = localStorage.getItem('user'); if (u) return JSON.parse(u).id; } catch { } return null; })();
-        if (!instrId || typeof window === 'undefined' || !('WebSocket' in window)) {
-          // no websocket support; try SSE
-          setupEventSource();
-          return;
-        }
+    void fetchPendingCount();
 
-        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const host = window.location.host;
-        const url = `${proto}://${host}/ws/pending-requests/?instructor_id=${instrId}`;
-        ws = new WebSocket(url);
-
-        ws.onopen = () => {
-          // connected; stop other fallbacks
-          retries = 0;
-          if (es) { try { es.close(); } catch { } es = null; }
-          stopPolling();
-        };
-
-        ws.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data);
-            if (typeof data.count === 'number') setPendingCount(data.count);
-          } catch {
-            // ignore parse errors
-          }
-        };
-
-        ws.onclose = () => {
-          ws = null;
-          // try reconnect with exponential backoff
-          if (retries < 5) {
-            const delay = Math.min(30000, 1000 * 2 ** retries);
-            reconnectTimer = setTimeout(() => { retries += 1; setupWebSocket(); }, delay);
-            return;
-          }
-          // after retries exhausted, attempt SSE, then polling
-          setupEventSource();
-          if (!pollId) startPolling();
-        };
-
-        ws.onerror = () => {
-          try { ws?.close(); } catch { }
-        };
-      } catch (e) {
-        // fallback to SSE/polling
-        setupEventSource();
-        if (!pollId) startPolling();
-      }
-    };
-
-    // Start with WebSocket if available, otherwise SSE, otherwise polling
-    if (typeof window !== 'undefined' && 'WebSocket' in window) {
-      setupWebSocket();
-    } else if (typeof window !== 'undefined' && 'EventSource' in window) {
-      setupEventSource();
-    } else {
-      startPolling();
+    // In Supabase mode, subscribe to real-time postgres changes (never fails with HTTP 200 on Vercel)
+    if (isSupabaseConfigured() && instrId) {
+      const unsub = subscribeToPendingRequests(instrId, () => {
+        void fetchPendingCount();
+      });
+      const interval = setInterval(() => void fetchPendingCount(), 30000);
+      return () => {
+        unsub?.();
+        clearInterval(interval);
+      };
     }
 
-    return () => {
-      if (ws) try { ws.close(); } catch { }
-      if (es) try { es.close(); } catch { }
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (pollId) clearInterval(pollId);
-    };
+    const pollId = setInterval(() => void fetchPendingCount(), 30000);
+    return () => clearInterval(pollId);
   }, [fetchPendingCount, isInstructor, employee]);
 
   const handleLogout = () => {

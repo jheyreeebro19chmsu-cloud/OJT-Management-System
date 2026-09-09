@@ -1,4 +1,6 @@
 .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
   isolation: isolate !important;
   z-index: 0 !important;
   position: relative !important;

@@ -329,11 +329,69 @@ function loadFromStorage<T>(key: string, defaultValue: T): T {
   }
 }
 
+function sanitizeValueForStorage(key: string, value: any): any {
+  if (key === STORAGE_KEYS.EMPLOYEES && Array.isArray(value)) {
+    return value.map((emp) => {
+      if (!emp || typeof emp !== 'object') return emp;
+      const copy = { ...emp };
+      // Strip bulky base64 dataUrl from submitted documents to prevent localStorage overflow
+      if (copy.submittedDocuments && typeof copy.submittedDocuments === 'object') {
+        const sanitizedDocs: any = {};
+        for (const [docKey, docVal] of Object.entries(copy.submittedDocuments)) {
+          if (docVal && typeof docVal === 'object') {
+            const { dataUrl, ...rest } = docVal as any;
+            sanitizedDocs[docKey] = rest;
+          }
+        }
+        copy.submittedDocuments = sanitizedDocs;
+      }
+      // Omit excessive base64 photo strings (> 60KB) from localStorage cache
+      if (typeof copy.photo === 'string' && copy.photo.startsWith('data:') && copy.photo.length > 60000) {
+        copy.photo = '';
+      }
+      return copy;
+    });
+  }
+  return value;
+}
+
+function cleanupStorageQuota(): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
+    if (raw && raw.length > 300000) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const sanitized = sanitizeValueForStorage(STORAGE_KEYS.EMPLOYEES, parsed);
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(sanitized));
+      }
+    }
+  } catch {
+    // Ignore any error during startup cleanup
+  }
+}
+
 function saveToStorage<T>(key: string, value: T): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    const payload = sanitizeValueForStorage(key, value);
+    localStorage.setItem(key, JSON.stringify(payload));
+  } catch (err: any) {
+    console.warn(`[Storage] QuotaExceeded or error saving key "${key}". Evicting non-essential caches.`);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.TIME_RECORDS);
+      localStorage.removeItem(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS);
+      localStorage.removeItem(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS);
+      localStorage.removeItem(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS);
+
+      const payload = sanitizeValueForStorage(key, value);
+      localStorage.setItem(key, JSON.stringify(payload));
+    } catch {
+      // Safe catch: never throw QuotaExceededError upwards to crash React
+    }
+  }
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  cleanupStorageQuota();
   migrateGeofenceStorageOnce();
   migrateInstructorPositionOnce();
   const [isLoading, setIsLoading] = useState(false);
@@ -620,12 +678,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.CURRENT_USER, currentUser);
   }, [currentUser]);
-
-  useEffect(() => {
-    if (employees.length > 0) {
-      saveToStorage(STORAGE_KEYS.EMPLOYEES, employees);
-    }
-  }, [employees]);
 
   useEffect(() => {
     if (!useSupabase && evaluations.length > 0) {

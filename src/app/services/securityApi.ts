@@ -41,15 +41,25 @@ function baseUrl() {
   return API_BASE.replace(/\/+$/, '');
 }
 
+let backendOffline = false;
+let lastFailureTime = 0;
+const RETRY_COOLDOWN_MS = 60000; // 1 minute cooldown before retesting an offline backend
+
+export function markSecurityBackendOffline(): void {
+  backendOffline = true;
+  lastFailureTime = Date.now();
+}
+
 export function isSecurityApiConfigured(): boolean {
-  // Only treat the Django security backend as available when an explicit,
-  // absolute backend URL is configured (VITE_DJANGO_API_URL / VITE_SECURITY_API_KEY).
-  // The same-origin '/api' fallback in config.ts assumes a reverse proxy that
-  // does not exist on this Vercel deployment, so it must NOT count as "configured" —
-  // otherwise face verification silently calls a dead endpoint instead of falling
-  // back to the working client-side (face-api.js) comparison.
   const base = baseUrl();
-  return Boolean(base) && /^https?:\/\//i.test(base);
+  if (!base || !/^https?:\/\//i.test(base)) return false;
+  // Railway deployment is decommissioned and returns 404/no CORS
+  if (base.includes('railway.app')) return false;
+  // If recent requests failed with network/CORS or 404, don't keep spamming
+  if (backendOffline && Date.now() - lastFailureTime < RETRY_COOLDOWN_MS) {
+    return false;
+  }
+  return true;
 }
 
 function securityHeaders(): Record<string, string> {
@@ -77,6 +87,9 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
 
     const text = await res.text();
     if (!res.ok) {
+      if (res.status === 404 || res.status >= 500) {
+        markSecurityBackendOffline();
+      }
       throw new Error(text || `Request failed with status ${res.status}`);
     }
 
@@ -89,6 +102,10 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
     } catch {
       return { success: true, message: text } as T;
     }
+  } catch (err: any) {
+    // Network or CORS failure: trip circuit breaker immediately
+    markSecurityBackendOffline();
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -142,8 +159,14 @@ export async function fetchSecurityHealth(timeoutMs = 5000): Promise<SecurityHea
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${baseUrl()}/health/`, { signal: controller.signal });
-    if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+    if (!res.ok) {
+      markSecurityBackendOffline();
+      throw new Error(`Health check failed: ${res.status}`);
+    }
     return res.json() as Promise<SecurityHealthResponse>;
+  } catch (err) {
+    markSecurityBackendOffline();
+    throw err;
   } finally {
     clearTimeout(timer);
   }

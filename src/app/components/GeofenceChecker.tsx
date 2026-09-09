@@ -419,7 +419,14 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             )}
           </div>
           <div className="h-64 relative z-0 isolate overflow-hidden">
-            <MapContainer center={mapCenter} zoom={16} scrollWheelZoom className="h-full w-full relative z-0">
+            <MapContainer
+              center={mapCenter}
+              zoom={16}
+              scrollWheelZoom
+              className="h-full w-full relative z-0"
+              style={{ width: '100%', height: '100%' }}
+            >
+              <MapAutoResizer />
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -474,5 +481,43 @@ function LiveMapFollow({ liveCoords }: { liveCoords: { lat: number; lng: number 
     if (!isValidCoord(liveCoords.lat, liveCoords.lng)) return;
     map.setView([liveCoords.lat, liveCoords.lng], map.getZoom(), { animate: true });
   }, [liveCoords, map]);
+  return null;
+}
+
+function MapAutoResizer() {
+  const map = useMap();
+
+  useEffect(() => {
+    map.invalidateSize();
+
+    const timers = [
+      setTimeout(() => map.invalidateSize(), 80),
+      setTimeout(() => map.invalidateSize(), 200),
+      setTimeout(() => map.invalidateSize(), 400),
+      setTimeout(() => map.invalidateSize(), 800),
+    ];
+
+    let ro: ResizeObserver | null = null;
+    try {
+      const container = map.getContainer();
+      if (typeof ResizeObserver !== 'undefined' && container) {
+        ro = new ResizeObserver(() => {
+          map.invalidateSize();
+        });
+        ro.observe(container);
+        if (container.parentElement) {
+          ro.observe(container.parentElement);
+        }
+      }
+    } catch {
+      // Ignore if ResizeObserver is unsupported or throws
+    }
+
+    return () => {
+      timers.forEach(clearTimeout);
+      if (ro) ro.disconnect();
+    };
+  }, [map]);
+
   return null;
 }

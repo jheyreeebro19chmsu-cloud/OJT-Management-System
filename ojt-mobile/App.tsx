@@ -69,6 +69,8 @@ import HTEEvaluationScreen from './screens/HTEEvaluationScreen';
 import HTEDTRScreen from './screens/HTEDTRScreen';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
+import BiometricBridge from './components/BiometricBridge';
+import { biometricService } from './services/biometricService';
 import AnnouncementsScreen from './screens/AnnouncementsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import EvaluationScreen from './screens/EvaluationScreen';
@@ -800,6 +802,28 @@ export default function App() {
 
     if (currentMode === 'clock_in') {
       try {
+        let isFaceVerified = true;
+        let matchConfidence = 100;
+        let matchDistance = 0.0;
+
+        if (profile?.photo) {
+          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.55);
+          if (!bio.matched) {
+            Alert.alert(
+              'Biometric Verification Failed',
+              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.55).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Retake Photo', onPress: () => setFaceModalMode('clock_in') },
+              ]
+            );
+            return;
+          }
+          isFaceVerified = true;
+          matchConfidence = bio.confidence;
+          matchDistance = bio.distance;
+        }
+
         await mobileDb.saveTimeRecord({
           employeeId: empId,
           date: today,
@@ -808,7 +832,7 @@ export default function App() {
             ? { lat: currentLocation.coords.latitude, lng: currentLocation.coords.longitude }
             : undefined,
           timeInGeofenced: isWithinGeofence,
-          timeInFaceVerified: true,
+          timeInFaceVerified: isFaceVerified,
           timeOutGeofenced: false,
           timeOutFaceVerified: false,
           timeInPhoto: base64Image,
@@ -818,7 +842,9 @@ export default function App() {
 
         // Auto-enroll if not enrolled yet
         if (!profile?.face_registered || !profile?.photo) {
-          await supabase.from('employees').update({ face_registered: true, photo: base64Image }).eq('id', empId).catch(() => {});
+          try {
+            await supabase.from('employees').update({ face_registered: true, photo: base64Image }).eq('id', empId);
+          } catch {}
           const updated = { ...profile, face_registered: true, faceRegistered: true, photo: base64Image };
           setProfile(updated);
           await authStore.saveUser(updated);
@@ -826,7 +852,10 @@ export default function App() {
 
         const rec = await mobileDb.getTodayTimeRecord(empId);
         if (rec) setDashboardRecord(rec);
-        Alert.alert('Attendance Recorded', `Successfully Clocked In at ${timeStr} with Facial Recognition & Geofence Verification!`);
+        Alert.alert(
+          'Attendance Recorded',
+          `Successfully Clocked In at ${timeStr}!\n\nBiometric Match: ${matchConfidence}% (Distance: ${matchDistance.toFixed(2)})\nGeofence: ${isWithinGeofence ? 'Verified' : 'Outside Boundary'}`
+        );
       } catch (err: any) {
         Alert.alert('Attendance Error', err.message || 'Failed to save clock-in');
       }
@@ -835,6 +864,28 @@ export default function App() {
 
     if (currentMode === 'clock_out') {
       try {
+        let isFaceVerified = true;
+        let matchConfidence = 100;
+        let matchDistance = 0.0;
+
+        if (profile?.photo) {
+          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.55);
+          if (!bio.matched) {
+            Alert.alert(
+              'Biometric Verification Failed',
+              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.55).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Retake Photo', onPress: () => setFaceModalMode('clock_out') },
+              ]
+            );
+            return;
+          }
+          isFaceVerified = true;
+          matchConfidence = bio.confidence;
+          matchDistance = bio.distance;
+        }
+
         let totalHours = 0;
         if (dashboardRecord?.timeIn) {
           const inParts = dashboardRecord.timeIn.split(':');
@@ -856,7 +907,7 @@ export default function App() {
           timeInGeofenced: dashboardRecord?.timeInGeofenced ?? isWithinGeofence,
           timeOutGeofenced: isWithinGeofence,
           timeInFaceVerified: dashboardRecord?.timeInFaceVerified ?? true,
-          timeOutFaceVerified: true,
+          timeOutFaceVerified: isFaceVerified,
           timeInPhoto: dashboardRecord?.timeInPhoto,
           timeOutPhoto: base64Image,
           totalHours: Number(totalHours.toFixed(2)),
@@ -871,7 +922,10 @@ export default function App() {
         const tot = all.reduce((acc, r) => acc + (Number(r.totalHours) || 0), 0);
         setRenderedHours(Math.round(tot * 10) / 10);
 
-        Alert.alert('Attendance Recorded', `Successfully Clocked Out at ${timeStr}! Total session: ${totalHours.toFixed(2)} hrs.`);
+        Alert.alert(
+          'Attendance Recorded',
+          `Successfully Clocked Out at ${timeStr}!\n\nSession: ${totalHours.toFixed(2)} hrs\nBiometric Match: ${matchConfidence}% (Distance: ${matchDistance.toFixed(2)})`
+        );
       } catch (err: any) {
         Alert.alert('Attendance Error', err.message || 'Failed to save clock-out');
       }
@@ -898,7 +952,7 @@ export default function App() {
               timeIn: todayRec.timeIn,
               timeOut: timeOutStr,
               totalHours,
-              status: totalHours >= 8 ? 'completed' : 'present',
+              status: 'present',
               timeInFaceVerified: true,
               timeOutFaceVerified: true,
               timeInGeofenced: true,
@@ -945,6 +999,7 @@ export default function App() {
   if (view === 'register') {
     return (
       <SafeAreaProvider>
+        <BiometricBridge />
         <RegisterScreen
           activeAcademicYear={activeAcademicYear}
           onCancel={() => setView('login')}
@@ -956,6 +1011,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <BiometricBridge />
       <SafeAreaView style={{ flex: 1, backgroundColor: '#042c54' }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ flex: 1 }}>
@@ -1022,10 +1078,14 @@ export default function App() {
               <FaceScanner
                 onCancel={() => setFaceModalMode(null)}
                 onCapture={handleFaceModalCapture}
+                mode={faceModalMode}
+                enrolledPhoto={profile?.photo}
+                employeeName={profile?.name}
               />
             ) : showFaceEnroll ? (
               <FaceScanner
                 onCancel={() => setShowFaceEnroll(false)}
+                mode="enroll"
                 onCapture={async (base64Image: string) => {
                   try {
                     setFaceEnrollInProgress(true);

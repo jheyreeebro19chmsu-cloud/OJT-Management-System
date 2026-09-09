@@ -43,7 +43,7 @@ import { Country, State, City } from 'country-state-city';
 
 
 import { authAPI } from '../services/authApi';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { createEmployee as createEmployeeDb } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
@@ -454,31 +454,52 @@ export function Register() {
     setEmailMsg('');
     setEmailValidationUnavailable(false);
     try {
-      // Prefer server-side check
-      const res = await authAPI.checkEmail(email).catch(() => null);
-      if (res && typeof res.data?.exists === 'boolean') {
-        if (res.data.exists) { setEmailTaken(true); setEmailMsg('Email already in use'); }
-        else setEmailTaken(false);
-      } else {
-        // Fallback to local caches when server couldn't be reached
-        const existsLocal = employees.some((e) => e.email.toLowerCase() === email.toLowerCase()) || hostSupervisors.some((h) => h.email.toLowerCase() === email.toLowerCase());
-        if (existsLocal) {
+      const cleanEmail = email.trim().toLowerCase();
+
+      // 1. Direct Supabase query (instant, no CORS, authentic)
+      if (isSupabaseConfigured()) {
+        const [{ data: empMatches }, { data: hostMatches }] = await Promise.all([
+          supabase.from('employees').select('id').ilike('email', cleanEmail).limit(1),
+          supabase.from('host_supervisors').select('id').ilike('email', cleanEmail).limit(1),
+        ]);
+        if ((empMatches && empMatches.length > 0) || (hostMatches && hostMatches.length > 0)) {
           setEmailTaken(true);
           setEmailMsg('Email already in use');
-        } else {
-          // If neither server nor local could confirm, mark validation unavailable but allow registration to continue
-          setEmailTaken(false);
-          setEmailValidationUnavailable(true);
-          setEmailMsg('Could not validate email with server — proceeding with caution');
+          return;
         }
+      }
+
+      // 2. Server check if backend is configured and active
+      if (isSecurityApiConfigured()) {
+        const res = await authAPI.checkEmail(email).catch(() => null);
+        if (res && typeof res.data?.exists === 'boolean') {
+          if (res.data.exists) {
+            setEmailTaken(true);
+            setEmailMsg('Email already in use');
+            return;
+          }
+          setEmailTaken(false);
+          return;
+        }
+      }
+
+      // 3. Fallback to local memory / cache
+      const existsLocal =
+        employees.some((e) => e.email.toLowerCase() === cleanEmail) ||
+        hostSupervisors.some((h) => h.email.toLowerCase() === cleanEmail);
+      if (existsLocal) {
+        setEmailTaken(true);
+        setEmailMsg('Email already in use');
+      } else {
+        setEmailTaken(false);
       }
     } catch (e) {
       console.debug('Email check failed', e);
-      // On unexpected errors, allow proceed but show warning
       setEmailTaken(false);
       setEmailValidationUnavailable(true);
-      setEmailMsg('Could not validate email (network/server error) — proceeding with caution');
-    } finally { setEmailChecking(false); }
+    } finally {
+      setEmailChecking(false);
+    }
   };
 
   const verifyOtp = () => {
@@ -2148,9 +2169,6 @@ export function Register() {
                               type="button"
                               onClick={() => {
                                 setShowLocationMap(!showLocationMap);
-                                setTimeout(() => {
-                                  window.dispatchEvent(new Event('resize'));
-                                }, 300);
                               }}
                               className="px-3 py-1.5 bg-white border border-green-200 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition-colors"
                             >
@@ -2166,13 +2184,13 @@ export function Register() {
                                 exit={{ height: 0, opacity: 0 }}
                                 className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
                               >
-                                <div className="h-52">
+                                <div className="h-52 w-full relative">
                                   <GeofenceMap
                                     zones={[]}
                                     picking={false}
                                     pickedCoords={registrationLocation}
                                     liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
-                                    className="h-52 pointer-events-none"
+                                    className="h-52 w-full pointer-events-none"
                                   />
                                 </div>
 

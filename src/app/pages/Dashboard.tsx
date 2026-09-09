@@ -424,13 +424,17 @@ export function Dashboard() {
       };
 
       const fetchHteRequests = async () => {
-        const { data } = await supabase
-          .from('hte_student_access')
-          .select('*, host_supervisors(*), employees!inner(*)')
-          .eq('employees.instructor_id', currentUser?.id)
-          .in('status', ['pending', 'approved'])
-          .order('created_at', { ascending: false });
-        if (data) setHteRequests(data);
+        try {
+          const { data, error } = await supabase
+            .from('hte_student_access')
+            .select('*, host_supervisors(*), employees!inner(*)')
+            .eq('employees.instructor_id', currentUser?.id)
+            .in('status', ['pending', 'approved'])
+            .order('created_at', { ascending: false });
+          if (!error && data) setHteRequests(data);
+        } catch {
+          // Table may not yet be created in Supabase
+        }
       };
 
       fetchPending();

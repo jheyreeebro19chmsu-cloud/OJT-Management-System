@@ -14,6 +14,7 @@ import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { mobileDb, TimeRecord } from '../lib/supabaseService';
 import FaceScanner from '../components/FaceScanner';
+import { biometricService } from '../services/biometricService';
 
 interface DTRScreenProps {
   onBack: () => void;
@@ -203,6 +204,24 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
 
       const empId = profile?.id || profile?.employeeId || '';
 
+      let isFaceVerified = true;
+      let matchConfidence = 100;
+      let matchDistance = 0.0;
+
+      if (profile?.photo) {
+        const bio = await biometricService.verifyBiometrics(profile.photo, photo, 0.55);
+        if (!bio.matched) {
+          Alert.alert(
+            'Biometric Verification Failed',
+            `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.55).\n\n${bio.error || 'Identity could not be verified. Attendance was not saved.'}`
+          );
+          return;
+        }
+        isFaceVerified = true;
+        matchConfidence = bio.confidence;
+        matchDistance = bio.distance;
+      }
+
       if (scanType === 'in') {
         await mobileDb.saveTimeRecord({
           employeeId: empId,
@@ -212,7 +231,7 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
             ? { lat: currentLocation.coords.latitude, lng: currentLocation.coords.longitude }
             : undefined,
           timeInGeofenced: isWithinGeofence,
-          timeInFaceVerified: Boolean(photo),
+          timeInFaceVerified: isFaceVerified,
           timeOutGeofenced: false,
           timeOutFaceVerified: false,
           timeInPhoto: photo,
@@ -242,7 +261,7 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
           timeInGeofenced: todayRecord.timeInGeofenced,
           timeOutGeofenced: isWithinGeofence,
           timeInFaceVerified: todayRecord.timeInFaceVerified,
-          timeOutFaceVerified: Boolean(photo),
+          timeOutFaceVerified: isFaceVerified,
           timeInPhoto: todayRecord.timeInPhoto,
           timeOutPhoto: photo,
           totalHours: Number(totalHours.toFixed(2)),
@@ -263,7 +282,10 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
         }
       }
 
-      Alert.alert('Attendance Recorded', `Successfully clocked ${scanType?.toUpperCase()}! Data saved to Supabase.`);
+      Alert.alert(
+        'Attendance Recorded',
+        `Successfully clocked ${scanType?.toUpperCase()}!\n\nBiometric Match: ${matchConfidence}% (Distance: ${matchDistance.toFixed(2)})\nData saved to Supabase.`
+      );
       await loadDTRData();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save attendance record');
@@ -278,6 +300,9 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       <FaceScanner
         onCapture={submitAttendance}
         onCancel={() => setShowScanner(false)}
+        mode={scanType === 'in' ? 'clock_in' : 'clock_out'}
+        enrolledPhoto={profile?.photo}
+        employeeName={profile?.name}
       />
     );
   }
