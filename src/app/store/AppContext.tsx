@@ -736,7 +736,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Step 1: Check in-memory state across email, employeeId, and ID
     matchedEmp = employees.find(
       (e) =>
-        e.active !== false &&
         (normalizeEmail(e.email) === normalizedId ||
           (e.employeeId && e.employeeId.toLowerCase() === normalizedId) ||
           (e.id && e.id.toLowerCase() === normalizedId) ||
@@ -746,7 +745,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!matchedEmp) {
       matchedHost = hostSupervisors.find(
         (h) =>
-          h.active !== false &&
           (normalizeEmail(h.email) === normalizedId ||
             (h.employeeId && h.employeeId.toLowerCase() === normalizedId) ||
             (h.id && h.id.toLowerCase() === normalizedId))
@@ -763,7 +761,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .limit(1)
           .maybeSingle();
 
-        if (dbEmp && dbEmp.active !== false) {
+        if (dbEmp) {
           matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
           setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
         } else {
@@ -774,7 +772,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             .limit(1)
             .maybeSingle();
 
-          if (dbHost && dbHost.active !== false) {
+          if (dbHost) {
             matchedHost = {
               id: dbHost.id,
               employeeId: dbHost.employee_id,
@@ -822,7 +820,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               .limit(1)
               .maybeSingle();
 
-            if (dbEmp && dbEmp.active !== false) {
+            if (dbEmp) {
               matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
               setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
             } else {
@@ -833,7 +831,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 .limit(1)
                 .maybeSingle();
 
-              if (dbHost && dbHost.active !== false) {
+              if (dbHost) {
                 matchedHost = {
                   id: dbHost.id,
                   employeeId: dbHost.employee_id,
@@ -895,7 +893,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               id: matchedEmp.id,
               name: matchedEmp.name,
               role,
-              employeeId: matchedEmp.id,
+              employeeId: matchedEmp.employeeId || matchedEmp.id,
               email: normalizeEmail(matchedEmp.email),
               photo: matchedEmp.photo,
               faceRegistered: matchedEmp.faceRegistered,
@@ -942,7 +940,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             id: matchedEmp.id,
             name: matchedEmp.name,
             role,
-            employeeId: matchedEmp.id,
+            employeeId: matchedEmp.employeeId || matchedEmp.id,
             email: normalizeEmail(matchedEmp.email),
             photo: matchedEmp.photo,
             faceRegistered: matchedEmp.faceRegistered,
@@ -2367,7 +2365,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const approveEmployee = (id: string) => {
-    updateEmployee(id, { active: true, approvalStatus: 'approved' });
+    updateEmployee(id, { active: true, approvalStatus: 'approved', applicationStatus: 'approved' });
   };
 
   const rejectEmployee = (id: string) => {

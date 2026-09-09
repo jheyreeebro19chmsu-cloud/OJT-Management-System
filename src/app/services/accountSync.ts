@@ -6,29 +6,49 @@
  */
 import { supabase } from '../lib/supabase';
 import { Employee } from '../types';
+import { transformSupabaseEmployee } from './supabaseService';
+
+const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
 // ─── Linking a trainee to an Instructor / HTE ──────────────────────────────
 
 export async function linkTraineeToInstructor(traineeId: string, instructorId: string) {
-  const { error } = await supabase
-    .from('employees')
-    .update({
-      instructor_id: instructorId,
-      application_status: 'pending', // instructor must approve before trainee is active
-      linked_at: new Date().toISOString(),
-    })
-    .eq('id', traineeId);
+  let resolvedInstructorUuid = instructorId;
+  if (!isUuid(instructorId)) {
+    const { data: inst } = await supabase
+      .from('employees')
+      .select('id')
+      .or(`employee_id.eq.${instructorId},email.ilike.${instructorId}`)
+      .limit(1)
+      .maybeSingle();
+    if (inst?.id) resolvedInstructorUuid = inst.id;
+  }
 
+  let query = supabase.from('employees').update({
+    instructor_id: resolvedInstructorUuid,
+    application_status: 'pending',
+    linked_at: new Date().toISOString(),
+  });
+
+  if (isUuid(traineeId)) {
+    query = query.eq('id', traineeId);
+  } else {
+    query = query.eq('employee_id', traineeId);
+  }
+
+  const { error } = await query;
   if (error) throw new Error(error.message);
   return true;
 }
 
 export async function linkTraineeToHte(traineeId: string, hteId: string) {
-  const { error } = await supabase
-    .from('employees')
-    .update({ hte_id: hteId, linked_at: new Date().toISOString() })
-    .eq('id', traineeId);
-
+  let query = supabase.from('employees').update({ hte_id: hteId, linked_at: new Date().toISOString() });
+  if (isUuid(traineeId)) {
+    query = query.eq('id', traineeId);
+  } else {
+    query = query.eq('employee_id', traineeId);
+  }
+  const { error } = await query;
   if (error) throw new Error(error.message);
   return true;
 }
@@ -39,20 +59,29 @@ export async function getPendingTraineeRequests(instructorId: string): Promise<E
   const { data, error } = await supabase
     .from('employees')
     .select('*')
-    .eq('instructor_id', instructorId)
+    .or(`instructor_id.eq.${instructorId},instructor_id.is.null`)
     .eq('application_status', 'pending')
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(error.message);
-  return data || [];
+  return (data || []).map(transformSupabaseEmployee);
 }
 
-export async function approveTrainee(traineeId: string) {
-  const { error } = await supabase
-    .from('employees')
-    .update({ application_status: 'approved', active: true })
-    .eq('id', traineeId);
+export async function approveTrainee(traineeId: string, instructorId?: string) {
+  const updates: any = { application_status: 'approved', active: true };
+  if (instructorId) {
+    updates.instructor_id = instructorId;
+    updates.linked_at = new Date().toISOString();
+  }
 
+  let query = supabase.from('employees').update(updates);
+  if (isUuid(traineeId)) {
+    query = query.eq('id', traineeId);
+  } else {
+    query = query.eq('employee_id', traineeId);
+  }
+
+  const { error } = await query;
   if (error) throw new Error(error.message);
   return true;
 }

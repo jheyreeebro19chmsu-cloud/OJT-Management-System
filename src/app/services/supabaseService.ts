@@ -197,6 +197,10 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
   if (updates.applicationStatus !== undefined) supabaseUpdates.application_status = updates.applicationStatus;
+  if (updates.approvalStatus !== undefined) supabaseUpdates.application_status = updates.approvalStatus;
+  if (updates.instructorId !== undefined) supabaseUpdates.instructor_id = updates.instructorId;
+  if (updates.hteId !== undefined) supabaseUpdates.hte_id = updates.hteId;
+  if (updates.linkedAt !== undefined) supabaseUpdates.linked_at = updates.linkedAt;
   if ('registrationLocation' in updates) {
     supabaseUpdates.registration_lat = updates.registrationLocation?.lat ?? null;
     supabaseUpdates.registration_lng = updates.registrationLocation?.lng ?? null;
@@ -245,14 +249,29 @@ export async function deleteEmployee(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   try {
+    const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+    const isUuidVal = isUuid(id);
+
     // Delete from employees table
-    const { error: empError } = await supabase.from('employees').delete().eq('id', id);
+    let empQuery = supabase.from('employees').delete();
+    if (isUuidVal) {
+      empQuery = empQuery.eq('id', id);
+    } else {
+      empQuery = empQuery.eq('employee_id', id);
+    }
+    const { error: empError } = await empQuery;
     if (empError) {
       console.warn('Error deleting employee row:', empError);
     }
 
     // Also delete any corresponding host supervisor entry
-    const { error: hostError } = await supabase.from('host_supervisors').delete().eq('id', id);
+    let hostQuery = supabase.from('host_supervisors').delete();
+    if (isUuidVal) {
+      hostQuery = hostQuery.eq('id', id);
+    } else {
+      hostQuery = hostQuery.eq('employee_id', id);
+    }
+    const { error: hostError } = await hostQuery;
     if (hostError) {
       console.debug('No host_supervisor row to delete or notice:', hostError);
     }
@@ -1201,8 +1220,8 @@ export function transformSupabaseEmployee(data: any): Employee {
     instructorId: data.instructor_id,
     hteId: data.hte_id,
     linkedAt: data.linked_at,
-    applicationStatus: data.application_status || 'approved',
-    approvalStatus: data.approval_status || 'approved',
+    applicationStatus: data.application_status || data.approval_status || 'approved',
+    approvalStatus: data.application_status || data.approval_status || 'approved',
     documentsPassed:
       data.documents_passed !== undefined
         ? Boolean(data.documents_passed)

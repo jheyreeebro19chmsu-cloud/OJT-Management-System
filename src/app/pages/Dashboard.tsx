@@ -41,6 +41,7 @@ import { useApp } from '../store/AppContext';
 import { Announcement, Employee, TraineeDocuments, TraineeDocumentItem } from '../types';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
+import { transformSupabaseEmployee } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 
 
@@ -374,34 +375,45 @@ export function Dashboard() {
   };
 
   const handleLinkStudent = async () => {
-    if (!searchId.trim()) return;
+    const queryTerm = searchId.trim();
+    if (!queryTerm) return;
     setIsLinking(true);
 
     try {
-      const { data: student } = await supabase.from('employees').select('id').eq('id', searchId).single();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(queryTerm);
+      let query = supabase.from('employees').select('*');
+      if (isUuid) {
+        query = query.or(`id.eq.${queryTerm},employee_id.ilike.%${queryTerm}%`);
+      } else {
+        query = query.or(`employee_id.ilike.%${queryTerm}%,email.ilike.%${queryTerm}%,name.ilike.%${queryTerm}%`);
+      }
+      const { data: students, error: sErr } = await query.limit(1);
 
-      if (!student) {
-        toast.error('Student ID not found');
+      if (sErr || !students || students.length === 0) {
+        toast.error('Student not found by ID, email, or name.');
         return;
       }
 
-      const { error } = await supabase.from('hte_student_access').insert({
-        instructor_id: currentUser?.id,
-        student_id: student.id,
-        status: 'pending',
+      const student = students[0];
+      const instructorUuid = currentUser?.id;
+
+      // Update instructor_id in Supabase employees table
+      const { error: linkErr } = await supabase
+        .from('employees')
+        .update({
+          instructor_id: instructorUuid,
+          linked_at: new Date().toISOString(),
+        })
+        .eq('id', student.id);
+
+      if (linkErr) throw linkErr;
+
+      updateEmployee(student.id, {
+        instructorId: instructorUuid,
+        linkedAt: new Date().toISOString(),
       });
 
-      if (error) throw error;
-
-      const foundLocal = employees.find((emp) => emp.id === student.id);
-      if (foundLocal) {
-        updateEmployee(foundLocal.id, {
-          instructorId: currentUser?.id || foundLocal.instructorId,
-          linkedAt: new Date().toISOString(),
-        });
-      }
-
-      toast.success('Student linked successfully');
+      toast.success(`${student.name} linked successfully!`);
       setSearchId('');
       fetchLinkedStudents();
     } catch (err: any) {
@@ -418,9 +430,9 @@ export function Dashboard() {
         const { data } = await supabase
           .from('employees')
           .select('*')
-          .eq('instructor_id', currentUser?.id)
+          .or(`instructor_id.eq.${currentUser?.id},instructor_id.is.null`)
           .eq('application_status', 'pending');
-        if (data) setPendingApps(data);
+        if (data) setPendingApps(data.map(transformSupabaseEmployee));
       };
 
       const fetchHteRequests = async () => {
@@ -466,8 +478,8 @@ export function Dashboard() {
         .from('employees')
         .update({
           application_status: 'approved',
-          instructor_id: currentUser?.id || student.instructorId,
-          instructorId: currentUser?.id || student.instructorId,
+          active: true,
+          instructor_id: currentUser?.id || student.instructorId || null,
         })
         .eq('id', student.id);
       if (error) throw error;
@@ -475,6 +487,7 @@ export function Dashboard() {
       updateEmployee(student.id, {
         active: true,
         approvalStatus: 'approved',
+        applicationStatus: 'approved',
         instructorId: currentUser?.id || student.instructorId,
         linkedAt: new Date().toISOString(),
       });

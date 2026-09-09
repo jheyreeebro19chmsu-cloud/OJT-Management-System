@@ -48,7 +48,7 @@ export function TimeRecord() {
       if (pageState !== 'completed') {
         if (rec?.timeIn && !rec?.timeOut) {
           setAction('out');
-        } else if (!rec?.timeIn) {
+        } else {
           setAction('in');
         }
       }
@@ -221,6 +221,24 @@ export function TimeRecord() {
           console.warn('Skipping server time-out: missing numeric user_id or application_id');
         }
       }
+    } else {
+      // Safe fallback: If user clocked out without a prior clock-in today, persist a record
+      const fallbackRecord = addTimeRecord({
+        employeeId: employee.id,
+        date: getDTRSessionDate(now),
+        timeIn: timeStr,
+        timeOut: timeStr,
+        totalHours: 0,
+        timeInGeofenced: geofencePassed,
+        timeOutGeofenced: geofencePassed,
+        timeInFaceVerified: true,
+        timeOutFaceVerified: true,
+        status: 'present',
+        timeOutLocation: geofenceCoords || (employee as any).registrationLocation,
+        timeOutPhoto: storedImage,
+      });
+      setCurrentRecord(fallbackRecord);
+      setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)}`);
     }
     setPageState('completed');
   };

@@ -82,7 +82,7 @@ export function AdminEmployees() {
   const filteredGroups = {
     pending: employees.filter(
       (e) =>
-        (!e.active || e.approvalStatus === 'pending') &&
+        (!e.active || e.approvalStatus === 'pending' || e.applicationStatus === 'pending') &&
         matchesYear(e) &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -90,7 +90,7 @@ export function AdminEmployees() {
     ),
     student: employees.filter(
       (e) =>
-        (e.active && e.approvalStatus !== 'pending') &&
+        (e.active && e.approvalStatus !== 'pending' && e.applicationStatus !== 'pending') &&
         getEmployeeGroup(e) === 'student' &&
         matchesYear(e) &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -99,7 +99,7 @@ export function AdminEmployees() {
     ),
     instructor: employees.filter(
       (e) =>
-        (e.active && e.approvalStatus !== 'pending') &&
+        (e.active && e.approvalStatus !== 'pending' && e.applicationStatus !== 'pending') &&
         getEmployeeGroup(e) === 'instructor' &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
@@ -107,7 +107,7 @@ export function AdminEmployees() {
     ),
     hte: employees.filter(
       (e) =>
-        (e.active && e.approvalStatus !== 'pending') &&
+        (e.active && e.approvalStatus !== 'pending' && e.applicationStatus !== 'pending') &&
         getEmployeeGroup(e) === 'hte' &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
@@ -142,6 +142,7 @@ export function AdminEmployees() {
       faceRegistered: false,
       active: true,
       approvalStatus: 'approved',
+      applicationStatus: 'approved',
     });
     closeModal();
   };
