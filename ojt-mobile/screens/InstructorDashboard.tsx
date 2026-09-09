@@ -13,12 +13,10 @@ import {
   ArrowLeft,
   Users,
   Clock,
-  QrCode,
   Bell,
   Award,
   Calendar,
   ArrowRight,
-  ShieldCheck,
   CheckCircle2,
   FileSpreadsheet,
   MapPin,
@@ -39,7 +37,6 @@ export default function InstructorDashboard({
   const [loading, setLoading] = useState(true);
   const [trainees, setTrainees] = useState<Employee[]>([]);
   const [todayRecords, setTodayRecords] = useState<TimeRecord[]>([]);
-  const [pendingApplications, setPendingApplications] = useState<Employee[]>([]);
 
   useEffect(() => {
     loadDashboardMetrics();
@@ -55,9 +52,6 @@ export default function InstructorDashboard({
       ]);
 
       setTrainees(allTrainees);
-
-      const pending = allTrainees.filter((t) => t.applicationStatus === 'pending');
-      setPendingApplications(pending);
 
       const today = new Date().toISOString().split('T')[0];
       const todayLogs = allRecords.filter((r) => r.date === today);
@@ -104,12 +98,6 @@ export default function InstructorDashboard({
           <Text style={styles.kpiValue}>{loading ? '—' : activeTodayCount}</Text>
           <Text style={styles.kpiLabel}>Clocked-In Today</Text>
         </View>
-
-        <View style={[styles.kpiCard, { backgroundColor: '#fef3c7' }]}>
-          <ShieldCheck size={22} color="#d97706" />
-          <Text style={styles.kpiValue}>{loading ? '—' : pendingApplications.length}</Text>
-          <Text style={styles.kpiLabel}>Pending Approvals</Text>
-        </View>
       </View>
 
       {/* Quick Action Navigation Buttons */}
@@ -144,17 +132,6 @@ export default function InstructorDashboard({
           <View style={{ flex: 1 }}>
             <Text style={styles.actionTitle}>Trainee Geofencing & GPS</Text>
             <Text style={styles.actionDesc}>Monitor workplace coordinates & location radius</Text>
-          </View>
-          <ArrowRight size={18} color="#94a3b8" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionCard} onPress={() => onNavigate('instructor_qr')}>
-          <View style={[styles.actionIcon, { backgroundColor: '#fdf4ff' }]}>
-            <QrCode size={20} color="#c026d3" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.actionTitle}>Enrollment QR Code</Text>
-            <Text style={styles.actionDesc}>Generate link code for new students</Text>
           </View>
           <ArrowRight size={18} color="#94a3b8" />
         </TouchableOpacity>
