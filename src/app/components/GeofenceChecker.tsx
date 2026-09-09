@@ -1,6 +1,6 @@
 import { MapPin, CheckCircle, XCircle, Loader, AlertTriangle, Navigation, ShieldOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Circle, CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
 
 import 'leaflet/dist/leaflet.css';
@@ -36,6 +36,10 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const [result, setResult] = useState<GeofenceResult>({ state: 'idle' });
   const [watchCoords, setWatchCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
 
+  // Stable ref for onResult callback to avoid unnecessary interval restarts & re-renders
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
+
   const employee = getCurrentEmployee();
 
   const activeZones = React.useMemo(() => {
@@ -68,16 +72,22 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     return zones;
   }, [geofenceZones, employee]);
 
+  // Stable ref for activeZones to prevent any possible interval restart loops
+  const activeZonesRef = useRef(activeZones);
+  activeZonesRef.current = activeZones;
+
   const checkGeofence = useCallback(async () => {
+    const currentZones = activeZonesRef.current;
+
     if (!settings.geofenceEnabled) {
       setResult({ state: 'inside', zoneName: 'Geofence Disabled (All Locations Allowed)' });
-      onResult(true, undefined);
+      onResultRef.current(true, undefined);
       return;
     }
 
-    if (activeZones.length === 0) {
+    if (currentZones.length === 0) {
       setResult({ state: 'inside', zoneName: 'No Active Zones' });
-      onResult(true, undefined);
+      onResultRef.current(true, undefined);
       return;
     }
 
@@ -89,7 +99,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       const coords = { lat: latitude, lng: longitude };
 
       // 1. Immediate priority check: Evaluate trainee's permanent registered location
-      const personalZone = activeZones.find((z) => z.id.startsWith('personal-'));
+      const personalZone = currentZones.find((z) => z.id.startsWith('personal-'));
       if (personalZone) {
         const isInsidePersonal = isWithinGeofence(
           latitude,
@@ -109,15 +119,15 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             accuracy,
             verifiedBy: 'local',
           });
-          onResult(true, coords);
+          onResultRef.current(true, coords);
           return;
         }
       }
 
-      let closestZone = activeZones[0];
+      let closestZone = currentZones[0];
       let minDistance = calculateDistance(latitude, longitude, closestZone.lat, closestZone.lng);
 
-      for (const zone of activeZones.slice(1)) {
+      for (const zone of currentZones.slice(1)) {
         const dist = calculateDistance(latitude, longitude, zone.lat, zone.lng);
         if (dist < minDistance) {
           minDistance = dist;
@@ -131,7 +141,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             lat: latitude,
             lng: longitude,
             accuracy: accuracy,
-            zones: activeZones.map((z) => ({
+            zones: currentZones.map((z) => ({
               name: z.name,
               lat: z.lat,
               lng: z.lng,
@@ -152,7 +162,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             accuracy,
             verifiedBy: 'server',
           });
-          onResult(inside, coords);
+          onResultRef.current(inside, coords);
           return;
         } catch {
           // Fall back to local calculation below
@@ -176,18 +186,18 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         accuracy,
         verifiedBy: 'local',
       });
-      onResult(inside, coords);
+      onResultRef.current(inside, coords);
     } catch (err: unknown) {
       const isPermissionDenied = isGeolocationPositionError(err) && err.code === 1;
       if (isPermissionDenied) {
         setResult({ state: 'denied', zoneName: 'Location Access Denied' });
-        onResult(false, undefined);
+        onResultRef.current(false, undefined);
       } else {
         setResult({ state: 'error', zoneName: 'Location Service Unavailable' });
-        onResult(false, undefined);
+        onResultRef.current(false, undefined);
       }
     }
-  }, [activeZones, settings.geofenceEnabled, onResult]);
+  }, [settings.geofenceEnabled]);
 
   useEffect(() => {
     if (autoCheck) checkGeofence();

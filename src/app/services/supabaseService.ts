@@ -300,17 +300,16 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     total_hours: record.totalHours,
     status: record.status,
     notes: record.notes,
-    academic_year: record.academicYear,
   };
 
   const { data, error } = await supabase.from('time_records').insert([supabaseRecord]).select().single();
 
   if (error) {
-    console.error('Error creating time record:', error);
+    console.error('Error creating time record in Supabase:', error);
     throw new Error(error.message || JSON.stringify(error));
   }
 
-  return transformSupabaseTimeRecord(data);
+  return transformSupabaseTimeRecord({ ...data, academic_year: record.academicYear });
 }
 
 export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>): Promise<boolean> {
@@ -336,13 +335,20 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (updates.totalHours !== undefined) supabaseUpdates.total_hours = updates.totalHours;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
-  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
+
+  if (Object.keys(supabaseUpdates).length === 0) {
+    return true;
+  }
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   if (isUuid) {
     const { error, data } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
-    if (!error && data && data.length > 0) {
+    if (error) {
+      console.error('Error updating time record by UUID:', error);
+      throw new Error(error.message || 'Failed to update time record');
+    }
+    if (data && data.length > 0) {
       return true;
     }
   }
@@ -356,12 +362,16 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
       .eq('employee_id', updates.employeeId)
       .eq('date', targetDate)
       .select();
-    if (!err2 && data2 && data2.length > 0) {
+    if (err2) {
+      console.error('Error updating time record by employee_id and date:', err2);
+      throw new Error(err2.message || 'Failed to update time record');
+    }
+    if (data2 && data2.length > 0) {
       return true;
     }
   }
 
-  return true;
+  return false;
 }
 
 export async function uploadFacePhoto(
@@ -475,7 +485,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
 
   if (error) {
     console.error('Error creating/upserting geofence zone in database:', error);
-    return null;
+    throw new Error(error.message || 'Failed to create geofence zone');
   }
 
   return {
@@ -509,8 +519,8 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
 
   if (error) {
-    console.error('Error updating geofence zone:', error);
-    return false;
+    console.error('Error updating geofence zone in Supabase:', error);
+    throw new Error(error.message || 'Failed to update geofence zone');
   }
 
   return true;
@@ -520,31 +530,51 @@ export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   try {
-    // 1. Delete from geofence_zones table by ID
-    const { error: delErr } = await supabase.from('geofence_zones').delete().eq('id', id);
-    if (delErr) {
-      console.warn('Notice deleting from geofence_zones by id:', delErr.message);
+    const isUuid = isValidUUID(id);
+    if (isUuid) {
+      const { error: delErr } = await supabase.from('geofence_zones').delete().eq('id', id);
+      if (delErr) {
+        console.error('Error deleting from geofence_zones by id:', delErr.message);
+        throw new Error(delErr.message);
+      }
     }
 
-    // 2. If it's a personal zone or employee id, also delete matching personal ID & clear employee coordinates
     const cleanId = id.startsWith('personal-') ? id.replace('personal-', '') : id;
-    if (cleanId !== id) {
-      await supabase.from('geofence_zones').delete().eq('id', cleanId);
+    if (cleanId !== id && isValidUUID(cleanId)) {
+      const { error: delErr2 } = await supabase.from('geofence_zones').delete().eq('id', cleanId);
+      if (delErr2) {
+        console.error('Error deleting personal geofence zone by cleanId:', delErr2.message);
+        throw new Error(delErr2.message);
+      }
     }
 
-    // 3. Clear workplace coordinates from matching employee in Supabase
-    await supabase.from('employees').update({
-      registration_lat: null,
-      registration_lng: null,
-      registration_address: null,
-      registration_location: null,
-    }).or(`id.eq.${cleanId},employee_id.eq.${cleanId}`);
-  } catch (err) {
-    console.error('Error in deleteGeofenceZone:', err);
-    return false;
-  }
+    // Restore pre-existing behavior: clear employee assigned workplace coordinates in Supabase
+    // Uses verified live columns: registration_lat, registration_lng, registration_address
+    if (cleanId) {
+      const isCleanUuid = isValidUUID(cleanId);
+      let query = supabase.from('employees').update({
+        registration_lat: null,
+        registration_lng: null,
+        registration_address: null,
+      });
 
-  return true;
+      if (isCleanUuid) {
+        query = query.or(`id.eq.${cleanId},employee_id.eq.${cleanId}`);
+      } else {
+        query = query.eq('employee_id', cleanId);
+      }
+
+      const { error: empUpdateErr } = await query;
+      if (empUpdateErr) {
+        console.warn('Notice clearing employee coordinates on zone deletion:', empUpdateErr.message);
+      }
+    }
+
+    return true;
+  } catch (err: any) {
+    console.error('Error in deleteGeofenceZone:', err);
+    throw new Error(err.message || 'Failed to delete geofence zone');
+  }
 }
 
 // Migration helper: update any employees/announcements that still use 'Administrator' position/name
@@ -599,14 +629,14 @@ export async function fetchSettings(): Promise<AppSettings | null> {
 export async function updateSettings(settings: AppSettings): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
+  // Only send verified live columns in public.app_settings
   const supabaseSettings = {
     work_start_time: settings.workStartTime,
     work_end_time: settings.workEndTime,
     late_threshold_minutes: settings.lateThresholdMinutes,
     geofence_enabled: settings.geofenceEnabled,
     facial_recognition_enabled: settings.facialRecognitionEnabled,
-    academic_years: settings.academicYears,
-    active_academic_year: settings.activeAcademicYear,
+    updated_at: new Date().toISOString(),
   };
 
   const { error: updateError, count } = await supabase.from('app_settings').update(supabaseSettings).eq('id', 1);
@@ -615,8 +645,8 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
     const { error: insertError } = await supabase.from('app_settings').insert([{ id: 1, ...supabaseSettings }]);
 
     if (insertError) {
-      console.error('Error inserting settings:', insertError);
-      return false;
+      console.error('Error inserting settings in Supabase:', insertError);
+      throw new Error(insertError.message || 'Failed to save settings');
     }
   }
 
@@ -658,7 +688,8 @@ export async function fetchEvaluations(): Promise<Evaluation[]> {
 export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Promise<Evaluation | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const supabaseEval = {
+  // Live schema has no academic_year column; send only live columns
+  const supabaseEval: any = {
     employee_id: evaluation.employeeId,
     evaluated_by: evaluation.evaluatedBy,
     attendance_score: evaluation.attendanceScore,
@@ -671,16 +702,15 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     strengths: evaluation.strengths,
     areas_for_improvement: evaluation.areasForImprovement,
     recommendations: evaluation.recommendations,
-    evaluated_at: evaluation.evaluatedAt,
+    evaluated_at: evaluation.evaluatedAt || new Date().toISOString(),
     status: evaluation.status,
-    academic_year: evaluation.academicYear,
   };
 
   const { data, error } = await supabase.from('evaluations').insert([supabaseEval]).select().single();
 
   if (error) {
-    console.error('Error creating evaluation:', error);
-    return null;
+    console.error('Error creating evaluation in Supabase:', error);
+    throw new Error(error.message || JSON.stringify(error));
   }
 
   return {
@@ -699,7 +729,7 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     recommendations: data.recommendations,
     evaluatedAt: data.evaluated_at,
     status: data.status,
-    academicYear: data.academic_year,
+    academicYear: evaluation.academicYear,
   };
 }
 
@@ -719,13 +749,12 @@ export async function updateEvaluation(id: string, updates: Partial<Evaluation>)
   if (updates.areasForImprovement !== undefined) supabaseUpdates.areas_for_improvement = updates.areasForImprovement;
   if (updates.recommendations !== undefined) supabaseUpdates.recommendations = updates.recommendations;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
-  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
 
   const { error } = await supabase.from('evaluations').update(supabaseUpdates).eq('id', id);
 
   if (error) {
-    console.error('Error updating evaluation:', error);
-    return false;
+    console.error('Error updating evaluation in Supabase:', error);
+    throw new Error(error.message || 'Failed to update evaluation');
   }
 
   return true;
@@ -737,8 +766,8 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
   const { error } = await supabase.from('evaluations').delete().eq('id', id);
 
   if (error) {
-    console.error('Error deleting evaluation:', error);
-    return false;
+    console.error('Error deleting evaluation in Supabase:', error);
+    throw new Error(error.message || 'Failed to delete evaluation');
   }
 
   return true;
@@ -1044,6 +1073,7 @@ export async function fetchHostFeedback(): Promise<HostFeedback[]> {
 export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Promise<HostFeedback | null> {
   if (!isSupabaseConfigured()) return null;
 
+  // Live schema has no academic_year column; send only live columns
   const supabaseHf = {
     employee_id: feedback.employeeId,
     host_name: feedback.hostName,
@@ -1059,16 +1089,15 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
     strengths: feedback.strengths,
     areas_for_improvement: feedback.areasForImprovement,
     recommendation: feedback.recommendation,
-    submitted_at: feedback.submittedAt,
+    submitted_at: feedback.submittedAt || new Date().toISOString(),
     status: feedback.status,
-    academic_year: feedback.academicYear,
   };
 
   const { data, error } = await supabase.from('host_feedback').insert([supabaseHf]).select().single();
 
   if (error) {
-    console.error('Error creating host feedback:', error);
-    return null;
+    console.error('Error creating host feedback in Supabase:', error);
+    throw new Error(error.message || JSON.stringify(error));
   }
 
   return {
@@ -1089,8 +1118,50 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
     recommendation: data.recommendation,
     submittedAt: data.submitted_at,
     status: data.status,
-    academicYear: data.academic_year,
+    academicYear: feedback.academicYear,
   };
+}
+
+export async function updateHostFeedback(id: string, updates: Partial<HostFeedback>): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+
+  const supabaseUpdates: any = {};
+  if (updates.hostName !== undefined) supabaseUpdates.host_name = updates.hostName;
+  if (updates.hostCompany !== undefined) supabaseUpdates.host_company = updates.hostCompany;
+  if (updates.hostPosition !== undefined) supabaseUpdates.host_position = updates.hostPosition;
+  if (updates.hostEmail !== undefined) supabaseUpdates.host_email = updates.hostEmail;
+  if (updates.attendanceScore !== undefined) supabaseUpdates.attendance_score = updates.attendanceScore;
+  if (updates.performanceScore !== undefined) supabaseUpdates.performance_score = updates.performanceScore;
+  if (updates.attitudeScore !== undefined) supabaseUpdates.attitude_score = updates.attitudeScore;
+  if (updates.communicationScore !== undefined) supabaseUpdates.communication_score = updates.communicationScore;
+  if (updates.teamworkScore !== undefined) supabaseUpdates.teamwork_score = updates.teamworkScore;
+  if (updates.overallScore !== undefined) supabaseUpdates.overall_score = updates.overallScore;
+  if (updates.strengths !== undefined) supabaseUpdates.strengths = updates.strengths;
+  if (updates.areasForImprovement !== undefined) supabaseUpdates.areas_for_improvement = updates.areasForImprovement;
+  if (updates.recommendation !== undefined) supabaseUpdates.recommendation = updates.recommendation;
+  if (updates.status !== undefined) supabaseUpdates.status = updates.status;
+
+  const { error } = await supabase.from('host_feedback').update(supabaseUpdates).eq('id', id);
+
+  if (error) {
+    console.error('Error updating host feedback in Supabase:', error);
+    throw new Error(error.message || 'Failed to update host feedback');
+  }
+
+  return true;
+}
+
+export async function deleteHostFeedback(id: string): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+
+  const { error } = await supabase.from('host_feedback').delete().eq('id', id);
+
+  if (error) {
+    console.error('Error deleting host feedback in Supabase:', error);
+    throw new Error(error.message || 'Failed to delete host feedback');
+  }
+
+  return true;
 }
 
 // ─── Transform Helpers ───────────────────────────────────────────────────────
@@ -1245,18 +1316,17 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
       total_hours: rec.totalHours,
       status: rec.status,
       notes: rec.notes,
-      academic_year: rec.academicYear,
     }));
 
     const { error } = await supabase.from('time_records').upsert(payload, { onConflict: 'id' });
     if (error) {
       console.error('Error upserting time records in Supabase:', error);
-      return false;
+      throw new Error(error.message || 'Failed to upsert time records');
     }
     return true;
   } catch (e) {
     console.error('upsertTimeRecords exception:', e);
-    return false;
+    throw e;
   }
 }
 
@@ -1398,10 +1468,9 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
               name: e.name || 'HTE Representative',
               email: (e.email || '').trim().toLowerCase(),
               company_name: e.company_name || 'Host Training Establishment',
-              company_address: e.registration_address || 'Company Workplace',
-              contact_person: e.name,
-              academic_year: e.academic_year || activeAY,
+              position: 'HTE Representative',
               is_approved: true,
+              active: true,
             }, { onConflict: 'id' });
             migratedHTEs++;
           } catch (mErr) {
@@ -1423,19 +1492,7 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
       }
     }
 
-    // 2. Update any time_records missing academic_year
-    const { data: recs, error: recFetchErr } = await supabase.from('time_records').select('id, academic_year');
-    let repairedRecords = 0;
-    if (!recFetchErr && recs) {
-      for (const r of recs) {
-        if (!r.academic_year) {
-          await supabase.from('time_records').update({ academic_year: activeAY }).eq('id', r.id);
-          repairedRecords++;
-        }
-      }
-    }
-
-    return { success: true, repairedEmployees, repairedRecords, migratedHTEs };
+    return { success: true, repairedEmployees, repairedRecords: 0, migratedHTEs };
   } catch (e) {
     console.error('repairDatabaseData error:', e);
     return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };

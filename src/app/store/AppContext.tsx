@@ -814,6 +814,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   schoolName: 'Carlos Hilado Memorial State University',
                   campus: 'Talisay Campus',
                   course: 'Information Systems',
+                  startDate: new Date().toISOString().split('T')[0],
+                  endDate: new Date().toISOString().split('T')[0],
                   requiredHours: isInstRole || isHostRole ? 0 : 486,
                   faceRegistered: false,
                   active: true,
@@ -1496,11 +1498,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (useSupabase) {
       const targetId = existing?.id || id;
-      supabaseService.updateTimeRecord(targetId, enrichedData);
+      supabaseService.updateTimeRecord(targetId, enrichedData).catch((err) => {
+        console.error('[AppContext] Failed to update time record in Supabase:', err);
+      });
     }
   };
 
   const approveTimeRecord = (id: string, approvedBy?: string) => {
+    const previous = timeRecords.find((r) => r.id === id);
     const now = new Date().toISOString();
     const update: Partial<TimeRecord> = {
       approvalStatus: 'approved',
@@ -1509,10 +1514,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvalNote: '',
     };
     setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...update } : r)));
-    if (useSupabase) supabaseService.updateTimeRecord(id, update);
+    if (useSupabase) {
+      supabaseService.updateTimeRecord(id, update).catch((err) => {
+        console.error('[AppContext] Failed to approve time record in Supabase:', err);
+        if (previous) setTimeRecords((prev) => prev.map((r) => (r.id === id ? previous : r)));
+        alert('Failed to save approval to cloud. Action has been rolled back.');
+      });
+    }
   };
 
   const disapproveTimeRecord = (id: string, note?: string) => {
+    const previous = timeRecords.find((r) => r.id === id);
     const now = new Date().toISOString();
     const update: Partial<TimeRecord> = {
       approvalStatus: 'disapproved',
@@ -1520,7 +1532,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedAt: now,
     };
     setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...update } : r)));
-    if (useSupabase) supabaseService.updateTimeRecord(id, update);
+    if (useSupabase) {
+      supabaseService.updateTimeRecord(id, update).catch((err) => {
+        console.error('[AppContext] Failed to disapprove time record in Supabase:', err);
+        if (previous) setTimeRecords((prev) => prev.map((r) => (r.id === id ? previous : r)));
+        alert('Failed to save disapproval to cloud. Action has been rolled back.');
+      });
+    }
   };
 
 
@@ -1601,22 +1619,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addGeofenceZone = (zone: Omit<GeofenceZone, 'id'> & { id?: string }) => {
     const zoneWithAY = { ...zone, academicYear: (zone as any).academicYear || settings.activeAcademicYear };
-    const newZone = sanitizeGeofenceZone({ ...zoneWithAY, id: zone.id || `zone-${Date.now()}` });
+    const tempId = zone.id || `zone-${Date.now()}`;
+    const newZone = sanitizeGeofenceZone({ ...zoneWithAY, id: tempId });
     if (!newZone) return;
 
+    setGeofenceZones((prev) => [...prev.filter((z) => z.id !== newZone.id), newZone]);
+
     if (useSupabase) {
-      supabaseService.createGeofenceZone({ ...zoneWithAY, id: newZone.id }).then((created) => {
-        const sanitizedCreated = sanitizeGeofenceZone(created || newZone);
-        if (sanitizedCreated) {
-          setGeofenceZones((prev) => [...prev.filter((z) => z.id !== sanitizedCreated.id), sanitizedCreated]);
-        }
-      });
-    } else {
-      setGeofenceZones((prev) => [...prev.filter((z) => z.id !== newZone.id), newZone]);
+      supabaseService
+        .createGeofenceZone({ ...zoneWithAY, id: newZone.id })
+        .then((created) => {
+          const sanitizedCreated = sanitizeGeofenceZone(created || newZone);
+          if (sanitizedCreated) {
+            setGeofenceZones((prev) => [...prev.filter((z) => z.id !== tempId && z.id !== sanitizedCreated.id), sanitizedCreated]);
+          }
+        })
+        .catch((err) => {
+          console.error('[AppContext] Failed to create geofence zone in Supabase:', err);
+          setGeofenceZones((prev) => prev.filter((z) => z.id !== tempId));
+          alert('Failed to save geofence zone to cloud. Please try again.');
+        });
     }
   };
 
   const updateGeofenceZone = (id: string, data: Partial<GeofenceZone>) => {
+    const previous = geofenceZones.find((z) => z.id === id);
     setGeofenceZones((prev) =>
       prev.map((z) => {
         if (z.id !== id) return z;
@@ -1626,11 +1653,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
 
     if (useSupabase) {
-      supabaseService.updateGeofenceZone(id, data);
+      supabaseService.updateGeofenceZone(id, data).catch((err) => {
+        console.error('[AppContext] Failed to update geofence zone in Supabase:', err);
+        if (previous) {
+          setGeofenceZones((prev) => prev.map((z) => (z.id === id ? previous : z)));
+        }
+        alert('Failed to save geofence zone update to cloud. Changes have been rolled back.');
+      });
     }
   };
 
   const deleteGeofenceZone = (id: string) => {
+    const previousZones = geofenceZones;
     // 1. Remove from local geofenceZones state and storage
     setGeofenceZones((prev) => {
       const filtered = prev.filter((z) => z.id !== id && z.id !== `personal-${id}`);
@@ -1663,19 +1697,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // 3. Always delete from Supabase database
     if (useSupabase) {
-      supabaseService.deleteGeofenceZone(id);
+      supabaseService.deleteGeofenceZone(id).catch((err) => {
+        console.error('[AppContext] Failed to delete geofence zone in Supabase:', err);
+        setGeofenceZones(previousZones);
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, previousZones);
+        alert('Failed to delete geofence zone from cloud. Item has been restored.');
+      });
       if (matchedEmpId && matchedEmpId !== id) {
-        supabaseService.deleteGeofenceZone(matchedEmpId);
+        supabaseService.deleteGeofenceZone(matchedEmpId).catch(() => {});
       }
     }
   };
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {
+    const previous = settings;
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
 
     if (useSupabase) {
-      supabaseService.updateSettings(updated);
+      supabaseService.updateSettings(updated).catch((err) => {
+        console.error('[AppContext] Failed to update settings in Supabase:', err);
+        setSettings(previous);
+        alert('Failed to save settings to cloud. Changes have been rolled back.');
+      });
     }
   };
 
@@ -1759,34 +1803,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Evaluations ─────────────────────────────────────────────────────────────
   const addEvaluation = (data: Omit<Evaluation, 'id'>): Evaluation => {
-    const newEval: Evaluation = { ...data, id: `eval-${Date.now()}` };
+    const tempId = `eval-${Date.now()}`;
+    const newEval: Evaluation = { ...data, id: tempId };
+
+    setEvaluations((prev) => [newEval, ...prev]);
 
     if (useSupabase) {
-      supabaseService.createEvaluation(data).then((created) => {
-        if (created) {
-          setEvaluations((prev) => [created, ...prev]);
-        }
-      });
-    } else {
-      setEvaluations((prev) => [...prev, newEval]);
+      supabaseService
+        .createEvaluation(data)
+        .then((created) => {
+          if (created) {
+            setEvaluations((prev) => [created, ...prev.filter((e) => e.id !== tempId && e.id !== created.id)]);
+          }
+        })
+        .catch((err) => {
+          console.error('[AppContext] Failed to save evaluation to Supabase:', err);
+          setEvaluations((prev) => prev.filter((e) => e.id !== tempId));
+          alert('Failed to save evaluation to cloud. Please try again.');
+        });
     }
 
     return newEval;
   };
 
   const updateEvaluation = (id: string, data: Partial<Evaluation>) => {
+    const previous = evaluations.find((e) => e.id === id);
     setEvaluations((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
 
     if (useSupabase) {
-      supabaseService.updateEvaluation(id, data);
+      supabaseService.updateEvaluation(id, data).catch((err) => {
+        console.error('[AppContext] Failed to update evaluation in Supabase:', err);
+        if (previous) {
+          setEvaluations((prev) => prev.map((e) => (e.id === id ? previous : e)));
+        }
+        alert('Failed to save evaluation update to cloud. Changes have been rolled back.');
+      });
     }
   };
 
   const deleteEvaluation = (id: string) => {
+    const previous = evaluations.find((e) => e.id === id);
     setEvaluations((prev) => prev.filter((e) => e.id !== id));
 
     if (useSupabase) {
-      supabaseService.deleteEvaluation(id);
+      supabaseService.deleteEvaluation(id).catch((err) => {
+        console.error('[AppContext] Failed to delete evaluation in Supabase:', err);
+        if (previous) {
+          setEvaluations((prev) => [previous, ...prev]);
+        }
+        alert('Failed to delete evaluation from cloud. Item has been restored.');
+      });
     }
   };
 
@@ -2046,11 +2112,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const totalScore =
       data.attendanceScore + data.performanceScore + data.attitudeScore + data.communicationScore + data.teamworkScore;
     const overallScore = Math.round(totalScore / 5);
+    const tempId = `hf-${Date.now()}`;
 
     const newFeedback: HostFeedback = {
       ...data,
       academicYear: (data as any).academicYear || settings.activeAcademicYear,
-      id: `hf-${Date.now()}`,
+      id: tempId,
       overallScore,
       submittedAt: new Date().toISOString(),
       status: 'submitted',
@@ -2059,11 +2126,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHostFeedback((prev) => [newFeedback, ...prev]);
 
     if (useSupabase) {
-      supabaseService.createHostFeedback(newFeedback).then((created) => {
-        if (created) {
-          setHostFeedback((prev) => prev.map((f) => (f.id === newFeedback.id ? created : f)));
-        }
-      });
+      supabaseService
+        .createHostFeedback(newFeedback)
+        .then((created) => {
+          if (created) {
+            setHostFeedback((prev) => [created, ...prev.filter((f) => f.id !== tempId && f.id !== created.id)]);
+          }
+        })
+        .catch((err) => {
+          console.error('[AppContext] Failed to save host feedback to Supabase:', err);
+          setHostFeedback((prev) => prev.filter((f) => f.id !== tempId));
+          alert('Failed to save host feedback to cloud. Please try again.');
+        });
     }
 
     // Auto-sync into evaluations table so Instructor and Trainee see the evaluation in real-time
@@ -2095,11 +2169,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateHostFeedback = (id: string, updates: Partial<HostFeedback>) => {
+    const previous = hostFeedback.find((f) => f.id === id);
     setHostFeedback((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
+    if (useSupabase) {
+      supabaseService.updateHostFeedback(id, updates).catch((err) => {
+        console.error('[AppContext] Failed to update host feedback in Supabase:', err);
+        if (previous) {
+          setHostFeedback((prev) => prev.map((f) => (f.id === id ? previous : f)));
+        }
+        alert('Failed to save host feedback update to cloud. Changes have been rolled back.');
+      });
+    }
   };
 
   const deleteHostFeedback = (id: string) => {
+    const previous = hostFeedback.find((f) => f.id === id);
     setHostFeedback((prev) => prev.filter((f) => f.id !== id));
+    if (useSupabase) {
+      supabaseService.deleteHostFeedback(id).catch((err) => {
+        console.error('[AppContext] Failed to delete host feedback in Supabase:', err);
+        if (previous) {
+          setHostFeedback((prev) => [previous, ...prev]);
+        }
+        alert('Failed to delete host feedback from cloud. Item has been restored.');
+      });
+    }
   };
 
   const getEmployeeHostFeedback = (employeeId: string): HostFeedback[] => {

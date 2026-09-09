@@ -67,10 +67,10 @@ export function TimeRecord() {
     };
   }, []);
 
-  const handleGeofenceResult = (passed: boolean, coords?: { lat: number; lng: number }) => {
+  const handleGeofenceResult = React.useCallback((passed: boolean, coords?: { lat: number; lng: number }) => {
     setGeofencePassed(passed);
     setGeofenceCoords(coords);
-  };
+  }, []);
 
   const proceedToFaceScan = () => {
     if (!geofencePassed) return;

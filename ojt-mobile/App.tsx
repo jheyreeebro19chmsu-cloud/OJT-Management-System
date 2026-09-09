@@ -339,6 +339,55 @@ export default function App() {
         await authStore.saveUser(normalized);
         return normalized;
       }
+
+      // 3. Auto-heal: User is authenticated in Supabase Auth but profile was missing in employees table
+      // Faithful mirror of Web's AppContext.tsx lines 800-835
+      const { data: authUserResp } = await supabase.auth.getUser();
+      const currentUser = authUserResp?.user;
+      if (currentUser && (currentUser.id === userId || currentUser.email?.toLowerCase() === normEmail)) {
+        const userMeta = currentUser.user_metadata || {};
+        const userRole = userMeta.role || 'employee';
+        const isHostRole = userRole === 'host' || userRole === 'hte';
+        const isInstRole = userRole === 'admin' || userRole === 'instructor';
+        const targetYear = activeAcademicYear || getCurrentAcademicYear();
+
+        const healPayload = {
+          id: currentUser.id,
+          name: userMeta.full_name || normEmail.split('@')[0] || 'Trainee',
+          email: normEmail || currentUser.email || '',
+          employee_id: isHostRole
+            ? `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`
+            : isInstRole
+            ? `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`
+            : `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`,
+          department: 'College of Computer Studies',
+          position: isInstRole ? 'OJT Instructor' : isHostRole ? 'HTE Representative' : 'OJT Trainee',
+          company_name: isHostRole ? 'Host Establishment' : 'N/A',
+          supervisor_name: 'N/A',
+          school_name: 'Carlos Hilado Memorial State University',
+          campus: 'Talisay Campus',
+          course: 'Information Systems',
+          start_date: new Date().toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
+          required_hours: isInstRole || isHostRole ? 0 : 486,
+          face_registered: false,
+          active: true,
+          academic_year: targetYear,
+          application_status: 'approved',
+          created_at: new Date().toISOString().split('T')[0],
+        };
+
+        const { data: savedEmp } = await supabase
+          .from('employees')
+          .upsert([healPayload], { onConflict: 'email' })
+          .select()
+          .maybeSingle();
+
+        const normalized = normalizeProfile(savedEmp || healPayload);
+        setProfile(normalized);
+        await authStore.saveUser(normalized);
+        return normalized;
+      }
     } catch (err) {
       console.warn('Profile fetch warning:', err);
     }
