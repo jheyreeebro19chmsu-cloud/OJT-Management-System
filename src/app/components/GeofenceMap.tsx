@@ -18,6 +18,13 @@ export interface GeofenceMapProps {
   liveUser?: { lat: number; lng: number; accuracy?: number } | null;
   /** e.g. h-64 (admin) or h-72 min-h-[220px] (time record) */
   className?: string;
+  /** Zone ID that is currently set to interactive draggable mode */
+  draggableZoneId?: string | null;
+  /** Callbacks for interactive dragging */
+  onZoneDrag?: (zoneId: string, lat: number, lng: number) => void;
+  onZoneDragEnd?: (zoneId: string, lat: number, lng: number) => void;
+  /** Selected zone click callback */
+  onZoneClick?: (zone: GeofenceZone) => void;
 }
 
 export function GeofenceMap({
@@ -28,6 +35,10 @@ export function GeofenceMap({
   focusCoords,
   liveUser = null,
   className = 'h-64',
+  draggableZoneId = null,
+  onZoneDrag,
+  onZoneDragEnd,
+  onZoneClick,
 }: GeofenceMapProps) {
   const fittedZonesRef = useRef(false);
   const fittedLiveUserRef = useRef(false);
@@ -49,6 +60,23 @@ export function GeofenceMap({
         html: '<span class="leaflet-zone-dot"></span>',
         iconSize: [18, 18],
         iconAnchor: [9, 9],
+      }),
+    []
+  );
+  const draggableZoneIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: 'leaflet-draggable-zone-marker',
+        html: `
+          <div style="position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: grab;">
+            <div style="position: absolute; width: 34px; height: 34px; border-radius: 9999px; background-color: rgba(37, 99, 235, 0.35); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+            <div style="position: absolute; width: 26px; height: 26px; border-radius: 9999px; background-color: #2563eb; border: 3px solid #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: bold;">
+              📍
+            </div>
+          </div>
+        `,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
       }),
     []
   );
@@ -115,29 +143,58 @@ export function GeofenceMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {safeZones.map((zone) => (
-          <React.Fragment key={zone.id}>
-            <Circle
-              center={[zone.lat, zone.lng]}
-              radius={Number(zone.radius) || 100}
-              pathOptions={{
-                color: zone.active ? '#2563eb' : '#94a3b8',
-                fillColor: zone.active ? '#3b82f6' : '#94a3b8',
-                fillOpacity: 0.18,
-                weight: 2,
-              }}
-            />
-            <Marker position={[zone.lat, zone.lng]} icon={zone.active ? zoneIcon : inactiveZoneIcon}>
-              <Popup className="leaflet-geofence-popup">
-                <div className="leaflet-popup-card">
-                  <p className="leaflet-popup-title">{zone.name || 'Geofence Zone'}</p>
-                  <p>Radius: {Math.round(zone.radius)}m</p>
-                  <p>Status: {zone.active ? 'Active' : 'Inactive'}</p>
-                </div>
-              </Popup>
-            </Marker>
-          </React.Fragment>
-        ))}
+        {safeZones.map((zone) => {
+          const isDraggable = draggableZoneId === zone.id;
+          return (
+            <React.Fragment key={zone.id}>
+              <Circle
+                center={[zone.lat, zone.lng]}
+                radius={Number(zone.radius) || 100}
+                pathOptions={{
+                  color: isDraggable ? '#2563eb' : zone.active ? '#2563eb' : '#94a3b8',
+                  fillColor: isDraggable ? '#3b82f6' : zone.active ? '#3b82f6' : '#94a3b8',
+                  fillOpacity: isDraggable ? 0.35 : 0.18,
+                  weight: isDraggable ? 3 : 2,
+                  dashArray: isDraggable ? '6, 6' : undefined,
+                }}
+              />
+              <Marker
+                position={[zone.lat, zone.lng]}
+                icon={isDraggable ? draggableZoneIcon : zone.active ? zoneIcon : inactiveZoneIcon}
+                draggable={isDraggable}
+                eventHandlers={{
+                  drag: (e: any) => {
+                    const marker = e.target;
+                    const pos = marker.getLatLng();
+                    onZoneDrag?.(zone.id, pos.lat, pos.lng);
+                  },
+                  dragend: (e: any) => {
+                    const marker = e.target;
+                    const pos = marker.getLatLng();
+                    onZoneDragEnd?.(zone.id, pos.lat, pos.lng);
+                  },
+                  click: () => {
+                    onZoneClick?.(zone);
+                  },
+                }}
+              >
+                <Popup className="leaflet-geofence-popup">
+                  <div className="leaflet-popup-card">
+                    <p className="leaflet-popup-title">{zone.name || 'Geofence Zone'}</p>
+                    {isDraggable && (
+                      <p style={{ color: '#2563eb', fontWeight: 800, margin: '4px 0' }}>
+                        📍 Drag mode active: Drag this pin to relocate
+                      </p>
+                    )}
+                    <p>Radius: {Math.round(zone.radius)}m</p>
+                    <p>Coordinates: {zone.lat.toFixed(5)}, {zone.lng.toFixed(5)}</p>
+                    <p>Status: {zone.active ? 'Active' : 'Inactive'}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            </React.Fragment>
+          );
+        })}
 
         {safePickedCoords && (
           <Marker position={[safePickedCoords.lat, safePickedCoords.lng]} icon={pickedIcon}>

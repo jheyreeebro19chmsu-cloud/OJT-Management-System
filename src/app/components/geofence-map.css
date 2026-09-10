@@ -69,3 +69,15 @@
   font-weight: 700;
   color: #0f172a;
 }
+
+.leaflet-draggable-zone-marker {
+  background: transparent;
+  border: none;
+  cursor: grab !important;
+  z-index: 1000 !important;
+}
+
+.leaflet-draggable-zone-marker:active {
+  cursor: grabbing !important;
+}
+
