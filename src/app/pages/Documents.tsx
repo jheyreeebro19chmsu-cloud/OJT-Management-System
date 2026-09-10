@@ -98,6 +98,16 @@ export function Documents() {
   const handleFileUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
 
+    // Validate file type — only PDF, JPG, PNG accepted
+    const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Only PDF, JPG, and PNG files are accepted.`
+      );
+      return;
+    }
+
     // Check size limit: max 10MB
     if (file.size > 10 * 1024 * 1024) {
       toast.error('File size exceeds 10MB limit. Please choose a smaller file.');
@@ -115,7 +125,8 @@ export function Documents() {
         dataUrl,
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        status: 'passed',
+        // Initial status is pending until OJT Coordinator reviews and approves
+        status: 'pending',
       };
 
       const updatedDocs: TraineeDocuments = {
@@ -124,19 +135,22 @@ export function Documents() {
       };
 
       const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
-      const newIsAllPassed = newUploadedCount === 4;
+      const allPreviouslyPassed = docKeys.every((k) =>
+        k === docKey ? true : updatedDocs[k]?.status === 'passed'
+      );
+      const newIsAllPassed = newUploadedCount === 4 && allPreviouslyPassed;
 
       if (employee) {
         updateEmployee(employee.id, {
           submittedDocuments: updatedDocs,
           documentsPassed: newIsAllPassed,
-          documentsStatus: newIsAllPassed ? 'passed' : 'partial',
+          documentsStatus: newUploadedCount === 4 ? 'submitted' : 'partial',
         });
       }
 
       setUploadingKey(null);
       const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
-      toast.success(`${meta?.title || 'Document'} uploaded and marked as PASSED!`);
+      toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
     };
 
     reader.onerror = () => {
@@ -270,6 +284,7 @@ export function Documents() {
           const doc = submittedDocs[item.key];
           const hasFile = Boolean(doc?.dataUrl || doc?.name);
           const isPassed = doc?.status === 'passed' && hasFile;
+          const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
           const isUploading = uploadingKey === item.key;
           const Icon = item.icon;
 
@@ -305,12 +320,18 @@ export function Documents() {
                     className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border flex items-center gap-1 shrink-0 ${
                       isPassed
                         ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm'
-                        : 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
+                        : isPending
+                          ? 'bg-blue-100 text-blue-800 border-blue-300'
+                          : 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
                     }`}
                   >
                     {isPassed ? (
                       <>
                         <Check size={12} className="stroke-[3]" /> PASSED
+                      </>
+                    ) : isPending ? (
+                      <>
+                        <Clock size={11} /> PENDING REVIEW
                       </>
                     ) : (
                       <>

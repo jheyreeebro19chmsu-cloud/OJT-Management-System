@@ -18,6 +18,9 @@ import {
   Printer,
   Navigation,
   Loader2,
+  Upload,
+  FileText,
+  AlertCircle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
@@ -25,6 +28,7 @@ import { toast } from 'sonner';
 
 import { useApp, DEFAULT_OJT_REQUIRED_DOCUMENTS } from '../store/AppContext';
 import type { Employee } from '../types';
+import type { TraineeDocuments, TraineeDocumentItem } from '../types';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
@@ -32,6 +36,7 @@ import { getCurrentLocation, reverseGeocode } from '../utils/geo';
 import { readAsDataUrl } from './Announcements';
 import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
+import { STANDARD_REQUIRED_DOCS } from './Documents';
 
 
 const GRADE_CONFIG = {
@@ -179,7 +184,64 @@ export function Profile() {
   const [documentNote, setDocumentNote] = useState<Record<string, string>>({});
   const [documentFileName, setDocumentFileName] = useState<Record<string, string>>({});
   const [documentFileUrl, setDocumentFileUrl] = useState<Record<string, string>>({});
+  const [docUploadingKey, setDocUploadingKey] = useState<string | null>(null);
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
+
+  const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
+  const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as const;
+  const uploadedDocCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
+
+  const handleProfileDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+    if (!file) return;
+
+    // Validate file type — only PDF, JPG, PNG accepted
+    const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Only PDF, JPG, and PNG files are accepted.`
+      );
+      return;
+    }
+
+    // Max 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size exceeds 10MB limit. Please choose a smaller file.');
+      return;
+    }
+
+    setDocUploadingKey(docKey);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      const newDocItem: TraineeDocumentItem = {
+        name: file.name,
+        size: file.size,
+        dataUrl,
+        fileType: file.type || 'application/octet-stream',
+        uploadedAt: new Date().toISOString(),
+        // Pending until OJT Coordinator reviews
+        status: 'pending',
+      };
+      const updatedDocs: TraineeDocuments = {
+        ...(employee?.submittedDocuments || {}),
+        [docKey]: newDocItem,
+      };
+      updateEmployee(employee.id, {
+        submittedDocuments: updatedDocs,
+        documentsPassed: false,
+        documentsStatus: 'submitted',
+      });
+      setDocUploadingKey(null);
+      const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
+      toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
+    };
+    reader.onerror = () => {
+      setDocUploadingKey(null);
+      toast.error('Failed to read file. Please try again.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleProfileFaceSuccess = async (img?: string) => {
     if (!img || !employee) return;
@@ -617,6 +679,137 @@ export function Profile() {
           </div>
         </motion.div>
       )}
+
+      {/* Required Documents */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.09 }}
+        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <FileCheck size={15} className="text-blue-700" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800 text-sm">Required Documents</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/4 submitted</p>
+            </div>
+          </div>
+          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+            uploadedDocCount === 4
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+              : 'bg-amber-50 text-amber-700 border-amber-300'
+          }`}>
+            {uploadedDocCount === 4 ? '✓ All Submitted' : `${4 - uploadedDocCount} Missing`}
+          </span>
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
+            style={{ width: `${(uploadedDocCount / 4) * 100}%` }}
+          />
+        </div>
+
+        <div className="space-y-2">
+          {STANDARD_REQUIRED_DOCS.map((item) => {
+            const doc = submittedDocs[item.key];
+            const hasFile = Boolean(doc?.dataUrl || doc?.name);
+            const isPassed = doc?.status === 'passed' && hasFile;
+            const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
+            const isUploading = docUploadingKey === item.key;
+
+            return (
+              <div
+                key={item.key}
+                className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                  isPassed
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : isPending
+                      ? 'bg-blue-50 border-blue-200'
+                      : 'bg-gray-50 border-gray-100'
+                }`}
+              >
+                {/* Status icon */}
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  isPassed ? 'bg-emerald-100' : isPending ? 'bg-blue-100' : 'bg-gray-200'
+                }`}>
+                  {isPassed ? (
+                    <Check size={13} className="text-emerald-700 stroke-[3]" />
+                  ) : isPending ? (
+                    <Clock size={13} className="text-blue-600" />
+                  ) : (
+                    <AlertCircle size={13} className="text-gray-400" />
+                  )}
+                </div>
+
+                {/* Doc info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
+                  {hasFile && doc ? (
+                    <p className="text-[10px] text-gray-500 truncate">
+                      {doc.name}
+                      {isPassed && ' · Approved'}
+                      {isPending && ' · Pending Review'}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-gray-400">Not yet submitted</p>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {hasFile && doc?.dataUrl && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewDocModal({
+                          title: item.title,
+                          fileName: doc.name,
+                          fileUrl: doc.dataUrl,
+                          date: doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : '',
+                        })
+                      }
+                      className="p-1.5 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+                      title="View document"
+                    >
+                      <Eye size={13} />
+                    </button>
+                  )}
+                  <label
+                    htmlFor={`profile-doc-${item.key}`}
+                    className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                      isUploading
+                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                        : hasFile
+                          ? 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'
+                          : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                    title={hasFile ? 'Replace document' : 'Upload document'}
+                  >
+                    <Upload size={13} className={isUploading ? 'animate-spin' : ''} />
+                    <input
+                      type="file"
+                      id={`profile-doc-${item.key}`}
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      disabled={isUploading}
+                      onChange={(e) => handleProfileDocUpload(item.key, e.target.files?.[0] || null)}
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-[10px] text-gray-400 mt-3 text-center">
+          Accepted formats: PDF, JPG, PNG · Max 10MB per file
+        </p>
+      </motion.div>
 
       {/* Editable Personal Info */}
       <motion.div
