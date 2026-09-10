@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { GeofenceMap } from '../../components/GeofenceMap';
@@ -46,7 +47,18 @@ const BLANK_ZONE = {
 type ZoneTypeFilter = 'all' | 'instructor' | 'hte' | 'institutional';
 
 export function AdminGeofence() {
-  const { geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, settings } = useApp();
+  const { currentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, settings } = useApp();
+  const navigate = useNavigate();
+
+  // Trainee role guard: Trainees are strictly forbidden from accessing or managing geofences
+  useEffect(() => {
+    if (!currentUser) return;
+    const role = (currentUser.role || (currentUser as any).position || '').toLowerCase();
+    if (role === 'employee' || role === 'trainee' || role.includes('trainee') || role.includes('student')) {
+      navigate('/app', { replace: true });
+    }
+  }, [currentUser, navigate]);
+
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [zoneTypeFilter, setZoneTypeFilter] = useState<ZoneTypeFilter>('all');
   const [showAdd, setShowAdd] = useState(false);
@@ -77,11 +89,51 @@ export function AdminGeofence() {
 
   const isTraineeAccount = (acc: Employee | null): boolean => {
     if (!acc) return false;
-    const normPos = acc.position?.toLowerCase() || '';
-    const empId = acc.employeeId?.toLowerCase() || '';
+    const normPos = (acc.position || '').toLowerCase();
+    const empId = (acc.employeeId || '').toLowerCase();
     const id = (acc.id || '').toLowerCase();
-    if (normPos.includes('instructor') || normPos.includes('faculty') || normPos.includes('admin') || empId.startsWith('adm-') || empId.startsWith('instr-') || id.startsWith('adm') || id.startsWith('instr')) return false;
-    if (normPos.includes('hte') || normPos.includes('host training') || empId.startsWith('hte-') || id.startsWith('hte')) return false;
+    const role = ((acc as any).role || '').toLowerCase();
+
+    // Positive trainee indicators
+    if (
+      role === 'employee' ||
+      role === 'trainee' ||
+      normPos.includes('trainee') ||
+      normPos.includes('student') ||
+      normPos.includes('intern') ||
+      empId.startsWith('ojt-')
+    ) {
+      return true;
+    }
+
+    // Explicit Instructor / Admin indicators
+    if (
+      role === 'admin' ||
+      role === 'instructor' ||
+      normPos.includes('instructor') ||
+      normPos.includes('faculty') ||
+      normPos.includes('admin') ||
+      empId.startsWith('adm-') ||
+      empId.startsWith('instr-') ||
+      id.startsWith('adm') ||
+      id.startsWith('instr')
+    ) {
+      return false;
+    }
+
+    // Explicit HTE indicators
+    if (
+      role === 'hte' ||
+      role === 'host' ||
+      normPos.includes('hte') ||
+      normPos.includes('host training') ||
+      normPos.includes('supervisor') ||
+      empId.startsWith('hte-') ||
+      id.startsWith('hte')
+    ) {
+      return false;
+    }
+
     return true;
   };
 
@@ -95,26 +147,56 @@ export function AdminGeofence() {
     const directEmp = employees.find((e) => e.id === zone.id || e.employeeId === zone.id);
     if (directEmp) return directEmp;
 
-    const personPrefix = zone.name?.includes(' - ') ? zone.name.split(' - ')[0].trim() : zone.name;
-    const normZonePrefix = normalizeName(personPrefix);
+    const personPrefix = (zone.name?.includes(' - ') ? zone.name.split(' - ')[0].trim() : zone.name || '').trim();
+    const normZonePrefix = personPrefix.toLowerCase();
+    if (!normZonePrefix) return null;
 
+    // 1. Exact name match first
+    const exact = employees.find((e) => (e.name || '').toLowerCase().trim() === normZonePrefix);
+    if (exact) return exact;
+
+    // 2. Exact word-set match
+    const normZoneWords = normalizeName(personPrefix);
     const matchByName = employees.find((e) => {
       if (!e.name) return false;
-      const normEmp = normalizeName(e.name);
-      if (normEmp === normZonePrefix) return true;
-      if (normEmp && normZonePrefix && (normEmp.includes(normZonePrefix) || normZonePrefix.includes(normEmp))) return true;
-      return false;
+      return normalizeName(e.name) === normZoneWords;
     });
     if (matchByName) return matchByName;
 
     return null;
   };
 
-  // Combine explicit geofenceZones with instructor/HTE registered stations (excluding individual trainee accounts)
+  // Combine explicit geofenceZones with instructor/HTE registered stations (strictly excluding all Trainees)
   const allCombinedZones = useMemo<GeofenceZone[]>(() => {
     const zoneMap = new Map<string, GeofenceZone>();
 
-    // 1. Process explicit geofence zones from DB/Storage, filtering out any personal trainee zones
+    // Set of all known trainee identities to strictly block from geofencing
+    const traineeIdentities = new Set<string>();
+    employees.forEach((e) => {
+      if (isTraineeAccount(e)) {
+        if (e.id) traineeIdentities.add(e.id.toLowerCase());
+        if (e.employeeId) traineeIdentities.add(e.employeeId.toLowerCase());
+        if (e.name) traineeIdentities.add(e.name.toLowerCase().trim());
+      }
+    });
+
+    const isTraineeZone = (z: GeofenceZone): boolean => {
+      const zId = (z.id || '').toLowerCase();
+      const zName = (z.name || '').toLowerCase();
+      if (zId.startsWith('personal-')) return true;
+      if (zName.includes('trainee') || zName.includes('student') || zName.includes('intern')) return true;
+
+      const acc = getAccountForZone(z);
+      if (acc && isTraineeAccount(acc)) return true;
+
+      const prefix = (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || '').toLowerCase();
+      if (prefix && traineeIdentities.has(prefix)) {
+        if (!acc || isTraineeAccount(acc)) return true;
+      }
+      return false;
+    };
+
+    // 1. Process explicit geofence zones from DB/Storage, strictly filtering out any personal trainee zones
     geofenceZones
       .filter(
         (z) =>
@@ -122,7 +204,8 @@ export function AdminGeofence() {
           z.id !== 'zone-1' &&
           !z.id.startsWith('personal-') &&
           !z.name.toLowerCase().includes('rainer') &&
-          !z.name.toLowerCase().includes('dooms')
+          !z.name.toLowerCase().includes('dooms') &&
+          !isTraineeZone(z)
       )
       .forEach((z) => {
         const account = getAccountForZone(z);
@@ -142,6 +225,7 @@ export function AdminGeofence() {
 
     // 2. Include registered Instructors and HTEs with GPS coordinates (strictly excluding Trainees)
     employees.forEach((emp: Employee) => {
+      if (isTraineeAccount(emp)) return; // Strictly ignore any Trainee account
       if (emp.name?.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
       const isInst = Boolean(
         emp.position === 'OJT Instructor' ||
@@ -183,11 +267,13 @@ export function AdminGeofence() {
 
   const isInstructorZone = (zone: any): boolean => {
     const acc = getAccountForZone(zone);
+    if (acc && isTraineeAccount(acc)) return false;
     const normPos = acc?.position?.toLowerCase() || '';
     const empId = acc?.employeeId?.toLowerCase() || '';
     const accId = (acc?.id || '').toLowerCase();
     const zoneName = (zone?.name || '').toLowerCase();
     const zoneId = (zone?.id || '').toLowerCase();
+    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
     return Boolean(
       normPos.includes('instructor') ||
       normPos.includes('faculty') ||
@@ -206,9 +292,11 @@ export function AdminGeofence() {
 
   const isHTEZone = (zone: any): boolean => {
     const acc = getAccountForZone(zone);
+    if (acc && isTraineeAccount(acc)) return false;
     const normPos = acc?.position?.toLowerCase() || '';
     const empId = acc?.employeeId?.toLowerCase() || '';
     const zoneName = (zone?.name || '').toLowerCase();
+    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
     return Boolean(
       normPos.includes('hte') ||
       normPos.includes('host training') ||
@@ -228,6 +316,10 @@ export function AdminGeofence() {
 
   const filteredZones = useMemo(() => {
     return allCombinedZones.filter((zone) => {
+      // Strictly exclude any trainee account
+      const account = getAccountForZone(zone);
+      if (account && isTraineeAccount(account)) return false;
+
       // Academic year filter
       if (selectedAcademicYear !== 'all') {
         const zoneAY = getZoneAcademicYear(zone);

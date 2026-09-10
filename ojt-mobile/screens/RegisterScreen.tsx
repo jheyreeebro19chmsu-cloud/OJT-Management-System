@@ -586,22 +586,22 @@ export default function RegisterScreen({
         });
       }
 
-      // 3. Auto-Create Geofence Zone for Trainee tagged with Academic Year
-      if (role === 'trainee' && location.lat && location.lng) {
+      // 3. Auto-Create Station Geofence Zone for Admin/Instructor and HTE only (never for Trainees)
+      if ((role === 'admin' || role === 'hte') && location.lat && location.lng) {
         try {
           const zonePayload = {
-            id: `personal-${userId}`,
-            name: `${fullName} - ${form.companyName || 'Assigned Workplace'}`,
-            address: form.companyAddress || form.address || 'Trainee Workplace',
+            id: `station-${userId}`,
+            name: role === 'admin' ? `${fullName} - Official Station` : `${fullName} - ${form.companyName || 'HTE Workplace'}`,
+            address: form.companyAddress || form.address || (role === 'admin' ? 'Campus Station' : 'HTE Workplace'),
             lat: location.lat,
             lng: location.lng,
-            radius: 300,
+            radius: 100,
             active: true,
             academic_year: activeAcademicYear,
           };
           await supabase.from('geofence_zones').upsert(zonePayload);
         } catch (zoneErr) {
-          console.debug('Failed to auto-sync geofence zone:', zoneErr);
+          console.debug('Failed to auto-sync station geofence zone:', zoneErr);
         }
       }
 
