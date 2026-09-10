@@ -14,6 +14,7 @@ const navItems = [
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
+  { to: '/app/hte-feedback', label: 'Evaluate HTE', icon: Star, end: false },
 ];
 
 export function EmployeeLayout() {

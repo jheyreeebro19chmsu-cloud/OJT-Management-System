@@ -249,12 +249,19 @@ export const mobileDb = {
       .filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative');
   },
 
-  async getTraineesByHte(hteId: string, academicYear?: string): Promise<Employee[]> {
+  async getTraineesByHte(hteId: string, academicYear?: string, companyName?: string): Promise<Employee[]> {
     let query = supabase
       .from('employees')
       .select('*')
-      .eq('hte_id', hteId)
       .order('name', { ascending: true });
+
+    if (hteId && companyName && companyName.trim() !== '') {
+      query = query.or(`hte_id.eq.${hteId},company_name.ilike.%${companyName.trim()}%`);
+    } else if (hteId) {
+      query = query.eq('hte_id', hteId);
+    } else if (companyName && companyName.trim() !== '') {
+      query = query.ilike('company_name', `%${companyName.trim()}%`);
+    }
     
     if (academicYear) {
       query = query.or(`academic_year.eq.${academicYear},academic_year.is.null`);

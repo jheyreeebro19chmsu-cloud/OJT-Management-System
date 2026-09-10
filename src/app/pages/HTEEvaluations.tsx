@@ -165,6 +165,7 @@ export function HTEEvaluations() {
     addHostFeedback,
     currentUser,
     getCurrentEmployee,
+    updateEmployee,
     settings,
   } = useApp();
 
@@ -202,16 +203,23 @@ export function HTEEvaluations() {
 
   // Only trainees linked to the active HTE workflow should appear in evaluation queues.
   const activeTrainees = useMemo(() => {
-    const currentHteId = currentUser?.id || currentEmp?.id || undefined;
+    const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
+    const currentCompany = (companyName || '').trim().toLowerCase();
 
     return employees.filter((e) => {
       if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
       const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
+      const isCompanyMatched = Boolean(
+        currentCompany &&
+        currentCompany !== 'host training establishment' &&
+        e.companyName &&
+        e.companyName.trim().toLowerCase() === currentCompany
+      );
       const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
       const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
-      return isAssignedToCurrentHte || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
+      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
     });
-  }, [employees, currentUser, currentEmp, companyName]);
+  }, [employees, currentUser, currentEmp, hteUser, companyName]);
 
   // Handle preselected student from URL
   React.useEffect(() => {
@@ -287,6 +295,18 @@ export function HTEEvaluations() {
       addEvaluation(data);
       toast.success(`Evaluation ${status === 'final' ? 'finalized and synced' : 'saved as draft'}!`);
     }
+
+    // Bidirectional sync: ensure trainee is linked to this HTE
+    try {
+      const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id;
+      if (selectedEmp && currentHteId) {
+        updateEmployee(selectedEmp.id, {
+          hteId: currentHteId,
+          companyName: companyName !== 'Host Training Establishment' ? companyName : selectedEmp.companyName,
+          supervisorName: supervisorName !== 'HTE Supervisor' ? supervisorName : selectedEmp.supervisorName,
+        });
+      }
+    } catch {}
 
     // Also mirror to Host Feedback table for HTE cross-sync
     try {

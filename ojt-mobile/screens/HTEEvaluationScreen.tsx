@@ -47,7 +47,8 @@ export default function HTEEvaluationScreen({
     setLoading(true);
     try {
       const hteId = profile?.id || profile?.employeeId || '';
-      const list = await mobileDb.getTraineesByHte(hteId, activeAcademicYear);
+      const companyName = profile?.companyName || '';
+      const list = await mobileDb.getTraineesByHte(hteId, activeAcademicYear, companyName);
       setTrainees(list);
       if (list.length > 0) {
         setSelectedTraineeId(list[0].id);
@@ -131,6 +132,15 @@ export default function HTEEvaluationScreen({
         status: 'submitted',
         academicYear: profile?.academicYear || '2025-2026',
       });
+
+      // 3. Sync Trainee Account with HTE
+      if (profile?.id) {
+        await mobileDb.updateEmployee(selectedTraineeId, {
+          hteId: profile.id,
+          companyName: profile.companyName || undefined,
+          supervisorName: profile.name || undefined,
+        });
+      }
 
       Alert.alert('Evaluation Submitted', 'Trainee evaluation and host feedback saved directly to Supabase!', [
         { text: 'OK', onPress: onBack },

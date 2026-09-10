@@ -29,6 +29,9 @@ import {
   Printer,
   Check,
   RefreshCw,
+  Star,
+  Award,
+  ThumbsUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
@@ -70,6 +73,8 @@ export function Dashboard() {
     getActiveAnnouncements,
     employees,
     timeRecords: contextTimeRecords,
+    evaluations,
+    hostFeedback,
     updateEmployee,
   } = useApp();
   const employee = getCurrentEmployee();
@@ -100,6 +105,7 @@ export function Dashboard() {
   // Trainee Required Documents state
   const [dashboardPreviewDoc, setDashboardPreviewDoc] = useState<any | null>(null);
   const [dashboardUploadingKey, setDashboardUploadingKey] = useState<string | null>(null);
+  const [previewEvaluation, setPreviewEvaluation] = useState<any | null>(null);
 
   const submittedDocs: TraineeDocuments = currentEmp?.submittedDocuments || {};
   const docKeys: (keyof TraineeDocuments)[] = ['endorsement', 'consent', 'medical', 'resume'];
@@ -551,6 +557,21 @@ export function Dashboard() {
   const presentDays = allRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
   const lateDays = allRecords.filter((r) => r.status === 'late').length;
   const recentRecordsEmployee = allRecords.slice(0, 5);
+
+  const traineeEvaluation = evaluations.find(
+    (ev) => ev.employeeId === currentEmp?.id || ev.employeeId === currentEmp?.employeeId
+  );
+  const traineeHostFeedback = hostFeedback.find(
+    (hf) => hf.employeeId === currentEmp?.id || hf.employeeId === currentEmp?.employeeId
+  );
+  const matchedHteRep = employees.find(
+    (e) =>
+      (e.position === 'HTE Representative' || e.position === 'Training Supervisor') &&
+      ((currentEmp?.hteId && e.id === currentEmp.hteId) ||
+        (currentEmp?.companyName && e.companyName?.trim().toLowerCase() === currentEmp.companyName.trim().toLowerCase()))
+  );
+  const hteCompanyName = currentEmp?.companyName || matchedHteRep?.companyName || 'Host Training Establishment';
+  const hteSupervisorName = currentEmp?.supervisorName || matchedHteRep?.name || 'HTE Representative';
 
   const greeting = () => {
     const h = currentTime.getHours();
@@ -1331,6 +1352,143 @@ export function Dashboard() {
         </motion.div>
       )}
 
+      {/* Trainee HTE Partner & Evaluation Status Card */}
+      {!isAdmin && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.14 }}
+          className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm">
+                <Building size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-gray-800 text-sm">Host Training Establishment (HTE) Status</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                    Synced
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Manage mutual evaluations between trainee and host establishment supervisor
+                </p>
+              </div>
+            </div>
+
+            <Link
+              to="/app/hte-feedback"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all self-start sm:self-auto"
+            >
+              <Star size={13} />
+              <span>{traineeHostFeedback ? 'View HTE Evaluation' : 'Evaluate HTE Partner'}</span>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {/* 1. Host Company Info & Trainee's Evaluation of HTE */}
+            <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">
+                    Assigned HTE Partner
+                  </span>
+                  {traineeHostFeedback ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                      <CheckCircle2 size={11} /> You Evaluated HTE ({traineeHostFeedback.overallScore}%)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
+                      <Clock size={11} /> Feedback Pending
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-base font-bold text-slate-900 mt-1 flex items-center gap-1.5">
+                  <Building size={16} className="text-blue-600" />
+                  {hteCompanyName}
+                </p>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Supervisor: <span className="font-semibold text-slate-800">{hteSupervisorName}</span>
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                <span className="text-slate-500 text-[11px]">
+                  {traineeHostFeedback ? `Recommendation: ${traineeHostFeedback.recommendation}` : 'Rate your internship experience'}
+                </span>
+                <Link
+                  to="/app/hte-feedback"
+                  className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                >
+                  {traineeHostFeedback ? 'Review / Edit' : 'Evaluate Now'} <ChevronRight size={13} />
+                </Link>
+              </div>
+            </div>
+
+            {/* 2. Trainee's Evaluation Received from HTE Supervisor */}
+            <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between space-y-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">
+                    HTE Supervisor Evaluation of You
+                  </span>
+                  {traineeEvaluation ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                      <Award size={11} /> Official Grade: {traineeEvaluation.grade}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 flex items-center gap-1">
+                      <Clock size={11} /> Supervisor Pending
+                    </span>
+                  )}
+                </div>
+
+                {traineeEvaluation ? (
+                  <div className="mt-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-blue-700">{traineeEvaluation.overallScore}%</span>
+                      <span className="text-xs font-bold text-slate-700">{traineeEvaluation.grade}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
+                      "{traineeEvaluation.strengths || traineeEvaluation.recommendations || 'Performance officially verified.'}"
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-1.5">
+                    <p className="text-xs font-semibold text-slate-700">Awaiting Host Evaluation</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Your supervisor at {hteCompanyName} will complete your evaluation for university credits.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {traineeEvaluation ? (
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                  <span className="text-slate-500 text-[11px]">
+                    Evaluated by {traineeEvaluation.evaluatedBy}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewEvaluation(traineeEvaluation)}
+                    className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    View Scorecard <ChevronRight size={13} />
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-400">
+                  Evaluation status is synchronized live with supervisor.
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* OJT Progress */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -1544,6 +1702,109 @@ export function Dashboard() {
                   className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition-colors"
                 >
                   Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Trainee Evaluation Scorecard Modal */}
+        {previewEvaluation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-5 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
+                    <Award size={20} className="text-yellow-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base leading-tight">HTE Performance Evaluation</h3>
+                    <p className="text-xs text-blue-200">Evaluated by {previewEvaluation.evaluatedBy}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewEvaluation(null)}
+                  className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-y-auto space-y-4">
+                {/* Overall Grade Banner */}
+                <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-blue-600">Official Rating</span>
+                    <p className="text-2xl font-black text-blue-900 mt-0.5">{previewEvaluation.grade}</p>
+                    <span className="text-xs text-blue-700">Verified OJT Performance Grade</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-3xl font-black text-blue-700">{previewEvaluation.overallScore}%</span>
+                    <span className="text-[10px] block text-blue-500 font-semibold">Cumulative Score</span>
+                  </div>
+                </div>
+
+                {/* Score Breakdown */}
+                <div className="space-y-2.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Score Breakdown</span>
+                  {[
+                    { label: 'Job Performance & Practical Skills', score: previewEvaluation.performanceScore },
+                    { label: 'Work Habits, Conduct & Attendance', score: previewEvaluation.attendanceScore },
+                    { label: 'Interpersonal & Communication Skills', score: previewEvaluation.communicationScore },
+                    { label: 'Time Management & Problem Solving', score: previewEvaluation.punctualityScore },
+                    { label: 'Attitude & Work Ethic', score: previewEvaluation.attitudeScore },
+                  ].map((item, idx) => (
+                    <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-700">{item.label}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${item.score}%` }} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-900 w-8 text-right">{item.score}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Supervisor Written Feedback */}
+                {previewEvaluation.strengths && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-100">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                      Supervisor Feedback & Strengths
+                    </span>
+                    <p className="text-xs text-emerald-950 mt-1 leading-relaxed">{previewEvaluation.strengths}</p>
+                  </div>
+                )}
+
+                {previewEvaluation.recommendations && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Recommendations
+                    </span>
+                    <p className="text-xs text-slate-700 mt-1 leading-relaxed">{previewEvaluation.recommendations}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">
+                  Evaluated {previewEvaluation.evaluatedAt ? new Date(previewEvaluation.evaluatedAt).toLocaleDateString() : 'N/A'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewEvaluation(null)}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm"
+                >
+                  Close Scorecard
                 </button>
               </div>
             </motion.div>

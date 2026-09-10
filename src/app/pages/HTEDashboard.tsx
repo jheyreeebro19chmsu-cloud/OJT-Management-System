@@ -22,7 +22,7 @@ import { getPhotoUrl } from '../services/config';
 
 export function HTEDashboard() {
   const navigate = useNavigate();
-  const { employees, timeRecords, hostFeedback, announcements, currentUser, getCurrentEmployee, settings } =
+  const { employees, timeRecords, evaluations, hostFeedback, announcements, currentUser, getCurrentEmployee, settings } =
     useApp();
   const currentEmp = getCurrentEmployee();
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,18 +42,25 @@ export function HTEDashboard() {
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
 
-  // Only trainees tied to the active HTE via an instructor link or a direct HTE assignment are shown.
+  // Only trainees tied to the active HTE via company name, direct HTE assignment, or instructor link
   const trainees = useMemo(() => {
-    const currentHteId = currentUser?.id || currentEmp?.id || undefined;
+    const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
+    const currentCompany = (companyName || '').trim().toLowerCase();
 
     return employees.filter((e) => {
       if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
       const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
+      const isCompanyMatched = Boolean(
+        currentCompany &&
+        currentCompany !== 'host training establishment' &&
+        e.companyName &&
+        e.companyName.trim().toLowerCase() === currentCompany
+      );
       const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
       const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
-      return isAssignedToCurrentHte || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
+      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
     });
-  }, [employees, currentUser, currentEmp, companyName]);
+  }, [employees, currentUser, currentEmp, hteUser, companyName]);
 
   // Compute rendered hours
   const traineeStats = useMemo(() => {
@@ -70,7 +77,9 @@ export function HTEDashboard() {
       const renderedHours = Math.round((totalMinutes / 60) * 10) / 10;
       const requiredHours = t.requiredHours || 486;
       const progress = Math.min(Math.round((renderedHours / requiredHours) * 100), 100);
-      const hasEvaluation = hostFeedback.some((hf) => hf.employeeId === t.id);
+      const hasEvaluation =
+        evaluations.some((ev) => ev.employeeId === t.id) ||
+        hostFeedback.some((hf) => hf.employeeId === t.id);
 
       return {
         ...t,
@@ -81,7 +90,7 @@ export function HTEDashboard() {
         logCount: records.length,
       };
     });
-  }, [trainees, timeRecords, hostFeedback]);
+  }, [trainees, timeRecords, evaluations, hostFeedback]);
 
   // High-level summary metrics
   const totalRenderedHours = useMemo(() => {
@@ -93,8 +102,8 @@ export function HTEDashboard() {
   }, [traineeStats]);
 
   const evaluatedCount = useMemo(() => {
-    return hostFeedback.length;
-  }, [hostFeedback]);
+    return traineeStats.filter((t) => t.hasEvaluation).length;
+  }, [traineeStats]);
 
   const filteredTrainees = useMemo(() => {
     return traineeStats.filter(

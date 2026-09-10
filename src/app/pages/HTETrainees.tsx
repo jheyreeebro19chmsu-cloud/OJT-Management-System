@@ -16,22 +16,45 @@ import { getPhotoUrl } from '../services/config';
 
 export function HTETrainees() {
   const navigate = useNavigate();
-  const { employees, timeRecords, currentUser } = useApp();
+  const { employees, timeRecords, currentUser, getCurrentEmployee } = useApp();
+  const currentEmp = getCurrentEmployee();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
 
-  // Show trainees linked to the current HTE context via instructor assignment or HTE assignment.
+  const hteUser = React.useMemo(() => {
+    try {
+      const stored = localStorage.getItem('ojt_hte_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const companyName =
+    currentEmp?.companyName ||
+    hteUser?.companyName ||
+    localStorage.getItem('ojt_hte_company') ||
+    '';
+
+  // Show trainees linked to the current HTE context via company name or HTE assignment.
   const trainees = useMemo(() => {
-    const currentHteId = currentUser?.id || currentUser?.employeeId || undefined;
+    const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
+    const currentCompany = (companyName || '').trim().toLowerCase();
 
     return employees.filter((e) => {
       if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
       const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
+      const isCompanyMatched = Boolean(
+        currentCompany &&
+        currentCompany !== 'host training establishment' &&
+        e.companyName &&
+        e.companyName.trim().toLowerCase() === currentCompany
+      );
       const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
       const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
-      return isAssignedToCurrentHte || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
+      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
     });
-  }, [employees, currentUser]);
+  }, [employees, currentUser, currentEmp, hteUser, companyName]);
 
   // Calculate rendered hours for each trainee
   const traineeData = useMemo(() => {
