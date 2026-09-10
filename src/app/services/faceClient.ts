@@ -211,6 +211,8 @@ export interface FaceQualityReport {
   blurry: boolean;
   capDetected: boolean;
   glassesDetected: boolean;
+  maskDetected: boolean;
+  faceObscured: boolean;
   faceDetected: boolean;
   faceCentered: boolean;
   brightness: number;
@@ -218,7 +220,7 @@ export interface FaceQualityReport {
 }
 
 /**
- * Image inspection for lighting, clarity, cap/headwear, and glasses obstruction.
+ * Image inspection for lighting, clarity, cap/headwear, glasses, and face mask obstruction.
  */
 export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityReport> {
   const result: FaceQualityReport = {
@@ -229,6 +231,8 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     blurry: false,
     capDetected: false,
     glassesDetected: false,
+    maskDetected: false,
+    faceObscured: false,
     faceDetected: false,
     faceCentered: true,
     brightness: 120,
@@ -362,16 +366,17 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
           if (aboveBrowY > 0 && aboveBrowY < h && browMidX > 0 && browMidX < w) {
             const aboveIdx = (aboveBrowY * w + browMidX) * 4;
             const aboveLum = 0.299 * data[aboveIdx] + 0.587 * data[aboveIdx + 1] + 0.114 * data[aboveIdx + 2];
-            // Only flag if there is an unmistakable dark visor/cap brim (< 15 lum) when skin is bright (> 80)
-            if (aboveLum < 15 && noseLum > 80 && topBrowY - box.y < 2) {
+            // Only flag if there is an unmistakable dark visor/cap brim (< 25 lum) when skin is bright (> 70)
+            if (aboveLum < 25 && noseLum > 70 && topBrowY - box.y < 4) {
               result.capDetected = true;
+              result.faceObscured = true;
               result.ok = false;
               result.issues.push('Cap or hat visor detected. Please remove headwear.');
             }
           }
 
-          // Glasses / Dark Eyewear Detection:
-          // Check for dark sunglasses covering pupils
+          // Glasses / Dark Eyewear / Sunglasses Detection:
+          // Check for dark sunglasses covering pupils or eyes
           const leftPupilX = Math.round((positions[36].x + positions[39].x) / 2);
           const leftPupilY = Math.round((positions[37].y + positions[41].y) / 2);
           const rightPupilX = Math.round((positions[42].x + positions[45].x) / 2);
@@ -387,17 +392,99 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
             }
           });
           const avgEyeLum = eyeSamples > 0 ? eyeLums / eyeSamples : 100;
-          // Only flag if dark sunglasses completely block the pupils
-          if (avgEyeLum < 15 && noseLum > 80) {
+          // Flag if sunglasses or dark eyewear cover the eye region
+          if ((avgEyeLum < 45 && noseLum > 70) || (avgEyeLum < 28)) {
             result.glassesDetected = true;
+            result.faceObscured = true;
             result.ok = false;
-            result.issues.push('Dark sunglasses detected. Please remove sunglasses for facial scan.');
+            result.issues.push('Dark sunglasses / eyewear detected. Please remove sunglasses for facial scan.');
           }
+
+          // Face Mask / Lower Face Obstruction Detection:
+          // Checks area between nose bottom (point 33) and chin (point 8) / mouth (points 48-67)
+          const mouthMidX = Math.round((positions[48].x + positions[54].x) / 2);
+          const mouthMidY = Math.round((positions[51].y + positions[57].y) / 2);
+          if (mouthMidX > 0 && mouthMidX < w && mouthMidY > 0 && mouthMidY < h) {
+            const mouthIdx = (mouthMidY * w + mouthMidX) * 4;
+            const mouthR = data[mouthIdx];
+            const mouthG = data[mouthIdx + 1];
+            const mouthB = data[mouthIdx + 2];
+            const mouthLum = 0.299 * mouthR + 0.587 * mouthG + 0.114 * mouthB;
+
+            // Surgical blue/cyan mask
+            const isBlueMask = mouthB > mouthR + 20 && mouthB > 65;
+            // Black or dark cloth mask while face is well-lit
+            const isDarkMask = mouthLum < 42 && noseLum > 72;
+            // Light/white mask covering lower face
+            const isWhiteMask = mouthLum > 215 && Math.abs(mouthR - mouthB) < 16 && noseLum < 185;
+
+            if (isBlueMask || isDarkMask || isWhiteMask) {
+              result.maskDetected = true;
+              result.faceObscured = true;
+              result.ok = false;
+              result.issues.push('Face mask or mouth covering detected. Please remove mask for biometric verification.');
+            }
+          }
+
+          // Overall Face Obscured Flag
+          result.faceObscured = Boolean(result.maskDetected || result.glassesDetected || result.capDetected);
+          if (result.faceObscured) {
+            result.ok = false;
+          }
+        }
+
+        // Bounding-box based fallback obstruction check (in case landmarks are displaced by mask/sunglasses)
+        if (!result.maskDetected) {
+          const lowerY = Math.round(box.y + box.height * 0.72);
+          const lowerMidX = Math.round(box.x + box.width * 0.50);
+          if (lowerY > 0 && lowerY < h && lowerMidX > 0 && lowerMidX < w) {
+            const idx = (lowerY * w + lowerMidX) * 4;
+            const b = data[idx + 2];
+            const r = data[idx];
+            const g = data[idx + 1];
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            if ((b > r + 20 && b > 65) || (lum < 40 && avgLum > 65)) {
+              result.maskDetected = true;
+              result.faceObscured = true;
+              result.ok = false;
+              if (!result.issues.some((i) => i.includes('mask'))) {
+                result.issues.push('Face mask detected. Please remove mask for biometric verification.');
+              }
+            }
+          }
+        }
+
+        if (!result.glassesDetected) {
+          const eyeY = Math.round(box.y + box.height * 0.35);
+          const eyeLeftX = Math.round(box.x + box.width * 0.35);
+          const eyeRightX = Math.round(box.x + box.width * 0.65);
+          let darkCount = 0;
+          [eyeLeftX, eyeRightX].forEach((ex) => {
+            if (eyeY > 0 && eyeY < h && ex > 0 && ex < w) {
+              const idx = (eyeY * w + ex) * 4;
+              const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+              if (lum < 38) darkCount++;
+            }
+          });
+          if (darkCount >= 2 && avgLum > 60) {
+            result.glassesDetected = true;
+            result.faceObscured = true;
+            result.ok = false;
+            if (!result.issues.some((i) => i.includes('sunglasses'))) {
+              result.issues.push('Dark sunglasses detected. Please remove sunglasses for facial scan.');
+            }
+          }
+        }
+
+        result.faceObscured = Boolean(result.maskDetected || result.glassesDetected || result.capDetected);
+        if (result.faceObscured) {
+          result.ok = false;
         }
       } else {
         result.faceDetected = false;
+        result.faceObscured = true;
         result.ok = false;
-        result.issues.push('No face detected. Position head inside the oval guide.');
+        result.issues.push('No face detected. Position head inside the oval guide without coverings.');
       }
     }
   } catch (err) {

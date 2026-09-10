@@ -158,6 +158,9 @@ const BRIDGE_HTML = `
 
         let hasFace = false;
         let faceCentered = true;
+        let maskDetected = false;
+        let glassesDetected = false;
+
         if (modelsReady) {
           const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.14, inputSize: 224 });
           const det = await faceapi.detectSingleFace(img, detectorOpts);
@@ -170,21 +173,56 @@ const BRIDGE_HTML = `
             if (Math.abs(faceCx - 0.50) > 0.22 || Math.abs(faceCy - 0.48) > 0.25) {
               faceCentered = false;
             }
+
+            // Lower face mask sampling
+            const lowerY = Math.round(box.y + box.height * 0.72);
+            const lowerMidX = Math.round(box.x + box.width * 0.50);
+            if (lowerY > 0 && lowerY < canvas.height && lowerMidX > 0 && lowerMidX < canvas.width) {
+              const idx = (lowerY * canvas.width + lowerMidX) * 4;
+              const r = imgData[idx];
+              const g = imgData[idx + 1];
+              const b = imgData[idx + 2];
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              if ((b > r + 20 && b > 65) || (lum < 40 && avgLum > 65)) {
+                maskDetected = true;
+              }
+            }
+
+            // Upper face sunglasses sampling
+            const eyeY = Math.round(box.y + box.height * 0.35);
+            const eyeLeftX = Math.round(box.x + box.width * 0.35);
+            const eyeRightX = Math.round(box.x + box.width * 0.65);
+            let darkCount = 0;
+            [eyeLeftX, eyeRightX].forEach((ex) => {
+              if (eyeY > 0 && eyeY < canvas.height && ex > 0 && ex < canvas.width) {
+                const idx = (eyeY * canvas.width + ex) * 4;
+                const lum = 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
+                if (lum < 38) darkCount++;
+              }
+            });
+            if (darkCount >= 2 && avgLum > 60) {
+              glassesDetected = true;
+            }
           }
         } else {
           hasFace = true;
         }
 
+        const faceObscured = Boolean(maskDetected || glassesDetected);
+
         sendToNative({
           id,
           hasFace,
           faceCentered,
+          maskDetected,
+          glassesDetected,
+          faceObscured,
           tooDark: avgLum < 30,
           tooBright: avgLum > 240,
           brightness: avgLum
         });
       } catch (err) {
-        sendToNative({ id, hasFace: true, faceCentered: true, tooDark: false, tooBright: false, brightness: 128 });
+        sendToNative({ id, hasFace: true, faceCentered: true, maskDetected: false, glassesDetected: false, faceObscured: false, tooDark: false, tooBright: false, brightness: 128 });
       }
     }
 

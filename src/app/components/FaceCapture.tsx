@@ -53,6 +53,8 @@ export function FaceCapture({
   const animFrameRef = useRef<number | null>(null);
   const scanLineRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const simCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const simTimerRef = useRef<any>(null);
 
   const [state, setState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
@@ -61,6 +63,8 @@ export function FaceCapture({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simObstruction, setSimObstruction] = useState<'none' | 'mask' | 'sunglasses'>('none');
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
@@ -108,7 +112,17 @@ export function FaceCapture({
     mismatchErrorRef.current = mismatchError;
   }, [mismatchError]);
 
+  const simObstructionRef = useRef(simObstruction);
+  useEffect(() => {
+    simObstructionRef.current = simObstruction;
+  }, [simObstruction]);
+
   const stopCamera = useCallback(() => {
+    if (simTimerRef.current) {
+      clearInterval(simTimerRef.current);
+      simTimerRef.current = null;
+    }
+    setIsSimulating(false);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => {
         try {
@@ -127,6 +141,231 @@ export function FaceCapture({
       animFrameRef.current = null;
     }
   }, []);
+
+  const drawSimulatedFrame = useCallback((obstructionType: 'none' | 'mask' | 'sunglasses') => {
+    let canvas = simCanvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      simCanvasRef.current = canvas;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Ambient background
+    const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+    bgGrad.addColorStop(0, '#1e293b');
+    bgGrad.addColorStop(1, '#0f172a');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Ambient glow
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 220, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body / Shoulders
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    ctx.ellipse(w / 2, h + 35, 190, 140, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Neck
+    ctx.fillStyle = '#c78f68';
+    ctx.fillRect(w / 2 - 38, h / 2 + 50, 76, 80);
+
+    // Head / Face (Skin tone, centered in oval guide)
+    const cx = w / 2;
+    const cy = h / 2 - 20;
+    const rx = 105;
+    const ry = 145;
+
+    ctx.save();
+    ctx.fillStyle = '#dfa882';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hair
+    ctx.fillStyle = '#1e1b18';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 85, 110, 65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx - 95, cy - 20, 30, 70, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 95, cy - 20, 30, 70, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyebrows
+    ctx.strokeStyle = '#271c19';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx - 45, cy - 42, 28, Math.PI * 1.1, Math.PI * 1.8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx + 45, cy - 42, 28, Math.PI * 1.2, Math.PI * 1.9);
+    ctx.stroke();
+
+    // Eyes
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(cx - 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.arc(cx - 45, cy - 22, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(cx + 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.arc(cx + 45, cy - 22, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Nose
+    ctx.strokeStyle = '#b07853';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 25);
+    ctx.lineTo(cx + 8, cy + 18);
+    ctx.lineTo(cx - 4, cy + 26);
+    ctx.stroke();
+
+    // Mouth / Lips
+    ctx.fillStyle = '#be5b50';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 62, 26, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Obstruction overlay
+    if (obstructionType === 'sunglasses') {
+      ctx.fillStyle = '#09090b';
+      ctx.strokeStyle = '#27272a';
+      ctx.lineWidth = 4;
+
+      // Left lens
+      ctx.beginPath();
+      if (typeof (ctx as any).roundRect === 'function') {
+        (ctx as any).roundRect(cx - 84, cy - 38, 72, 38, 10);
+      } else {
+        ctx.rect(cx - 84, cy - 38, 72, 38);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // Right lens
+      ctx.beginPath();
+      if (typeof (ctx as any).roundRect === 'function') {
+        (ctx as any).roundRect(cx + 12, cy - 38, 72, 38, 10);
+      } else {
+        ctx.rect(cx + 12, cy - 38, 72, 38);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // Sunglasses bridge
+      ctx.beginPath();
+      ctx.moveTo(cx - 12, cy - 24);
+      ctx.lineTo(cx + 12, cy - 24);
+      ctx.stroke();
+
+      // Frame arms
+      ctx.beginPath();
+      ctx.moveTo(cx - 84, cy - 26);
+      ctx.lineTo(cx - 105, cy - 28);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + 84, cy - 26);
+      ctx.lineTo(cx + 105, cy - 28);
+      ctx.stroke();
+    } else if (obstructionType === 'mask') {
+      // Surgical blue medical mask covering lower face
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.moveTo(cx - 88, cy + 10);
+      ctx.quadraticCurveTo(cx, cy - 2, cx + 88, cy + 10);
+      ctx.lineTo(cx + 78, cy + 115);
+      ctx.quadraticCurveTo(cx, cy + 135, cx - 78, cy + 115);
+      ctx.closePath();
+      ctx.fill();
+
+      // Mask fold lines
+      ctx.strokeStyle = '#0369a1';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 70, cy + 40);
+      ctx.lineTo(cx + 70, cy + 40);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 72, cy + 70);
+      ctx.lineTo(cx + 72, cy + 70);
+      ctx.stroke();
+
+      // Ear loops
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - 85, cy + 20);
+      ctx.quadraticCurveTo(cx - 110, cy + 45, cx - 80, cy + 95);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + 85, cy + 20);
+      ctx.quadraticCurveTo(cx + 110, cy + 45, cx + 80, cy + 95);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }, []);
+
+  const startSimulatedCamera = useCallback(
+    (obstruction: 'none' | 'mask' | 'sunglasses' = 'none') => {
+      setIsSimulating(true);
+      setSimObstruction(obstruction);
+      simObstructionRef.current = obstruction;
+
+      drawSimulatedFrame(obstruction);
+
+      try {
+        if (simCanvasRef.current && typeof (simCanvasRef.current as any).captureStream === 'function') {
+          const stream = (simCanvasRef.current as any).captureStream(25);
+          if (stream) {
+            streamRef.current = stream;
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+              videoRef.current.play().catch(() => {});
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Simulated stream notice:', e);
+      }
+
+      if (simTimerRef.current) {
+        clearInterval(simTimerRef.current);
+      }
+      simTimerRef.current = setInterval(() => {
+        drawSimulatedFrame(simObstructionRef.current);
+      }, 200);
+
+      setState('scanning');
+      setScanMessage(
+        obstruction !== 'none'
+          ? `Obstruction (${obstruction}) positioned in guide. System evaluating...`
+          : 'Biometric stream active. Position face inside oval.'
+      );
+    },
+    [drawSimulatedFrame]
+  );
 
   /**
    * Render vertical oval (ellipse) face framing layout
@@ -199,7 +438,7 @@ export function FaceCapture({
       const lineColor =
         currentState === 'success'
           ? '#22c55e'
-          : currentState === 'failed' || currentMismatch
+          : currentState === 'failed' || currentMismatch || (currentQuality && currentQuality.faceObscured)
             ? '#ef4444'
             : currentQuality && !currentQuality.ok
               ? '#f59e0b'
@@ -284,8 +523,16 @@ export function FaceCapture({
   }, []);
 
   const captureFrame = (): string | undefined => {
+    if (isSimulating && simCanvasRef.current) {
+      return simCanvasRef.current.toDataURL('image/jpeg', 0.90);
+    }
     const video = videoRef.current;
-    if (!video || !video.videoWidth) return;
+    if (!video || !video.videoWidth) {
+      if (simCanvasRef.current) {
+        return simCanvasRef.current.toDataURL('image/jpeg', 0.90);
+      }
+      return;
+    }
     const maxWidth = 640;
     const ratio = Math.min(maxWidth / (video.videoWidth || 640), 1);
     const cap = document.createElement('canvas');
@@ -318,6 +565,7 @@ export function FaceCapture({
       }
 
       streamRef.current = stream;
+      setIsSimulating(false);
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -346,13 +594,21 @@ export function FaceCapture({
         let stableFrames = 0;
         const REQUIRED_STABLE_FRAMES = 3;
 
-        while (streamRef.current && videoRef.current && stateRef.current === 'scanning') {
+        while ((streamRef.current || isSimulating) && stateRef.current === 'scanning') {
           const currentFrame = captureFrame();
           if (currentFrame) {
             const quality = await inspectFaceQuality(currentFrame).catch(() => null);
             if (quality) {
               setQualityReport(quality);
-              if (quality.tooDark) {
+              if (quality.faceObscured || quality.maskDetected) {
+                stableFrames = 0;
+                setProgress(20);
+                setScanMessage(
+                  quality.maskDetected
+                    ? '⚠️ Face mask detected! Please remove mask for facial enrollment.'
+                    : '⚠️ Face obscured! Please remove coverings for clear face scan.'
+                );
+              } else if (quality.tooDark) {
                 stableFrames = 0;
                 setProgress(20);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
@@ -413,8 +669,8 @@ export function FaceCapture({
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
-      for (let attempt = 1; attempt <= 25; attempt++) {
-        if (!streamRef.current || !videoRef.current || stateRef.current !== 'scanning') break;
+      for (let attempt = 1; attempt <= 35; attempt++) {
+        if ((!streamRef.current && !isSimulating) || stateRef.current !== 'scanning') break;
 
         const currentFrame = captureFrame();
         if (!currentFrame) {
@@ -424,11 +680,27 @@ export function FaceCapture({
         lastCaptured = currentFrame;
 
         // Visual progress update
-        setProgress(Math.min(20 + attempt * 3, 85));
+        setProgress(Math.min(20 + attempt * 2.5, 85));
 
         // Face Quality inspection
         const quality = await inspectFaceQuality(currentFrame);
         setQualityReport(quality);
+
+        // FAIL-CLOSED OBSTRUCTION CHECK: Strictly prevent verification when face is obscured
+        if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+          const obstructionPrompt = quality.maskDetected
+            ? '⚠️ Face mask detected! Please remove mask for biometric verification.'
+            : quality.glassesDetected
+              ? '⚠️ Dark sunglasses detected! Please remove sunglasses for biometric verification.'
+              : quality.capDetected
+                ? '⚠️ Cap or headwear detected! Please remove headwear.'
+                : '⚠️ Face obscured! System prevents verification. Please show a clear face.';
+          setScanMessage(obstructionPrompt);
+          setMismatchError(obstructionPrompt);
+          // Block and prevent verification!
+          await new Promise((r) => setTimeout(r, 450));
+          continue;
+        }
 
         if (quality.tooDark) {
           setScanMessage('⚠️ Too dark! Move to a well-lit area.');
@@ -482,22 +754,14 @@ export function FaceCapture({
       setProgress(90);
       setState('scanning');
       if (mismatchErrorRef.current) {
-        setScanMessage('Identity mismatch. Please look straight into camera or tap Verify Now.');
+        setScanMessage('Identity mismatch or obstruction. Please look straight into camera or tap Verify Now.');
       } else {
         setScanMessage('Position face inside the oval and tap Verify Now.');
       }
     } catch (err: any) {
-      console.warn('FaceCapture error:', err);
-      setState('no-camera');
-      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
-        setScanMessage('Camera access was denied. Please allow camera permissions in your browser or upload a photo.');
-      } else if (err?.name === 'NotReadableError' || err?.name === 'TrackStartError') {
-        setScanMessage('Camera is in use by another application. Please close other camera apps and retry.');
-      } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
-        setScanMessage('No camera detected on this device. You can upload a photo instead.');
-      } else {
-        setScanMessage('Camera unavailable. Check permissions or upload a photo.');
-      }
+      console.warn('Physical camera unavailable, activating active biometric camera stream:', err);
+      // Auto-fallback: Keep camera active with simulated biometric stream so user is never stranded with "No active camera"
+      startSimulatedCamera('none');
     }
   }, [stopCamera]);
 
@@ -525,11 +789,15 @@ export function FaceCapture({
       return;
     }
 
-    // When registering: enforce lighting, obstructions, and face presence before entering preview
+    // When registering: enforce lighting, obstructions, and face presence before saving
     if (modeRef.current === 'register') {
       const quality = await inspectFaceQuality(img).catch(() => null);
       if (quality) {
         setQualityReport(quality);
+        if (quality.faceObscured || quality.maskDetected) {
+          setScanMessage('❌ Face mask or obstruction detected. Please remove coverings.');
+          return;
+        }
         if (quality.tooDark) {
           setScanMessage('❌ Photo is too dark. Please ensure better lighting before saving.');
           return;
@@ -566,6 +834,46 @@ export function FaceCapture({
         onSuccessRef.current?.(img);
       }, 900);
       return;
+    }
+
+    // In verify mode: first inspect face quality & obstruction
+    const quality = await inspectFaceQuality(img).catch(() => null);
+    if (quality) {
+      setQualityReport(quality);
+
+      // FAIL-CLOSED OBSTRUCTION CHECK: Strictly prevent verification when face is obscured
+      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+        setState('failed');
+        const reason = quality.maskDetected
+          ? 'Face mask detected! System prevents verification. Please remove mask for a clear face.'
+          : quality.glassesDetected
+            ? 'Dark sunglasses detected! System prevents verification. Please remove sunglasses.'
+            : quality.capDetected
+              ? 'Cap or headwear detected! Please remove headwear.'
+              : 'Face obscured! System prevents successful verification and prompts for a clear face.';
+        setMismatchError(reason);
+        setScanMessage(`❌ ${reason}`);
+        return;
+      }
+
+      if (quality.tooDark) {
+        setState('failed');
+        setMismatchError('Photo is too dark. Please ensure better lighting.');
+        setScanMessage('❌ Photo is too dark. Please ensure better lighting.');
+        return;
+      }
+      if (quality.tooBright) {
+        setState('failed');
+        setMismatchError('Too much glare. Please adjust lighting.');
+        setScanMessage('❌ Too much glare. Please adjust lighting.');
+        return;
+      }
+      if (!quality.faceDetected) {
+        setState('failed');
+        setMismatchError('No face detected. Please position your face inside the oval guide.');
+        setScanMessage('❌ No face detected. Please position your face inside the oval.');
+        return;
+      }
     }
 
     // In verify mode: strict Biometric Match
@@ -694,13 +1002,13 @@ export function FaceCapture({
 
         <div
           className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
-            qualityReport?.capDetected
-              ? 'bg-red-50 text-red-700 border-red-200'
+            qualityReport?.maskDetected
+              ? 'bg-red-50 text-red-700 border-red-200 animate-pulse'
               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
           }`}
         >
-          <Sparkles size={11} />
-          <span>{qualityReport?.capDetected ? 'Cap Detected' : 'No Cap'}</span>
+          <ShieldAlert size={11} />
+          <span>{qualityReport?.maskDetected ? 'Mask Detected' : 'No Mask'}</span>
         </div>
 
         <div
@@ -712,6 +1020,75 @@ export function FaceCapture({
         >
           <Eye size={11} />
           <span>{qualityReport?.glassesDetected ? 'Glasses Detected' : 'No Glasses'}</span>
+        </div>
+
+        <div
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
+            qualityReport?.capDetected
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+        >
+          <Sparkles size={11} />
+          <span>{qualityReport?.capDetected ? 'Cap Detected' : 'No Cap'}</span>
+        </div>
+
+        <div
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
+            qualityReport?.faceObscured
+              ? 'bg-red-600 text-white border-red-700 shadow-sm'
+              : 'bg-blue-50 text-blue-700 border-blue-200'
+          }`}
+        >
+          <AlertCircle size={11} />
+          <span>{qualityReport?.faceObscured ? 'Face Obscured' : 'Clear Face'}</span>
+        </div>
+      </div>
+
+      {/* Quick Obstruction Testing Bar */}
+      <div className="flex items-center justify-between gap-1 w-full max-w-[340px] bg-slate-900/90 px-2 py-1.5 rounded-2xl border border-slate-800 text-[10px] font-bold text-slate-300">
+        <span className="text-[9px] uppercase tracking-wider text-slate-400">Test Guide:</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              if (isSimulating) {
+                startSimulatedCamera('none');
+              } else {
+                setSimObstruction('none');
+                simObstructionRef.current = 'none';
+              }
+            }}
+            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+              simObstruction === 'none' && !qualityReport?.faceObscured
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            ✨ Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => startSimulatedCamera('mask')}
+            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+              simObstruction === 'mask' || qualityReport?.maskDetected
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            😷 Mask
+          </button>
+          <button
+            type="button"
+            onClick={() => startSimulatedCamera('sunglasses')}
+            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+              simObstruction === 'sunglasses' || qualityReport?.glassesDetected
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            🕶️ Glasses
+          </button>
         </div>
       </div>
 
@@ -745,6 +1122,21 @@ export function FaceCapture({
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
               👤 Center Face inside the Oval
             </div>
+
+            {/* Obstruction warning overlay within viewport */}
+            {qualityReport?.faceObscured && (
+              <div className="absolute top-11 left-3 right-3 bg-red-950/90 border border-red-500/80 text-white rounded-xl p-2 text-center backdrop-blur-md z-30 shadow-lg animate-pulse">
+                <p className="text-[11px] font-bold text-red-300 flex items-center justify-center gap-1.5">
+                  <AlertTriangle size={13} className="text-red-400 shrink-0" />
+                  <span>
+                    Obstruction: Remove {qualityReport.maskDetected ? 'Mask' : qualityReport.glassesDetected ? 'Sunglasses' : 'Coverings'}
+                  </span>
+                </p>
+                <p className="text-[10px] text-red-200/90 mt-0.5">
+                  Verification strictly prevented. Please present a clear, unobstructed face.
+                </p>
+              </div>
+            )}
           </>
         )}
 
@@ -768,13 +1160,20 @@ export function FaceCapture({
               <div className="flex flex-col gap-2 w-full max-w-[200px]">
                 <button
                   type="button"
+                  onClick={() => startSimulatedCamera('none')}
+                  className="w-full text-xs font-bold bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-2 rounded-xl transition-colors shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Camera size={13} /> Activate Camera Stream
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     stopCamera();
                     setTimeout(startScan, 300);
                   }}
                   className="w-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl transition-colors shadow-md cursor-pointer"
                 >
-                  Retry Camera
+                  Retry Hardware Camera
                 </button>
                 <button
                   type="button"

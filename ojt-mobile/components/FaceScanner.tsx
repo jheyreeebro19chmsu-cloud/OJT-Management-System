@@ -222,6 +222,23 @@ export default function FaceScanner({
           return;
         }
 
+        if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+          consecutiveStable = 0;
+          setStableCount(0);
+          setScanStatus('failed');
+          const prompt = quality.maskDetected
+            ? '⚠️ Face mask detected! Please remove mask for biometric scan.'
+            : quality.glassesDetected
+              ? '⚠️ Dark sunglasses detected! Please remove sunglasses.'
+              : quality.capDetected
+                ? '⚠️ Cap detected! Please remove headwear.'
+                : '⚠️ Face obscured! Please ensure your full face is visible.';
+          setStatusMessage(prompt);
+          setErrorMessage(prompt);
+          Animated.timing(progressAnim, { toValue: 0.2, duration: 200, useNativeDriver: false }).start();
+          return;
+        }
+
         if (!quality.hasFace) {
           consecutiveStable = 0;
           setStableCount(0);
@@ -340,6 +357,23 @@ export default function FaceScanner({
       }
 
       const base64Data = `data:image/jpeg;base64,${photo.base64}`;
+
+      // Enforce fail-closed obstruction checks
+      const quality = await biometricService.inspectQuality(base64Data);
+      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+        setScanStatus('failed');
+        const reason = quality.maskDetected
+          ? 'Face mask detected! System prevents verification. Please remove mask for a clear face.'
+          : quality.glassesDetected
+            ? 'Dark sunglasses detected! System prevents verification. Please remove sunglasses.'
+            : quality.capDetected
+              ? 'Cap or headwear detected! Please remove headwear.'
+              : 'Face obscured! System prevents successful verification and prompts for a clear face.';
+        setErrorMessage(reason);
+        setStatusMessage('⚠️ Face Obstructed');
+        setIsCapturing(false);
+        return;
+      }
 
       // If in DTR verification mode, check against enrolled photo
       if ((mode === 'clock_in' || mode === 'clock_out') && enrolledPhoto) {
