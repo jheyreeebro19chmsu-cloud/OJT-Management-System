@@ -22,6 +22,8 @@ import {
   Trash2,
   Clock,
   Phone,
+  ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -75,6 +77,8 @@ export function Register() {
   const [attemptedNext, setAttemptedNext] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
+  const [showCameraPermissionPrompt, setShowCameraPermissionPrompt] = useState(false);
+  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   const [form, setForm] = useState({
     // Personal Information
     name: '',
@@ -2671,11 +2675,15 @@ export function Register() {
                   </div>
                   <h2 className="font-bold text-gray-800">Face Registration</h2>
                 </div>
-                <p className="text-sm text-gray-500 mb-4">
-                  Register your face for biometric time recording. The captured image will be stored in the system for
-                  <p className="text-sm text-gray-500 mt-2">Optional: you can skip this and enroll your face later from your Profile after logging in.</p>
-                  identity verification during clock-in/out.
-                </p>
+                <div className="text-sm text-gray-500 mb-4 space-y-1">
+                  <p>
+                    Register your face for biometric time recording. The captured image will be stored in the system for
+                    identity verification during clock-in/out.
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Optional: you can skip this and enroll your face later from your Profile after logging in.
+                  </p>
+                </div>
 
                 {faceCapturing ? (
                   <FaceCapture
@@ -2688,7 +2696,7 @@ export function Register() {
                   />
                 ) : faceRegistered ? (
                   <div className="flex flex-col items-center gap-3 py-4">
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300">
+                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-green-300 shadow-sm">
                       {photo ? (
                         <img
                           src={photo}
@@ -2707,31 +2715,145 @@ export function Register() {
                       </p>
                     </div>
                     <button
+                      type="button"
                       onClick={() => {
                         setFaceRegistered(false);
-                        setFaceCapturing(true);
+                        setShowCameraPermissionPrompt(true);
                       }}
-                      className="text-xs text-blue-600 hover:text-blue-800"
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
                     >
                       Re-register face
                     </button>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4 py-4">
-                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
-                      <Camera size={28} className="text-gray-400" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-gray-700">No face registered yet</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
-                    </div>
+                    {/* Camera Permission Denied Instruction Banner */}
+                    {cameraPermissionDenied && (
+                      <div
+                        id="camera-permission-denied-message"
+                        data-testid="camera-permission-denied-message"
+                        className="w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-2xl text-center space-y-3 shadow-sm animate-in fade-in"
+                      >
+                        <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto border border-red-200">
+                          <ShieldAlert size={24} />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-red-800">Camera Permission Denied</h4>
+                          <p className="text-xs text-red-600 mt-1 leading-relaxed">
+                            Camera access was denied. The system requires camera permission to capture and register your facial biometrics.
+                          </p>
+                        </div>
+                        <div className="p-3 bg-white/90 rounded-xl border border-red-100 text-left text-xs text-gray-700 space-y-1">
+                          <p className="font-semibold text-gray-900">How to allow camera access:</p>
+                          <p>1. Click the lock or camera icon in your browser address bar.</p>
+                          <p>2. Change Camera permission to <strong>"Allow"</strong>.</p>
+                          <p>3. Click <strong>"Scan &amp; Capture Now"</strong> below to grant access and proceed.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!cameraPermissionDenied && (
+                      <>
+                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
+                          <Camera size={28} className="text-gray-400" />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-gray-700">No face registered yet</p>
+                          <p className="text-xs text-gray-400 mt-0.5">Required for biometric time recording</p>
+                        </div>
+                      </>
+                    )}
+
                     <button
-                      onClick={() => setFaceCapturing(true)}
-                      className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2"
+                      type="button"
+                      id="scan-capture-now-btn"
+                      data-testid="scan-capture-now-btn"
+                      onClick={() => setShowCameraPermissionPrompt(true)}
+                      className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
                     >
                       <Camera size={16} />
-                      Register Face
+                      Scan &amp; Capture Now
                     </button>
+                  </div>
+                )}
+
+                {/* System Camera Permission Request Modal */}
+                {showCameraPermissionPrompt && (
+                  <div
+                    id="camera-permission-modal"
+                    data-testid="camera-permission-modal"
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in"
+                  >
+                    <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 text-center space-y-4">
+                      <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mx-auto border border-purple-200 shadow-inner">
+                        <Camera size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-gray-900">Camera Permission Request</h3>
+                        <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">
+                          The system requires access to your camera to scan and register your facial biometrics for trainee verification.
+                        </p>
+                      </div>
+                      <div className="p-3 bg-purple-50/80 rounded-xl border border-purple-100 text-[11px] text-purple-900 text-left leading-relaxed">
+                        🔒 <strong>Biometric Privacy Notice:</strong> Your facial photo is securely processed to verify identity during your OJT attendance clock-in and clock-out.
+                      </div>
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          type="button"
+                          id="camera-permission-deny-btn"
+                          data-testid="camera-permission-deny-btn"
+                          onClick={() => {
+                            setShowCameraPermissionPrompt(false);
+                            setCameraPermissionDenied(true);
+                            setFaceCapturing(false);
+                            toast.error('Camera permission denied. Camera access is required to register your face.');
+                          }}
+                          className="flex-1 py-2.5 px-4 rounded-xl border border-gray-300 text-gray-700 font-semibold text-xs hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          Deny
+                        </button>
+                        <button
+                          type="button"
+                          id="camera-permission-allow-btn"
+                          data-testid="camera-permission-allow-btn"
+                          onClick={async () => {
+                            setShowCameraPermissionPrompt(false);
+                            setCameraPermissionDenied(false);
+
+                            if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+                              try {
+                                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                                stream.getTracks().forEach((t) => {
+                                  try {
+                                    t.stop();
+                                  } catch {}
+                                });
+                                setFaceCapturing(true);
+                              } catch (err: any) {
+                                console.warn('getUserMedia probe result:', err);
+                                const isDenied =
+                                  err?.name === 'NotAllowedError' ||
+                                  err?.name === 'PermissionDeniedError' ||
+                                  String(err?.message || '').toLowerCase().includes('denied');
+                                if (isDenied) {
+                                  setCameraPermissionDenied(true);
+                                  setFaceCapturing(false);
+                                  toast.error('Camera access was denied. Please allow camera permission to continue.');
+                                  return;
+                                }
+                                setFaceCapturing(true);
+                              }
+                            } else {
+                              setFaceCapturing(true);
+                            }
+                          }}
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-purple-600 text-white font-semibold text-xs hover:bg-purple-700 shadow-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Check size={14} />
+                          Allow
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </motion.div>

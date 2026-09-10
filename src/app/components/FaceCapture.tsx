@@ -26,7 +26,17 @@ import {
 } from '../services/faceClient';
 import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
 
-type ScanState = 'idle' | 'requesting' | 'scanning' | 'analyzing' | 'verifying' | 'preview' | 'success' | 'failed' | 'no-camera';
+type ScanState =
+  | 'idle'
+  | 'requesting'
+  | 'scanning'
+  | 'analyzing'
+  | 'verifying'
+  | 'preview'
+  | 'success'
+  | 'failed'
+  | 'no-camera'
+  | 'permission-denied';
 
 interface FaceCaptureProps {
   mode: 'register' | 'verify';
@@ -655,12 +665,24 @@ export function FaceCapture({
           await videoRef.current.play().catch(() => {});
         }
       }
-    } catch (hwErr) {
-      console.warn('Physical camera unavailable, activating active biometric camera stream:', hwErr);
+    } catch (hwErr: any) {
+      console.warn('Camera stream request notice:', hwErr);
+      const isPermissionDenied =
+        hwErr?.name === 'NotAllowedError' ||
+        hwErr?.name === 'PermissionDeniedError' ||
+        String(hwErr?.message || '').toLowerCase().includes('denied') ||
+        String(hwErr?.message || '').toLowerCase().includes('permission');
+
+      if (isPermissionDenied) {
+        setState('permission-denied');
+        setScanMessage('⚠️ Camera access denied. Please allow camera permission in browser settings.');
+        setMismatchError('Camera permission was denied. The system requires camera access to proceed with facial recognition.');
+        return;
+      }
     }
 
     if (!hasLiveHardwareCamera) {
-      // Auto-fallback: Keep camera active with simulated biometric stream so user is never stranded with "No active camera"
+      // Auto-fallback: Keep camera active with simulated biometric stream when physical device is absent
       setIsSimulating(true);
       const currentObs = simObstructionRef.current || 'none';
       drawSimulatedFrame(currentObs);
@@ -1245,6 +1267,38 @@ export function FaceCapture({
               </div>
             )}
           </>
+        )}
+
+        {/* Camera Permission Denied View */}
+        {state === 'permission-denied' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-6 z-30 text-center space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-red-900/50 text-red-400 border border-red-500/40 flex items-center justify-center shadow-lg">
+              <ShieldAlert size={28} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white">Camera Permission Denied</h4>
+              <p className="text-xs text-red-300 mt-1 leading-relaxed max-w-[280px]">
+                Camera access was denied. The system requires camera permission to capture and register your facial biometrics.
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-[10px] text-slate-300 text-left w-full max-w-[280px] space-y-1">
+              <p className="font-bold text-slate-200">How to enable camera:</p>
+              <p>1. Click the lock or camera icon in your address bar</p>
+              <p>2. Change Camera permission to "Allow"</p>
+              <p>3. Tap "Grant Camera Access & Try Again" below</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                stopCamera();
+                setTimeout(startScan, 300);
+              }}
+              className="w-full max-w-[280px] py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Camera size={14} />
+              <span>Grant Camera Access & Try Again</span>
+            </button>
+          </div>
         )}
 
         {/* Idle / No Camera State */}

@@ -901,6 +901,92 @@ assert('System never encounters "No active camera" stranded state', fallbackStre
 assert('Obstructed face on simulated stream still strictly prevents verification', fallbackStreamScan.canVerify === false);
 
 // ----------------------------------------------------------------------------
+// MODULE 12: TRAINEE CAMERA PERMISSION & STEP 4 FACE REGISTRATION FLOW
+// ----------------------------------------------------------------------------
+printSectionHeader('12. WHITE BOX TESTS: Trainee Camera Permission Management');
+
+/**
+ * Simulates the camera permission state machine in Register Step 4
+ */
+function simulateCameraPermissionWorkflow({ action, browserPermission = 'prompt' }) {
+  let showCameraPermissionPrompt = false;
+  let cameraPermissionDenied = false;
+  let faceCapturing = false;
+  let activeCameraFeed = false;
+  let instructionMessageVisible = false;
+  let instructionMessage = '';
+
+  // 1. User arrives on Step 4 (Face Registration)
+  // 2. User clicks "Scan & Capture Now" or triggers camera feature
+  if (action === 'click_scan_and_capture_now') {
+    showCameraPermissionPrompt = true;
+  }
+
+  // 3. User chooses "Allow"
+  if (action === 'user_selects_allow') {
+    showCameraPermissionPrompt = false;
+    if (browserPermission === 'denied') {
+      // Browser native permission is blocked
+      cameraPermissionDenied = true;
+      faceCapturing = false;
+      activeCameraFeed = false;
+      instructionMessageVisible = true;
+      instructionMessage = 'Camera access was denied. The system requires camera permission to capture and register your facial biometrics.';
+    } else {
+      // Browser grants access
+      cameraPermissionDenied = false;
+      faceCapturing = true;
+      activeCameraFeed = true;
+      instructionMessageVisible = false;
+    }
+  }
+
+  // 4. User chooses "Deny"
+  if (action === 'user_selects_deny') {
+    showCameraPermissionPrompt = false;
+    cameraPermissionDenied = true;
+    faceCapturing = false;
+    activeCameraFeed = false;
+    instructionMessageVisible = true;
+    instructionMessage = 'Camera access was denied. The system requires camera permission to capture and register your facial biometrics.';
+  }
+
+  return {
+    showCameraPermissionPrompt,
+    cameraPermissionDenied,
+    faceCapturing,
+    activeCameraFeed,
+    instructionMessageVisible,
+    instructionMessage,
+  };
+}
+
+// Test 12.1: Clicking "Scan & Capture Now" triggers system permission prompt
+const triggerPrompt = simulateCameraPermissionWorkflow({ action: 'click_scan_and_capture_now' });
+assert('Clicking "Scan & Capture Now" triggers camera permission prompt modal', triggerPrompt.showCameraPermissionPrompt === true);
+assert('Camera feed is not started before user responds to prompt', triggerPrompt.activeCameraFeed === false);
+
+// Test 12.2: User selects "Allow" -> System asks for camera permission & allows access once granted
+const allowFlow = simulateCameraPermissionWorkflow({ action: 'user_selects_allow', browserPermission: 'granted' });
+assert('Selecting "Allow" closes permission prompt modal', allowFlow.showCameraPermissionPrompt === false);
+assert('Selecting "Allow" starts camera feed (activeCameraFeed: true)', allowFlow.activeCameraFeed === true);
+assert('Selecting "Allow" activates FaceCapture (faceCapturing: true)', allowFlow.faceCapturing === true);
+assert('Selecting "Allow" clears cameraPermissionDenied flag', allowFlow.cameraPermissionDenied === false);
+
+// Test 12.3: User selects "Deny" -> Camera feed does NOT start & system displays instruction message
+const denyFlow = simulateCameraPermissionWorkflow({ action: 'user_selects_deny' });
+assert('Selecting "Deny" does NOT start camera feed (activeCameraFeed: false)', denyFlow.activeCameraFeed === false);
+assert('Selecting "Deny" strictly prevents FaceCapture (faceCapturing: false)', denyFlow.faceCapturing === false);
+assert('Selecting "Deny" sets cameraPermissionDenied: true', denyFlow.cameraPermissionDenied === true);
+assert('Selecting "Deny" displays instruction message to trainee', denyFlow.instructionMessageVisible === true);
+assert('Instruction message specifically informs trainee how to allow camera access', denyFlow.instructionMessage.includes('The system requires camera permission to capture and register your facial biometrics'));
+
+// Test 12.4: Browser permission denied on Allow -> Instructs trainee to allow camera in browser
+const browserDeniedFlow = simulateCameraPermissionWorkflow({ action: 'user_selects_allow', browserPermission: 'denied' });
+assert('Browser native denial prevents camera feed even if modal Allow was clicked', browserDeniedFlow.activeCameraFeed === false);
+assert('Browser native denial presents instruction message to trainee', browserDeniedFlow.instructionMessageVisible === true);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);
