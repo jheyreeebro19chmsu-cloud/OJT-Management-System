@@ -310,13 +310,17 @@ export const mobileDb = {
     let query = supabase.from('time_records').select('*').order('date', { ascending: false });
     const ids = [employeeId, altId].filter(Boolean) as string[];
     if (ids.length > 0) query = query.in('employee_id', ids);
-    if (academicYear) query = query.or(`academic_year.eq.${academicYear},academic_year.is.null`);
+    // Note: Do not query academic_year in SQL as column does not exist on time_records in Supabase
     const { data, error } = await query;
     if (error) {
       console.warn('Error fetching time records:', error);
       return [];
     }
-    return (data || []).map(transformTimeRecord);
+    const records = (data || []).map(transformTimeRecord);
+    if (academicYear) {
+      return records.filter((r) => !r.academicYear || r.academicYear === academicYear);
+    }
+    return records;
   },
 
   async getTodayTimeRecord(employeeId: string, altId?: string): Promise<TimeRecord | null> {
@@ -353,7 +357,7 @@ export const mobileDb = {
       total_hours: record.totalHours,
       status: record.status,
       notes: record.notes,
-      academic_year: record.academicYear,
+      // Note: Omit academic_year as time_records table does not have an academic_year column
     };
 
     if (record.id) {
@@ -367,26 +371,30 @@ export const mobileDb = {
         console.error('Error updating time record:', error);
         return null;
       }
-      return transformTimeRecord(data);
+      return {
+        ...transformTimeRecord(data),
+        academicYear: record.academicYear,
+      };
     } else {
       const { data, error } = await supabase.from('time_records').insert([payload]).select().single();
       if (error) {
         console.error('Error inserting time record:', error);
         return null;
       }
-      return transformTimeRecord(data);
+      return {
+        ...transformTimeRecord(data),
+        academicYear: record.academicYear,
+      };
     }
   },
 
   // Geofence Zones
   async getGeofenceZones(academicYear?: string): Promise<GeofenceZone[]> {
-    let query = supabase.from('geofence_zones').select('*').order('name', { ascending: true });
-    if (academicYear) {
-      query = query.or(`academic_year.eq.${academicYear},academic_year.is.null`);
-    }
+    const query = supabase.from('geofence_zones').select('*').order('name', { ascending: true });
+    // Note: Do not query academic_year in SQL as column does not exist on geofence_zones in Supabase
     const { data, error } = await query;
     if (error) return [];
-    return (data || []).map((z: any) => ({
+    const zones = (data || []).map((z: any) => ({
       id: z.id,
       name: z.name,
       address: z.address,
@@ -396,6 +404,10 @@ export const mobileDb = {
       active: z.active !== false,
       academicYear: z.academic_year,
     }));
+    if (academicYear) {
+      return zones.filter((z: any) => !z.academicYear || z.academicYear === academicYear);
+    }
+    return zones;
   },
 
   // Announcements
@@ -459,10 +471,10 @@ export const mobileDb = {
   async getEvaluations(employeeId?: string, academicYear?: string): Promise<Evaluation[]> {
     let query = supabase.from('evaluations').select('*').order('evaluated_at', { ascending: false });
     if (employeeId) query = query.eq('employee_id', employeeId);
-    if (academicYear) query = query.or(`academic_year.eq.${academicYear},academic_year.is.null`);
+    // Note: Do not query academic_year in SQL as column does not exist on evaluations in Supabase
     const { data, error } = await query;
     if (error) return [];
-    return (data || []).map((e: any) => ({
+    const evals = (data || []).map((e: any) => ({
       id: e.id,
       employeeId: e.employee_id,
       evaluatedBy: e.evaluated_by,
@@ -480,6 +492,10 @@ export const mobileDb = {
       status: e.status || 'submitted',
       academicYear: e.academic_year,
     }));
+    if (academicYear) {
+      return evals.filter((e: any) => !e.academicYear || e.academicYear === academicYear);
+    }
+    return evals;
   },
 
   async saveEvaluation(evaluation: Omit<Evaluation, 'id'>): Promise<Evaluation | null> {
@@ -498,7 +514,7 @@ export const mobileDb = {
       recommendations: evaluation.recommendations,
       evaluated_at: evaluation.evaluatedAt,
       status: evaluation.status,
-      academic_year: evaluation.academicYear,
+      // Note: Omit academic_year as evaluations table does not have an academic_year column
     };
     const { data, error } = await supabase.from('evaluations').insert([payload]).select().single();
     if (error) {
@@ -557,7 +573,7 @@ export const mobileDb = {
       recommendation: feedback.recommendation,
       submitted_at: feedback.submittedAt,
       status: feedback.status,
-      academic_year: feedback.academicYear,
+      // Note: Omit academic_year as host_feedback table does not have an academic_year column
     };
     const { data, error } = await supabase.from('host_feedback').insert([payload]).select().single();
     if (error) {
