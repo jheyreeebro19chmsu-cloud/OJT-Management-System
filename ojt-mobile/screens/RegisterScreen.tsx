@@ -453,6 +453,10 @@ export default function RegisterScreen({
           Alert.alert('Address Required', 'Please specify your city or municipality.');
           return false;
         }
+        if (!form.barangay.trim()) {
+          Alert.alert('Barangay Required', 'Barangay is required. Please specify your Barangay / District.');
+          return false;
+        }
       }
       if (step === 2) {
         if (!form.schoolName || !form.campus || !form.department || !form.course) {
@@ -1097,14 +1101,27 @@ export default function RegisterScreen({
                 </View>
               )}
 
-              <Text style={styles.fieldLabel}>Barangay / District</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.fieldLabel}>Barangay / District *</Text>
+                {!form.barangay.trim() && (
+                  <Text style={{ fontSize: 11, color: '#dc2626', fontWeight: '700' }}>Required</Text>
+                )}
+              </View>
               <TextInput
-                style={styles.textInput}
+                style={[
+                  styles.textInput,
+                  !form.barangay.trim() && { borderColor: '#f87171', backgroundColor: '#fef2f2' },
+                ]}
                 placeholder="e.g. Brgy. Zone 2"
                 placeholderTextColor="#94a3b8"
                 value={form.barangay}
                 onChangeText={(v) => updateForm('barangay', v)}
               />
+              {!form.barangay.trim() && (
+                <Text style={{ fontSize: 11, color: '#dc2626', marginTop: -8, marginBottom: 8, fontWeight: '500' }}>
+                  ⚠ Barangay is required
+                </Text>
+              )}
 
               <Text style={styles.fieldLabel}>Street / Unit / House No.</Text>
               <TextInput

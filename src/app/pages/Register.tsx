@@ -72,6 +72,7 @@ export function Register() {
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
+  const [attemptedNext, setAttemptedNext] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [faceCapturing, setFaceCapturing] = useState(false);
   const [form, setForm] = useState({
@@ -520,9 +521,17 @@ export function Register() {
   };
 
   const handleNext = () => {
+    const errs = getValidationErrors();
+    if (errs.length > 0) {
+      setAttemptedNext(true);
+      toast.error(errs[0]);
+      return;
+    }
+    setAttemptedNext(false);
     if (step < steps.length - 1) setStep((s) => s + 1);
   };
   const handleBack = () => {
+    setAttemptedNext(false);
     if (step > 0) setStep((s) => s - 1);
   };
 
@@ -900,8 +909,10 @@ export function Register() {
     // Role-specific and Step-specific Validation
     if (role === 'admin') {
       if (step === 0) {
-        if (!hasName) errors.push('Please enter your full name');
-        if (!hasEmail) errors.push('Please enter your email');
+        if (!form.lastName?.trim()) errors.push('Please enter your Last Name');
+        if (!form.firstName?.trim()) errors.push('Please enter your First Name');
+        if (!hasEmail) errors.push('Please enter your Email Address');
+        if (emailExists) errors.push('Email is already registered. Please sign in or use another email.');
         if (!form.contactPhone?.trim()) {
           errors.push('Please enter your Philippine contact number (+639...)');
         } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
@@ -909,36 +920,70 @@ export function Register() {
         }
         if (!form.campus) errors.push('Please select your CHMSU Campus');
         if (!form.department) errors.push('Please select your Department');
-        if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        if (!form.course) errors.push('Please select your Program / Course');
+        if (!form.birthdate?.trim()) errors.push('Please provide your Birthdate');
+        if (!hasValidCountry) errors.push('Please select your Country');
+        if (!hasValidRegion) errors.push('Please select your Region');
+        if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
+        if (!hasValidCity) errors.push('Please select your City/Municipality');
+        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) {
+          errors.push('Please enter your Barangay');
+        }
+        if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
     }
 
     if (role === 'trainee') {
       if (step === 0) {
-        if (!hasName) errors.push('Please enter your First Name and Last Name');
+        if (!form.lastName?.trim()) errors.push('Please enter your Last Name');
+        if (!form.firstName?.trim()) errors.push('Please enter your First Name');
         if (!hasEmail) errors.push('Please enter your Email Address');
+        if (emailExists) errors.push('Email is already registered. Please sign in or use another email.');
+        if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
         if (!form.contactPhone?.trim()) {
           errors.push('Please enter your Philippine contact number (+639...)');
         } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
           errors.push('Please enter a valid Philippine mobile number (e.g. +639123456789)');
         }
-        if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        if (!form.birthdate?.trim()) errors.push('Please provide your Birthdate');
+        if (!hasValidCountry) errors.push('Please select your Country');
+        if (!hasValidRegion) errors.push('Please select your Region');
+        if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
+        if (!hasValidCity) errors.push('Please select your City/Municipality');
+        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) {
+          errors.push('Please enter your Barangay');
+        }
       }
       if (step === 1) {
         // Company fields are optional for initial trainee enrollment
       }
       if (step === 2) {
-        // School fields are optional with defaults
+        if (!form.campus) errors.push('Please select your Campus');
+        if (!form.department) errors.push('Please select your Department');
+        if (!form.course) errors.push('Please select your Program / Course');
+      }
+      if (step === 3) {
+        if (!photo && !faceRegistered) {
+          errors.push('Please complete face biometrics registration');
+        }
       }
     }
 
     if (role === 'hte') {
       if (step === 0) {
-        if (!form.companyName?.trim()) errors.push('Company Name');
-        if (!hasValidPassword) errors.push('Valid password (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        if (!form.companyName?.trim()) errors.push('Please enter Company Name');
+        if (!hasValidCountry) errors.push('Please select Country');
+        if (!hasValidRegion) errors.push('Please select Region');
+        if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select Province');
+        if (!hasValidCity) errors.push('Please select City/Municipality');
+        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) {
+          errors.push('Please enter Barangay');
+        }
+        if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
       if (step === 1) {
         if (!hasEmail) errors.push('Please enter your contact email');
+        if (emailExists) errors.push('Email is already in use. Please sign in or use another email.');
         if (!form.contactPhone?.trim()) {
           errors.push('Please enter your Philippine contact number (+639...)');
         } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
@@ -1349,15 +1394,33 @@ export function Register() {
 
                         {form.country === 'PH' && (
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Barangay *</label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-xs font-semibold text-gray-600">Barangay *</label>
+                              {!form.barangay?.trim() && (
+                                <span className="text-[11px] text-red-600 font-bold">
+                                  {attemptedNext || validationErrors.some((e) => e.includes('Barangay')) ? 'Required field' : '*'}
+                                </span>
+                              )}
+                            </div>
                             <input
                               value={form.barangay}
                               onChange={(e) => {
                                 update('barangay', e.target.value);
                               }}
                               placeholder="Enter barangay"
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none transition-all ${
+                                (attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
+                                !form.barangay?.trim()
+                                  ? 'border-red-400 bg-red-50/30 text-red-900 focus:ring-2 focus:ring-red-400'
+                                  : 'border-gray-200 bg-white focus:ring-2 focus:ring-blue-500'
+                              }`}
                             />
+                            {(attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
+                              !form.barangay?.trim() && (
+                                <p className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
+                                  <span>⚠</span> Barangay is required. Please enter your barangay.
+                                </p>
+                              )}
                           </div>
                         )}
 
@@ -2116,9 +2179,16 @@ export function Register() {
                       )}
 
                       <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">
-                          {form.country === 'PH' ? 'Barangay *' : 'Neighborhood/Area'}
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-semibold text-gray-600">
+                            {form.country === 'PH' || !form.country ? 'Barangay *' : 'Neighborhood/Area'}
+                          </label>
+                          {(form.country === 'PH' || !form.country) && !form.barangay?.trim() && (
+                            <span className="text-[11px] text-red-600 font-bold">
+                              {attemptedNext || validationErrors.some((e) => e.includes('Barangay')) ? 'Required field' : '*'}
+                            </span>
+                          )}
+                        </div>
                         {/* Always use manual input for Barangay to avoid select fallback */}
                         <input
                           value={form.barangay}
@@ -2126,8 +2196,21 @@ export function Register() {
                             update('barangay', e.target.value);
                           }}
                           placeholder="Enter barangay"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none transition-all ${
+                            (attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
+                            (form.country === 'PH' || !form.country) &&
+                            !form.barangay?.trim()
+                              ? 'border-red-400 bg-red-50/30 text-red-900 focus:ring-2 focus:ring-red-400'
+                              : 'border-gray-200 bg-gray-50 focus:ring-2 focus:ring-blue-500'
+                          }`}
                         />
+                        {(attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
+                          (form.country === 'PH' || !form.country) &&
+                          !form.barangay?.trim() && (
+                            <p className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
+                              <span>⚠</span> Barangay is required. Please enter your barangay.
+                            </p>
+                          )}
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
@@ -2669,9 +2752,11 @@ export function Register() {
           {role !== null && (
             <div className="mt-6">
               {validationErrors.length > 0 && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded text-sm text-red-700">
-                  <strong className="block mb-1">Please fix the following before continuing:</strong>
-                  <ul className="list-disc list-inside">
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 shadow-sm animate-in fade-in">
+                  <strong className="block mb-1 font-bold text-red-800 flex items-center gap-1.5">
+                    <span>⚠</span> Please complete the required information before continuing:
+                  </strong>
+                  <ul className="list-disc list-inside space-y-0.5 text-xs text-red-700 font-medium">
                     {validationErrors.map((e) => (
                       <li key={e}>{e}</li>
                     ))}
@@ -2682,6 +2767,7 @@ export function Register() {
               <div className="flex gap-3">
                 {step > 0 && (
                   <button
+                    type="button"
                     onClick={handleBack}
                     className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
                   >
@@ -2690,32 +2776,60 @@ export function Register() {
                   </button>
                 )}
                 {step < steps.length - 1 ? (
-                  <button
-                    onClick={handleNext}
-                    disabled={!isStepValid()}
-                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+                  <div
+                    className="flex-1 flex"
+                    onClick={() => {
+                      if (!isStepValid()) {
+                        setAttemptedNext(true);
+                        const errs = getValidationErrors();
+                        if (errs.length > 0) {
+                          toast.error(errs[0]);
+                        }
+                      }
+                    }}
                   >
-                    Next
-                    <ArrowRight size={14} />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      disabled={!isStepValid()}
+                      className="w-full flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+                    >
+                      Next
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
                 ) : (
-                  <button
-                    onClick={handleSubmit}
-                    disabled={!isStepValid() || isSubmitting}
-                    className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
+                  <div
+                    className="flex-1 flex"
+                    onClick={() => {
+                      if (!isStepValid() || isSubmitting) {
+                        setAttemptedNext(true);
+                        const errs = getValidationErrors();
+                        if (errs.length > 0) {
+                          toast.error(errs[0]);
+                        }
+                      }
+                    }}
                   >
-                    {isSubmitting ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Registering...
-                      </>
-                    ) : (
-                      <>
-                        <Check size={14} />
-                        Complete Registration
-                      </>
-                    )}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={!isStepValid() || isSubmitting}
+                      className="w-full flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Registering...
+                        </>
+                      ) : (
+                        <>
+                          <Check size={14} />
+                          Complete Registration
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
               {/* Error message display */}

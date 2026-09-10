@@ -250,6 +250,87 @@ assert('Safely handles null/undefined input without crashing',
 
 
 // ----------------------------------------------------------------------------
+// MODULE 6: REGISTRATION VALIDATION & REQUIRED BARANGAY FIELD LOGIC
+// ----------------------------------------------------------------------------
+function validateRegistrationStep(form, role = 'trainee', step = 0) {
+  const errors = [];
+  const hasName = Boolean(form.name || ((form.firstName || '').trim() && (form.lastName || '').trim()));
+  const hasEmail = Boolean(form.email && form.email.trim());
+  const hasValidPassword = Boolean(form.password && form.password.length >= 8 && form.password === form.confirmPassword);
+  const hasValidCountry = form.country === 'other' ? Boolean(form.countryManual?.trim()) : Boolean(form.country);
+  const hasValidRegion = form.region === 'other' ? Boolean(form.regionManual?.trim()) : Boolean(form.region);
+  const hasValidCity = form.city === 'other' ? Boolean(form.cityManual?.trim()) : Boolean(form.city);
+  const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangayManual?.trim()) : Boolean(form.barangay?.trim());
+  const hasValidProvince =
+    form.country === 'PH' || !form.country
+      ? form.province === 'other'
+        ? Boolean(form.provinceManual?.trim())
+        : Boolean(form.province)
+      : true;
+
+  if (role === 'trainee' && step === 0) {
+    if (!form.lastName?.trim()) errors.push('Please enter your Last Name');
+    if (!form.firstName?.trim()) errors.push('Please enter your First Name');
+    if (!hasEmail) errors.push('Please enter your Email Address');
+    if (!hasValidPassword) errors.push('Valid password required');
+    if (!form.contactPhone?.trim()) errors.push('Please enter your Philippine contact number');
+    if (!form.birthdate?.trim()) errors.push('Please provide your Birthdate');
+    if (!hasValidCountry) errors.push('Please select your Country');
+    if (!hasValidRegion) errors.push('Please select your Region');
+    if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
+    if (!hasValidCity) errors.push('Please select your City/Municipality');
+    if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
+  }
+  return errors;
+}
+
+printSectionHeader('6. WHITE BOX TESTS: Registration Required Information & Barangay Validation');
+
+const baseValidForm = {
+  firstName: 'Juan',
+  lastName: 'Dela Cruz',
+  email: 'juan@chmsu.edu.ph',
+  password: 'Password123!',
+  confirmPassword: 'Password123!',
+  contactPhone: '+639123456789',
+  birthdate: '2002-05-15',
+  country: 'PH',
+  region: 'Region VI (Western Visayas)',
+  province: 'Negros Occidental',
+  city: 'Talisay City',
+  barangay: 'Zone 2',
+};
+
+// Test 6.1: Full form with all required information passes
+const fullValidErrors = validateRegistrationStep(baseValidForm);
+assert('All required fields filled -> Validation passes (0 errors)', fullValidErrors.length === 0, fullValidErrors.join(', '));
+
+// Test 6.2: Leaving Barangay BLANK must fail validation and indicate Barangay
+const blankBarangayForm = { ...baseValidForm, barangay: '' };
+const blankBarangayErrors = validateRegistrationStep(blankBarangayForm);
+assert('Barangay blank -> System prevents registration (validation fails)', 
+  blankBarangayErrors.length > 0
+);
+assert('Barangay blank -> System indicates the required field "Please enter your Barangay"', 
+  blankBarangayErrors.includes('Please enter your Barangay')
+);
+
+// Test 6.3: Whitespace only in Barangay must also be rejected
+const whitespaceBarangayForm = { ...baseValidForm, barangay: '   ' };
+const whitespaceBarangayErrors = validateRegistrationStep(whitespaceBarangayForm);
+assert('Barangay with whitespace only -> Rejected as required field', 
+  whitespaceBarangayErrors.includes('Please enter your Barangay')
+);
+
+// Test 6.4: Leaving City blank also fails validation
+const blankCityForm = { ...baseValidForm, city: '' };
+const blankCityErrors = validateRegistrationStep(blankCityForm);
+assert('City blank -> System prevents registration with City required error', 
+  blankCityErrors.includes('Please select your City/Municipality')
+);
+
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);
