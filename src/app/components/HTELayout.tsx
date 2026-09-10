@@ -85,249 +85,207 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
     navigate('/login');
   };
 
-  return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 bg-slate-900 flex-col shrink-0 no-print border-r border-slate-800 shadow-xl">
-        {/* Brand Header */}
-        <div className="p-5 border-b border-slate-800/80 bg-slate-950/40">
+  const renderSidebarContent = (isMobile = false) => (
+    <>
+      {/* Brand Header */}
+      <div className="p-5 border-b border-blue-800 bg-blue-950/40">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white rounded-2xl p-1 shadow-md shrink-0 flex items-center justify-center">
-              <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-xl" />
+            <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+              <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div className="min-w-0">
-              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
+              <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT DTR</div>
               <div className="text-blue-300 text-xs font-semibold">HTE Panel</div>
             </div>
           </div>
-
-          {/* Academic Year Environment Indicator */}
-          <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-slate-800/60 rounded-xl border border-slate-700/50 text-[11px] text-slate-300 font-semibold">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
-            </div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Active</span>
-          </div>
-        </div>
-
-        {/* Navigation Items */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
-          {navItems.map(({ to, label, icon: Icon, end }) => {
-            const isActive = end ? location.pathname === to : location.pathname.startsWith(to);
-            return (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive: active }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all text-sm font-semibold relative ${
-                    active
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                      : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-200'
-                  }`
-                }
-              >
-                <Icon size={18} className="shrink-0" />
-                <span>{label}</span>
-                {isActive && (
-                  <motion.div
-                    layoutId="hte-nav-pill"
-                    className="absolute right-2 w-1.5 h-1.5 rounded-full bg-white"
-                  />
-                )}
-              </NavLink>
-            );
-          })}
-        </nav>
-
-        {/* Supervisor User Footer */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/40">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center overflow-hidden shrink-0">
-                {avatarSource ? (
-                  <img src={getPhotoUrl(avatarSource)} alt={avatarName} className="w-full h-full object-cover" />
-                ) : (
-                  <Building size={18} className="text-blue-400" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="text-white text-xs font-bold truncate">{avatarName}</div>
-                <div className="text-slate-400 text-[10px] truncate">{supervisorRole}</div>
-              </div>
-            </div>
+          {isMobile && (
             <button
-              onClick={handleLogout}
-              className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
-              title="Sign Out"
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 rounded-lg text-blue-200 hover:text-white hover:bg-blue-800 transition-colors cursor-pointer"
             >
-              <LogOut size={16} />
+              <X size={20} />
             </button>
-          </div>
+          )}
         </div>
-      </aside>
 
-      {/* Mobile Drawer Backdrop */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[998] lg:hidden"
-          />
-        )}
-      </AnimatePresence>
+        {/* Academic Year Environment Indicator */}
+        <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+          </div>
+          <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
+        </div>
+      </div>
 
-      {/* Mobile Drawer Menu */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.aside
-            initial={{ x: -280 }}
-            animate={{ x: 0 }}
-            exit={{ x: -280 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-            className="fixed inset-y-0 left-0 w-72 bg-slate-900 z-[999] flex flex-col lg:hidden shadow-2xl border-r border-slate-800"
-          >
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-white rounded-xl p-1 shadow-md">
-                  <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-lg" />
-                </div>
-                <div>
-                  <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
-                  <div className="text-blue-300 text-xs font-semibold">HTE Panel</div>
-                </div>
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-              {navItems.map(({ to, label, icon: Icon, end }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  onClick={() => setSidebarOpen(false)}
-                  className={({ isActive: active }) =>
-                    `flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all text-sm font-semibold ${
-                      active ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                    }`
-                  }
-                >
-                  <Icon size={18} />
-                  <span>{label}</span>
-                </NavLink>
-              ))}
-            </nav>
-
-            <div className="p-4 border-t border-slate-800 bg-slate-950/40">
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-red-500/10 text-red-400 font-semibold text-sm hover:bg-red-500/20 transition-colors"
-              >
-                <LogOut size={16} />
-                <span>Logout</span>
-              </button>
-            </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Navbar */}
-        <header className="bg-white border-b border-slate-200/80 sticky top-0 z-30 shadow-xs">
-          <div className="px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              {/* Left: Mobile Toggle & Page Title */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
-                >
-                  <Menu size={20} />
-                </button>
-                <div className="flex items-center gap-2">
-                  <span className="font-black text-slate-800 text-base sm:text-lg tracking-tight">
-                    Host Training Establishment
-                  </span>
-                  <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-xs font-bold shadow-xs">
-                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                    <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Actions */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => navigate('/hte/evaluations')}
-                  className="hidden md:inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
-                >
-                  <Star size={14} />
-                  <span>Evaluate Trainee</span>
-                </button>
-                <button
-                  onClick={() => navigate('/hte/settings')}
-                  className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
-                  title="Settings"
-                >
-                  <Settings size={18} />
-                </button>
-                <button
-                  onClick={() => navigate('/hte/profile')}
-                  className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
-                  title="Profile"
-                >
-                  <div className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center overflow-hidden">
-                    {avatarSource ? (
-                      <img src={getPhotoUrl(avatarSource)} alt={avatarName} className="w-full h-full object-cover" />
-                    ) : (
-                      <User size={16} className="text-blue-600" />
+      {/* Navigation Items on the Left */}
+      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        {navItems.map((item) => {
+          const { to, label, icon: Icon, end } = item;
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              onClick={() => isMobile && setSidebarOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
+                  isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-sky-600/40' : ''}`}>
+                    <Icon size={18} />
+                    {isActive && (
+                      <motion.div
+                        layoutId="nav-indicator-hte"
+                        className="absolute inset-0 bg-sky-600/40 rounded-xl -z-10"
+                      />
                     )}
                   </div>
-                </button>
+                  <span className="text-sm font-medium">{label}</span>
+                </>
+              )}
+            </NavLink>
+          );
+        })}
+      </nav>
+
+      {/* Supervisor User Footer on Left Sidebar */}
+      <div className="p-3 border-t border-blue-800 bg-blue-950/30">
+        <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
+          <div className="w-9 h-9 bg-sky-400 rounded-full flex items-center justify-center overflow-hidden border border-white/20 shadow-inner shrink-0">
+            {avatarSource ? (
+              <img
+                src={getPhotoUrl(avatarSource)}
+                alt={avatarName}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Building size={18} className="text-white" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="text-white text-xs font-bold truncate">{avatarName}</div>
+            <div className="text-blue-300 text-[10px] truncate">{companyName}</div>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            if (isMobile) setSidebarOpen(false);
+            handleLogout();
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium cursor-pointer"
+        >
+          <LogOut size={15} />
+          Logout
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
+      {/* Desktop Left Sidebar (Matching Instructor & Trainee) */}
+      <aside className="hidden lg:flex w-64 bg-blue-900 flex-col shrink-0 no-print border-r border-blue-800 shadow-xl">
+        {renderSidebarContent(false)}
+      </aside>
+
+      {/* Mobile Slide-Over Left Sidebar Drawer (Navigation on the Left) */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[998] lg:hidden no-print"
+            />
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 280 }}
+              className="fixed inset-y-0 left-0 z-[999] w-72 bg-blue-900 flex flex-col shadow-2xl lg:hidden no-print border-r border-blue-800"
+            >
+              {renderSidebarContent(true)}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header with Hamburger Navigation Button on the Left */}
+        <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10 no-print border-b border-blue-700/50">
+          <div className="max-w-md lg:max-w-none mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* Mobile Sidebar Toggle Button on the Left */}
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-xl text-blue-200 hover:text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+                aria-label="Open Navigation"
+              >
+                <Menu size={22} />
+              </button>
+
+              <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+                <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
+              <div>
+                <div className="text-xs text-blue-200 leading-tight">CHMSU OJT DTR</div>
+                <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{companyName}</div>
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-700/60 border border-blue-400/40 text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+              </div>
+            </div>
+
+            {/* Header Right Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/hte/evaluations')}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/80 hover:bg-blue-600 text-white border border-blue-400/30 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+              >
+                <Star size={13} className="text-amber-300 fill-amber-300" />
+                <span>Evaluate</span>
+              </button>
+              <div
+                onClick={() => navigate('/hte/profile')}
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm flex items-center justify-center bg-blue-800"
+                title="View Profile"
+              >
+                {avatarSource ? (
+                  <img
+                    src={getPhotoUrl(avatarSource)}
+                    alt={avatarName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Building size={16} className="text-white p-1" />
+                )}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 text-blue-200 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-blue-700 font-medium cursor-pointer"
+              >
+                <LogOut size={14} />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
             </div>
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-50/80">
-          <div className="max-w-7xl mx-auto pb-16 lg:pb-0">
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             {children || <Outlet />}
           </div>
         </main>
-
-        {/* Mobile Bottom Navigation Bar */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-2 z-40 flex items-center justify-around shadow-lg">
-          {navItems.slice(0, 5).map(({ to, label, icon: Icon, end }) => {
-            const isActive = end ? location.pathname === to : location.pathname.startsWith(to);
-            return (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive: active }) =>
-                  `flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[10px] font-bold transition-all ${
-                    active ? 'text-blue-600 font-extrabold' : 'text-slate-400 hover:text-slate-600'
-                  }`
-                }
-              >
-                <Icon size={18} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-                <span>{label}</span>
-              </NavLink>
-            );
-          })}
-        </div>
       </div>
 
       <LogoutConfirmModal
