@@ -267,14 +267,15 @@ export default function ProfileScreen({ profile, session, onBack, onEnrollFace }
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Award color="#7c3aed" size={18} />
-              <Text style={styles.cardTitle}>Required OJT Documents</Text>
+              <Text style={styles.cardTitle}>Required Documents / Requirements Checklist</Text>
             </View>
             <View style={styles.docsList}>
               {[
                 { id: '1', name: '1. Endorsement Letter', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
-                { id: '2', name: '2. Parental Consent Form', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
-                { id: '3', name: '3. Medical Certificate', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+                { id: '2', name: '2. Parental Consent Form & Waiver', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+                { id: '3', name: '3. Medical Certificate / Clearance', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
                 { id: '4', name: '4. Student Bio-data / Resume', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
+                { id: '5', name: '5. Memorandum of Agreement (MOA)', status: data?.documents_passed !== false ? 'Verified' : 'Pending' },
               ].map((doc) => (
                 <View key={doc.id} style={styles.docRow}>
                   <Text style={styles.docRowName}>{doc.name}</Text>

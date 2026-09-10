@@ -454,6 +454,120 @@ assert('User outside designated workplace zone -> Prevent punch and display Outs
 
 
 // ----------------------------------------------------------------------------
+// MODULE 8: TRAINEE PROFILE & REQUIREMENTS CHECKLIST RESOLUTION
+// ----------------------------------------------------------------------------
+printSectionHeader('8. WHITE BOX TESTS: Profile Required Documents & Checklist');
+
+const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
+  {
+    title: 'Endorsement Letter',
+    description: 'Official endorsement letter issued and signed by the College Dean / Department Chair / OJT Coordinator.',
+    notes: 'Official institutional endorsement from Department Chair / Coordinator',
+    dueDate: 'Before starting training hours',
+    required: true,
+  },
+  {
+    title: 'Parental / Guardian Consent Form & Waiver',
+    description: 'Signed student waiver, assumption of liability, and parent/guardian emergency contact authorization.',
+    notes: 'Signed student waiver & parent/guardian consent form',
+    dueDate: 'Before starting training hours',
+    required: true,
+  },
+  {
+    title: 'Medical Certificate / Physical Clearance',
+    description: 'Valid medical examination clearance & physical fitness certification issued by a licensed physician or university clinic.',
+    notes: 'Physical fitness & health examination certification',
+    dueDate: 'Before deployment to HTE',
+    required: true,
+  },
+  {
+    title: 'Student Bio-data / Comprehensive Resume',
+    description: 'Comprehensive student profile, academic background, contact details, skill highlights, and formal 2x2 ID photo.',
+    notes: 'Updated resume with recent formal 2x2 ID photo',
+    dueDate: 'Prior to company placement',
+    required: true,
+  },
+  {
+    title: 'Memorandum of Agreement (MOA) / Internship Contract',
+    description: 'Tripartite training contract between the University (CHMSU), the Host Training Establishment (HTE), and the Trainee.',
+    notes: 'Duly notarized tripartite internship agreement',
+    dueDate: 'Within first 2 weeks of training',
+    required: true,
+  },
+];
+
+function resolveTraineeRequiredDocuments(employeeId, customDocs = [], activeYear = '2026-2027') {
+  const assigned = customDocs.filter(
+    (d) => (d.employeeId === employeeId || d.employeeId === 'all') && (!d.academicYear || d.academicYear === activeYear)
+  );
+
+  const standard = DEFAULT_OJT_REQUIRED_DOCUMENTS.map((d, i) => ({
+    id: `std-doc-${i + 1}-${employeeId}`,
+    employeeId,
+    title: d.title,
+    description: d.description,
+    notes: d.notes,
+    dueDate: d.dueDate,
+    required: d.required,
+    academicYear: activeYear,
+    createdAt: new Date().toISOString(),
+  }));
+
+  const merged = [...assigned];
+  for (const std of standard) {
+    const exists = merged.some((m) => m.title.toLowerCase().trim() === std.title.toLowerCase().trim());
+    if (!exists) merged.push(std);
+  }
+  return merged;
+}
+
+function resolveDocumentSubmission(docId, employeeId, submissions = [], employeeSubmittedDocs = {}) {
+  const inState = submissions.find((s) => s.documentId === docId && s.employeeId === employeeId);
+  if (inState) return inState;
+
+  const lower = docId.toLowerCase();
+  let matched = null;
+  if (lower.includes('endorsement') || lower.includes('doc-1') || lower.includes('std-doc-1')) matched = employeeSubmittedDocs.endorsement;
+  else if (lower.includes('consent') || lower.includes('doc-2') || lower.includes('std-doc-2')) matched = employeeSubmittedDocs.consent;
+  else if (lower.includes('medical') || lower.includes('doc-3') || lower.includes('std-doc-3')) matched = employeeSubmittedDocs.medical;
+  else if (lower.includes('resume') || lower.includes('doc-4') || lower.includes('std-doc-4')) matched = employeeSubmittedDocs.resume;
+
+  if (matched && (matched.dataUrl || matched.name)) {
+    return {
+      id: `sub-auto-${docId}`,
+      documentId: docId,
+      employeeId,
+      fileName: matched.name || 'document.pdf',
+      fileUrl: matched.dataUrl || 'data:application/pdf;base64,sample',
+      status: 'approved',
+    };
+  }
+  return null;
+}
+
+// Test 8.1: Newly logged-in trainee with 0 custom documents returns standard institutional OJT documents
+const traineeDocs = resolveTraineeRequiredDocuments('emp-trainee-001', []);
+assert('Logged-in trainee with no prior custom documents returns non-empty list', traineeDocs.length > 0);
+assert('Returns at least 5 standard institutional OJT requirements', traineeDocs.length >= 5);
+assert('Includes Endorsement Letter in checklist', traineeDocs.some((d) => d.title.includes('Endorsement')));
+assert('Includes Parental Consent Form in checklist', traineeDocs.some((d) => d.title.includes('Consent')));
+assert('Includes Medical Certificate in checklist', traineeDocs.some((d) => d.title.includes('Medical')));
+assert('Includes Student Bio-data / Resume in checklist', traineeDocs.some((d) => d.title.includes('Resume')));
+assert('Includes Memorandum of Agreement (MOA) in checklist', traineeDocs.some((d) => d.title.includes('Memorandum of Agreement')));
+
+// Test 8.2: Resolving submission from employee profile submittedDocuments
+const sampleSubmittedDocs = {
+  endorsement: { name: 'endorsement_signed.pdf', dataUrl: 'data:application/pdf;base64,xyz', status: 'passed' },
+};
+const subResult = resolveDocumentSubmission('std-doc-1-emp-trainee-001', 'emp-trainee-001', [], sampleSubmittedDocs);
+assert('Automatically recognizes previously uploaded Endorsement Letter as submitted', subResult !== null && subResult.fileName === 'endorsement_signed.pdf');
+
+// Test 8.3: Missing document correctly returns null (unsubmitted)
+const unsubmittedResult = resolveDocumentSubmission('std-doc-2-emp-trainee-001', 'emp-trainee-001', [], sampleSubmittedDocs);
+assert('Unsubmitted Parental Consent Form returns null (missing)', unsubmittedResult === null);
+
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

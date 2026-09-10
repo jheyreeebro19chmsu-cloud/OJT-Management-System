@@ -20,6 +20,8 @@ import {
   RequirementStatus,
   HostFeedback,
   HostSupervisor,
+  TraineeDocuments,
+  TraineeDocumentItem,
 } from '../types';
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
 
@@ -98,6 +100,49 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
 const DEFAULT_HOST_SUPERVISORS: HostSupervisor[] = [];
 
 const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [];
+
+export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
+  {
+    docKey: 'endorsement',
+    title: 'Endorsement Letter',
+    description: 'Official endorsement letter issued and signed by the College Dean / Department Chair / OJT Coordinator.',
+    notes: 'Official institutional endorsement from Department Chair / Coordinator',
+    dueDate: 'Before starting training hours',
+    required: true,
+  },
+  {
+    docKey: 'consent',
+    title: 'Parental / Guardian Consent Form & Waiver',
+    description: 'Signed student waiver, assumption of liability, and parent/guardian emergency contact authorization.',
+    notes: 'Signed student waiver & parent/guardian consent form',
+    dueDate: 'Before starting training hours',
+    required: true,
+  },
+  {
+    docKey: 'medical',
+    title: 'Medical Certificate / Physical Clearance',
+    description: 'Valid medical examination clearance & physical fitness certification issued by a licensed physician or university clinic.',
+    notes: 'Physical fitness & health examination certification',
+    dueDate: 'Before deployment to HTE',
+    required: true,
+  },
+  {
+    docKey: 'resume',
+    title: 'Student Bio-data / Comprehensive Resume',
+    description: 'Comprehensive student profile, academic background, contact details, skill highlights, and formal 2x2 ID photo.',
+    notes: 'Updated resume with recent formal 2x2 ID photo',
+    dueDate: 'Prior to company placement',
+    required: true,
+  },
+  {
+    docKey: 'moa',
+    title: 'Memorandum of Agreement (MOA) / Internship Contract',
+    description: 'Tripartite training contract between the University (CHMSU), the Host Training Establishment (HTE), and the Trainee.',
+    notes: 'Duly notarized tripartite internship agreement',
+    dueDate: 'Within first 2 weeks of training',
+    required: true,
+  },
+];
 
 function generateMockRecords(): TimeRecord[] {
   return [];
@@ -2178,9 +2223,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getEmployeeRequiredDocuments = (employeeId: string): RequiredDocument[] => {
-    return requiredDocuments
-      .filter((doc) => doc.employeeId === employeeId && (!doc.academicYear || doc.academicYear === settings.activeAcademicYear))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // 1. Fetch any specific custom documents added by admin for this employee or all employees
+    const assignedDocs = requiredDocuments.filter(
+      (doc) =>
+        (doc.employeeId === employeeId || doc.employeeId === 'all') &&
+        (!doc.academicYear || doc.academicYear === settings.activeAcademicYear)
+    );
+
+    // 2. Standard mandatory institutional OJT checklist documents
+    const standardDocs: RequiredDocument[] = DEFAULT_OJT_REQUIRED_DOCUMENTS.map((d, index) => ({
+      id: `req-${d.docKey || index + 1}-${employeeId}`,
+      employeeId,
+      title: d.title,
+      description: d.description,
+      notes: d.notes,
+      dueDate: d.dueDate,
+      required: d.required,
+      academicYear: settings.activeAcademicYear,
+      createdAt: new Date().toISOString(),
+    }));
+
+    // Merge: custom assigned documents take priority over duplicate titles
+    const combined = [...assignedDocs];
+    for (const std of standardDocs) {
+      const alreadyExists = combined.some(
+        (c) => c.title.toLowerCase().trim() === std.title.toLowerCase().trim()
+      );
+      if (!alreadyExists) {
+        combined.push(std);
+      }
+    }
+
+    return combined;
   };
 
   const getRequirementStatus = (documentId: string, employeeId: string): RequirementStatus => {
@@ -2221,17 +2295,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRequiredDocumentSubmissions((prev) => {
       const existing = prev.find((s) => s.documentId === documentId && s.employeeId === employeeId);
       if (existing) {
-        saved = { ...existing, note: notes, notes, fileName: payload.fileName || '', fileUrl: payload.fileUrl || '', submittedAt: now, status: 'submitted' };
+        saved = {
+          ...existing,
+          note: notes,
+          notes,
+          fileName: payload.fileName || '',
+          fileUrl: payload.fileUrl || '',
+          submittedAt: now,
+          status: 'submitted',
+        };
         return prev.map((s) => (s.id === existing.id ? saved : s));
       }
       return [saved, ...prev];
     });
 
+    // Also sync to employee.submittedDocuments
+    const lowerDoc = documentId.toLowerCase();
+    let docKey: keyof TraineeDocuments | null = null;
+    if (lowerDoc.includes('endorsement')) docKey = 'endorsement';
+    else if (lowerDoc.includes('consent')) docKey = 'consent';
+    else if (lowerDoc.includes('medical')) docKey = 'medical';
+    else if (lowerDoc.includes('resume')) docKey = 'resume';
+
+    if (docKey) {
+      const currentEmp = employees.find((e) => e.id === employeeId) || getCurrentEmployee();
+      if (currentEmp) {
+        updateEmployee(employeeId, {
+          submittedDocuments: {
+            ...(currentEmp.submittedDocuments || {}),
+            [docKey]: {
+              name: payload.fileName || 'Uploaded Document.pdf',
+              dataUrl: payload.fileUrl || '',
+              uploadedAt: now,
+              status: 'passed',
+            },
+          },
+        });
+      }
+    }
+
     return saved;
   };
 
   const getRequiredDocumentSubmission = (documentId: string, employeeId: string): RequiredDocumentSubmission | null => {
-    return requiredDocumentSubmissions.find((s) => s.documentId === documentId && s.employeeId === employeeId) || null;
+    // 1. Direct match in requiredDocumentSubmissions
+    const existing = requiredDocumentSubmissions.find(
+      (s) =>
+        (s.documentId === documentId || documentId.includes(s.documentId) || s.documentId.includes(documentId)) &&
+        s.employeeId === employeeId
+    );
+    if (existing) return existing;
+
+    // 2. Trainee submittedDocuments fallback
+    const emp =
+      employees.find((e) => e.id === employeeId) ||
+      (getCurrentEmployee()?.id === employeeId ? getCurrentEmployee() : null);
+    if (emp?.submittedDocuments) {
+      let matchedDocItem: TraineeDocumentItem | undefined = undefined;
+      const lowerDoc = documentId.toLowerCase();
+      if (lowerDoc.includes('endorsement') || lowerDoc.includes('doc-1') || lowerDoc.includes('std-doc-1')) {
+        matchedDocItem = emp.submittedDocuments.endorsement;
+      } else if (lowerDoc.includes('consent') || lowerDoc.includes('doc-2') || lowerDoc.includes('std-doc-2')) {
+        matchedDocItem = emp.submittedDocuments.consent;
+      } else if (lowerDoc.includes('medical') || lowerDoc.includes('doc-3') || lowerDoc.includes('std-doc-3')) {
+        matchedDocItem = emp.submittedDocuments.medical;
+      } else if (lowerDoc.includes('resume') || lowerDoc.includes('doc-4') || lowerDoc.includes('std-doc-4')) {
+        matchedDocItem = emp.submittedDocuments.resume;
+      } else if (lowerDoc.includes('moa') || lowerDoc.includes('doc-5') || lowerDoc.includes('std-doc-5')) {
+        matchedDocItem = (emp.submittedDocuments as any).moa;
+      }
+
+      if (matchedDocItem && (matchedDocItem.dataUrl || matchedDocItem.name)) {
+        return {
+          id: `sub-auto-${documentId}`,
+          documentId,
+          employeeId,
+          submittedAt: matchedDocItem.uploadedAt || new Date().toISOString(),
+          fileName: matchedDocItem.name || 'Submitted Document.pdf',
+          fileUrl: matchedDocItem.dataUrl || '',
+          note: `Verified (${matchedDocItem.status || 'passed'})`,
+          status: 'approved',
+          verificationStatus: 'passed',
+        };
+      }
+    }
+
+    return null;
   };
 
   // ── Host Feedback ─────────────────────────────────────────────────────────────

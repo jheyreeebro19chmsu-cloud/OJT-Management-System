@@ -6,13 +6,14 @@ import {
   Camera,
   Edit2,
   Check,
+  CheckCircle,
+  FileCheck,
   X,
   MapPin,
   Award,
   Star,
   KeyRound,
   Download,
-  CheckCircle,
   Eye,
   Printer,
   Navigation,
@@ -22,7 +23,7 @@ import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
-import { useApp } from '../store/AppContext';
+import { useApp, DEFAULT_OJT_REQUIRED_DOCUMENTS } from '../store/AppContext';
 import type { Employee } from '../types';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
@@ -144,7 +145,21 @@ export function Profile() {
     createdAt: new Date().toISOString().split('T')[0],
   };
   const records = getEmployeeRecords(employee.id);
-  const requiredDocuments = getEmployeeRequiredDocuments(employee.id);
+  const rawRequiredDocuments = getEmployeeRequiredDocuments(employee.id);
+  const requiredDocuments =
+    rawRequiredDocuments.length > 0
+      ? rawRequiredDocuments
+      : DEFAULT_OJT_REQUIRED_DOCUMENTS.map((d, i) => ({
+          id: `std-doc-${i + 1}-${employee.id}`,
+          employeeId: employee.id,
+          title: d.title,
+          description: d.description,
+          notes: d.notes,
+          dueDate: d.dueDate,
+          required: d.required,
+          academicYear: settings.activeAcademicYear,
+          createdAt: new Date().toISOString(),
+        }));
   const evaluation = getEmployeeEvaluation(employee.id);
   const hostFeedback = getLatestHostFeedback(employee.id);
   const [editing, setEditing] = useState(false);
@@ -337,112 +352,145 @@ export function Profile() {
         </div>
       </motion.div>
 
-      <Section title="Required Documents" icon={<Check />}> 
+      <Section title="Required Documents / Requirements Checklist" icon={<FileCheck size={18} className="text-violet-700" />}> 
         <div className="space-y-3">
-          {requiredDocuments.length === 0 ? (
-            <p className="text-xs text-gray-500">No required documents assigned yet.</p>
-          ) : (
-            requiredDocuments.map((doc) => {
-              const submission = getRequiredDocumentSubmission(doc.id, employee.id);
-              return (
-                <div key={doc.id} className="rounded-xl border border-violet-100 bg-violet-50 p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-violet-900">{doc.title}</p>
-                      {doc.description && <p className="text-[11px] text-violet-700 mt-1">{doc.description}</p>}
-                    </div>
-                    <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${getRequirementStatus(doc.id, employee.id) === 'complete' ? 'bg-green-100 text-green-700' : getRequirementStatus(doc.id, employee.id) === 'incomplete' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                      {getRequirementStatus(doc.id, employee.id)}
-                    </span>
+          {/* Institutional OJT Checklist Summary Banner */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-xl border border-violet-200">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold text-violet-950">Institutional OJT Requirements Checklist</p>
+                <span className="text-[10px] bg-violet-200/70 text-violet-900 font-extrabold px-2 py-0.5 rounded-full">
+                  Mandatory
+                </span>
+              </div>
+              <p className="text-[11px] text-violet-700 mt-0.5 font-medium">
+                {requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length} of {requiredDocuments.length} documents verified ({requiredDocuments.length > 0 ? Math.round((requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length / requiredDocuments.length) * 100) : 0}%)
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                requiredDocuments.length > 0 && requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length === requiredDocuments.length
+                  ? 'bg-green-100 text-green-800 border-green-300'
+                  : 'bg-amber-100 text-amber-800 border-amber-300'
+              }`}>
+                {requiredDocuments.length > 0 && requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length === requiredDocuments.length
+                  ? '✓ All Compliant'
+                  : `${requiredDocuments.length - requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length} Pending`}
+              </span>
+            </div>
+          </div>
+
+          {requiredDocuments.map((doc) => {
+            const submission = getRequiredDocumentSubmission(doc.id, employee.id);
+            const status = getRequirementStatus(doc.id, employee.id);
+            return (
+              <div key={doc.id} className="rounded-xl border border-violet-100 bg-violet-50/70 p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-violet-950">{doc.title}</p>
+                    {doc.description && <p className="text-[11px] text-violet-800 mt-0.5 leading-relaxed">{doc.description}</p>}
                   </div>
-                  {doc.dueDate && <p className="text-[11px] text-gray-600">Due: {doc.dueDate}</p>}
-                  {submission ? (
-                    <div className="rounded-lg bg-white border border-violet-100 p-2.5 text-[11px] text-gray-700 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-gray-800">Submitted Document</p>
-                        <p className="text-[10px] text-gray-400">{new Date(submission.submittedAt).toLocaleDateString()}</p>
-                      </div>
-                      {submission.note && <p className="text-gray-600">Note: {submission.note}</p>}
-                      {submission.fileName && <p className="font-medium text-slate-800">File: {submission.fileName}</p>}
-                      
-                      <div className="flex items-center gap-2 pt-1">
-                        {submission.fileUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDocModal({
-                              title: doc.title,
-                              fileName: submission.fileName,
-                              fileUrl: submission.fileUrl,
-                              note: submission.note,
-                              date: new Date(submission.submittedAt).toLocaleDateString(),
-                            })}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-sm"
-                          >
-                            <Eye size={12} /> View Document
-                          </button>
-                        )}
-                        {submission.fileUrl && (
-                          <a
-                            href={submission.fileUrl}
-                            download={submission.fileName || 'ojt-document'}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-violet-200 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-50 transition-all"
-                          >
-                            <Download size={12} /> Download
-                          </a>
-                        )}
-                      </div>
+                  <span className={`text-[10px] rounded-full px-2.5 py-1 font-extrabold uppercase tracking-wide shrink-0 border ${
+                    status === 'complete'
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : status === 'incomplete'
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-red-100 text-red-800 border-red-300'
+                  }`}>
+                    {status === 'complete' ? '✓ Complete' : status === 'incomplete' ? '⚠ Incomplete' : '✕ Missing'}
+                  </span>
+                </div>
+                {doc.dueDate && (
+                  <p className="text-[11px] text-slate-600 flex items-center gap-1 font-medium">
+                    <Clock size={11} className="text-slate-400" /> Due: {doc.dueDate}
+                  </p>
+                )}
+                {submission ? (
+                  <div className="rounded-lg bg-white border border-violet-100 p-2.5 text-[11px] text-gray-700 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-gray-800">Submitted Document</p>
+                      <p className="text-[10px] text-gray-400">{new Date(submission.submittedAt).toLocaleDateString()}</p>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <textarea
-                        value={documentNote[doc.id] || ''}
-                        onChange={(e) => setDocumentNote((prev) => ({ ...prev, [doc.id]: e.target.value }))}
-                        rows={2}
-                        placeholder="Add description / notes for this document..."
-                        className="w-full px-3 py-2 border border-violet-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
-                      />
-                      <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg border border-violet-200 bg-white text-violet-700 cursor-pointer">
-                          Attach file
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                setDocumentFileName((prev) => ({ ...prev, [doc.id]: file.name }));
-                                const reader = new FileReader();
-                                reader.onload = () => setDocumentFileUrl((prev) => ({ ...prev, [doc.id]: String(reader.result || '') }));
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                          />
-                        </label>
-                        {documentFileName[doc.id] && <span className="text-[10px] text-gray-600">{documentFileName[doc.id]}</span>}
+                    {submission.note && <p className="text-gray-600">Note: {submission.note}</p>}
+                    {submission.fileName && <p className="font-medium text-slate-800">File: {submission.fileName}</p>}
+                    
+                    <div className="flex items-center gap-2 pt-1">
+                      {submission.fileUrl && (
                         <button
                           type="button"
-                          onClick={() => {
-                            const note = documentNote[doc.id] || '';
-                            const fileName = documentFileName[doc.id] || '';
-                            const fileUrl = documentFileUrl[doc.id] || '';
-                            if (!fileUrl) {
-                              toast.error('Please attach the required file.');
-                              return;
-                            }
-                            submitRequiredDocument(doc.id, employee.id, { note, notes: note, fileName, fileUrl });
-                            toast.success('Document submitted.');
-                          }}
-                          className="ml-auto px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700"
+                          onClick={() => setPreviewDocModal({
+                            title: doc.title,
+                            fileName: submission.fileName,
+                            fileUrl: submission.fileUrl,
+                            note: submission.note,
+                            date: new Date(submission.submittedAt).toLocaleDateString(),
+                          })}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-sm"
                         >
-                          Submit
+                          <Eye size={12} /> View Document
                         </button>
-                      </div>
+                      )}
+                      {submission.fileUrl && (
+                        <a
+                          href={submission.fileUrl}
+                          download={submission.fileName || 'ojt-document'}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-violet-200 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-50 transition-all"
+                        >
+                          <Download size={12} /> Download
+                        </a>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })
-          )}
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1 border-t border-violet-100">
+                    <textarea
+                      value={documentNote[doc.id] || ''}
+                      onChange={(e) => setDocumentNote((prev) => ({ ...prev, [doc.id]: e.target.value }))}
+                      rows={2}
+                      placeholder="Add description / notes for this document..."
+                      className="w-full px-3 py-2 border border-violet-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+                    />
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg border border-violet-200 bg-white text-violet-700 hover:bg-violet-50 cursor-pointer transition-colors shadow-sm">
+                        Attach file
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setDocumentFileName((prev) => ({ ...prev, [doc.id]: file.name }));
+                              const reader = new FileReader();
+                              reader.onload = () => setDocumentFileUrl((prev) => ({ ...prev, [doc.id]: String(reader.result || '') }));
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                      {documentFileName[doc.id] && <span className="text-[10px] text-gray-600 truncate max-w-[150px]">{documentFileName[doc.id]}</span>}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const note = documentNote[doc.id] || '';
+                          const fileName = documentFileName[doc.id] || '';
+                          const fileUrl = documentFileUrl[doc.id] || '';
+                          if (!fileUrl) {
+                            toast.error('Please attach the required file.');
+                            return;
+                          }
+                          submitRequiredDocument(doc.id, employee.id, { note, notes: note, fileName, fileUrl });
+                          toast.success('Document submitted.');
+                        }}
+                        className="ml-auto px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 shadow-sm transition-all"
+                      >
+                        Submit
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </Section>
 
