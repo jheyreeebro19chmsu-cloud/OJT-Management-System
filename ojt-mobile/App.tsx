@@ -1,3 +1,4 @@
+import './lib/typography';
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
@@ -2052,7 +2053,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 6,
   },
-  clockStripTime: { fontSize: 14, fontWeight: '900', color: '#0f172a', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  clockStripTime: { fontSize: 14, fontWeight: '900', color: '#0f172a', fontFamily: Platform.select({ ios: 'Times New Roman', android: 'serif', default: 'Times New Roman' }) },
   clockStripDot: { color: '#94a3b8', fontSize: 12 },
   clockStripDate: { fontSize: 12, fontWeight: '600', color: '#64748b' },
   dashShiftGrid: {

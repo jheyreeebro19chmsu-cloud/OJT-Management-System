@@ -1,13 +1,36 @@
- :root {
-	 --font-sans: "Times New Roman", Times, serif;
-	 --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
- }
- 
- html, body {
-	 font-family: var(--font-sans);
- }
- 
- /* Provide explicit serif fallback where needed */
- .serif, .times, .tnr {
-	 font-family: "Times New Roman", Times, serif;
- }
+:root {
+  --font-sans: "Times New Roman", Times, serif;
+  --font-serif: "Times New Roman", Times, serif;
+  --font-mono: "Times New Roman", Times, serif;
+}
+
+*,
+*::before,
+*::after,
+html,
+body,
+input,
+button,
+select,
+textarea,
+p,
+span,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+a,
+div,
+label,
+code,
+pre {
+  font-family: "Times New Roman", Times, serif !important;
+}
+
+/* Explicit class helpers */
+.serif, .times, .tnr, .font-sans, .font-serif, .font-mono {
+  font-family: "Times New Roman", Times, serif !important;
+}
+

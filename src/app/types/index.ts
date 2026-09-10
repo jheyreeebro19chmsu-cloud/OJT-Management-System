@@ -25,6 +25,12 @@ export interface Employee {
   linkedAt?: string;
   registrationLocation?: { lat: number; lng: number };
   registrationAddress?: string;
+  address?: string;
+  street?: string;
+  barangay?: string;
+  city?: string;
+  province?: string;
+  region?: string;
   firstName?: string;
   lastName?: string;
   middleInitial?: string;

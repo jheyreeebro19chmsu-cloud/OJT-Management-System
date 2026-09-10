@@ -671,10 +671,17 @@ export function Register() {
       return parts.filter(Boolean).join(', ');
     };
 
-    const computedAddress =
+    // Resolve real GPS physical address for where registration happens (NOT home living address)
+    const gpsResolvedAddr =
+      registrationAddress ||
+      (registrationLocation ? await reverseGeocode(registrationLocation.lat, registrationLocation.lng) : undefined);
+
+    const computedRegistrationAddress =
       role === 'hte'
-        ? form.companyAddress || registrationAddress || buildAddrFromForm() || undefined
-        : registrationAddress || buildAddrFromForm() || undefined;
+        ? form.companyAddress || gpsResolvedAddr || undefined
+        : gpsResolvedAddr || (registrationLocation ? `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` : undefined);
+
+    const residentialAddress = buildAddrFromForm() || undefined;
 
     // Compose full name from parts if form.name is empty
     const composedName = form.name || form.contactPerson ||
@@ -692,6 +699,7 @@ export function Register() {
         ...form,
         name: composedName,
         employeeId: empId,
+        address: residentialAddress,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
         requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
         faceRegistered,
@@ -702,9 +710,9 @@ export function Register() {
         documentsPassed: role === 'trainee' ? (hasAnyDocs ? isAllDocsPassed : false) : undefined,
         documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : undefined,
         submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : undefined,
-        // Ensure location info is always persisted even if GPS is missing
+        // Registration location & address strictly bound to device GPS establishment
         registrationLocation: registrationLocation || undefined,
-        registrationAddress: buildAddrFromForm() || registrationAddress || undefined,
+        registrationAddress: computedRegistrationAddress,
         companyAddress: form.companyAddress || undefined,
         password: form.password,
       });
@@ -743,8 +751,9 @@ export function Register() {
             startDate: form.startDate,
             endDate: form.endDate,
             requiredHours: Number(form.requiredHours) || (role === 'admin' || role === 'hte' ? 0 : 486),
+            address: residentialAddress,
             registrationLocation: registrationLocation || undefined,
-            registrationAddress: computedAddress,
+            registrationAddress: computedRegistrationAddress,
             photo: photo || (existing ? existing.photo : undefined),
             faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
             active: true,
@@ -761,7 +770,7 @@ export function Register() {
 
           if (registrationLocation?.lat && registrationLocation?.lng) {
             const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - ${form.companyName || 'Assigned Workplace'}`;
-            const zoneAddr = computedAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
+            const zoneAddr = computedRegistrationAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
             addGeofenceZone({
               id: `personal-${empToUpdateId}`,
               name: zoneName,
@@ -1288,10 +1297,6 @@ export function Register() {
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
-                                    const countryObj = Country.getCountryByCode(form.country);
-                                    const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
-                                    const fullAddr = `${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
-                                    setRegistrationAddress(fullAddr);
                                   }}
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
@@ -1316,8 +1321,6 @@ export function Register() {
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
-                                    const fullAddr = `${e.target.value}, ${form.province}, ${form.region}, Philippines`;
-                                    setRegistrationAddress(fullAddr);
                                   }}
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
@@ -1336,10 +1339,6 @@ export function Register() {
                                 value={form.barangay}
                                 onChange={(e) => {
                                   update('barangay', e.target.value);
-                                  const countryObj = Country.getCountryByCode(form.country);
-                                  const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
-                                  const fullAddr = `${form.city}, ${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
-                                  setRegistrationAddress(fullAddr);
                                 }}
                                 placeholder="Area/Street"
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
@@ -1355,10 +1354,6 @@ export function Register() {
                               value={form.barangay}
                               onChange={(e) => {
                                 update('barangay', e.target.value);
-                                const cityName = form.city;
-                                const provName = form.province;
-                                const fullAddr = `${e.target.value}, ${cityName}, ${provName}, ${form.region}, Philippines`;
-                                setRegistrationAddress(fullAddr);
                               }}
                               placeholder="Enter barangay"
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
@@ -1411,6 +1406,9 @@ export function Register() {
                                   setRegistrationLocation({ lat, lng });
                                   setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
                                   setLocationStatus('captured');
+                                  reverseGeocode(lat, lng).then((addr) => {
+                                    if (addr) setRegistrationAddress(addr);
+                                  });
                                 }}
                                 liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
                                 className="h-48"
@@ -2064,10 +2062,6 @@ export function Register() {
                                 const selectedCity = e.target.value;
                                 update('city', selectedCity);
                                 update('barangay', '');
-                                if (selectedCity && form.province && form.region) {
-                                  const fullAddr = `${selectedCity}, ${form.province}, ${form.region}, Philippines`;
-                                  setRegistrationAddress(fullAddr);
-                                }
                               }}
                               className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.province ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
                                 }`}
@@ -2098,10 +2092,6 @@ export function Register() {
                               onChange={(e) => {
                                 update('city', e.target.value);
                                 update('barangay', '');
-                                const countryObj = Country.getCountryByCode(form.country);
-                                const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
-                                const fullAddr = `${e.target.value}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
-                                setRegistrationAddress(fullAddr);
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
@@ -2134,10 +2124,6 @@ export function Register() {
                           value={form.barangay}
                           onChange={(e) => {
                             update('barangay', e.target.value);
-                            const countryObj = Country.getCountryByCode(form.country);
-                            const stateObj = State.getStateByCodeAndCountry(form.region, form.country);
-                            const fullAddr = `${e.target.value}, ${form.city || ''}, ${stateObj?.name || form.region}, ${countryObj?.name || form.country}`;
-                            setRegistrationAddress(fullAddr);
                           }}
                           placeholder="Enter barangay"
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"

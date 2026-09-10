@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   timeCol: { alignItems: 'center', flex: 1 },
   timeColLabel: { fontSize: 11, color: '#64748b', fontWeight: '600' },
   timeColValue: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginTop: 2 },
-  gpsCoordsText: { fontSize: 9, fontFamily: 'monospace', color: '#64748b', marginTop: 2 },
+  gpsCoordsText: { fontSize: 9, fontFamily: 'serif', color: '#64748b', marginTop: 2 },
   badgeSmall: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 2, paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' },
   badgeSmallText: { fontSize: 9, color: '#16a34a', fontWeight: '700' },
   verificationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, flexWrap: 'wrap', gap: 8 },

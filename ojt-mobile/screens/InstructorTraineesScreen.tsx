@@ -395,7 +395,7 @@ export default function InstructorTraineesScreen({
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>GPS Coordinates:</Text>
-                    <Text style={[styles.detailValue, { fontFamily: 'monospace', color: '#0369a1' }]}>
+                    <Text style={[styles.detailValue, { fontFamily: 'serif', color: '#0369a1' }]}>
                       {selectedTrainee.registrationLocation
                         ? `${selectedTrainee.registrationLocation.lat.toFixed(6)}, ${selectedTrainee.registrationLocation.lng.toFixed(6)}`
                         : 'Not Set'}

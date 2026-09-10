@@ -147,6 +147,7 @@ export default function RegisterScreen({
 
   // GPS Location State
   const [location, setLocation] = useState<{ lat?: number; lng?: number; accuracy?: number; error?: string }>({});
+  const [gpsAddress, setGpsAddress] = useState<string>('');
   const [locLoading, setLocLoading] = useState(false);
 
   // Load registered instructors and HTE companies for trainee dropdowns
@@ -239,6 +240,38 @@ export default function RegisterScreen({
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy ?? undefined,
         });
+
+        // Reverse-geocode physical device GPS coordinates for registration address
+        try {
+          const rev = await Location.reverseGeocodeAsync({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          if (rev && rev.length > 0) {
+            const first = rev[0];
+            const parts = [
+              first.street || first.name,
+              first.district || first.subregion,
+              first.city,
+              first.region,
+              first.country,
+            ].filter(Boolean);
+            if (parts.length > 0) {
+              setGpsAddress(parts.join(', '));
+            }
+          }
+        } catch {
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
+              { headers: { 'User-Agent': 'CHMSU-OJT-System/1.0' } }
+            );
+            if (res.ok) {
+              const d = await res.json();
+              if (d.display_name) setGpsAddress(d.display_name);
+            }
+          } catch {}
+        }
       } else {
         setLocation({ error: 'Could not acquire GPS coordinates' });
       }
@@ -513,6 +546,18 @@ export default function RegisterScreen({
       const userId = authData?.user?.id || '';
       const validUserId = isUuid(userId) ? userId : undefined;
 
+      // Compute strictly decoupled addresses:
+      // 1. Residential Home Address: where the user lives
+      const residentialAddress =
+        [form.street, form.barangay, form.city, form.province, form.region, form.country].filter(Boolean).join(', ') ||
+        form.address ||
+        null;
+
+      // 2. Registered Address: physical location/establishment where registration device GPS is locked
+      const computedRegistrationAddress =
+        gpsAddress ||
+        (location.lat && location.lng ? `${Number(location.lat).toFixed(6)}, ${Number(location.lng).toFixed(6)}` : null);
+
       // 2. Build Profile Data Partitioned by Academic Year with valid schema columns
       const profileData: any = {
         name: fullName,
@@ -520,9 +565,10 @@ export default function RegisterScreen({
         academic_year: activeAcademicYear,
         active: true,
         application_status: 'approved',
+        address: residentialAddress,
         registration_lat: location.lat || null,
         registration_lng: location.lng || null,
-        registration_address: form.address || form.companyAddress || null,
+        registration_address: computedRegistrationAddress,
         photo: form.photo || null,
         face_registered: Boolean(form.photo),
       };
@@ -592,7 +638,7 @@ export default function RegisterScreen({
           const zonePayload = {
             id: `station-${userId}`,
             name: role === 'admin' ? `${fullName} - Official Station` : `${fullName} - ${form.companyName || 'HTE Workplace'}`,
-            address: form.companyAddress || form.address || (role === 'admin' ? 'Campus Station' : 'HTE Workplace'),
+            address: computedRegistrationAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'HTE Workplace'),
             lat: location.lat,
             lng: location.lng,
             radius: 100,
@@ -802,11 +848,18 @@ export default function RegisterScreen({
               </TouchableOpacity>
             </View>
           ) : location.lat && location.lng ? (
-            <View style={styles.gpsSuccess}>
-              <MapPin size={15} color="#059669" />
-              <Text style={styles.gpsSuccessText}>
-                GPS Locked: {location.lat?.toFixed(4)}, {location.lng?.toFixed(4)} (±{Math.round(location.accuracy || 0)}m)
-              </Text>
+            <View style={[styles.gpsSuccess, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MapPin size={15} color="#059669" />
+                <Text style={styles.gpsSuccessText}>
+                  GPS Locked: {location.lat?.toFixed(4)}, {location.lng?.toFixed(4)} (±{Math.round(location.accuracy || 0)}m)
+                </Text>
+              </View>
+              {gpsAddress ? (
+                <Text style={{ fontSize: 11, color: '#047857', marginTop: 2, paddingLeft: 21 }}>
+                  Registered Establishment: {gpsAddress}
+                </Text>
+              ) : null}
             </View>
           ) : null}
         </View>

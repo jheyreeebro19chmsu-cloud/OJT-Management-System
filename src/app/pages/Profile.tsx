@@ -19,7 +19,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
@@ -99,7 +99,28 @@ export function Profile() {
     addGeofenceZone,
   } = useApp();
   const [syncingLocation, setSyncingLocation] = useState(false);
+  const [resolvedGpsAddress, setResolvedGpsAddress] = useState<string>('');
   const rawEmployee = getCurrentEmployee();
+
+  useEffect(() => {
+    if (rawEmployee?.registrationLocation?.lat && rawEmployee?.registrationLocation?.lng) {
+      const empAny = rawEmployee as any;
+      const homeAddr = [empAny?.street, empAny?.barangay, empAny?.city, empAny?.province, empAny?.region].filter(Boolean).join(', ');
+      const reg = rawEmployee.registrationAddress || '';
+      const isHomeDupe = Boolean(homeAddr && empAny?.barangay && reg.toLowerCase().includes(empAny.barangay.toLowerCase()));
+
+      if (!reg || isHomeDupe) {
+        reverseGeocode(rawEmployee.registrationLocation.lat, rawEmployee.registrationLocation.lng).then((resolved) => {
+          if (resolved && resolved !== reg) {
+            setResolvedGpsAddress(resolved);
+            if (rawEmployee.id && isHomeDupe) {
+              updateEmployee(rawEmployee.id, { registrationAddress: resolved });
+            }
+          }
+        });
+      }
+    }
+  }, [rawEmployee?.registrationLocation, rawEmployee?.registrationAddress]);
   const employee: Employee = rawEmployee || {
     id: currentUser?.id || currentUser?.employeeId || `emp-${Date.now()}`,
     employeeId: currentUser?.employeeId || currentUser?.id || 'OJT-STUDENT',
@@ -736,7 +757,7 @@ export function Profile() {
         <Section title="Permanent Geofence & Location" icon={<MapPin size={15} className="text-blue-700" />}>
           <InfoRow
             label="Registered Address"
-            value={employee.registrationAddress || 'Assigned Establishment Location'}
+            value={resolvedGpsAddress || employee.registrationAddress || 'Assigned Establishment Location'}
           />
           <InfoRow
             label="GPS Coordinates"

@@ -87,12 +87,37 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     hteUser?.contactPhone ||
     '+63 (034) 712-0000';
 
+  const [resolvedGpsAddress, setResolvedGpsAddress] = useState<string>('');
+
+  React.useEffect(() => {
+    if (employee?.registrationLocation?.lat && employee?.registrationLocation?.lng) {
+      const empAny = employee as any;
+      const homeAddr = [empAny?.street, empAny?.barangay, empAny?.city, empAny?.province, empAny?.region]
+        .filter(Boolean)
+        .join(', ');
+      const reg = employee.registrationAddress || '';
+      const isHomeDupe = Boolean(homeAddr && empAny?.barangay && reg.toLowerCase().includes(empAny.barangay.toLowerCase()));
+
+      if (!reg || isHomeDupe) {
+        reverseGeocode(employee.registrationLocation.lat, employee.registrationLocation.lng).then((resolved) => {
+          if (resolved && resolved !== reg) {
+            setResolvedGpsAddress(resolved);
+            if (employee.id && isHomeDupe) {
+              updateEmployee(employee.id, { registrationAddress: resolved });
+            }
+          }
+        });
+      }
+    }
+  }, [employee?.registrationLocation, employee?.registrationAddress]);
+
   const registrationAddress =
+    resolvedGpsAddress ||
     employee?.registrationAddress ||
     employee?.companyAddress ||
     (role === 'hte' ? company : 'Negros Occidental, Philippines');
 
-  // Construct readable address
+  // Construct readable home address
   const address = (() => {
     const empAny = employee as any;
     if (empAny?.street || empAny?.barangay || empAny?.city) {
@@ -105,7 +130,7 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
       ].filter(Boolean);
       if (parts.length > 0) return parts.join(', ');
     }
-    return registrationAddress;
+    return 'Residential Address on File';
   })();
 
   const geofenceCoords = employee?.registrationLocation
