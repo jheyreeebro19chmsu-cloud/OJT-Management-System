@@ -278,9 +278,7 @@ export function Register() {
       const { latitude, longitude, accuracy } = position.coords;
       setRegistrationLocation({ lat: latitude, lng: longitude, accuracy });
       setLocationStatus('captured');
-      reverseGeocode(latitude, longitude).then((addr) => {
-        if (addr) setRegistrationAddress(addr);
-      });
+      setRegistrationAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
       const accuracyLabel = accuracy < 10 ? 'High' : accuracy < 50 ? 'Good' : 'Low';
       toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
     } catch (err: unknown) {
@@ -292,7 +290,9 @@ export function Register() {
         toast.error('Location access denied. Please allow GPS access in your browser settings.');
       } else {
         // Timeout or unavailable — fall back to campus coords with warning
-        setRegistrationLocation((prev) => prev || DEFAULT_CAMPUS_LOCATION);
+        const fallback = DEFAULT_CAMPUS_LOCATION;
+        setRegistrationLocation((prev) => prev || fallback);
+        setRegistrationAddress(`${fallback.lat.toFixed(6)}, ${fallback.lng.toFixed(6)}`);
         setLocationStatus('captured');
         toast.warning('Could not get live GPS. Using default campus location — please adjust pin if needed.');
       }
@@ -309,9 +309,7 @@ export function Register() {
       (pos) => {
         setRegistrationLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
         setLocationStatus('captured');
-        reverseGeocode(pos.coords.latitude, pos.coords.longitude).then((addr) => {
-          if (addr) setRegistrationAddress(addr);
-        });
+        setRegistrationAddress(`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`);
       },
       (err) => {
         console.error('watchPosition error', err);
@@ -680,15 +678,10 @@ export function Register() {
       return parts.filter(Boolean).join(', ');
     };
 
-    // Resolve real GPS physical address for where registration happens (NOT home living address)
-    const gpsResolvedAddr =
-      registrationAddress ||
-      (registrationLocation ? await reverseGeocode(registrationLocation.lat, registrationLocation.lng) : undefined);
-
-    const computedRegistrationAddress =
-      role === 'hte'
-        ? form.companyAddress || gpsResolvedAddr || undefined
-        : gpsResolvedAddr || (registrationLocation ? `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` : undefined);
+    // Ensure registration address is strictly device GPS coordinates where account was registered (NOT text address)
+    const computedRegistrationAddress = registrationLocation
+      ? `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}`
+      : registrationAddress || undefined;
 
     const residentialAddress = buildAddrFromForm() || undefined;
 
@@ -778,8 +771,8 @@ export function Register() {
           }
 
           if (registrationLocation?.lat && registrationLocation?.lng) {
-            const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - ${form.companyName || 'Assigned Workplace'}`;
-            const zoneAddr = computedRegistrationAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'Trainee Workplace');
+            const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - Registered Account Geofence`;
+            const zoneAddr = computedRegistrationAddress || `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}`;
             addGeofenceZone({
               id: `personal-${empToUpdateId}`,
               name: zoneName,
@@ -1469,9 +1462,6 @@ export function Register() {
                                   setRegistrationLocation({ lat, lng });
                                   setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
                                   setLocationStatus('captured');
-                                  reverseGeocode(lat, lng).then((addr) => {
-                                    if (addr) setRegistrationAddress(addr);
-                                  });
                                 }}
                                 liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
                                 className="h-48"

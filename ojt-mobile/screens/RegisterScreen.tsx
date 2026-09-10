@@ -559,8 +559,9 @@ export default function RegisterScreen({
 
       // 2. Registered Address: physical location/establishment where registration device GPS is locked
       const computedRegistrationAddress =
-        gpsAddress ||
-        (location.lat && location.lng ? `${Number(location.lat).toFixed(6)}, ${Number(location.lng).toFixed(6)}` : null);
+        location.lat && location.lng
+          ? `${Number(location.lat).toFixed(6)}, ${Number(location.lng).toFixed(6)}`
+          : gpsAddress || null;
 
       // 2. Build Profile Data Partitioned by Academic Year with valid schema columns
       const profileData: any = {
@@ -583,50 +584,78 @@ export default function RegisterScreen({
 
       if (role === 'trainee') {
         profileData.position = 'OJT Trainee';
-        profileData.department = form.department || 'College of Computer Studies';
-        profileData.course = form.course || 'Information Systems';
-        profileData.campus = form.campus || 'Talisay Campus';
-        profileData.school_name = form.schoolName || 'Carlos Hilado Memorial State University';
-        profileData.company_name = form.companyName || 'N/A';
-        profileData.supervisor_name = form.supervisorName || 'N/A';
-        profileData.required_hours = parseInt(form.requiredHours, 10) || 486;
-        profileData.start_date = form.startDate || new Date().toISOString().split('T')[0];
-        profileData.end_date = form.endDate || new Date().toISOString().split('T')[0];
-        profileData.employee_id = form.employeeId || `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+        profileData.employee_id = form.employeeId.trim();
+        profileData.company_name = form.companyName.trim();
+        profileData.supervisor_name = form.contactPerson.trim();
+        profileData.school_name = 'Carlos Hilado Memorial State University';
+        profileData.campus = form.campus;
+        profileData.department = form.department;
+        profileData.course = form.course;
+        profileData.start_date = form.startDate || null;
+        profileData.end_date = form.endDate || null;
+        profileData.required_hours = 486;
+        profileData.phone = form.phone.trim();
+        profileData.instructor_id = isUuid(assignedInstructorId) ? assignedInstructorId : null;
+        profileData.hte_id = isUuid(assignedHteId) ? assignedHteId : null;
+        profileData.documents_passed = isAllDocsUploaded;
+        profileData.documents_status = isAllDocsUploaded ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete';
+        profileData.registration_location = {
+          lat: location.lat || null,
+          lng: location.lng || null,
+          address: computedRegistrationAddress,
+          phone: form.phone.trim(),
+          documentsPassed: isAllDocsUploaded,
+          documentsStatus: isAllDocsUploaded ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete',
+          documents: hasAnyDocs ? traineeDocs : null,
+        };
+      } else if (role === 'hte') {
+        profileData.position = 'HTE Representative';
+        profileData.employee_id = form.employeeId.trim();
+        profileData.company_name = form.companyName.trim();
+        profileData.supervisor_name = fullName;
+        profileData.phone = form.phone.trim();
+        profileData.required_hours = 0;
+        profileData.instructor_id = isUuid(assignedInstructorId) ? assignedInstructorId : null;
+        profileData.documents_passed = true;
+        profileData.documents_status = 'passed';
+        profileData.registration_location = {
+          lat: location.lat || null,
+          lng: location.lng || null,
+          address: computedRegistrationAddress,
+          companyAddress: form.companyAddress || null,
+          phone: form.phone.trim(),
+        };
       } else if (role === 'admin') {
         profileData.position = 'OJT Instructor';
-        profileData.department = form.department || 'College of Computer Studies';
-        profileData.campus = form.campus || 'Talisay Campus';
-        profileData.school_name = form.schoolName || 'Carlos Hilado Memorial State University';
-        profileData.company_name = 'CHMSU';
-        profileData.supervisor_name = fullName;
-        profileData.course = 'N/A';
-        profileData.start_date = new Date().toISOString().split('T')[0];
-        profileData.end_date = new Date().toISOString().split('T')[0];
+        profileData.employee_id = form.employeeId.trim();
+        profileData.department = form.department;
+        profileData.campus = form.campus;
+        profileData.phone = form.phone.trim();
         profileData.required_hours = 0;
-        profileData.employee_id = form.employeeId || `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
-      } else if (role === 'hte') {
-        profileData.position = 'Training Supervisor';
-        profileData.company_name = form.companyName || 'HTE Partner';
-        profileData.department = form.department || 'Corporate';
-        profileData.supervisor_name = fullName;
-        profileData.school_name = 'N/A';
-        profileData.course = 'N/A';
-        profileData.start_date = new Date().toISOString().split('T')[0];
-        profileData.end_date = new Date().toISOString().split('T')[0];
-        profileData.required_hours = 0;
-        profileData.employee_id = form.employeeId || `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
+        profileData.school_name = 'Carlos Hilado Memorial State University';
+        profileData.documents_passed = true;
+        profileData.documents_status = 'passed';
+        profileData.registration_location = {
+          lat: location.lat || null,
+          lng: location.lng || null,
+          address: computedRegistrationAddress,
+          phone: form.phone.trim(),
+        };
       }
 
       // Upsert into employees table
-      const { error: profileError } = await supabase.from('employees').upsert([profileData], { onConflict: 'email' });
+      const { error: profileError } = await supabase
+        .from('employees')
+        .upsert(profileData, { onConflict: 'email' });
+
       if (profileError) {
-        console.warn('Employees upsert warning on mobile:', profileError);
+        console.error('Profile creation error:', profileError);
+        throw profileError;
       }
 
-      // If HTE supervisor, also sync to host_supervisors table
+      // Sync Host Supervisor if HTE Role
       if (role === 'hte') {
-        await supabase.from('host_supervisors').upsert({
+        await mobileDb.saveHostSupervisor({
           id: userId,
           name: fullName,
           email: form.email.trim().toLowerCase(),
@@ -636,13 +665,19 @@ export default function RegisterScreen({
         });
       }
 
-      // 3. Auto-Create Station Geofence Zone for Admin/Instructor and HTE only (never for Trainees)
-      if ((role === 'admin' || role === 'hte') && location.lat && location.lng) {
+      // 3. Auto-Create Registered Account Geofence Zone in Supabase
+      if (location.lat && location.lng) {
         try {
+          const zoneName =
+            role === 'admin'
+              ? `${fullName} - Official Station`
+              : role === 'hte'
+              ? `${fullName} - ${form.companyName || 'HTE Workplace'}`
+              : `${fullName} - Registered Account Geofence`;
           const zonePayload = {
-            id: `station-${userId}`,
-            name: role === 'admin' ? `${fullName} - Official Station` : `${fullName} - ${form.companyName || 'HTE Workplace'}`,
-            address: computedRegistrationAddress || form.companyAddress || (role === 'admin' ? 'Campus Station' : 'HTE Workplace'),
+            id: role === 'admin' || role === 'hte' ? `station-${userId}` : `personal-${userId}`,
+            name: zoneName,
+            address: computedRegistrationAddress || `${Number(location.lat).toFixed(6)}, ${Number(location.lng).toFixed(6)}`,
             lat: location.lat,
             lng: location.lng,
             radius: 100,

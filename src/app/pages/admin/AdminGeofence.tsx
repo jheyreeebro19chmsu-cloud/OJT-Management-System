@@ -241,8 +241,16 @@ export function AdminGeofence() {
       );
       if (!isInst && !isHte) return;
 
-      const regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
-      const regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
+      let regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
+      let regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
+      if ((regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
+        const addrStr = String(emp.registrationAddress || (emp as any)?.registration_address);
+        const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+        if (match) {
+          regLat = parseFloat(match[1]);
+          regLng = parseFloat(match[2]);
+        }
+      }
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
         const normEmp = normalizeName(emp.name);
         const personKey = `acc-${normEmp}`;

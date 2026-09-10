@@ -154,10 +154,18 @@ function transformEmployee(data: any): Employee {
     createdAt: data.created_at,
     active: data.active !== false,
     academicYear: data.academic_year,
-    registrationLocation:
-      data.registration_lat && data.registration_lng
-        ? { lat: Number(data.registration_lat), lng: Number(data.registration_lng) }
-        : undefined,
+    registrationLocation: (() => {
+      if (data.registration_lat != null && data.registration_lng != null) {
+        return { lat: Number(data.registration_lat), lng: Number(data.registration_lng) };
+      }
+      if (data.registration_address) {
+        const match = String(data.registration_address).match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+        if (match) {
+          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+        }
+      }
+      return undefined;
+    })(),
     registrationAddress: data.registration_address,
     instructorId: data.instructor_id,
     hteId: data.hte_id,

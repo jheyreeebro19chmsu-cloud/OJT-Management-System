@@ -1380,30 +1380,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        // Auto-create/upsert station geofence zone in database and local state for Instructors and HTEs
+        // Auto-create/upsert station geofence zone in database and local state for all registered accounts
         if (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) {
-          if (isInstructor || isHTE) {
-            const isCreatedUuid = created.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(created.id);
-            const zoneName = isInstructor ? `${created.name} - Official Station` : `${created.name} - ${cleanData.companyName || 'HTE Workplace'}`;
-            const zoneAddr = cleanData.registrationAddress || cleanData.companyAddress || (isInstructor ? 'Campus Station' : 'HTE Workplace');
+          const isCreatedUuid = created.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(created.id);
+          const zoneName = isInstructor
+            ? `${created.name} - Official Station`
+            : isHTE
+            ? `${created.name} - ${cleanData.companyName || 'HTE Workplace'}`
+            : `${created.name} - Registered Account Geofence`;
+          const zoneAddr = cleanData.registrationAddress || `${Number(cleanData.registrationLocation.lat).toFixed(6)}, ${Number(cleanData.registrationLocation.lng).toFixed(6)}`;
 
-            const stationZone: GeofenceZone = {
-              id: isCreatedUuid ? created.id : `station-${created.id}`,
-              name: zoneName,
-              address: zoneAddr,
-              lat: Number(cleanData.registrationLocation.lat),
-              lng: Number(cleanData.registrationLocation.lng),
-              radius: 100,
-              active: true,
-              academicYear: cleanData.academicYear || settings.activeAcademicYear,
-            };
-            supabaseService.createGeofenceZone(stationZone).then((saved) => {
-              const zoneToUse = saved || stationZone;
-              setGeofenceZones((prev) => [zoneToUse, ...prev.filter((z) => z.id !== zoneToUse.id && z.id !== stationZone.id && z.id !== `station-${created!.id}`)]);
-            }).catch((err) => {
-              console.debug('Station geofence zone auto-sync notice:', err);
-            });
-          }
+          const stationZone: GeofenceZone = {
+            id: isCreatedUuid ? created.id : `station-${created.id}`,
+            name: zoneName,
+            address: zoneAddr,
+            lat: Number(cleanData.registrationLocation.lat),
+            lng: Number(cleanData.registrationLocation.lng),
+            radius: 100,
+            active: true,
+            academicYear: cleanData.academicYear || settings.activeAcademicYear,
+          };
+          supabaseService.createGeofenceZone(stationZone).then((saved) => {
+            const zoneToUse = saved || stationZone;
+            setGeofenceZones((prev) => [zoneToUse, ...prev.filter((z) => z.id !== zoneToUse.id && z.id !== stationZone.id && z.id !== `station-${created!.id}`)]);
+          }).catch((err) => {
+            console.debug('Station geofence zone auto-sync notice:', err);
+          });
         }
 
         return { success: true, employee: created };

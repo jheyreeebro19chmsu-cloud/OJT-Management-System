@@ -114,41 +114,51 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
   async function evaluateGeofence(location: Location.LocationObject) {
     const targetCoords: { lat: number; lng: number; radius: number }[] = [];
 
-    // 1. Profile registration location
-    const regLoc =
+    // 1. Profile registration location (where user registered an account)
+    let regLoc =
       profile?.registration_location ||
       profile?.registrationLocation ||
       (profile?.registration_lat && profile?.registration_lng
         ? { lat: profile.registration_lat, lng: profile.registration_lng }
         : null);
+
+    if (!regLoc?.lat && (profile?.registration_address || profile?.registrationAddress)) {
+      const addrStr = String(profile.registration_address || profile.registrationAddress);
+      const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (match) {
+        regLoc = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+      }
+    }
+
     if (regLoc?.lat && regLoc?.lng) {
+      // Strictly rely on where account was registered
       targetCoords.push({
         lat: Number(regLoc.lat),
         lng: Number(regLoc.lng),
         radius: 300,
       });
-    }
-
-    // 2. Geofence zones from Supabase
-    try {
-      const zones = await mobileDb.getGeofenceZones();
-      const empId = profile?.id || profile?.employeeId || '';
-      zones.forEach((z) => {
-        if (z.lat && z.lng) {
-          const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}`;
-          const isCompany =
-            profile?.companyName && z.name && z.name.toLowerCase().includes(profile.companyName.toLowerCase());
-          if (isPersonal || isCompany || !profile?.companyName) {
-            targetCoords.push({
-              lat: z.lat,
-              lng: z.lng,
-              radius: z.radius || 300,
-            });
+    } else {
+      // 2. Geofence zones from Supabase fallback only if no registered account location
+      try {
+        const zones = await mobileDb.getGeofenceZones();
+        const empId = profile?.id || profile?.employeeId || '';
+        zones.forEach((z) => {
+          if (z.lat && z.lng) {
+            const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}` || z.id === `station-${empId}`;
+            const isCompany =
+              profile?.companyName && z.name && z.name.toLowerCase().includes(profile.companyName.toLowerCase());
+            if (isPersonal || isCompany) {
+              targetCoords.push({
+                lat: z.lat,
+                lng: z.lng,
+                radius: z.radius || 300,
+              });
+            }
           }
-        }
-      });
-    } catch (zErr) {
-      console.debug('Geofence zone fetch notice:', zErr);
+        });
+      } catch (zErr) {
+        console.debug('Geofence zone fetch notice:', zErr);
+      }
     }
 
     if (targetCoords.length > 0) {

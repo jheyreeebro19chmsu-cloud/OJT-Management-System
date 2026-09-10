@@ -1208,12 +1208,21 @@ export function transformSupabaseEmployee(data: any): Employee {
     createdAt: data.created_at,
     active: data.active,
     academicYear: data.academic_year,
-    registrationLocation:
-      data.registration_lat && data.registration_lng
-        ? { lat: data.registration_lat, lng: data.registration_lng }
-        : regLoc?.lat && regLoc?.lng
-          ? { lat: regLoc.lat, lng: regLoc.lng }
-          : undefined,
+    registrationLocation: (() => {
+      if (data.registration_lat != null && data.registration_lng != null) {
+        return { lat: Number(data.registration_lat), lng: Number(data.registration_lng) };
+      }
+      if (regLoc?.lat != null && regLoc?.lng != null) {
+        return { lat: Number(regLoc.lat), lng: Number(regLoc.lng) };
+      }
+      if (data.registration_address) {
+        const match = String(data.registration_address).match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+        if (match) {
+          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+        }
+      }
+      return undefined;
+    })(),
     registrationAddress: data.registration_address || regLoc?.address || undefined,
     contactPhone: data.contact_phone || data.phone || regLoc?.contactPhone || regLoc?.phone || undefined,
     phone: data.phone || data.contact_phone || regLoc?.phone || regLoc?.contactPhone || undefined,

@@ -57,14 +57,22 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         z.radius > 0
     );
 
-    // Add employee's custom registration location if it exists at the top priority
-    const regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat ?? (employee as any)?.latitude;
-    const regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng ?? (employee as any)?.longitude;
-    if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
+    // Add employee's registered account geofence if it exists at the top priority
+    let regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat ?? (employee as any)?.latitude;
+    let regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng ?? (employee as any)?.longitude;
+    if ((regLat == null || regLng == null) && (employee?.registrationAddress || (employee as any)?.registration_address)) {
+      const addrStr = String(employee?.registrationAddress || (employee as any)?.registration_address);
+      const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (match) {
+        regLat = parseFloat(match[1]);
+        regLng = parseFloat(match[2]);
+      }
+    }
+    if (regLat != null && regLng != null && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
       zones.unshift({
         id: `personal-${employee?.id || 'trainee'}`,
-        name: employee?.companyName ? `${employee.companyName} (Designated Workplace)` : (employee?.registrationAddress || 'Assigned Establishment Premises'),
-        address: employee?.registrationAddress || employee?.companyAddress || '',
+        name: employee?.companyName ? `${employee.companyName} (Designated Workplace)` : 'Registered Account Geofence',
+        address: employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
         lat: Number(regLat),
         lng: Number(regLng),
         radius: Math.max(Number((employee as any)?.geofenceRadius || (employee as any)?.radius || 250), 200),
@@ -113,8 +121,9 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         return;
       }
 
-      // 1. Immediate priority check: Evaluate trainee's permanent registered location
-      const personalZone = currentZones.find((z) => z.id.startsWith('personal-'));
+      // 1. Immediate priority check: Evaluate trainee's registered account geofence
+      // Strictly rely on where they registered an account, NOT residential address or falling back to campus
+      const personalZone = currentZones.find((z) => z.id.startsWith('personal-') || z.id === `station-${employee?.id}`);
       if (personalZone) {
         const isInsidePersonal = isWithinGeofence(
           latitude,
@@ -124,8 +133,8 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           personalZone.radius,
           accuracy
         );
+        const personalDist = calculateDistance(latitude, longitude, personalZone.lat, personalZone.lng);
         if (isInsidePersonal) {
-          const personalDist = calculateDistance(latitude, longitude, personalZone.lat, personalZone.lng);
           setResult({
             state: 'inside',
             distance: personalDist,
@@ -135,6 +144,19 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             verifiedBy: 'local',
           });
           onResultRef.current(true, coords, 'inside');
+          return;
+        } else {
+          // STRICT REQUIREMENT: When user has a registered account geofence,
+          // attendance must strictly rely on where they registered the account.
+          setResult({
+            state: 'outside',
+            distance: personalDist,
+            zoneName: `${personalZone.name} (Outside Registered Account Geofence)`,
+            coords: { ...coords, accuracy },
+            accuracy,
+            verifiedBy: 'local',
+          });
+          onResultRef.current(false, coords, 'outside');
           return;
         }
       }
