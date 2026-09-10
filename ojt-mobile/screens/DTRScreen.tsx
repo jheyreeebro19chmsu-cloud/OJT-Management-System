@@ -44,6 +44,7 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
   const [historyRecords, setHistoryRecords] = useState<TimeRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'today' | 'history'>('today');
   const [clockTime, setClockTime] = useState(new Date());
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [celebration, setCelebration] = useState<{
     action: 'in' | 'out';
     timeStr: string;
@@ -62,25 +63,32 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     loadDTRData();
     checkGeofence();
 
-    // Subscribe to continuous live GPS updates
+    // Subscribe to continuous live GPS updates if permission is available
     let sub: Location.LocationSubscription | null = null;
-    Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        distanceInterval: 5,
-        timeInterval: 3000,
-      },
-      (loc) => {
-        setCurrentLocation(loc);
-        evaluateGeofence(loc);
+    Location.getForegroundPermissionsAsync().then(({ status }) => {
+      if (status === 'granted') {
+        setPermissionDenied(false);
+        Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 5,
+            timeInterval: 3000,
+          },
+          (loc) => {
+            setCurrentLocation(loc);
+            evaluateGeofence(loc);
+          }
+        )
+          .then((s) => {
+            sub = s;
+          })
+          .catch((err) => {
+            console.debug('Watch position error:', err);
+          });
+      } else {
+        setPermissionDenied(true);
       }
-    )
-      .then((s) => {
-        sub = s;
-      })
-      .catch((err) => {
-        console.debug('Watch position error:', err);
-      });
+    });
 
     return () => {
       if (sub) sub.remove();
@@ -169,14 +177,24 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required for workplace geofencing.');
+        setPermissionDenied(true);
+        Alert.alert(
+          'GPS Permission Required',
+          'Location permission is required for Daily Time Record (DTR) attendance verification. Please grant location permissions in your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Retry', onPress: () => checkGeofence() },
+          ]
+        );
         return;
       }
+      setPermissionDenied(false);
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setCurrentLocation(loc);
       await evaluateGeofence(loc);
     } catch (e) {
       console.warn('Manual geofence check notice:', e);
+      setPermissionDenied(true);
     }
   }
 
@@ -194,6 +212,17 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
   }
 
   function handleAction(type: 'in' | 'out') {
+    if (permissionDenied || !currentLocation) {
+      Alert.alert(
+        'GPS Permission Denied',
+        'Cannot record attendance without GPS location verification. Please allow location permissions in device settings and try again.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Grant Permission', onPress: checkGeofence },
+        ]
+      );
+      return;
+    }
     setScanType(type);
     setCelebration(null);
     setShowScanner(true);
@@ -378,6 +407,22 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
           </View>
 
           {/* Workplace Geofence Radar Card (Web Parity) */}
+          {permissionDenied && (
+            <View style={styles.permissionWarningCard}>
+              <View style={styles.permissionWarningHeader}>
+                <AlertTriangle size={20} color="#b45309" />
+                <Text style={styles.permissionWarningTitle}>GPS Permission Denied</Text>
+              </View>
+              <Text style={styles.permissionWarningDesc}>
+                Location access is required for Daily Time Record (DTR) attendance verification to confirm you are within your assigned workplace premises. Please grant location permissions.
+              </Text>
+              <TouchableOpacity style={styles.permissionRetryBtn} onPress={checkGeofence}>
+                <RefreshCw size={14} color="#ffffff" />
+                <Text style={styles.permissionRetryBtnText}>Grant Location Permission</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.geofenceCard}>
             <View style={styles.geofenceHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -1011,5 +1056,48 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0f172a',
     marginTop: 2,
+  },
+  permissionWarningCard: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#f59e0b',
+    padding: 14,
+    marginBottom: 16,
+  },
+  permissionWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  permissionWarningTitle: {
+    fontFamily: 'Times New Roman',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  permissionWarningDesc: {
+    fontFamily: 'Times New Roman',
+    fontSize: 12,
+    color: '#78350f',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  permissionRetryBtn: {
+    backgroundColor: '#d97706',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+  },
+  permissionRetryBtnText: {
+    fontFamily: 'Times New Roman',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

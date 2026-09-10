@@ -331,6 +331,129 @@ assert('City blank -> System prevents registration with City required error',
 
 
 // ----------------------------------------------------------------------------
+// MODULE 7: GPS PERMISSION & ATTENDANCE VERIFICATION STATE MACHINE
+// ----------------------------------------------------------------------------
+printSectionHeader('7. WHITE BOX TESTS: GPS Permission Verification & Warning Matrix');
+
+function evaluateGpsPermissionAndGeofence({
+  permissionState,      // 'prompt' | 'granted' | 'denied'
+  geolocationError,     // null | { code: 1, message: 'User denied Geolocation' } | { code: 2, message: 'Position unavailable' }
+  coords,               // { lat, lng, accuracy } | null
+  geofenceZones,        // array of zones
+  geofenceEnabled = true
+}) {
+  const isDenied = permissionState === 'denied' || (geolocationError && geolocationError.code === 1);
+  if (isDenied) {
+    return {
+      state: 'denied',
+      canPunch: false,
+      warningTitle: 'GPS Permission Denied',
+      warningDisplayed: true,
+      actionButtonLabel: 'GPS Permission Denied — Allow Location to Proceed',
+      promptHelperVisible: false
+    };
+  }
+
+  if (permissionState === 'prompt' && !coords) {
+    return {
+      state: 'checking',
+      canPunch: false,
+      warningTitle: null,
+      warningDisplayed: false,
+      actionButtonLabel: 'Checking Location & Requesting GPS...',
+      promptHelperVisible: true
+    };
+  }
+
+  if (geolocationError) {
+    return {
+      state: 'error',
+      canPunch: !geofenceEnabled,
+      warningTitle: 'Location Service Unavailable',
+      warningDisplayed: true,
+      actionButtonLabel: 'Location Error — Recheck',
+      promptHelperVisible: false
+    };
+  }
+
+  if (!coords) {
+    return {
+      state: 'checking',
+      canPunch: false,
+      warningTitle: null,
+      warningDisplayed: false,
+      actionButtonLabel: 'Checking Location & Requesting GPS...',
+      promptHelperVisible: false
+    };
+  }
+
+  if (!geofenceEnabled || !geofenceZones || geofenceZones.length === 0) {
+    return {
+      state: 'inside',
+      canPunch: true,
+      warningTitle: null,
+      warningDisplayed: false,
+      actionButtonLabel: 'Proceed to Face Scan (Clock In)',
+      promptHelperVisible: false
+    };
+  }
+
+  const isInside = geofenceZones.some(z => {
+    const dist = calculateDistance(coords.lat, coords.lng, z.lat, z.lng);
+    return dist <= z.radius;
+  });
+
+  return {
+    state: isInside ? 'inside' : 'outside',
+    canPunch: isInside,
+    warningTitle: isInside ? null : 'Outside Work Premises',
+    warningDisplayed: !isInside,
+    actionButtonLabel: isInside ? 'Proceed to Face Scan (Clock In)' : 'Outside Work Premises — Cannot Clock In/Out',
+    promptHelperVisible: false
+  };
+}
+
+// Test 7.1: Permission denied explicitly by user (error code 1)
+const deniedResult = evaluateGpsPermissionAndGeofence({
+  permissionState: 'denied',
+  geolocationError: { code: 1, message: 'User denied Geolocation' },
+  coords: null,
+  geofenceZones: [{ lat: 10.7410, lng: 122.9702, radius: 250 }]
+});
+assert('GPS permission denied -> State is "denied"', deniedResult.state === 'denied');
+assert('GPS permission denied -> Appropriate warning displayed', deniedResult.warningDisplayed === true && deniedResult.warningTitle === 'GPS Permission Denied');
+assert('GPS permission denied -> Prevents attendance punch (canPunch: false)', deniedResult.canPunch === false);
+assert('GPS permission denied -> Action button reflects denial state with guidance', deniedResult.actionButtonLabel.includes('GPS Permission Denied'));
+
+// Test 7.2: Initial opening without prior grant ('prompt' state)
+const promptResult = evaluateGpsPermissionAndGeofence({
+  permissionState: 'prompt',
+  geolocationError: null,
+  coords: null,
+  geofenceZones: [{ lat: 10.7410, lng: 122.9702, radius: 250 }]
+});
+assert('Initial open in prompt state -> State is "checking" and prompt helper visible', promptResult.state === 'checking' && promptResult.promptHelperVisible === true);
+
+// Test 7.3: Empty active zones array still requires valid GPS and passes once coordinates exist
+const emptyZonesGrantedResult = evaluateGpsPermissionAndGeofence({
+  permissionState: 'granted',
+  geolocationError: null,
+  coords: { lat: 10.7410, lng: 122.9702, accuracy: 10 },
+  geofenceZones: []
+});
+assert('Granted GPS with empty active zones -> Correctly validates location and allows attendance', emptyZonesGrantedResult.canPunch === true && emptyZonesGrantedResult.state === 'inside');
+
+// Test 7.4: User outside designated geofence radius
+const outsideResult = evaluateGpsPermissionAndGeofence({
+  permissionState: 'granted',
+  geolocationError: null,
+  coords: { lat: 10.7500, lng: 122.9702, accuracy: 10 }, // ~1 km away
+  geofenceZones: [{ lat: 10.7410, lng: 122.9702, radius: 100 }]
+});
+assert('User outside designated workplace zone -> Prevent punch and display Outside Work Premises warning', outsideResult.canPunch === false && outsideResult.state === 'outside');
+
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

@@ -1,4 +1,4 @@
-import { MapPin, CheckCircle, XCircle, Loader, AlertTriangle, Navigation, ShieldOff } from 'lucide-react';
+import { MapPin, CheckCircle, XCircle, Loader, AlertTriangle, Navigation, ShieldOff, RefreshCw, Compass } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Circle, CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
@@ -15,19 +15,20 @@ import {
   GEOFENCE_RADIUS_METERS,
 } from '../utils/geo';
 
-type GeoState = 'idle' | 'checking' | 'inside' | 'outside' | 'denied' | 'error' | 'demo';
+export type GeoState = 'idle' | 'checking' | 'inside' | 'outside' | 'denied' | 'error' | 'demo';
 
-interface GeofenceResult {
+export interface GeofenceResult {
   state: GeoState;
   distance?: number;
   zoneName?: string;
   coords?: { lat: number; lng: number; accuracy?: number };
   accuracy?: number;
   verifiedBy?: 'server' | 'local';
+  errorMessage?: string;
 }
 
-interface GeofenceCheckerProps {
-  onResult: (passed: boolean, coords?: { lat: number; lng: number }) => void;
+export interface GeofenceCheckerProps {
+  onResult: (passed: boolean, coords?: { lat: number; lng: number }, state?: GeoState, message?: string) => void;
   autoCheck?: boolean;
 }
 
@@ -35,6 +36,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const { geofenceZones, settings, getCurrentEmployee } = useApp();
   const [result, setResult] = useState<GeofenceResult>({ state: 'idle' });
   const [watchCoords, setWatchCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
 
   // Stable ref for onResult callback to avoid unnecessary interval restarts & re-renders
   const onResultRef = useRef(onResult);
@@ -79,24 +81,37 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const checkGeofence = useCallback(async () => {
     const currentZones = activeZonesRef.current;
 
-    if (!settings.geofenceEnabled) {
-      setResult({ state: 'inside', zoneName: 'Geofence Disabled (All Locations Allowed)' });
-      onResultRef.current(true, undefined);
-      return;
-    }
-
-    if (currentZones.length === 0) {
-      setResult({ state: 'inside', zoneName: 'No Active Zones' });
-      onResultRef.current(true, undefined);
-      return;
-    }
-
-    setResult({ state: 'checking' });
+    setResult((prev) => ({ ...prev, state: 'checking' }));
 
     try {
+      // Actively request the user's location via browser GPS (triggers browser permission prompt)
       const position = await getCurrentLocation();
       const { latitude, longitude, accuracy } = position.coords;
       const coords = { lat: latitude, lng: longitude };
+
+      if (!settings.geofenceEnabled) {
+        setResult({
+          state: 'inside',
+          zoneName: 'Geofence Disabled (All Locations Allowed)',
+          coords: { ...coords, accuracy },
+          accuracy,
+          verifiedBy: 'local',
+        });
+        onResultRef.current(true, coords, 'inside');
+        return;
+      }
+
+      if (currentZones.length === 0) {
+        setResult({
+          state: 'inside',
+          zoneName: 'No Active Zones Configured (Attendance Allowed)',
+          coords: { ...coords, accuracy },
+          accuracy,
+          verifiedBy: 'local',
+        });
+        onResultRef.current(true, coords, 'inside');
+        return;
+      }
 
       // 1. Immediate priority check: Evaluate trainee's permanent registered location
       const personalZone = currentZones.find((z) => z.id.startsWith('personal-'));
@@ -119,7 +134,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             accuracy,
             verifiedBy: 'local',
           });
-          onResultRef.current(true, coords);
+          onResultRef.current(true, coords, 'inside');
           return;
         }
       }
@@ -162,7 +177,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             accuracy,
             verifiedBy: 'server',
           });
-          onResultRef.current(inside, coords);
+          onResultRef.current(inside, coords, inside ? 'inside' : 'outside');
           return;
         } catch {
           // Fall back to local calculation below
@@ -186,18 +201,70 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         accuracy,
         verifiedBy: 'local',
       });
-      onResultRef.current(inside, coords);
+      onResultRef.current(inside, coords, inside ? 'inside' : 'outside');
     } catch (err: unknown) {
-      const isPermissionDenied = isGeolocationPositionError(err) && err.code === 1;
+      const isPermissionDenied =
+        (isGeolocationPositionError(err) && err.code === 1) ||
+        (err as any)?.code === 1 ||
+        (typeof (err as any)?.message === 'string' && (err as any).message.toLowerCase().includes('denied'));
+
       if (isPermissionDenied) {
-        setResult({ state: 'denied', zoneName: 'Location Access Denied' });
-        onResultRef.current(false, undefined);
+        setResult({
+          state: 'denied',
+          zoneName: 'Location Access Denied',
+          errorMessage: 'GPS permission was denied by the user or browser. Location permission is required to record attendance.',
+        });
+        onResultRef.current(false, undefined, 'denied', 'GPS location permission denied');
       } else {
-        setResult({ state: 'error', zoneName: 'Location Service Unavailable' });
-        onResultRef.current(false, undefined);
+        if (!settings.geofenceEnabled) {
+          setResult({ state: 'inside', zoneName: 'Geofence Disabled (All Locations Allowed)' });
+          onResultRef.current(true, undefined, 'inside');
+          return;
+        }
+        setResult({
+          state: 'error',
+          zoneName: 'Location Service Unavailable',
+          errorMessage: (err as any)?.message || 'Unable to determine device location.',
+        });
+        onResultRef.current(false, undefined, 'error', 'Location service unavailable');
       }
     }
   }, [settings.geofenceEnabled]);
+
+  // Monitor browser permission state transitions
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((status) => {
+          setPermissionState(status.state);
+          if (status.state === 'denied') {
+            setResult({
+              state: 'denied',
+              zoneName: 'Location Access Denied',
+              errorMessage: 'GPS access is blocked by your browser for this site.',
+            });
+            onResultRef.current(false, undefined, 'denied', 'GPS location permission denied');
+          }
+          status.onchange = () => {
+            setPermissionState(status.state);
+            if (status.state === 'granted') {
+              checkGeofence();
+            } else if (status.state === 'denied') {
+              setResult({
+                state: 'denied',
+                zoneName: 'Location Access Denied',
+                errorMessage: 'GPS access is blocked by your browser for this site.',
+              });
+              onResultRef.current(false, undefined, 'denied', 'GPS location permission denied');
+            }
+          };
+        })
+        .catch(() => {
+          setPermissionState('unsupported');
+        });
+    }
+  }, [checkGeofence]);
 
   useEffect(() => {
     if (autoCheck) checkGeofence();
@@ -341,8 +408,92 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         )}
       </AnimatePresence>
 
+      {/* GPS Permission Prompt Helper */}
+      <AnimatePresence>
+        {permissionState === 'prompt' && result.state === 'checking' && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="rounded-2xl border-2 border-sky-300 bg-sky-50 p-4 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center shrink-0 mt-0.5">
+                <Compass size={18} className="animate-spin" />
+              </div>
+              <div className="text-xs text-sky-950 flex-1">
+                <p className="font-bold text-sky-900 text-sm">System Requesting GPS Location Permission</p>
+                <p className="mt-1 text-sky-800 leading-relaxed">
+                  Please click <strong>"Allow"</strong> or <strong>"While using the site"</strong> on your browser's location prompt popup to confirm you are within your designated workplace premises.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* GPS Permission Denied — Prominent Warning Card */}
+      <AnimatePresence>
+        {result.state === 'denied' && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-sm shadow-amber-200">
+                <AlertTriangle size={20} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-amber-950 text-sm">GPS Permission Denied</h4>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                    Action Required
+                  </span>
+                </div>
+                <p className="text-xs text-amber-900 mt-1 font-medium leading-relaxed">
+                  Daily Time Record (DTR) requires GPS location access to confirm that you are physically present at your assigned OJT workplace premises before clocking in or out.
+                </p>
+
+                {/* Step-by-step unblock instructions */}
+                <div className="mt-3 bg-white/90 border border-amber-200 rounded-xl p-3 text-xs text-amber-950 space-y-2">
+                  <p className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <span>⚙️</span> How to allow location permission in your browser:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px] text-amber-900">
+                    <li>Click the <strong>Lock (🔒)</strong> or <strong>Site Settings (🎛️)</strong> icon in your browser address bar (top of screen).</li>
+                    <li>Find <strong>Location</strong> and switch it from <strong>"Block"</strong> to <strong>"Allow"</strong>.</li>
+                    <li>If using Windows or a smartphone, verify that system <strong>Location Services</strong> are enabled.</li>
+                    <li>Click the <strong>"Request GPS Permission / Retry"</strong> button below.</li>
+                  </ol>
+                </div>
+
+                <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={checkGeofence}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors"
+                  >
+                    <RefreshCw size={14} />
+                    Request GPS Permission / Retry
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="flex items-center justify-center gap-1 text-xs bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 font-medium py-2.5 px-3 rounded-xl transition-colors"
+                  >
+                    Reload Page
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Standard status card */}
-      {result.state !== 'outside' && (
+      {result.state !== 'outside' && result.state !== 'denied' && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}

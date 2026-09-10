@@ -1,10 +1,10 @@
-import { Clock, CheckCircle, MapPin, Camera, AlertCircle, XCircle, RefreshCw } from 'lucide-react';
+import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { FaceCapture } from '../components/FaceCapture';
-import { GeofenceChecker } from '../components/GeofenceChecker';
+import { GeofenceChecker, type GeoState } from '../components/GeofenceChecker';
 import {
   fetchSecurityHealth,
   isSecurityApiConfigured,
@@ -27,6 +27,8 @@ export function TimeRecord() {
   const [pageState, setPageState] = useState<PageState>('check-geofence');
   const [geofencePassed, setGeofencePassed] = useState(false);
   const [geofenceCoords, setGeofenceCoords] = useState<{ lat: number; lng: number } | undefined>();
+  const [geofenceStatus, setGeofenceStatus] = useState<GeoState>('checking');
+  const [geofenceMessage, setGeofenceMessage] = useState<string>('');
   const [action, setAction] = useState<'in' | 'out'>('in');
   const [completedAction, setCompletedAction] = useState<'in' | 'out'>('in');
   const [currentRecord, setCurrentRecord] = useState(todayRecord);
@@ -73,10 +75,15 @@ export function TimeRecord() {
     };
   }, []);
 
-  const handleGeofenceResult = React.useCallback((passed: boolean, coords?: { lat: number; lng: number }) => {
-    setGeofencePassed(passed);
-    setGeofenceCoords(coords);
-  }, []);
+  const handleGeofenceResult = React.useCallback(
+    (passed: boolean, coords?: { lat: number; lng: number }, state?: GeoState, message?: string) => {
+      setGeofencePassed(passed);
+      setGeofenceCoords(coords);
+      if (state) setGeofenceStatus(state);
+      if (message) setGeofenceMessage(message);
+    },
+    []
+  );
 
   const proceedToFaceScan = () => {
     if (!geofencePassed) return;
@@ -382,6 +389,19 @@ export function TimeRecord() {
               </div>
             </div>
 
+            {/* Prominent GPS Permission Warning Banner */}
+            {geofenceStatus === 'denied' && (
+              <div className="mb-4 bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+                <AlertTriangle size={22} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-950 flex-1">
+                  <p className="font-bold text-sm text-amber-900">⚠️ GPS Location Permission Denied</p>
+                  <p className="mt-1 text-amber-800 leading-relaxed">
+                    The system cannot record your Daily Time Record (DTR) attendance without GPS verification. Please grant location permissions in your browser or device settings to clock in or out.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Attendance Action Mode Switcher */}
             <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
               <button
@@ -416,14 +436,47 @@ export function TimeRecord() {
             </div>
 
             <button
-              onClick={proceedToFaceScan}
-              disabled={!geofencePassed}
-              className="w-full mt-4 py-3 bg-blue-700 text-white rounded-2xl font-semibold text-sm hover:bg-blue-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              onClick={() => {
+                if (geofenceStatus === 'denied') {
+                  alert(
+                    'GPS Location Permission Denied\n\nTo clock in or out, you must allow location access:\n1. Click the Lock (🔒) or Site Settings icon in your browser address bar.\n2. Change Location to "Allow".\n3. Click "Request GPS Permission / Retry".'
+                  );
+                  return;
+                }
+                proceedToFaceScan();
+              }}
+              disabled={!geofencePassed && geofenceStatus !== 'denied'}
+              className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                geofencePassed
+                  ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md'
+                  : geofenceStatus === 'denied'
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
+                    : geofenceStatus === 'outside'
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-blue-700 text-white opacity-40 cursor-not-allowed'
+              }`}
             >
-              <Camera size={16} />
-              {geofencePassed
-                ? `Proceed to Face Scan (Clock ${action === 'in' ? 'In' : 'Out'})`
-                : 'Waiting for Location...'}
+              {geofenceStatus === 'denied' ? (
+                <>
+                  <AlertTriangle size={16} className="text-amber-700" />
+                  <span>GPS Permission Denied — Allow Location to Proceed</span>
+                </>
+              ) : geofencePassed ? (
+                <>
+                  <Camera size={16} />
+                  <span>Proceed to Face Scan (Clock {action === 'in' ? 'In' : 'Out'})</span>
+                </>
+              ) : geofenceStatus === 'outside' ? (
+                <>
+                  <MapPin size={16} />
+                  <span>Outside Work Premises — Cannot Clock In/Out</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={16} className="animate-spin" />
+                  <span>Checking Location & Requesting GPS...</span>
+                </>
+              )}
             </button>
           </motion.div>
         ) : pageState === 'face-scan' ? (
