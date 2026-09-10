@@ -38,6 +38,8 @@ type ScanState =
   | 'no-camera'
   | 'permission-denied';
 
+export type SimMode = 'none' | 'mask' | 'sunglasses' | 'different_person' | 'poor_lighting';
+
 interface FaceCaptureProps {
   mode: 'register' | 'verify';
   employeeName?: string;
@@ -74,7 +76,11 @@ export function FaceCapture({
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
-  const [simObstruction, setSimObstruction] = useState<'none' | 'mask' | 'sunglasses'>('none');
+  const [simObstruction, setSimObstruction] = useState<SimMode>('none');
+  const isSimulatingRef = useRef(isSimulating);
+  useEffect(() => {
+    isSimulatingRef.current = isSimulating;
+  }, [isSimulating]);
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
@@ -122,7 +128,7 @@ export function FaceCapture({
     mismatchErrorRef.current = mismatchError;
   }, [mismatchError]);
 
-  const simObstructionRef = useRef(simObstruction);
+  const simObstructionRef = useRef<SimMode>(simObstruction);
   useEffect(() => {
     simObstructionRef.current = simObstruction;
   }, [simObstruction]);
@@ -152,7 +158,7 @@ export function FaceCapture({
     }
   }, []);
 
-  const drawSimulatedFrame = useCallback((obstructionType: 'none' | 'mask' | 'sunglasses') => {
+  const drawSimulatedFrame = useCallback((obstructionType: SimMode) => {
     let canvas = simCanvasRef.current;
     if (!canvas) {
       canvas = document.createElement('canvas');
@@ -166,6 +172,130 @@ export function FaceCapture({
     const w = canvas.width;
     const h = canvas.height;
 
+    // SCENARIO 3: Poor Lighting / Dark Environment (Luminance < 32)
+    if (obstructionType === 'poor_lighting') {
+      ctx.fillStyle = '#06080c';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.02)';
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, 180, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#0f141c';
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h + 35, 190, 140, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#1c1714';
+      ctx.fillRect(w / 2 - 38, h / 2 + 50, 76, 80);
+
+      const cx = w / 2;
+      const cy = h / 2 - 20;
+      ctx.fillStyle = '#1f1a17';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 105, 145, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#080808';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 85, 110, 65, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#12100e';
+      ctx.beginPath();
+      ctx.ellipse(cx - 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    // SCENARIO 2: Different / Unregistered Person (Biometric Distance > 0.55)
+    if (obstructionType === 'different_person') {
+      const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+      bgGrad.addColorStop(0, '#1e1b4b');
+      bgGrad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.10)';
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, 220, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#3730a3';
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h + 35, 190, 140, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#8c5634';
+      ctx.fillRect(w / 2 - 42, h / 2 + 50, 84, 80);
+
+      const cx = w / 2;
+      const cy = h / 2 - 15;
+      const rx = 115;
+      const ry = 138;
+
+      ctx.save();
+      ctx.fillStyle = '#9c6644';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#b45309';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 80, 120, 70, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx - 102, cy - 15, 34, 65, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + 102, cy - 15, 34, 65, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#451a03';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(cx - 48, cy - 40, 26, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + 48, cy - 40, 26, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(cx - 48, cy - 20, 19, 11, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 48, cy - 20, 19, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#78350f';
+      ctx.beginPath();
+      ctx.arc(cx - 48, cy - 20, 7, 0, Math.PI * 2);
+      ctx.arc(cx + 48, cy - 20, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#713f12';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 20);
+      ctx.lineTo(cx + 12, cy + 20);
+      ctx.lineTo(cx - 6, cy + 28);
+      ctx.stroke();
+
+      ctx.fillStyle = '#451a03';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 50, 32, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#991b1b';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 64, 24, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+      return;
+    }
+
+    // SCENARIOS 1 & 4: Registered Trainee Face (Matches Registered Profile)
     // Ambient background
     const bgGrad = ctx.createLinearGradient(0, 0, w, h);
     bgGrad.addColorStop(0, '#1e293b');
@@ -338,7 +468,7 @@ export function FaceCapture({
   }, []);
 
   const startSimulatedCamera = useCallback(
-    (obstruction: 'none' | 'mask' | 'sunglasses' = 'none') => {
+    (obstruction: SimMode = 'none') => {
       setIsSimulating(true);
       setSimObstruction(obstruction);
       simObstructionRef.current = obstruction;
@@ -368,7 +498,45 @@ export function FaceCapture({
       }, 150);
 
       setState('scanning');
-      if (obstruction === 'mask') {
+      if (obstruction === 'different_person') {
+        const msg = '⚠️ Biometric Mismatch: Face does not match registered profile. (Distance: 0.78 > 0.55)';
+        setScanMessage(msg);
+        setMismatchError(msg);
+        setQualityReport({
+          ok: false,
+          faceDetected: true,
+          faceCentered: true,
+          faceObscured: false,
+          maskDetected: false,
+          glassesDetected: false,
+          capDetected: false,
+          tooDark: false,
+          tooBright: false,
+          blurry: false,
+          brightness: 120,
+          sharpness: 80,
+          issues: ['Biometric mismatch: Facial signature does not match registered profile.'],
+        });
+      } else if (obstruction === 'poor_lighting') {
+        const msg = '⚠️ Too dark! Move to a well-lit area.';
+        setScanMessage(msg);
+        setMismatchError('Photo is too dark. Please ensure better lighting.');
+        setQualityReport({
+          ok: false,
+          faceDetected: true,
+          faceCentered: true,
+          faceObscured: false,
+          maskDetected: false,
+          glassesDetected: false,
+          capDetected: false,
+          tooDark: true,
+          tooBright: false,
+          blurry: false,
+          brightness: 20,
+          sharpness: 70,
+          issues: ['Area is too dark. Please move to a brighter location.'],
+        });
+      } else if (obstruction === 'mask') {
         const msg = '⚠️ Face mask detected! System prevents successful verification and prompts for a clear face.';
         setScanMessage(msg);
         setMismatchError(msg);
@@ -445,7 +613,13 @@ export function FaceCapture({
     const hasLiveVideo = Boolean(video && video.videoWidth > 0);
     const hasSimFrame = Boolean(isSimulating && simCanvasRef.current);
 
-    if (!hasLiveVideo && !hasSimFrame) return;
+    if (!hasLiveVideo && !hasSimFrame) {
+      const curState = stateRef.current;
+      if (curState === 'scanning' || curState === 'analyzing' || curState === 'verifying') {
+        animFrameRef.current = requestAnimationFrame(drawOverlay);
+      }
+      return;
+    }
 
     try {
       const ctx = canvas.getContext('2d');
@@ -607,8 +781,8 @@ export function FaceCapture({
     }
   }, []);
 
-  const captureFrame = (): string | undefined => {
-    if (isSimulating && simCanvasRef.current) {
+  const captureFrame = useCallback((): string | undefined => {
+    if (isSimulatingRef.current && simCanvasRef.current) {
       return simCanvasRef.current.toDataURL('image/jpeg', 0.90);
     }
     const video = videoRef.current;
@@ -625,7 +799,7 @@ export function FaceCapture({
     cap.height = (video.videoHeight || 480) * ratio;
     cap.getContext('2d')?.drawImage(video, 0, 0, cap.width, cap.height);
     return cap.toDataURL('image/jpeg', 0.90);
-  };
+  }, []);
 
   const startScan = useCallback(async () => {
     stopCamera();
@@ -640,15 +814,33 @@ export function FaceCapture({
       if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
         let stream: MediaStream;
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
+          const gUMPromise = navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 640 },
               height: { ideal: 480 },
               facingMode: 'user',
             },
           });
-        } catch {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Camera request timed out')), 3500)
+          );
+          stream = await Promise.race([gUMPromise, timeoutPromise]);
+        } catch (initialErr: any) {
+          if (String(initialErr?.message || '').includes('timed out')) {
+            throw initialErr;
+          }
+          if (
+            initialErr?.name === 'NotAllowedError' ||
+            initialErr?.name === 'PermissionDeniedError' ||
+            String(initialErr?.message || '').toLowerCase().includes('denied')
+          ) {
+            throw initialErr;
+          }
+          const gUMFallback = navigator.mediaDevices.getUserMedia({ video: true });
+          const timeoutPromise2 = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Camera request timed out')), 2500)
+          );
+          stream = await Promise.race([gUMFallback, timeoutPromise2]);
         }
 
         streamRef.current = stream;
@@ -660,7 +852,7 @@ export function FaceCapture({
           await new Promise<void>((resolve) => {
             if (!videoRef.current) return resolve();
             videoRef.current.onloadedmetadata = () => resolve();
-            setTimeout(resolve, 600);
+            setTimeout(resolve, 800);
           });
           await videoRef.current.play().catch(() => {});
         }
@@ -682,10 +874,26 @@ export function FaceCapture({
     }
 
     if (!hasLiveHardwareCamera) {
-      // Auto-fallback: Keep camera active with simulated biometric stream when physical device is absent
+      // Auto-fallback: Keep camera active with simulated biometric stream when physical device is absent or timed out
       setIsSimulating(true);
       const currentObs = simObstructionRef.current || 'none';
       drawSimulatedFrame(currentObs);
+
+      try {
+        if (simCanvasRef.current && typeof (simCanvasRef.current as any).captureStream === 'function') {
+          const stream = (simCanvasRef.current as any).captureStream(25);
+          if (stream) {
+            streamRef.current = stream;
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+              videoRef.current.play().catch(() => {});
+            }
+          }
+        }
+      } catch (streamErr) {
+        console.warn('Simulated stream capture notice:', streamErr);
+      }
+
       if (simTimerRef.current) clearInterval(simTimerRef.current);
       simTimerRef.current = setInterval(() => {
         drawSimulatedFrame(simObstructionRef.current || 'none');
@@ -833,13 +1041,15 @@ export function FaceCapture({
           continue;
         }
 
-        if (quality.tooDark) {
+        if (quality.tooDark || simObstructionRef.current === 'poor_lighting') {
           setScanMessage('⚠️ Too dark! Move to a well-lit area.');
+          setMismatchError('Photo is too dark. Please ensure better lighting.');
           await new Promise((r) => setTimeout(r, 450));
           continue;
         }
         if (quality.tooBright) {
           setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
+          setMismatchError('Too much glare. Please adjust lighting.');
           await new Promise((r) => setTimeout(r, 450));
           continue;
         }
@@ -850,6 +1060,13 @@ export function FaceCapture({
         }
 
         setScanMessage('Verifying trainee biometrics...');
+
+        if (simObstructionRef.current === 'different_person') {
+          setMismatchError('Biometric Mismatch: Face does not match registered profile.');
+          setScanMessage('❌ Face mismatch! Distance: 0.78 (Must be ≤ 0.55)');
+          await new Promise((r) => setTimeout(r, 450));
+          continue;
+        }
 
         const enrolledImage = registeredImageRef.current;
         if (enrolledImage) {
@@ -985,7 +1202,7 @@ export function FaceCapture({
         return;
       }
 
-      if (quality.tooDark) {
+      if (quality.tooDark || simObstructionRef.current === 'poor_lighting') {
         setState('failed');
         setMismatchError('Photo is too dark. Please ensure better lighting.');
         setScanMessage('❌ Photo is too dark. Please ensure better lighting.');
@@ -1009,6 +1226,13 @@ export function FaceCapture({
     setState('verifying');
     setScanMessage('Verifying biometric match...');
     setProgress(75);
+
+    if (simObstructionRef.current === 'different_person') {
+      setState('failed');
+      setMismatchError(`Face does not match registered biometrics for ${employeeNameRef.current || 'this student'}.`);
+      setScanMessage('❌ Access Denied: Biometrics mismatch (Distance: 0.78 > 0.55)');
+      return;
+    }
 
     const enrolledImage = registeredImageRef.current;
     if (enrolledImage) {
@@ -1085,8 +1309,10 @@ export function FaceCapture({
     reader.readAsDataURL(file);
   };
 
+  const hasStartedRef = useRef(false);
   useEffect(() => {
-    if (autoStart) {
+    if (autoStart && !hasStartedRef.current) {
+      hasStartedRef.current = true;
       startScan();
     }
     return () => {
@@ -1099,6 +1325,7 @@ export function FaceCapture({
     setProgress(0);
     setCapturedImage(null);
     setMismatchError(null);
+    hasStartedRef.current = false;
     startScan();
   };
 
@@ -1177,28 +1404,47 @@ export function FaceCapture({
       {/* Quick Obstruction Testing Bar */}
       <div className="flex items-center justify-between gap-1 w-full max-w-[340px] bg-slate-900/90 px-2 py-1.5 rounded-2xl border border-slate-800 text-[10px] font-bold text-slate-300">
         <span className="text-[9px] uppercase tracking-wider text-slate-400">Test Guide:</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap justify-end">
           <button
             type="button"
-            onClick={() => {
-              if (isSimulating) {
-                startSimulatedCamera('none');
-              } else {
-                setSimObstruction('none');
-                simObstructionRef.current = 'none';
-              }
-            }}
+            onClick={() => startSimulatedCamera('none')}
+            title="Registered face matching enrolled template"
             className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-              simObstruction === 'none' && !qualityReport?.faceObscured
+              simObstruction === 'none' && !qualityReport?.faceObscured && !qualityReport?.tooDark && !mismatchError
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
-            ✨ Clear
+            ✨ Registered
+          </button>
+          <button
+            type="button"
+            onClick={() => startSimulatedCamera('different_person')}
+            title="Different unregistered person (distance > 0.55, rejects verification)"
+            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+              simObstruction === 'different_person' || (mismatchError && !qualityReport?.faceObscured && !qualityReport?.tooDark)
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            👤 Different
+          </button>
+          <button
+            type="button"
+            onClick={() => startSimulatedCamera('poor_lighting')}
+            title="Poor lighting / dark area (brightness < 32, warns trainee and prevents verification)"
+            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
+              simObstruction === 'poor_lighting' || qualityReport?.tooDark
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            🌙 Dark
           </button>
           <button
             type="button"
             onClick={() => startSimulatedCamera('mask')}
+            title="Face mask obstruction (blocks verification)"
             className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
               simObstruction === 'mask' || qualityReport?.maskDetected
                 ? 'bg-red-600 text-white shadow-sm'
@@ -1210,6 +1456,7 @@ export function FaceCapture({
           <button
             type="button"
             onClick={() => startSimulatedCamera('sunglasses')}
+            title="Sunglasses obstruction (blocks verification)"
             className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
               simObstruction === 'sunglasses' || qualityReport?.glassesDetected
                 ? 'bg-red-600 text-white shadow-sm'
