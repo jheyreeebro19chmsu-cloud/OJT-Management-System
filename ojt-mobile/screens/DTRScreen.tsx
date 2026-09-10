@@ -22,6 +22,7 @@ import {
   Sparkles,
   AlertTriangle,
   RefreshCw,
+  Compass,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
@@ -214,8 +215,10 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
   function handleAction(type: 'in' | 'out') {
     if (permissionDenied || !currentLocation) {
       Alert.alert(
-        'GPS Permission Denied',
-        'Cannot record attendance without GPS location verification. Please allow location permissions in device settings and try again.',
+        permissionDenied ? 'GPS Permission Denied' : 'GPS Location Permission Required',
+        permissionDenied
+          ? 'Cannot record attendance without GPS location verification. Please allow location permissions in device settings and try again.'
+          : 'Please grant GPS location permission so the system can verify you are within your designated workplace premises.',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Grant Permission', onPress: checkGeofence },
@@ -407,21 +410,38 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
           </View>
 
           {/* Workplace Geofence Radar Card (Web Parity) */}
-          {permissionDenied && (
+          {permissionDenied ? (
             <View style={styles.permissionWarningCard}>
               <View style={styles.permissionWarningHeader}>
                 <AlertTriangle size={20} color="#b45309" />
                 <Text style={styles.permissionWarningTitle}>GPS Permission Denied</Text>
               </View>
               <Text style={styles.permissionWarningDesc}>
-                Location access is required for Daily Time Record (DTR) attendance verification to confirm you are within your assigned workplace premises. Please grant location permissions.
+                Location access is blocked. Daily Time Record (DTR) requires GPS location to verify you are within your assigned workplace premises. Please grant location permissions in device settings.
               </Text>
               <TouchableOpacity style={styles.permissionRetryBtn} onPress={checkGeofence}>
                 <RefreshCw size={14} color="#ffffff" />
                 <Text style={styles.permissionRetryBtnText}>Grant Location Permission</Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : !currentLocation ? (
+            <View style={[styles.permissionWarningCard, { backgroundColor: '#f0f9ff', borderColor: '#7dd3fc' }]}>
+              <View style={styles.permissionWarningHeader}>
+                <Compass size={20} color="#0284c7" />
+                <Text style={[styles.permissionWarningTitle, { color: '#0369a1' }]}>GPS Location Permission Required</Text>
+              </View>
+              <Text style={[styles.permissionWarningDesc, { color: '#0c4a6e' }]}>
+                Daily Time Record (DTR) requires GPS location access to confirm you are within your assigned workplace premises. Please grant location permissions.
+              </Text>
+              <TouchableOpacity
+                style={[styles.permissionRetryBtn, { backgroundColor: '#0284c7' }]}
+                onPress={checkGeofence}
+              >
+                <Compass size={14} color="#ffffff" />
+                <Text style={styles.permissionRetryBtnText}>Grant Location Permission</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.geofenceCard}>
             <View style={styles.geofenceHeaderRow}>

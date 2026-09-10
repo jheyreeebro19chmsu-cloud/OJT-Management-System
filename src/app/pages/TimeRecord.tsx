@@ -1,4 +1,4 @@
-import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw } from 'lucide-react';
+import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw, Compass } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -389,14 +389,54 @@ export function TimeRecord() {
               </div>
             </div>
 
-            {/* Prominent GPS Permission Warning Banner */}
-            {geofenceStatus === 'denied' && (
+            {/* Prominent GPS Permission Warning / Request Banner */}
+            {geofenceStatus === 'denied' ? (
               <div className="mb-4 bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
                 <AlertTriangle size={22} className="text-amber-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-950 flex-1">
-                  <p className="font-bold text-sm text-amber-900">⚠️ GPS Location Permission Denied</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-sm text-amber-900">⚠️ GPS Location Permission Denied</p>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                      Permission Required
+                    </span>
+                  </div>
                   <p className="mt-1 text-amber-800 leading-relaxed">
-                    The system cannot record your Daily Time Record (DTR) attendance without GPS verification. Please grant location permissions in your browser or device settings to clock in or out.
+                    The system cannot record your Daily Time Record (DTR) attendance without GPS verification. Location access is currently blocked by your browser or device settings.
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        alert(
+                          'How to Allow GPS Location:\n\n1. Click the Lock (🔒) or Tune (🎛️) icon on the left of your browser address bar.\n2. Change Location to "Allow".\n3. Refresh this page or click "Retry Location Check".'
+                        );
+                      }}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-semibold transition-colors"
+                    >
+                      Unblock Instructions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="px-2.5 py-1 bg-white border border-amber-300 text-amber-800 rounded-lg text-[11px] font-semibold hover:bg-amber-100 transition-colors"
+                    >
+                      Reload Page
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : !geofencePassed && (
+              <div className="mb-4 bg-sky-50 border-2 border-sky-300 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+                <Compass size={22} className="text-sky-600 shrink-0 mt-0.5 animate-spin" />
+                <div className="text-xs text-sky-950 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-sm text-sky-900">📍 System Requesting Location Permission</p>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-200 text-sky-800 border border-sky-300">
+                      Action Required
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sky-800 leading-relaxed">
+                    Daily Time Record (DTR) requires GPS location access to verify that you are physically present at your assigned workplace premises. Please click <strong>"Allow"</strong> on your browser's location prompt.
                   </p>
                 </div>
               </div>
@@ -443,17 +483,23 @@ export function TimeRecord() {
                   );
                   return;
                 }
+                if (!geofencePassed) {
+                  alert(
+                    'GPS Permission Required\n\nPlease allow browser location access so the system can verify you are within your designated workplace geofence before clocking in or out.'
+                  );
+                  return;
+                }
                 proceedToFaceScan();
               }}
-              disabled={!geofencePassed && geofenceStatus !== 'denied'}
+              disabled={geofenceStatus === 'outside'}
               className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
                 geofencePassed
-                  ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md'
+                  ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
                   : geofenceStatus === 'denied'
                     ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
                     : geofenceStatus === 'outside'
                       ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-blue-700 text-white opacity-40 cursor-not-allowed'
+                      : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
               }`}
             >
               {geofenceStatus === 'denied' ? (
@@ -473,8 +519,8 @@ export function TimeRecord() {
                 </>
               ) : (
                 <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>Checking Location & Requesting GPS...</span>
+                  <Compass size={16} className="text-sky-600 animate-spin" />
+                  <span>GPS Permission Required — Click to Grant Location</span>
                 </>
               )}
             </button>
