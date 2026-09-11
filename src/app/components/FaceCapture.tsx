@@ -881,6 +881,14 @@ export function FaceCapture({
       if (currentSt === 'requesting') {
         console.warn('FaceCapture: camera init timed out (8s hard abort) — engaging simulated stream');
         startSimulatedCamera(simObstructionRef.current || 'none');
+        // Ensure UI leaves 'requesting' state even though startSimulatedCamera sets 'scanning'
+        setState('scanning');
+        setProgress(20);
+        setScanMessage(
+          modeRef.current === 'register'
+            ? 'Position face inside the oval for facial recognition scan...'
+            : 'Position your face inside the oval for biometric verification...'
+        );
       }
     }, 8000);
 
@@ -993,7 +1001,8 @@ export function FaceCapture({
         let stableFrames = 0;
         const REQUIRED_STABLE_FRAMES = 3;
 
-        while ((streamRef.current || isSimulating) && stateRef.current === 'scanning') {
+        // Use ref (not stale closure) so simulated stream also keeps the loop running
+        while ((streamRef.current || isSimulatingRef.current) && stateRef.current === 'scanning') {
           const currentFrame = captureFrame();
           if (currentFrame) {
             const quality = await inspectFaceQuality(currentFrame).catch(() => null);
@@ -1075,7 +1084,8 @@ export function FaceCapture({
       let lastCaptured: string | undefined = undefined;
 
       for (let attempt = 1; attempt <= 45; attempt++) {
-        if ((!streamRef.current && !isSimulating) || stateRef.current !== 'scanning') break;
+        // Use ref (not stale closure) so simulated stream path also continues scanning
+        if ((!streamRef.current && !isSimulatingRef.current) || stateRef.current !== 'scanning') break;
 
         const currentFrame = captureFrame();
         if (!currentFrame) {
