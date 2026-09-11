@@ -1,6 +1,6 @@
 import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw, Compass } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { FaceCapture } from '../components/FaceCapture';
@@ -36,6 +36,7 @@ export function TimeRecord() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const userActionOverrideRef = useRef<boolean>(false);
   // CORS-safe data URL of the registered face image for biometric matching
   const [registeredImageDataUrl, setRegisteredImageDataUrl] = useState<string | undefined>(undefined);
 
@@ -74,8 +75,9 @@ export function TimeRecord() {
     if (empLookupId) {
       const rec = getTodayRecord(empLookupId);
       setCurrentRecord(rec);
-      // Guard: do not flip the action state while viewing the completed confirmation
-      if (pageState !== 'completed') {
+      // Guard: do not flip the action state while viewing the completed confirmation,
+      // and do not override if the user explicitly clicked Clock In / Clock Out
+      if (pageState !== 'completed' && !userActionOverrideRef.current) {
         if (rec?.timeIn && !rec?.timeOut) {
           setAction('out');
         } else {
@@ -316,6 +318,7 @@ export function TimeRecord() {
   };
 
   const handleReset = () => {
+    userActionOverrideRef.current = false;
     setPageState('check-geofence');
     setGeofencePassed(false);
     setGeofenceCoords(undefined);
@@ -511,7 +514,10 @@ export function TimeRecord() {
             <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
               <button
                 type="button"
-                onClick={() => setAction('in')}
+                onClick={() => {
+                  setAction('in');
+                  userActionOverrideRef.current = true;
+                }}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
                   action === 'in'
                     ? 'bg-blue-600 text-white shadow-sm'
@@ -522,7 +528,10 @@ export function TimeRecord() {
               </button>
               <button
                 type="button"
-                onClick={() => setAction('out')}
+                onClick={() => {
+                  setAction('out');
+                  userActionOverrideRef.current = true;
+                }}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
                   action === 'out'
                     ? 'bg-blue-600 text-white shadow-sm'

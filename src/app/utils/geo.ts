@@ -203,8 +203,9 @@ export function calculateTotalHours(timeIn: string, timeOut: string): number {
   const [inH, inM] = timeIn.split(':').map(Number);
   const [outH, outM] = timeOut.split(':').map(Number);
   const inTotal = inH * 60 + inM;
-  const outTotal = outH * 60 + outM;
-  return parseFloat(((outTotal - inTotal) / 60).toFixed(2));
+  let diff = outH * 60 + outM - inTotal;
+  if (diff < 0) diff += 24 * 60; // handle overnight shifts gracefully
+  return parseFloat(Math.max(0, diff / 60).toFixed(2));
 }
 
 /**
