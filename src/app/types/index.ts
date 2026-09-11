@@ -39,7 +39,7 @@ export interface Employee {
   contactPhone?: string;
   academicYear?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
-  applicationStatus?: 'pending' | 'approved' | 'rejected';
+  applicationStatus?: 'unregistered' | 'pending' | 'approved' | 'rejected';
   documentsPassed?: boolean;
   documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
   submittedDocuments?: TraineeDocuments;
