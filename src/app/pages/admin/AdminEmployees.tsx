@@ -82,7 +82,13 @@ export function AdminEmployees() {
   const filteredGroups = {
     pending: employees.filter(
       (e) =>
-        (!e.active || e.approvalStatus === 'pending' || e.applicationStatus === 'pending') &&
+        // Pending: not yet approved or explicitly pending/unregistered
+        (e.active === false ||
+          e.approvalStatus === 'pending' ||
+          e.applicationStatus === 'pending' ||
+          e.applicationStatus === 'unregistered' ||
+          // null active with non-approved status = awaiting review
+          (e.active == null && e.applicationStatus !== 'approved')) &&
         matchesYear(e) &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -90,7 +96,10 @@ export function AdminEmployees() {
     ),
     student: employees.filter(
       (e) =>
-        (e.active && e.approvalStatus !== 'pending' && e.applicationStatus !== 'pending') &&
+        (e.active === true || e.active == null) &&
+        e.approvalStatus !== 'pending' &&
+        e.applicationStatus !== 'pending' &&
+        e.applicationStatus !== 'unregistered' &&
         getEmployeeGroup(e) === 'student' &&
         matchesYear(e) &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -99,7 +108,9 @@ export function AdminEmployees() {
     ),
     instructor: employees.filter(
       (e) =>
-        (e.active && e.approvalStatus !== 'pending' && e.applicationStatus !== 'pending') &&
+        (e.active === true || e.active == null) &&
+        e.approvalStatus !== 'pending' &&
+        e.applicationStatus !== 'pending' &&
         getEmployeeGroup(e) === 'instructor' &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
@@ -107,13 +118,16 @@ export function AdminEmployees() {
     ),
     hte: employees.filter(
       (e) =>
-        (e.active && e.approvalStatus !== 'pending' && e.applicationStatus !== 'pending') &&
+        (e.active === true || e.active == null) &&
+        e.approvalStatus !== 'pending' &&
+        e.applicationStatus !== 'pending' &&
         getEmployeeGroup(e) === 'hte' &&
         (e.name.toLowerCase().includes(search.toLowerCase()) ||
           e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
           e.department.toLowerCase().includes(search.toLowerCase()))
     ),
   };
+
 
   const totalFiltered = Object.values(filteredGroups).reduce((sum, items) => sum + items.length, 0);
 
