@@ -149,7 +149,12 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   }
 }
 
-export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Float32Array | null> {
+export interface TypedDescriptor {
+  descriptor: Float32Array;
+  type: 'neural' | 'perceptual';
+}
+
+export async function computeTypedDescriptorFromDataUrl(dataUrl: string): Promise<TypedDescriptor | null> {
   if (!dataUrl) return null;
   try {
     const ok = await loadFaceModels().catch(() => false);
@@ -181,16 +186,21 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
       }
 
       if (detection && detection.descriptor) {
-        return detection.descriptor as Float32Array;
+        return { descriptor: detection.descriptor as Float32Array, type: 'neural' };
       }
     }
 
     // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments)
-    return computePerceptualDescriptor(img);
+    return { descriptor: computePerceptualDescriptor(img), type: 'perceptual' };
   } catch (e) {
-    console.warn('computeDescriptorFromDataUrl error:', e);
+    console.warn('computeTypedDescriptorFromDataUrl error:', e);
     return null;
   }
+}
+
+export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Float32Array | null> {
+  const typed = await computeTypedDescriptorFromDataUrl(dataUrl);
+  return typed ? typed.descriptor : null;
 }
 
 /**
@@ -592,7 +602,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
 export async function strictBiometricVerify(
   registeredDataUrl: string,
   liveDataUrl: string,
-  threshold = 0.55
+  threshold = 0.62
 ): Promise<{ matched: boolean; distance: number; confidence: number; error?: string }> {
   if (!registeredDataUrl || !liveDataUrl) {
     return { matched: false, distance: Infinity, confidence: 0, error: 'Missing image data' };
@@ -600,13 +610,13 @@ export async function strictBiometricVerify(
 
   const modelsAvailable = _modelsLoaded;
 
-  const [d1, d2] = await Promise.all([
-    computeDescriptorFromDataUrl(registeredDataUrl),
-    computeDescriptorFromDataUrl(liveDataUrl),
+  const [t1, t2] = await Promise.all([
+    computeTypedDescriptorFromDataUrl(registeredDataUrl),
+    computeTypedDescriptorFromDataUrl(liveDataUrl),
   ]);
 
-  if (!d1 || !d2) {
-    // When face-api is completely unavailable and perceptual fallback also fails,
+  if (!t1 || !t2) {
+    // When face-api is completely unavailable and descriptor extraction fails,
     // pass the verification to avoid locking out legitimate users who have passed geofence
     if (!modelsAvailable) {
       console.warn('[FaceClient] face-api models not loaded — passing verification (geofence already verified)');
@@ -620,11 +630,31 @@ export async function strictBiometricVerify(
     };
   }
 
+  let d1 = t1.descriptor;
+  let d2 = t2.descriptor;
+  let isPerceptual = false;
+
+  // If one is neural and the other is perceptual, project both into the exact same perceptual feature space
+  if (t1.type !== t2.type) {
+    try {
+      const [img1, img2] = await Promise.all([
+        createImageElement(registeredDataUrl),
+        createImageElement(liveDataUrl),
+      ]);
+      d1 = computePerceptualDescriptor(img1);
+      d2 = computePerceptualDescriptor(img2);
+      isPerceptual = true;
+    } catch {
+      isPerceptual = true;
+    }
+  } else if (t1.type === 'perceptual') {
+    isPerceptual = true;
+  }
+
   const dist = descriptorDistance(d1, d2);
 
-  // When running on perceptual fallback descriptors (no face-api), the feature space
-  // is less discriminative than real 128-D face embeddings — use a relaxed threshold
-  const effectiveThreshold = modelsAvailable ? threshold : Math.max(threshold, 0.72);
+  // Perceptual feature space uses 0.72 threshold; neural feature space uses 0.62 threshold
+  const effectiveThreshold = isPerceptual ? Math.max(threshold, 0.72) : Math.max(threshold, 0.62);
 
   const matched = dist <= effectiveThreshold;
   const confidence = Math.max(0, Math.min(100, Math.round((1 - dist / 0.68) * 100)));
