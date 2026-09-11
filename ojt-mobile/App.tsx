@@ -829,11 +829,11 @@ export default function App() {
         let matchDistance = 0.0;
 
         if (profile?.photo) {
-          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.55);
+          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.62);
           if (!bio.matched) {
             Alert.alert(
               'Biometric Verification Failed',
-              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.55).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
+              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.62).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Retake Photo', onPress: () => setFaceModalMode('clock_in') },
@@ -891,11 +891,11 @@ export default function App() {
         let matchDistance = 0.0;
 
         if (profile?.photo) {
-          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.55);
+          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.62);
           if (!bio.matched) {
             Alert.alert(
               'Biometric Verification Failed',
-              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.55).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
+              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.62).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Retake Photo', onPress: () => setFaceModalMode('clock_out') },

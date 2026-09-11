@@ -49,7 +49,7 @@ try {
 
   const origCreate = React.createElement;
   if (origCreate) {
-    React.createElement = function (type: any, props: any, ...children: any[]) {
+    (React as any).createElement = function (type: any, props: any, ...children: any[]) {
       return origCreate.call(React, type, patchProps(type, props), ...children);
     };
   }

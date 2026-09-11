@@ -115,14 +115,21 @@ export default function EvaluationScreen({ profile, session, onBack }: Props) {
           .order('evaluated_at', { ascending: false });
         setAllEvaluations(data || []);
       } else {
-        const empId = session?.user?.id;
-        if (!empId) return;
+        const targetId = profile?.id || session?.user?.id || profile?.employeeId;
+        const targetEmail = profile?.email || session?.user?.email;
+        if (!targetId && !targetEmail) return;
+
         // First get employee record
-        const { data: emp } = await supabase
-          .from('employees')
-          .select('id, company_name, supervisor_name, hte_id')
-          .or(`id.eq.${empId},email.eq.${session.user.email}`)
-          .maybeSingle();
+        let empQuery = supabase.from('employees').select('id, company_name, supervisor_name, hte_id');
+        if (targetId && targetEmail) {
+          empQuery = empQuery.or(`id.eq.${targetId},email.ilike.${targetEmail},employee_id.ilike.${targetId}`);
+        } else if (targetId) {
+          empQuery = empQuery.or(`id.eq.${targetId},employee_id.ilike.${targetId}`);
+        } else {
+          empQuery = empQuery.ilike('email', targetEmail!);
+        }
+
+        const { data: emp } = await empQuery.limit(1).maybeSingle();
 
         if (emp) {
           setCurrentEmpId(emp.id);
@@ -168,7 +175,7 @@ export default function EvaluationScreen({ profile, session, onBack }: Props) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isAdmin, session]);
+  }, [isAdmin, session, profile]);
 
   useEffect(() => {
     fetchEvaluation();

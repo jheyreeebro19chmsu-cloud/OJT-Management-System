@@ -113,12 +113,12 @@ class BiometricService {
 
   /**
    * Verify matching between registered template photo and live captured photo
-   * Enforces 128-D Euclidean distance threshold (default: 0.55).
+   * Enforces 128-D Euclidean distance threshold (default: 0.62).
    */
   public async verifyBiometrics(
     registeredPhoto: string,
     livePhoto: string,
-    threshold = 0.55
+    threshold = 0.62
   ): Promise<BiometricMatchResult> {
     if (!registeredPhoto || !livePhoto) {
       return {

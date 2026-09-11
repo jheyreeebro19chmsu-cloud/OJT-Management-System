@@ -49,6 +49,9 @@ export interface TimeRecord {
   notes?: string;
   academicYear?: string;
   approvalStatus?: 'approved' | 'disapproved' | 'pending';
+  approvalNote?: string;
+  approvedBy?: string;
+  approvedAt?: string;
 }
 
 export interface GeofenceZone {
@@ -202,6 +205,9 @@ function transformTimeRecord(data: any): TimeRecord {
     notes: data.notes,
     academicYear: data.academic_year,
     approvalStatus: data.approval_status || 'pending',
+    approvalNote: data.approval_note,
+    approvedBy: data.approved_by,
+    approvedAt: data.approved_at,
   };
 }
 
@@ -364,6 +370,10 @@ export const mobileDb = {
       total_hours: record.totalHours,
       status: record.status,
       notes: record.notes,
+      ...(record.approvalStatus ? { approval_status: record.approvalStatus } : {}),
+      ...(record.approvalNote ? { approval_note: record.approvalNote } : {}),
+      ...(record.approvedBy ? { approved_by: record.approvedBy } : {}),
+      ...(record.approvedAt ? { approved_at: record.approvedAt } : {}),
       // Note: Omit academic_year as time_records table does not have an academic_year column
     };
 
@@ -393,6 +403,27 @@ export const mobileDb = {
         academicYear: record.academicYear,
       };
     }
+  },
+
+  async updateTimeRecordApproval(
+    id: string,
+    approvalStatus: 'approved' | 'disapproved' | 'pending',
+    note?: string,
+    approvedBy?: string
+  ): Promise<boolean> {
+    const payload: any = {
+      approval_status: approvalStatus,
+      approved_at: new Date().toISOString(),
+    };
+    if (note !== undefined) payload.approval_note = note;
+    if (approvedBy !== undefined) payload.approved_by = approvedBy;
+
+    const { error } = await supabase.from('time_records').update(payload).eq('id', id);
+    if (error) {
+      console.error('Error updating time record approval:', error);
+      return false;
+    }
+    return true;
   },
 
   // Geofence Zones

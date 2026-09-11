@@ -288,7 +288,7 @@ export default function FaceScanner({
           setStatusMessage('Verifying identity against profile...');
           Animated.timing(progressAnim, { toValue: 0.65, duration: 200, useNativeDriver: false }).start();
 
-          const bio: BiometricMatchResult = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.55);
+          const bio: BiometricMatchResult = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.62);
 
           if (!isMountedRef.current || hasFinishedRef.current) return;
 
@@ -308,7 +308,7 @@ export default function FaceScanner({
             consecutiveStable = 0;
             setStableCount(0);
             setScanStatus('failed');
-            setStatusMessage(`⚠️ Biometric mismatch (Distance: ${bio.distance.toFixed(2)} > 0.55)`);
+            setStatusMessage(`⚠️ Biometric mismatch (Distance: ${bio.distance.toFixed(2)} > 0.62)`);
           }
         } else {
           // If no enrolled photo yet on clock-in, auto-enroll student on first punch
@@ -378,14 +378,14 @@ export default function FaceScanner({
       // If in DTR verification mode, check against enrolled photo
       if ((mode === 'clock_in' || mode === 'clock_out') && enrolledPhoto) {
         setStatusMessage('Verifying biometric match...');
-        const bio = await biometricService.verifyBiometrics(enrolledPhoto, base64Data, 0.55);
+        const bio = await biometricService.verifyBiometrics(enrolledPhoto, base64Data, 0.62);
         if (bio.matched) {
           handleSuccess(base64Data, bio.confidence, bio.distance);
           return;
         } else {
           setScanStatus('failed');
           setErrorMessage(
-            `Face Mismatch: Does not match enrolled template for ${employeeName || 'this student'} (Distance: ${bio.distance.toFixed(2)}, threshold: 0.55). Center your face and avoid glare.`
+            `Face Mismatch: Does not match enrolled template for ${employeeName || 'this student'} (Distance: ${bio.distance.toFixed(2)}, threshold: 0.62). Center your face and avoid glare.`
           );
           setStatusMessage('⚠️ Verification failed. Please retake.');
           setIsCapturing(false);

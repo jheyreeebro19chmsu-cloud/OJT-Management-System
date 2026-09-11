@@ -43,6 +43,7 @@ import * as Location from 'expo-location';
 
 import { supabase } from '../lib/supabase';
 import { mobileApi } from '../lib/api';
+import { mobileDb } from '../lib/supabaseService';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 import DropdownPicker from '../components/DropdownPicker';
@@ -586,7 +587,7 @@ export default function RegisterScreen({
         profileData.position = 'OJT Trainee';
         profileData.employee_id = form.employeeId.trim();
         profileData.company_name = form.companyName.trim();
-        profileData.supervisor_name = form.contactPerson.trim();
+        profileData.supervisor_name = form.supervisorName.trim();
         profileData.school_name = 'Carlos Hilado Memorial State University';
         profileData.campus = form.campus;
         profileData.department = form.department;
@@ -595,18 +596,16 @@ export default function RegisterScreen({
         profileData.end_date = form.endDate || null;
         profileData.required_hours = 486;
         profileData.phone = form.phone.trim();
-        profileData.instructor_id = isUuid(assignedInstructorId) ? assignedInstructorId : null;
-        profileData.hte_id = isUuid(assignedHteId) ? assignedHteId : null;
-        profileData.documents_passed = isAllDocsUploaded;
-        profileData.documents_status = isAllDocsUploaded ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete';
+        profileData.instructor_id = form.instructorEmail ? form.instructorEmail.trim() : null;
+        profileData.documents_passed = true;
+        profileData.documents_status = 'passed';
         profileData.registration_location = {
           lat: location.lat || null,
           lng: location.lng || null,
           address: computedRegistrationAddress,
           phone: form.phone.trim(),
-          documentsPassed: isAllDocsUploaded,
-          documentsStatus: isAllDocsUploaded ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete',
-          documents: hasAnyDocs ? traineeDocs : null,
+          documentsPassed: true,
+          documentsStatus: 'passed',
         };
       } else if (role === 'hte') {
         profileData.position = 'HTE Representative';
@@ -615,7 +614,7 @@ export default function RegisterScreen({
         profileData.supervisor_name = fullName;
         profileData.phone = form.phone.trim();
         profileData.required_hours = 0;
-        profileData.instructor_id = isUuid(assignedInstructorId) ? assignedInstructorId : null;
+        profileData.instructor_id = form.instructorEmail ? form.instructorEmail.trim() : null;
         profileData.documents_passed = true;
         profileData.documents_status = 'passed';
         profileData.registration_location = {
@@ -655,14 +654,18 @@ export default function RegisterScreen({
 
       // Sync Host Supervisor if HTE Role
       if (role === 'hte') {
-        await mobileDb.saveHostSupervisor({
-          id: userId,
-          name: fullName,
-          email: form.email.trim().toLowerCase(),
-          company_name: form.companyName,
-          is_approved: true,
-          active: true,
-        });
+        try {
+          await supabase.from('host_supervisors').upsert({
+            id: userId || undefined,
+            name: fullName,
+            email: form.email.trim().toLowerCase(),
+            company_name: form.companyName,
+            is_approved: true,
+            active: true,
+          }, { onConflict: 'email' });
+        } catch (hErr) {
+          console.debug('Host supervisor sync notice:', hErr);
+        }
       }
 
       // 3. Auto-Create Registered Account Geofence Zone in Supabase
