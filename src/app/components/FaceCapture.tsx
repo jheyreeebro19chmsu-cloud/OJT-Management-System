@@ -85,6 +85,8 @@ export function FaceCapture({
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
+  // Hard abort timer: if camera init doesn't resolve within 8s, surface no-camera state
+  const initAbortTimerRef = useRef<any>(null);
 
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => {
@@ -134,6 +136,11 @@ export function FaceCapture({
   }, [simObstruction]);
 
   const stopCamera = useCallback(() => {
+    // Clear any pending hard abort timer
+    if (initAbortTimerRef.current) {
+      clearTimeout(initAbortTimerRef.current);
+      initAbortTimerRef.current = null;
+    }
     if (simTimerRef.current) {
       clearInterval(simTimerRef.current);
       simTimerRef.current = null;
@@ -467,6 +474,73 @@ export function FaceCapture({
     ctx.restore();
   }, []);
 
+  /**
+   * Attach a simulated canvas as a video stream source.
+   * Tries captureStream() first (Chrome/Edge desktop); falls back to a
+   * requestAnimationFrame draw-loop that writes directly to a <video> element
+   * for browsers that don't expose captureStream (Firefox, many mobile browsers).
+   */
+  const attachSimStreamToVideo = useCallback((canvas: HTMLCanvasElement) => {
+    // Primary path: captureStream API (Chrome/Edge)
+    if (typeof (canvas as any).captureStream === 'function') {
+      try {
+        const stream = (canvas as any).captureStream(25) as MediaStream;
+        if (stream && stream.getVideoTracks().length > 0) {
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(() => {});
+          }
+          return;
+        }
+      } catch {
+        // fall through to raf fallback
+      }
+    }
+
+    // Fallback path: requestAnimationFrame draw loop for Firefox / mobile browsers
+    // Create a minimal 1x1 silent canvas track to satisfy MediaStream,
+    // then continuously draw simCanvas frames into the video via srcObject = null
+    // and instead use the canvas element as imageSource for an OffscreenCanvas.
+    // Simplest cross-browser approach: draw simulated frames onto the overlay
+    // canvas directly and set video srcObject to a generated 1-track MediaStream.
+    try {
+      const fallbackCanvas = document.createElement('canvas');
+      fallbackCanvas.width = canvas.width || 640;
+      fallbackCanvas.height = canvas.height || 480;
+      const fallbackCtx = fallbackCanvas.getContext('2d');
+
+      const rafLoop = () => {
+        if (!isSimulatingRef.current) return;
+        if (fallbackCtx && simCanvasRef.current) {
+          fallbackCtx.drawImage(simCanvasRef.current, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+        }
+        requestAnimationFrame(rafLoop);
+      };
+      requestAnimationFrame(rafLoop);
+
+      // Try to get a stream from the fallback canvas
+      if (typeof (fallbackCanvas as any).captureStream === 'function') {
+        const fbStream = (fallbackCanvas as any).captureStream(25) as MediaStream;
+        if (fbStream) {
+          streamRef.current = fbStream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = fbStream;
+            videoRef.current.play().catch(() => {});
+          }
+          return;
+        }
+      }
+    } catch {
+      // All stream paths exhausted — overlay will still draw directly from simCanvasRef
+    }
+
+    // Last resort: null srcObject and let drawOverlay render simulated frames directly
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
   const startSimulatedCamera = useCallback(
     (obstruction: SimMode = 'none') => {
       setIsSimulating(true);
@@ -475,19 +549,9 @@ export function FaceCapture({
 
       drawSimulatedFrame(obstruction);
 
-      try {
-        if (simCanvasRef.current && typeof (simCanvasRef.current as any).captureStream === 'function') {
-          const stream = (simCanvasRef.current as any).captureStream(25);
-          if (stream) {
-            streamRef.current = stream;
-            if (videoRef.current) {
-              videoRef.current.srcObject = stream;
-              videoRef.current.play().catch(() => {});
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('Simulated stream notice:', e);
+      // Attach simulated canvas as video stream with cross-browser captureStream / RAF fallback
+      if (simCanvasRef.current) {
+        attachSimStreamToVideo(simCanvasRef.current);
       }
 
       if (simTimerRef.current) {
@@ -594,7 +658,7 @@ export function FaceCapture({
         });
       }
     },
-    [drawSimulatedFrame]
+    [drawSimulatedFrame, attachSimStreamToVideo]
   );
 
   /**
@@ -807,7 +871,18 @@ export function FaceCapture({
     setMismatchError(null);
     setQualityReport(null);
     setCapturedImage(null);
-    setScanMessage('Requesting camera access...');
+    setScanMessage('Initializing biometric scanner...');
+
+    // Hard 8-second abort: if camera initialization is still not resolved by then,
+    // automatically fall back to simulated stream instead of hanging indefinitely
+    if (initAbortTimerRef.current) clearTimeout(initAbortTimerRef.current);
+    initAbortTimerRef.current = setTimeout(() => {
+      const currentSt = stateRef.current;
+      if (currentSt === 'requesting') {
+        console.warn('FaceCapture: camera init timed out (8s hard abort) — engaging simulated stream');
+        startSimulatedCamera(simObstructionRef.current || 'none');
+      }
+    }, 8000);
 
     let hasLiveHardwareCamera = false;
     try {
@@ -866,6 +941,10 @@ export function FaceCapture({
         String(hwErr?.message || '').toLowerCase().includes('permission');
 
       if (isPermissionDenied) {
+        if (initAbortTimerRef.current) {
+          clearTimeout(initAbortTimerRef.current);
+          initAbortTimerRef.current = null;
+        }
         setState('permission-denied');
         setScanMessage('⚠️ Camera access denied. Please allow camera permission in browser settings.');
         setMismatchError('Camera permission was denied. The system requires camera access to proceed with facial recognition.');
@@ -873,25 +952,21 @@ export function FaceCapture({
       }
     }
 
+    // Clear hard abort timer — we reached this point so initialization is done
+    if (initAbortTimerRef.current) {
+      clearTimeout(initAbortTimerRef.current);
+      initAbortTimerRef.current = null;
+    }
+
     if (!hasLiveHardwareCamera) {
-      // Auto-fallback: Keep camera active with simulated biometric stream when physical device is absent or timed out
+      // Auto-fallback: simulated biometric stream when physical camera is absent or timed out
       setIsSimulating(true);
       const currentObs = simObstructionRef.current || 'none';
       drawSimulatedFrame(currentObs);
 
-      try {
-        if (simCanvasRef.current && typeof (simCanvasRef.current as any).captureStream === 'function') {
-          const stream = (simCanvasRef.current as any).captureStream(25);
-          if (stream) {
-            streamRef.current = stream;
-            if (videoRef.current) {
-              videoRef.current.srcObject = stream;
-              videoRef.current.play().catch(() => {});
-            }
-          }
-        }
-      } catch (streamErr) {
-        console.warn('Simulated stream capture notice:', streamErr);
+      // Attach with cross-browser captureStream / RAF fallback
+      if (simCanvasRef.current) {
+        attachSimStreamToVideo(simCanvasRef.current);
       }
 
       if (simTimerRef.current) clearInterval(simTimerRef.current);

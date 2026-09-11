@@ -36,10 +36,38 @@ export function TimeRecord() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  // CORS-safe data URL of the registered face image for biometric matching
+  const [registeredImageDataUrl, setRegisteredImageDataUrl] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Proactive GPS permission check — surface denied state immediately before async GeofenceChecker fires
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'geolocation' as PermissionName })
+        .then((status) => {
+          if (status.state === 'denied') {
+            setGeofenceStatus('denied');
+            setGeofenceMessage('GPS location permission denied');
+          }
+          status.onchange = () => {
+            if (status.state === 'denied') {
+              setGeofenceStatus('denied');
+              setGeofenceMessage('GPS location permission denied');
+            } else if (status.state === 'granted') {
+              // Permission was re-granted — clear denied state
+              setGeofenceStatus('checking');
+            }
+          };
+        })
+        .catch(() => {
+          // Permissions API not supported — rely on GeofenceChecker's own detection
+        });
+    }
   }, []);
 
   useEffect(() => {
@@ -74,6 +102,43 @@ export function TimeRecord() {
       mounted = false;
     };
   }, []);
+
+  // CORS-safe prefetch of registered face image into a local data URL
+  // Prevents biometric matching failures caused by cross-origin Supabase storage URLs
+  useEffect(() => {
+    const photo = employee?.photo;
+    if (!photo) {
+      setRegisteredImageDataUrl(undefined);
+      return;
+    }
+    // Already a data URL — use directly
+    if (photo.startsWith('data:')) {
+      setRegisteredImageDataUrl(photo);
+      return;
+    }
+    // Remote URL — fetch as blob and convert to data URL
+    let cancelled = false;
+    fetch(photo)
+      .then((res) => {
+        if (!res.ok) throw new Error('fetch failed');
+        return res.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (!cancelled) setRegisteredImageDataUrl(reader.result as string);
+        };
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => {
+        // Fallback: pass the raw URL and let faceClient handle CORS via its own fetch
+        if (!cancelled) setRegisteredImageDataUrl(photo);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [employee?.photo]);
 
   const handleGeofenceResult = React.useCallback(
     (passed: boolean, coords?: { lat: number; lng: number }, state?: GeoState, message?: string) => {
@@ -575,7 +640,7 @@ export function TimeRecord() {
                 mode="verify"
                 employeeName={employee?.name}
                 employeeId={employee?.id}
-                registeredImage={employee?.photo}
+                registeredImage={registeredImageDataUrl || employee?.photo}
                 onSuccess={handleFaceSuccess}
                 onCancel={() => setPageState('check-geofence')}
                 autoStart
