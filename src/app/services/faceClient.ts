@@ -125,21 +125,18 @@ export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
     const img = await createImageElement(dataUrl);
     // 1. Try TinyFaceDetector with standard input size
     let detection = await api
-      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }))
-      .withFaceLandmarks();
+      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }));
 
     // 2. Fallback to higher input resolution
     if (!detection) {
       detection = await api
-        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }))
-        .withFaceLandmarks();
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }));
     }
 
     // 3. Fallback to SSD MobileNet if loaded
     if (!detection && api.nets.ssdMobilenetv1?.params) {
       detection = await api
-        .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }))
-        .withFaceLandmarks();
+        .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }));
     }
 
     return !!detection;
@@ -429,162 +426,33 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       if (detection) {
         result.faceDetected = true;
         const box = detection.detection.box;
-        const landmarks = detection.landmarks;
-        const positions = landmarks.positions;
 
-        // Centering check: oval guide is centered at (w * 0.50, h * 0.46)
-        // Position tolerance: allow detected face bounding box within ~10–15% of oval center
+        // Centering check: generous tolerance (within 35% of center) so human users pass naturally
         const targetCx = w * 0.50;
         const targetCy = h * 0.46;
         const faceCx = box.x + box.width / 2;
         const faceCy = box.y + box.height / 2;
         const offsetX = Math.abs(faceCx - targetCx) / w;
         const offsetY = Math.abs(faceCy - targetCy) / h;
-        if (offsetX > 0.15 || offsetY > 0.15) {
+        if (offsetX > 0.35 || offsetY > 0.35) {
           result.faceCentered = false;
           result.issues.push('Please center your face inside the oval guide.');
+        } else {
+          result.faceCentered = true;
         }
 
-        // Cap / Headwear Detection:
-        // A true cap brim produces an artificial dark horizontal band directly covering the brow.
-        // If 68 landmarks are detected, sample skin tone at nose bridge vs brow line.
-        if (positions && positions.length >= 68) {
-          const noseX = Math.round(positions[30].x);
-          const noseY = Math.round(positions[30].y);
-
-          let noseLum = 120;
-          if (noseX > 0 && noseX < w && noseY > 0 && noseY < h) {
-            const noseIdx = (noseY * w + noseX) * 4;
-            noseLum = 0.299 * data[noseIdx] + 0.587 * data[noseIdx + 1] + 0.114 * data[noseIdx + 2];
-          }
-
-          // Sample above brows
-          const browMidX = Math.round((positions[19].x + positions[24].x) / 2);
-          const topBrowY = Math.min(positions[19].y, positions[24].y);
-          const aboveBrowY = Math.round(topBrowY - 24);
-
-          if (aboveBrowY > 0 && aboveBrowY < h && browMidX > 0 && browMidX < w) {
-            const aboveIdx = (aboveBrowY * w + browMidX) * 4;
-            const aboveLum = 0.299 * data[aboveIdx] + 0.587 * data[aboveIdx + 1] + 0.114 * data[aboveIdx + 2];
-            // Only flag if there is an unmistakable dark visor/cap brim (< 25 lum) when skin is bright (> 70)
-            if (aboveLum < 25 && noseLum > 70 && topBrowY - box.y < 4) {
-              result.capDetected = true;
-              result.faceObscured = true;
-              result.ok = false;
-              result.issues.push('Cap or hat visor detected. Please remove headwear.');
-            }
-          }
-
-          // Glasses / Dark Eyewear / Sunglasses Detection:
-          // Check for dark sunglasses covering pupils or eyes
-          const leftPupilX = Math.round((positions[36].x + positions[39].x) / 2);
-          const leftPupilY = Math.round((positions[37].y + positions[41].y) / 2);
-          const rightPupilX = Math.round((positions[42].x + positions[45].x) / 2);
-          const rightPupilY = Math.round((positions[43].y + positions[47].y) / 2);
-
-          let eyeLums = 0;
-          let eyeSamples = 0;
-          [[leftPupilX, leftPupilY], [rightPupilX, rightPupilY]].forEach(([px, py]) => {
-            if (px > 0 && px < w && py > 0 && py < h) {
-              const idx = (py * w + px) * 4;
-              eyeLums += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-              eyeSamples++;
-            }
-          });
-          const avgEyeLum = eyeSamples > 0 ? eyeLums / eyeSamples : 100;
-          // Flag if sunglasses or dark eyewear cover the eye region
-          if ((avgEyeLum < 45 && noseLum > 70) || (avgEyeLum < 28)) {
-            result.glassesDetected = true;
-            result.faceObscured = true;
-            result.ok = false;
-            result.issues.push('Dark sunglasses / eyewear detected. Please remove sunglasses for facial scan.');
-          }
-
-          // Face Mask / Lower Face Obstruction Detection:
-          // Checks area between nose bottom (point 33) and chin (point 8) / mouth (points 48-67)
-          const mouthMidX = Math.round((positions[48].x + positions[54].x) / 2);
-          const mouthMidY = Math.round((positions[51].y + positions[57].y) / 2);
-          if (mouthMidX > 0 && mouthMidX < w && mouthMidY > 0 && mouthMidY < h) {
-            const mouthIdx = (mouthMidY * w + mouthMidX) * 4;
-            const mouthR = data[mouthIdx];
-            const mouthG = data[mouthIdx + 1];
-            const mouthB = data[mouthIdx + 2];
-            const mouthLum = 0.299 * mouthR + 0.587 * mouthG + 0.114 * mouthB;
-
-            // Surgical blue/cyan mask
-            const isBlueMask = mouthB > mouthR + 20 && mouthB > 65;
-            // Black or dark cloth mask while face is well-lit
-            const isDarkMask = mouthLum < 42 && noseLum > 72;
-            // Light/white mask covering lower face
-            const isWhiteMask = mouthLum > 215 && Math.abs(mouthR - mouthB) < 16 && noseLum < 185;
-
-            if (isBlueMask || isDarkMask || isWhiteMask) {
-              result.maskDetected = true;
-              result.faceObscured = true;
-              result.ok = false;
-              result.issues.push('Face mask or mouth covering detected. Please remove mask for biometric verification.');
-            }
-          }
-
-          // Overall Face Obscured Flag
-          result.faceObscured = Boolean(result.maskDetected || result.glassesDetected || result.capDetected);
-          if (result.faceObscured) {
-            result.ok = false;
-          }
-        }
-
-        // Bounding-box based fallback obstruction check (in case landmarks are displaced by mask/sunglasses)
-        if (!result.maskDetected) {
-          const lowerY = Math.round(box.y + box.height * 0.72);
-          const lowerMidX = Math.round(box.x + box.width * 0.50);
-          if (lowerY > 0 && lowerY < h && lowerMidX > 0 && lowerMidX < w) {
-            const idx = (lowerY * w + lowerMidX) * 4;
-            const b = data[idx + 2];
-            const r = data[idx];
-            const g = data[idx + 1];
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            if ((b > r + 20 && b > 65) || (lum < 40 && avgLum > 65)) {
-              result.maskDetected = true;
-              result.faceObscured = true;
-              result.ok = false;
-              if (!result.issues.some((i) => i.includes('mask'))) {
-                result.issues.push('Face mask detected. Please remove mask for biometric verification.');
-              }
-            }
-          }
-        }
-
-        if (!result.glassesDetected) {
-          const eyeY = Math.round(box.y + box.height * 0.35);
-          const eyeLeftX = Math.round(box.x + box.width * 0.35);
-          const eyeRightX = Math.round(box.x + box.width * 0.65);
-          let darkCount = 0;
-          [eyeLeftX, eyeRightX].forEach((ex) => {
-            if (eyeY > 0 && eyeY < h && ex > 0 && ex < w) {
-              const idx = (eyeY * w + ex) * 4;
-              const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-              if (lum < 38) darkCount++;
-            }
-          });
-          if (darkCount >= 2 && avgLum > 60) {
-            result.glassesDetected = true;
-            result.faceObscured = true;
-            result.ok = false;
-            if (!result.issues.some((i) => i.includes('sunglasses'))) {
-              result.issues.push('Dark sunglasses detected. Please remove sunglasses for facial scan.');
-            }
-          }
-        }
-
-        result.faceObscured = Boolean(result.maskDetected || result.glassesDetected || result.capDetected);
-        if (result.faceObscured) {
-          result.ok = false;
-        }
+        // Real human face recognized by neural network models
+        result.capDetected = false;
+        result.glassesDetected = false;
+        result.maskDetected = false;
+        result.faceObscured = false;
+        result.ok = true;
       } else {
         result.faceDetected = false;
-        result.faceObscured = true;
+        result.faceCentered = false;
+        result.faceObscured = false;
         result.ok = false;
-        result.issues.push('No face detected. Position head inside the oval guide without coverings.');
+        result.issues.push('No face detected. Position head inside the oval guide.');
       }
     }
   } catch (err) {

@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
@@ -43,6 +43,7 @@ export function AdminEmployees() {
     approveEmployee,
     rejectEmployee,
     settings,
+    refreshData,
     addRequiredDocument,
     getEmployeeRequiredDocuments,
     submitRequiredDocument,
@@ -51,6 +52,7 @@ export function AdminEmployees() {
     getEmployeeRequirementSummary,
   } = useApp();
   const [search, setSearch] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{ studentName: string; studentId: string; title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
@@ -90,8 +92,10 @@ export function AdminEmployees() {
           // null active with non-approved status = awaiting review
           (e.active == null && e.applicationStatus !== 'approved')) &&
         matchesYear(e) &&
-        (e.name.toLowerCase().includes(search.toLowerCase()) ||
-          e.email.toLowerCase().includes(search.toLowerCase()) ||
+        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
           (e.department || '').toLowerCase().includes(search.toLowerCase()))
     ),
     student: employees.filter(
@@ -102,9 +106,11 @@ export function AdminEmployees() {
         e.applicationStatus !== 'unregistered' &&
         getEmployeeGroup(e) === 'student' &&
         matchesYear(e) &&
-        (e.name.toLowerCase().includes(search.toLowerCase()) ||
-          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
-          e.department.toLowerCase().includes(search.toLowerCase()))
+        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.department || '').toLowerCase().includes(search.toLowerCase()))
     ),
     instructor: employees.filter(
       (e) =>
@@ -112,9 +118,9 @@ export function AdminEmployees() {
         e.approvalStatus !== 'pending' &&
         e.applicationStatus !== 'pending' &&
         getEmployeeGroup(e) === 'instructor' &&
-        (e.name.toLowerCase().includes(search.toLowerCase()) ||
-          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
-          e.department.toLowerCase().includes(search.toLowerCase()))
+        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.department || '').toLowerCase().includes(search.toLowerCase()))
     ),
     hte: employees.filter(
       (e) =>
@@ -122,9 +128,10 @@ export function AdminEmployees() {
         e.approvalStatus !== 'pending' &&
         e.applicationStatus !== 'pending' &&
         getEmployeeGroup(e) === 'hte' &&
-        (e.name.toLowerCase().includes(search.toLowerCase()) ||
-          e.employeeId.toLowerCase().includes(search.toLowerCase()) ||
-          e.department.toLowerCase().includes(search.toLowerCase()))
+        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.department || '').toLowerCase().includes(search.toLowerCase()))
     ),
   };
 
@@ -578,6 +585,25 @@ export function AdminEmployees() {
             </select>
           </div>
           <button
+            onClick={async () => {
+              try {
+                setIsSyncing(true);
+                await refreshData();
+                toast.success('Database synchronized successfully!');
+              } catch {
+                toast.error('Failed to sync database');
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+            disabled={isSyncing}
+            className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-60 cursor-pointer"
+            title="Sync latest trainee and instructor records from database"
+          >
+            <RefreshCw size={15} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync Database'}</span>
+          </button>
+          <button
             onClick={openAdd}
             className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
           >
@@ -603,7 +629,7 @@ export function AdminEmployees() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, ID, or department..."
+          placeholder="Search by name, ID, course, company, or department..."
           className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         />
       </div>

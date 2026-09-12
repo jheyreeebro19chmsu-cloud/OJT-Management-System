@@ -20,6 +20,7 @@ export interface Employee {
   faceRegistered: boolean;
   createdAt: string;
   active: boolean;
+  userId?: string;
   instructorId?: string;
   hteId?: string;
   linkedAt?: string;

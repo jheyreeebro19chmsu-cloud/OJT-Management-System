@@ -167,7 +167,9 @@ interface AppContextType {
   hostFeedback: HostFeedback[];
   hostSupervisors: HostSupervisor[];
   login: (email: string, password: string) => Promise<User | null>;
+  loginWithOAuthUser: (authUser: any) => Promise<User | null>;
   logout: () => void;
+  refreshData: () => Promise<void>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   registerEmployee: (data: RegisterEmployeeInput) => Promise<{ success: boolean; message?: string; employee?: Employee }>;
   updateEmployee: (id: string, data: Partial<Employee>) => void;
@@ -748,6 +750,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [useSupabase]);
 
+  // Periodic polling & window focus auto-sync across all open tabs/devices
+  const refreshData = useCallback(async () => {
+    if (!useSupabase && !isSupabaseConfigured()) return;
+    try {
+      const [
+        supabaseEmployees,
+        supabaseRecords,
+        supabaseZones,
+        supabaseSettings,
+        supabaseEvaluations,
+        supabaseAnnouncements,
+        supabaseSubmissions,
+        supabaseComments,
+        supabaseHostFeedback,
+        supabaseHostSupervisors,
+      ] = await Promise.all([
+        supabaseService.fetchEmployees(),
+        supabaseService.fetchTimeRecords(),
+        supabaseService.fetchGeofenceZones(),
+        supabaseService.fetchSettings(),
+        supabaseService.fetchEvaluations(),
+        supabaseService.fetchAnnouncements(),
+        supabaseService.fetchAnnouncementSubmissions(),
+        supabaseService.fetchAnnouncementComments(),
+        supabaseService.fetchHostFeedback(),
+        supabaseService.fetchHostSupervisors(),
+      ]);
+
+      if (supabaseEmployees && supabaseEmployees.length > 0) setEmployees(supabaseEmployees);
+      if (supabaseRecords && supabaseRecords.length > 0) setTimeRecords(supabaseRecords);
+      const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+      if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
+      if (supabaseSettings) setSettings(supabaseSettings);
+      if (supabaseEvaluations && supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
+      if (supabaseAnnouncements && supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+      if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
+      if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
+      if (supabaseHostFeedback && supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
+      if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
+    } catch (err) {
+      console.warn('Manual or auto refreshData failed:', err);
+    }
+  }, [useSupabase]);
+
+  useEffect(() => {
+    if (!useSupabase && !isSupabaseConfigured()) return;
+
+    const interval = setInterval(() => {
+      refreshData();
+    }, 20000);
+
+    const onFocus = () => {
+      refreshData();
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refreshData, useSupabase]);
+
   // Save to localStorage only when not using Supabase
   useEffect(() => {
     if (!useSupabase && employees.length > 0) {
@@ -1101,6 +1165,139 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
+  const loginWithOAuthUser = async (authUser: any): Promise<User | null> => {
+    if (!authUser) return null;
+    const authEmail = (authUser.email || '').trim().toLowerCase();
+    const authId = authUser.id || '';
+    if (!authEmail && !authId) return null;
+
+    let matchedEmp: Employee | undefined = undefined;
+    let matchedHost: HostSupervisor | undefined = undefined;
+
+    // Step 1: In-memory check
+    matchedEmp = employees.find(
+      (e) =>
+        (authId && (e.userId === authId || e.id === authId)) ||
+        (authEmail && normalizeEmail(e.email) === authEmail)
+    );
+
+    if (!matchedEmp) {
+      matchedHost = hostSupervisors.find(
+        (h) =>
+          (authId && h.id === authId) ||
+          (authEmail && normalizeEmail(h.email) === authEmail)
+      );
+    }
+
+    // Step 2: Supabase DB check if not in memory
+    if (useSupabase && !matchedEmp && !matchedHost) {
+      try {
+        const orConditions = [
+          authId ? `id.eq.${authId}` : null,
+          authId ? `user_id.eq.${authId}` : null,
+          authEmail ? `email.ilike.${authEmail}` : null,
+        ].filter(Boolean).join(',');
+
+        if (orConditions) {
+          const { data: dbEmp } = await supabase
+            .from('employees')
+            .select('*')
+            .or(orConditions)
+            .limit(1)
+            .maybeSingle();
+
+          if (dbEmp) {
+            matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
+            setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+          } else {
+            const hostOr = [
+              authId ? `id.eq.${authId}` : null,
+              authEmail ? `email.ilike.${authEmail}` : null,
+            ].filter(Boolean).join(',');
+
+            const { data: dbHost } = await supabase
+              .from('host_supervisors')
+              .select('*')
+              .or(hostOr)
+              .limit(1)
+              .maybeSingle();
+
+            if (dbHost) {
+              matchedHost = {
+                id: dbHost.id,
+                employeeId: dbHost.employee_id,
+                name: dbHost.name,
+                email: dbHost.email,
+                companyName: dbHost.company_name,
+                companyAddress: dbHost.company_address,
+                contactPerson: dbHost.contact_person,
+                phone: dbHost.phone,
+                academicYear: dbHost.academic_year,
+                isApproved: dbHost.is_approved ?? true,
+                active: dbHost.active ?? true,
+              };
+              setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
+            }
+          }
+        }
+      } catch (lookupErr) {
+        console.warn('OAuth database lookup notice:', lookupErr);
+      }
+    }
+
+    if (matchedEmp) {
+      if (useSupabase && authId && matchedEmp.userId !== authId) {
+        try {
+          await supabase.from('employees').update({ user_id: authId }).eq('id', matchedEmp.id);
+          matchedEmp.userId = authId;
+        } catch (linkErr) {
+          console.warn('Could not link OAuth user_id:', linkErr);
+        }
+      }
+
+      const isInstructor =
+        matchedEmp.position === 'OJT Instructor' ||
+        matchedEmp.position === 'Administrator' ||
+        (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
+      const isHTE =
+        matchedEmp.position === 'HTE Representative' ||
+        matchedEmp.position === 'Training Supervisor' ||
+        (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
+      const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
+
+      const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
+      const user: User = {
+        id: matchedEmp.id,
+        name: matchedEmp.name,
+        role,
+        employeeId: matchedEmp.employeeId || matchedEmp.id,
+        email: normalizeEmail(matchedEmp.email),
+        photo: matchedEmp.photo || oauthPhoto,
+        faceRegistered: matchedEmp.faceRegistered,
+      };
+      setCurrentUser(user);
+      return user;
+    }
+
+    if (matchedHost) {
+      const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
+      const user: User = {
+        id: matchedHost.id,
+        name: matchedHost.name,
+        role: 'hte',
+        email: normalizeEmail(matchedHost.email),
+        employeeId: matchedHost.employeeId || matchedHost.id,
+        photo: matchedHost.photo || oauthPhoto,
+        faceRegistered: false,
+      };
+      setCurrentUser(user);
+      return user;
+    }
+
+    // Option B: Returning null when no profile exists so user can complete registration
+    return null;
+  };
+
   const logout = () => {
     try {
       const emp = getCurrentEmployee();
@@ -1292,8 +1489,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Auto-link trainees to an instructor for the active academic year
+        if (!authId && cleanData.userId) {
+          authId = cleanData.userId;
+        }
+
+        // Auto-link trainees to an instructor and HTE supervisor for the active academic year
         let autoInstructorId: string | undefined;
+        let autoHteId: string | undefined;
         const targetAcademicYear = cleanData.academicYear || newEmp.academicYear || settings.activeAcademicYear;
         if (!isInstructor && !isHTE) {
           try {
@@ -1318,6 +1520,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
           } catch (e) {
             console.warn('Auto instructor linking lookup failed:', e);
           }
+
+          // Auto-link trainee to matching HTE supervisor by company name or any active HTE supervisor
+          try {
+            if (cleanData.companyName && cleanData.companyName.trim() !== '' && cleanData.companyName.toLowerCase() !== 'n/a') {
+              const { data: matchingHte } = await supabase
+                .from('employees')
+                .select('id')
+                .eq('position', 'HTE Representative')
+                .ilike('company_name', `%${cleanData.companyName.trim()}%`)
+                .limit(1)
+                .maybeSingle();
+              if (matchingHte?.id) {
+                autoHteId = matchingHte.id;
+              } else {
+                const { data: matchingHost } = await supabase
+                  .from('host_supervisors')
+                  .select('id')
+                  .ilike('company_name', `%${cleanData.companyName.trim()}%`)
+                  .limit(1)
+                  .maybeSingle();
+                if (matchingHost?.id) autoHteId = matchingHost.id;
+              }
+            }
+
+            if (!autoHteId) {
+              const { data: anyHte } = await supabase
+                .from('employees')
+                .select('id')
+                .eq('position', 'HTE Representative')
+                .limit(1)
+                .maybeSingle();
+              if (anyHte?.id) autoHteId = anyHte.id;
+            }
+          } catch (hteErr) {
+            console.warn('Auto HTE linking lookup failed:', hteErr);
+          }
         }
 
         const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
@@ -1326,7 +1564,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...cleanData,
           academicYear: targetAcademicYear,
           instructorId: isUuid(autoInstructorId) ? autoInstructorId : undefined,
+          hteId: isUuid(autoHteId) ? autoHteId : undefined,
           applicationStatus: 'approved' as const,
+          approvalStatus: 'approved' as const,
+          active: true,
           ...(isUuid(authId) ? { id: authId } : {}),
         };
 
@@ -2648,7 +2889,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         hostFeedback: filteredHostFeedback,
         hostSupervisors,
         login,
+        loginWithOAuthUser,
         logout,
+        refreshData,
         changeCurrentUserPassword,
         registerEmployee,
         updateEmployee,

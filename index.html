@@ -1,38 +1,24 @@
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>On the Job Training System - CHMSU</title>
-      <link rel="icon" type="image/png" href="/chmsu-logo.png" />
-      <link rel="apple-touch-icon" href="/chmsu-logo.png" />
-      <!-- Load a locally-hosted face-api.js if available to avoid Tracking Prevention; fallback to CDN if not. -->
-      <script>
-        (function () {
-          var localPath = '/vendor/face-api.js';
-          var head = document.getElementsByTagName('head')[0];
-          var s = document.createElement('script');
-          s.src = localPath;
-          s.onload = function () { console.info('Loaded local face-api.js from', localPath); };
-          s.onerror = function () {
-            console.warn('Local face-api.js not found; not loading CDN to avoid Tracking Prevention issues. Face features will be disabled.');
-            // Mark a flag so frontend knows face-api is unavailable
-            try { window.__faceApiUnavailable = true; } catch (e) { /* ignore */ }
-          };
-          head.appendChild(s);
-        })();
-      </script>
-      <style>
-        *, *::before, *::after, html, body, input, button, select, textarea {
-          font-family: "Times New Roman", Times, serif !important;
-        }
-      </style>
-    </head>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>On the Job Training System - CHMSU</title>
+    <meta name="description" content="Carlos Hilado Memorial State University - On the Job Training Management System" />
+    <link rel="icon" type="image/png" href="/chmsu-logo.png" />
+    <link rel="apple-touch-icon" href="/chmsu-logo.png" />
+    <script src="/vendor/face-api.js" defer></script>
+    <style>
+      *, *::before, *::after, html, body, input, button, select, textarea {
+        font-family: "Times New Roman", Times, serif !important;
+      }
+    </style>
+  </head>
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
   

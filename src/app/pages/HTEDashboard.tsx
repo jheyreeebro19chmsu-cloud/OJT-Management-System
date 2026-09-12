@@ -42,13 +42,14 @@ export function HTEDashboard() {
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
 
-  // Only trainees tied to the active HTE via company name, direct HTE assignment, or instructor link
+  // Trainees tied to active HTE via company name, direct assignment, or all active OJT trainees if open
   const trainees = useMemo(() => {
     const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
     const currentCompany = (companyName || '').trim().toLowerCase();
 
-    return employees.filter((e) => {
-      if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+    const ojtList = employees.filter((e) => e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative');
+
+    const specificList = ojtList.filter((e) => {
       const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
       const isCompanyMatched = Boolean(
         currentCompany &&
@@ -57,9 +58,10 @@ export function HTEDashboard() {
         e.companyName.trim().toLowerCase() === currentCompany
       );
       const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
-      const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
-      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
+      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked;
     });
+
+    return specificList.length > 0 ? specificList : ojtList;
   }, [employees, currentUser, currentEmp, hteUser, companyName]);
 
   // Compute rendered hours

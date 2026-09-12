@@ -178,6 +178,8 @@ export function Register() {
   const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
   const [emailMsg, setEmailMsg] = useState('');
   const [emailValidationUnavailable, setEmailValidationUnavailable] = useState(false);
+  const [employeeIdTaken, setEmployeeIdTaken] = useState<null | boolean>(null);
+  const [employeeIdChecking, setEmployeeIdChecking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -245,7 +247,7 @@ export function Register() {
     }
   }, [registrationComplete, role]);
 
-  // Detect OAuth HTE prefill on mount
+  // Detect OAuth prefill on mount (for HTE, Trainee, or general OAuth registration)
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -253,16 +255,34 @@ export function Register() {
       const pending = localStorage.getItem('pending_oauth_role');
       const oauthEmail = localStorage.getItem('oauth_email');
       const oauthName = localStorage.getItem('oauth_name');
+      const oauthPhoto = localStorage.getItem('oauth_photo');
+
       if (h === 'hte' || pending === 'hte') {
         setRole('hte');
         setOauthPending(true);
         if (oauthEmail) update('email', oauthEmail);
         if (oauthName) update('name', oauthName);
-        // clear pending markers
-        localStorage.removeItem('pending_oauth_role');
-        localStorage.removeItem('oauth_email');
-        localStorage.removeItem('oauth_name');
+      } else if (oauthEmail || oauthName) {
+        setRole((currentRole) => currentRole || 'trainee');
+        setOauthPending(true);
+        if (oauthEmail) update('email', oauthEmail);
+        if (oauthName) {
+          update('name', oauthName);
+          const parts = oauthName.trim().split(/\s+/);
+          if (parts.length > 0) update('firstName', parts[0]);
+          if (parts.length > 1) update('lastName', parts.slice(1).join(' '));
+        }
+        if (oauthPhoto) {
+          setPhoto(oauthPhoto);
+        }
+        toast.info('Google profile loaded. Please complete your registration details.');
       }
+
+      // Clear pending handoff markers
+      localStorage.removeItem('pending_oauth_role');
+      localStorage.removeItem('oauth_email');
+      localStorage.removeItem('oauth_name');
+      localStorage.removeItem('oauth_photo');
     } catch {
       // ignore
     }
@@ -505,6 +525,36 @@ export function Register() {
     }
   };
 
+  const checkEmployeeIdExists = async (empId: string) => {
+    const cleanId = empId.trim();
+    if (!cleanId) { setEmployeeIdTaken(null); return; }
+    setEmployeeIdChecking(true);
+    setEmployeeIdTaken(null);
+    try {
+      if (isSupabaseConfigured()) {
+        const { data } = await supabase
+          .from('employees')
+          .select('id')
+          .ilike('employee_id', cleanId)
+          .limit(1);
+        if (data && data.length > 0) {
+          setEmployeeIdTaken(true);
+          return;
+        }
+      }
+      // Fallback to local cache
+      const existsLocal = employees.some(
+        (e) => (e.employeeId || '').toLowerCase() === cleanId.toLowerCase()
+      );
+      setEmployeeIdTaken(existsLocal);
+    } catch (e) {
+      console.debug('Employee ID check failed', e);
+      setEmployeeIdTaken(null);
+    } finally {
+      setEmployeeIdChecking(false);
+    }
+  };
+
   const verifyOtp = () => {
     if (otpCode === generatedOtp) {
       setIsOtpVerified(true);
@@ -706,6 +756,7 @@ export function Register() {
         name: composedName,
         employeeId: empId,
         address: residentialAddress,
+        userId: localStorage.getItem('oauth_user_id') || undefined,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
         requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
         faceRegistered,
@@ -858,6 +909,7 @@ export function Register() {
     // Auto-redirect based on role
     // Redirect to login after successful registration
     setIsSubmitting(false);
+    localStorage.removeItem('oauth_user_id');
     if (role === 'admin') {
       // For admin, show the success screen with QR code
       setRegistrationComplete(true);
@@ -923,9 +975,6 @@ export function Register() {
         if (!hasValidRegion) errors.push('Please select your Region');
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
-        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) {
-          errors.push('Please enter your Barangay');
-        }
         if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
     }
@@ -947,9 +996,6 @@ export function Register() {
         if (!hasValidRegion) errors.push('Please select your Region');
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
-        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) {
-          errors.push('Please enter your Barangay');
-        }
       }
       if (step === 1) {
         // Company fields are optional for initial trainee enrollment
@@ -958,6 +1004,10 @@ export function Register() {
         if (!form.campus) errors.push('Please select your Campus');
         if (!form.department) errors.push('Please select your Department');
         if (!form.course) errors.push('Please select your Program / Course');
+        // Employee/Student ID is optional but must be unique if provided
+        if (form.employeeId?.trim() && employeeIdTaken === true) {
+          errors.push('This Student/Employee ID is already taken. Please use a different ID or leave it blank.');
+        }
       }
       if (step === 3) {
         if (!photo && !faceRegistered) {
@@ -973,9 +1023,6 @@ export function Register() {
         if (!hasValidRegion) errors.push('Please select Region');
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select Province');
         if (!hasValidCity) errors.push('Please select City/Municipality');
-        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) {
-          errors.push('Please enter Barangay');
-        }
         if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
       if (step === 1) {
@@ -997,6 +1044,27 @@ export function Register() {
   };
 
   const validationErrors = getValidationErrors();
+
+  const isLastNameValid = Boolean(form.lastName?.trim());
+  const isFirstNameValid = Boolean(form.firstName?.trim());
+  const isEmailValid = Boolean((form.email && form.email.toString().trim()) || (form.username && form.username.toString().trim()));
+  const hasUpper = /[A-Z]/.test(form.password);
+  const hasLower = /[a-z]/.test(form.password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
+  const hasLength = (form.password || '').length >= 8;
+  const passwordsMatch = Boolean(form.password && form.password === form.confirmPassword);
+  const isPasswordValid = Boolean(hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch);
+  const isPhoneValid = Boolean(form.contactPhone?.trim() && form.contactPhone.replace(/[^\d]/g, '').length >= 10);
+  const isBirthdateValid = Boolean(form.birthdate?.trim());
+  const hasValidCountry = form.country === 'other' ? Boolean(form.countryManual?.trim()) : Boolean(form.country);
+  const hasValidRegion = form.region === 'other' ? Boolean(form.regionManual?.trim()) : Boolean(form.region);
+  const hasValidCity = form.city === 'other' ? Boolean(form.cityManual?.trim()) : Boolean(form.city);
+  const hasValidProvince =
+    form.country === 'PH'
+      ? form.province === 'other'
+        ? Boolean(form.provinceManual?.trim())
+        : Boolean(form.province)
+      : true;
 
   const locationStatusConfig = {
     idle: {
@@ -1237,8 +1305,15 @@ export function Register() {
                           value={form.companyName}
                           onChange={(e) => update('companyName', e.target.value)}
                           placeholder="Host Training Establishment Name"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            attemptedNext && !form.companyName?.trim()
+                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                              : 'border-gray-200 focus:ring-blue-500'
+                          }`}
                         />
+                        {attemptedNext && !form.companyName?.trim() && (
+                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter Company Name</p>
+                        )}
                       </div>
 
                       <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 space-y-4">
@@ -1254,7 +1329,11 @@ export function Register() {
                                 update('city', '');
                                 update('barangay', '');
                               }}
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                attemptedNext && !hasValidCountry
+                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                  : 'border-gray-200 focus:ring-blue-500'
+                              }`}
                             >
                               <option value="">Select Country</option>
                               {allCountries.map((c) => (
@@ -1263,6 +1342,9 @@ export function Register() {
                                 </option>
                               ))}
                             </select>
+                            {attemptedNext && !hasValidCountry && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Please select Country</p>
+                            )}
                           </div>
                           <div>
                             <label className="text-xs font-semibold text-gray-600 block mb-1">
@@ -1277,7 +1359,11 @@ export function Register() {
                                   update('city', '');
                                   update('barangay', '');
                                 }}
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                  attemptedNext && !hasValidRegion
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
                               >
                                 <option value="">Select Region</option>
                                 {PH_ADDRESS_DATA.map((r) => (
@@ -1295,7 +1381,11 @@ export function Register() {
                                   update('city', '');
                                   update('barangay', '');
                                 }}
-                                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                  attemptedNext && !hasValidRegion
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
                               >
                                 <option value="">Select State/Region</option>
                                 {statesList.map((s) => (
@@ -1304,6 +1394,9 @@ export function Register() {
                                   </option>
                                 ))}
                               </select>
+                            )}
+                            {attemptedNext && !hasValidRegion && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Please select Region</p>
                             )}
                           </div>
                         </div>
@@ -1314,7 +1407,7 @@ export function Register() {
                               {form.country === 'PH' ? 'Province *' : 'City/Town *'}
                             </label>
                             {form.country === 'PH' ? (
-                              <div className="space-y-2">
+                              <div className="space-y-1">
                                 <select
                                   value={form.province}
                                   onChange={(e) => {
@@ -1322,7 +1415,11 @@ export function Register() {
                                     update('city', '');
                                     update('barangay', '');
                                   }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                  className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                    attemptedNext && !hasValidProvince
+                                      ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                      : 'border-gray-200 focus:ring-blue-500'
+                                  }`}
                                 >
                                   <option value="">Select Province</option>
                                   {PH_ADDRESS_DATA.find((r) => r.name === form.region)?.provinces.map((p) => (
@@ -1331,9 +1428,12 @@ export function Register() {
                                     </option>
                                   ))}
                                 </select>
+                                {attemptedNext && (form.country === 'PH' || !form.country) && !hasValidProvince && (
+                                  <p className="text-xs text-red-500 mt-1 font-medium">Please select Province</p>
+                                )}
                               </div>
                             ) : (
-                              <div className="space-y-2">
+                              <div className="space-y-1">
                                 <select
                                   value={form.city}
                                   onChange={(e) => {
@@ -1357,14 +1457,18 @@ export function Register() {
                               {form.country === 'PH' ? 'City/Municipality *' : 'Neighborhood/Barangay'}
                             </label>
                             {form.country === 'PH' ? (
-                              <div className="space-y-2">
+                              <div className="space-y-1">
                                 <select
                                   value={form.city}
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
                                   }}
-                                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                  className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                    attemptedNext && !hasValidCity
+                                      ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                      : 'border-gray-200 focus:ring-blue-500'
+                                  }`}
                                 >
                                   <option value="">Select City</option>
                                   {PH_ADDRESS_DATA.find((r) => r.name === form.region)
@@ -1375,6 +1479,9 @@ export function Register() {
                                       </option>
                                     ))}
                                 </select>
+                                {attemptedNext && !hasValidCity && (
+                                  <p className="text-xs text-red-500 mt-1 font-medium">Please select City/Municipality</p>
+                                )}
                               </div>
                             ) : (
                               <input
@@ -1392,12 +1499,7 @@ export function Register() {
                         {form.country === 'PH' && (
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <label className="text-xs font-semibold text-gray-600">Barangay *</label>
-                              {!form.barangay?.trim() && (
-                                <span className="text-[11px] text-red-600 font-bold">
-                                  {attemptedNext || validationErrors.some((e) => e.includes('Barangay')) ? 'Required field' : '*'}
-                                </span>
-                              )}
+                              <label className="text-xs font-semibold text-gray-600">Barangay (Optional)</label>
                             </div>
                             <input
                               value={form.barangay}
@@ -1405,19 +1507,8 @@ export function Register() {
                                 update('barangay', e.target.value);
                               }}
                               placeholder="Enter barangay"
-                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none transition-all ${
-                                (attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
-                                !form.barangay?.trim()
-                                  ? 'border-red-400 bg-red-50/30 text-red-900 focus:ring-2 focus:ring-red-400'
-                                  : 'border-gray-200 bg-white focus:ring-2 focus:ring-blue-500'
-                              }`}
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             />
-                            {(attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
-                              !form.barangay?.trim() && (
-                                <p className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
-                                  <span>⚠</span> Barangay is required. Please enter your barangay.
-                                </p>
-                              )}
                           </div>
                         )}
 
@@ -1546,7 +1637,11 @@ export function Register() {
                                 value={form.password}
                                 onChange={(e) => update('password', e.target.value)}
                                 placeholder="Min 8 chars"
-                                className="w-full pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                  attemptedNext && !isPasswordValid
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
                               />
                               <button
                                 type="button"
@@ -1556,6 +1651,9 @@ export function Register() {
                                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                               </button>
                             </div>
+                            {attemptedNext && !form.password && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
+                            )}
                           </div>
 
                           <div>
@@ -1566,8 +1664,11 @@ export function Register() {
                                 value={form.confirmPassword}
                                 onChange={(e) => update('confirmPassword', e.target.value)}
                                 placeholder="Repeat password"
-                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300 ring-1 ring-red-300' : 'border-gray-200'
-                                  }`}
+                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                  (form.confirmPassword && form.password !== form.confirmPassword) || (attemptedNext && !form.confirmPassword)
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
                               />
                               <button
                                 type="button"
@@ -1577,6 +1678,12 @@ export function Register() {
                                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                               </button>
                             </div>
+                            {attemptedNext && !form.confirmPassword && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
+                            )}
+                            {form.confirmPassword && form.password !== form.confirmPassword && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
+                            )}
                           </div>
                         </div>
 
@@ -1642,8 +1749,15 @@ export function Register() {
                             value={form.lastName}
                             onChange={(e) => update('lastName', e.target.value)}
                             placeholder="Dela Cruz"
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                              attemptedNext && !isLastNameValid
+                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                : 'border-gray-200 focus:ring-blue-500'
+                            }`}
                           />
+                          {attemptedNext && !isLastNameValid && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Required</p>
+                          )}
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
@@ -1651,8 +1765,15 @@ export function Register() {
                             value={form.firstName}
                             onChange={(e) => update('firstName', e.target.value)}
                             placeholder="Juan"
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                              attemptedNext && !isFirstNameValid
+                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                : 'border-gray-200 focus:ring-blue-500'
+                            }`}
                           />
+                          {attemptedNext && !isFirstNameValid && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Required</p>
+                          )}
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
@@ -1673,12 +1794,18 @@ export function Register() {
                           onChange={(e) => { update('email', e.target.value); setEmailTaken(null); }}
                           onBlur={() => checkEmailExists(form.email)}
                           placeholder="your@email.com"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            (attemptedNext && !isEmailValid) || emailTaken
+                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                              : 'border-gray-200 focus:ring-blue-500'
+                          }`}
                         />
                         {emailChecking ? (
                           <p className="text-xs text-gray-500 mt-1">Checking email…</p>
                         ) : emailTaken ? (
                           <p className="text-xs text-red-600 mt-1">{emailMsg}</p>
+                        ) : attemptedNext && !isEmailValid ? (
+                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter your email address</p>
                         ) : null}
                       </div>
 
@@ -1691,9 +1818,16 @@ export function Register() {
                               value={form.password}
                               onChange={(e) => update('password', e.target.value)}
                               placeholder="Min 8 characters"
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                                attemptedNext && !isPasswordValid
+                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                  : 'border-gray-200 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
+                          {attemptedNext && !form.password && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
+                          )}
                         </div>
                         <div>
                           <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
@@ -1702,8 +1836,18 @@ export function Register() {
                             value={form.confirmPassword}
                             onChange={(e) => update('confirmPassword', e.target.value)}
                             placeholder="Repeat password"
-                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${form.confirmPassword && form.password !== form.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                              (form.confirmPassword && form.password !== form.confirmPassword) || (attemptedNext && !form.confirmPassword)
+                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                : 'border-gray-200 focus:ring-blue-500'
+                            }`}
                           />
+                          {attemptedNext && !form.confirmPassword && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
+                          )}
+                          {form.confirmPassword && form.password !== form.confirmPassword && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
+                          )}
                         </div>
                       </div>
 
@@ -1794,12 +1938,20 @@ export function Register() {
                               }}
                               placeholder="+639123456789"
                               maxLength={13}
-                              className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-mono tracking-wide"
+                              className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 font-mono tracking-wide ${
+                                attemptedNext && !isPhoneValid
+                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                  : 'border-gray-200 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
-                          <p className="text-[10px] text-gray-400 mt-1">
-                            Philippine mobile number only (+639..., 13 digits maximum)
-                          </p>
+                          {attemptedNext && !isPhoneValid ? (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Please enter a valid Philippine mobile number</p>
+                          ) : (
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              Philippine mobile number only (+639..., 13 digits maximum)
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -2002,8 +2154,15 @@ export function Register() {
                           type="date"
                           value={form.birthdate}
                           onChange={(e) => update('birthdate', e.target.value)}
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            attemptedNext && !isBirthdateValid
+                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                              : 'border-gray-200 focus:ring-blue-500'
+                          }`}
                         />
+                        {attemptedNext && !isBirthdateValid && (
+                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter your birthdate</p>
+                        )}
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Age (auto-calculated)</label>
@@ -2175,13 +2334,8 @@ export function Register() {
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-semibold text-gray-600">
-                            {form.country === 'PH' || !form.country ? 'Barangay *' : 'Neighborhood/Area'}
+                            {form.country === 'PH' || !form.country ? 'Barangay (Optional)' : 'Neighborhood/Area'}
                           </label>
-                          {(form.country === 'PH' || !form.country) && !form.barangay?.trim() && (
-                            <span className="text-[11px] text-red-600 font-bold">
-                              {attemptedNext || validationErrors.some((e) => e.includes('Barangay')) ? 'Required field' : '*'}
-                            </span>
-                          )}
                         </div>
                         {/* Always use manual input for Barangay to avoid select fallback */}
                         <input
@@ -2190,21 +2344,8 @@ export function Register() {
                             update('barangay', e.target.value);
                           }}
                           placeholder="Enter barangay"
-                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none transition-all ${
-                            (attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
-                            (form.country === 'PH' || !form.country) &&
-                            !form.barangay?.trim()
-                              ? 'border-red-400 bg-red-50/30 text-red-900 focus:ring-2 focus:ring-red-400'
-                              : 'border-gray-200 bg-gray-50 focus:ring-2 focus:ring-blue-500'
-                          }`}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
-                        {(attemptedNext || validationErrors.some((e) => e.includes('Barangay'))) &&
-                          (form.country === 'PH' || !form.country) &&
-                          !form.barangay?.trim() && (
-                            <p className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
-                              <span>⚠</span> Barangay is required. Please enter your barangay.
-                            </p>
-                          )}
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
@@ -2525,6 +2666,51 @@ export function Register() {
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Employee / Student ID — optional but unique */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+                        Student / Employee ID
+                        <span className="text-[10px] text-gray-400 font-normal ml-1">(optional)</span>
+                      </label>
+                      {employeeIdChecking && (
+                        <span className="text-[10px] text-blue-500 flex items-center gap-1 animate-pulse">
+                          <Loader size={10} className="animate-spin" /> Checking…
+                        </span>
+                      )}
+                      {!employeeIdChecking && form.employeeId?.trim() && employeeIdTaken === true && (
+                        <span className="text-[10px] font-bold text-red-600 flex items-center gap-1">
+                          <X size={10} className="stroke-[3]" /> ID already taken
+                        </span>
+                      )}
+                      {!employeeIdChecking && form.employeeId?.trim() && employeeIdTaken === false && (
+                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                          <Check size={10} className="stroke-[3]" /> ID available
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={form.employeeId || ''}
+                      onChange={(e) => {
+                        update('employeeId', e.target.value);
+                        setEmployeeIdTaken(null);
+                      }}
+                      onBlur={(e) => checkEmployeeIdExists(e.target.value)}
+                      placeholder="e.g. 2021-00123 (leave blank if not yet assigned)"
+                      className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 font-mono tracking-wide ${
+                        employeeIdTaken === true
+                          ? 'border-red-400 focus:ring-red-400'
+                          : employeeIdTaken === false && form.employeeId?.trim()
+                          ? 'border-emerald-400 focus:ring-emerald-400'
+                          : 'border-gray-200 focus:ring-blue-500'
+                      }`}
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Your school-assigned ID number. Must be unique across all enrolled trainees.
+                    </p>
                   </div>
 
                   {/* Required OJT Documents Section */}
@@ -2863,18 +3049,6 @@ export function Register() {
           {/* Navigation - Only show when role is selected */}
           {role !== null && (
             <div className="mt-6">
-              {validationErrors.length > 0 && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 shadow-sm animate-in fade-in">
-                  <strong className="block mb-1 font-bold text-red-800 flex items-center gap-1.5">
-                    <span>⚠</span> Please complete the required information before continuing:
-                  </strong>
-                  <ul className="list-disc list-inside space-y-0.5 text-xs text-red-700 font-medium">
-                    {validationErrors.map((e) => (
-                      <li key={e}>{e}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
               <div className="flex gap-3">
                 {step > 0 && (
