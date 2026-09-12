@@ -556,9 +556,10 @@ export function Profile() {
         </div>
       </Section>
 
-      {/* Evaluation Result (if finalized) */}
       {evaluation &&
-        evaluation.status === 'final' &&
+        (evaluation.status === 'final' ||
+          evaluation.status === 'submitted_to_instructor' ||
+          evaluation.status === 'reviewed_by_instructor') &&
         (() => {
           const gc = GRADE_CONFIG[evaluation.grade];
           return (
@@ -573,12 +574,21 @@ export function Profile() {
                   <Award size={16} className={gc.color} />
                 </div>
                 <h3 className={`font-bold text-sm ${gc.color}`}>OJT Evaluation Result</h3>
-                <span className="ml-auto text-xs text-gray-500">{safeFormatDate(evaluation.evaluatedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                {evaluation.status === 'reviewed_by_instructor' ? (
+                  <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    ✓ Verified by Instructor
+                  </span>
+                ) : (
+                  <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                    Pending Instructor Review
+                  </span>
+                )}
               </div>
 
               <div className="text-center mb-4">
                 <p className={`text-4xl font-bold ${gc.color}`}>{evaluation.overallScore}%</p>
                 <p className={`text-lg font-semibold mt-1 ${gc.color}`}>{evaluation.grade}</p>
+                <p className="text-xs text-gray-500 mt-1">{safeFormatDate(evaluation.evaluatedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
               </div>
 
               {/* Score breakdown */}

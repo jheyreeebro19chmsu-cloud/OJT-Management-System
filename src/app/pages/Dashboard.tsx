@@ -1445,9 +1445,15 @@ export function Dashboard() {
                     HTE Supervisor Evaluation of You
                   </span>
                   {traineeEvaluation ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                      <Award size={11} /> Official Grade: {traineeEvaluation.grade}
-                    </span>
+                    traineeEvaluation.status === 'reviewed_by_instructor' ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                        <Award size={11} /> ✓ Verified
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 flex items-center gap-1">
+                        <Award size={11} /> Grade: {traineeEvaluation.grade}
+                      </span>
+                    )
                   ) : (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 flex items-center gap-1">
                       <Clock size={11} /> Supervisor Pending
@@ -1461,9 +1467,15 @@ export function Dashboard() {
                       <span className="text-2xl font-black text-blue-700">{traineeEvaluation.overallScore}%</span>
                       <span className="text-xs font-bold text-slate-700">{traineeEvaluation.grade}</span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
-                      "{traineeEvaluation.strengths || traineeEvaluation.recommendations || 'Performance officially verified.'}"
-                    </p>
+                    {traineeEvaluation.status === 'reviewed_by_instructor' ? (
+                      <p className="text-xs text-emerald-700 font-semibold mt-0.5">
+                        ✓ Evaluation Completed &amp; Verified by Instructor
+                      </p>
+                    ) : (
+                      <p className="text-xs text-blue-700 font-semibold mt-0.5">
+                        Evaluated — Pending Instructor Review
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-1.5">

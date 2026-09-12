@@ -217,6 +217,18 @@ export function AdminEvaluations() {
     }
   };
 
+  const handleMarkDoneViewed = (evalId: string) => {
+    const existing = evaluations.find((e) => e.id === evalId);
+    if (!existing) return;
+    const updated: Partial<Evaluation> = {
+      status: 'reviewed_by_instructor',
+      instructorViewedAt: new Date().toISOString(),
+      instructorViewedBy: instructorName,
+    };
+    updateEvaluation(evalId, updated);
+    toast.success('✓ Evaluation marked as Done Viewed! Automatically synchronized to HTE and Trainee.');
+  };
+
   const getEmpStats = (empId: string) => {
     const recs = timeRecords.filter((r) => r.employeeId === empId);
     const totalHours = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
@@ -570,7 +582,24 @@ export function AdminEvaluations() {
           </button>
 
           <div className="flex items-center gap-2">
+            {ev.status !== 'reviewed_by_instructor' ? (
+              <button
+                type="button"
+                onClick={() => handleMarkDoneViewed(ev.id)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-600/30 cursor-pointer"
+              >
+                <CheckCircle2 size={16} />
+                <span>Done Viewed</span>
+              </button>
+            ) : (
+              <span className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm">
+                <CheckCircle2 size={14} className="text-emerald-600" />
+                <span>Done Viewed by Instructor</span>
+              </span>
+            )}
+
             <button
+              type="button"
               onClick={() => window.print()}
               className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
             >
@@ -578,6 +607,7 @@ export function AdminEvaluations() {
               Print Official Hard Copy
             </button>
             <button
+              type="button"
               onClick={() => openNewEval(selectedEmp)}
               className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-all flex items-center gap-1.5"
             >
@@ -637,8 +667,20 @@ export function AdminEvaluations() {
                 </div>
                 <div>
                   <span className="text-slate-400 font-semibold block">Evaluation Status:</span>
-                  <span className={`inline-block font-bold px-2 py-0.5 rounded text-[11px] uppercase ${ev.status === 'final' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                    {ev.status === 'final' ? 'Official / Finalized' : 'Draft Copy'}
+                  <span
+                    className={`inline-block font-bold px-2.5 py-0.5 rounded-full text-[11px] uppercase ${
+                      ev.status === 'reviewed_by_instructor'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : ev.status === 'final' || ev.status === 'submitted_to_instructor'
+                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {ev.status === 'reviewed_by_instructor'
+                      ? '✓ Done Viewed by Instructor'
+                      : ev.status === 'final' || ev.status === 'submitted_to_instructor'
+                      ? 'Submitted by HTE (Pending Review)'
+                      : 'Draft Copy'}
                   </span>
                 </div>
               </div>
@@ -848,8 +890,20 @@ export function AdminEvaluations() {
                         <span className={`inline-block text-xs font-extrabold px-3 py-1 rounded-full border ${gc.bg} ${gc.color} ${gc.border}`}>
                           {ev.grade} ({ev.overallScore}%)
                         </span>
-                        <p className="text-[10px] text-slate-400 mt-1 uppercase font-semibold">
-                          {ev.status === 'final' ? 'Official' : 'Draft'}
+                        <p className="text-[10px] uppercase font-bold mt-1">
+                          {ev.status === 'reviewed_by_instructor' ? (
+                            <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <CheckCircle2 size={10} /> Done Viewed
+                            </span>
+                          ) : ev.status === 'final' || ev.status === 'submitted_to_instructor' ? (
+                            <span className="text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <Clock size={10} /> Passed by HTE
+                            </span>
+                          ) : (
+                            <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                              Draft
+                            </span>
+                          )}
                         </p>
                       </div>
                     )}
@@ -890,14 +944,24 @@ export function AdminEvaluations() {
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
                     >
                       <FileText size={14} />
-                      View Official Form
+                      View Form
                     </button>
+                    {ev.status !== 'reviewed_by_instructor' && (
+                      <button
+                        onClick={() => handleMarkDoneViewed(ev.id)}
+                        className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20"
+                        title="Mark as Done Viewed to sync with HTE and Trainee"
+                      >
+                        <CheckCircle2 size={13} />
+                        Done Viewed
+                      </button>
+                    )}
                     <button
                       onClick={() => openNewEval(emp)}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 text-white rounded-xl text-xs font-bold hover:bg-blue-800 transition-colors"
                     >
                       <Edit2 size={14} />
-                      Edit Evaluation
+                      Edit
                     </button>
                   </>
                 ) : (

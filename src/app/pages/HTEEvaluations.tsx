@@ -295,10 +295,18 @@ export function HTEEvaluations() {
 
     if (editEvalId) {
       updateEvaluation(editEvalId, data);
-      toast.success(`Evaluation ${status === 'final' ? 'finalized and synced' : 'saved as draft'}!`);
+      if (status === 'submitted_to_instructor') {
+        toast.success('✓ Evaluation completed & passed to Instructor! Trainee will see results after Instructor reviews.');
+      } else {
+        toast.success('Draft saved.');
+      }
     } else {
       addEvaluation(data);
-      toast.success(`Evaluation ${status === 'final' ? 'finalized and synced' : 'saved as draft'}!`);
+      if (status === 'submitted_to_instructor') {
+        toast.success('✓ Evaluation completed & passed to Instructor! Trainee will see results after Instructor reviews.');
+      } else {
+        toast.success('Draft saved.');
+      }
     }
 
     // Bidirectional sync: ensure trainee is linked to this HTE
@@ -678,11 +686,11 @@ export function HTEEvaluations() {
               </button>
               <button
                 type="button"
-                onClick={() => handleSave('final')}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-blue-600/30 transition-all flex items-center gap-1.5"
+                onClick={() => handleSave('submitted_to_instructor')}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5"
               >
                 <Check size={16} />
-                <span>Submit & Finalize Official Evaluation</span>
+                <span>Submit &amp; Pass to Instructor</span>
               </button>
             </div>
           </div>
@@ -905,9 +913,17 @@ export function HTEEvaluations() {
                             <Award size={13} />
                             {evalData.overallScore}% ({evalData.grade})
                           </span>
-                          {evalData.status === 'final' && (
+                          {evalData.status === 'reviewed_by_instructor' ? (
                             <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                              Finalized
+                              ✓ Done Viewed by Instructor
+                            </span>
+                          ) : evalData.status === 'submitted_to_instructor' || evalData.status === 'final' ? (
+                            <span className="text-[10px] uppercase font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              Passed to Instructor
+                            </span>
+                          ) : (
+                            <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              Draft
                             </span>
                           )}
                         </div>
