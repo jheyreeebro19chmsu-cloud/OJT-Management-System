@@ -76,18 +76,23 @@ export function HostFeedback() {
     currentUser,
     getCurrentEmployee,
     updateEmployee,
+    settings,
   } = useApp();
   const navigate = useNavigate();
 
   const currentEmp = getCurrentEmployee();
   const isTrainee = !currentUser?.role || currentUser?.role === 'employee';
 
-  // Registered HTE Representatives from employees list
+  // Registered HTE Representatives from employees list for active academic year
   const hteRepresentatives = useMemo(() => {
+    const targetAY = settings?.activeAcademicYear || '2026-2027';
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
     return employees.filter(
-      (e) => e.position === 'HTE Representative' || e.position === 'Training Supervisor'
+      (e) =>
+        (e.position === 'HTE Representative' || e.position === 'Training Supervisor') &&
+        (e.academicYear === targetAY || (!e.academicYear && targetAY === defaultAY))
     );
-  }, [employees]);
+  }, [employees, settings]);
 
   // Check if current trainee has already submitted feedback
   const existingFeedback = useMemo(() => {

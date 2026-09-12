@@ -67,6 +67,12 @@ export function AdminEmployees() {
   const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (settings.activeAcademicYear) {
+      setSelectedYear(settings.activeAcademicYear);
+    }
+  }, [settings.activeAcademicYear]);
+
   const getEmployeeGroup = (emp: Employee) => {
     const normalized = emp.position?.toLowerCase() || '';
     const empId = emp.employeeId?.toLowerCase() || '';
@@ -77,8 +83,9 @@ export function AdminEmployees() {
 
   const matchesYear = (emp: Employee) => {
     if (selectedYear === 'all') return true;
-    if (!emp.academicYear) return true;
-    return emp.academicYear === selectedYear;
+    const defaultYear = settings.academicYears?.[0] || '2025-2026';
+    const empYear = emp.academicYear || defaultYear;
+    return empYear === selectedYear;
   };
 
   const filteredGroups = {
@@ -128,6 +135,7 @@ export function AdminEmployees() {
         e.approvalStatus !== 'pending' &&
         e.applicationStatus !== 'pending' &&
         getEmployeeGroup(e) === 'hte' &&
+        matchesYear(e) &&
         ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
           (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
           (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||

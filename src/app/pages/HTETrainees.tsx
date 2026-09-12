@@ -22,12 +22,15 @@ import { courseOptions } from '../data/academicOptions';
 
 export function HTETrainees() {
   const navigate = useNavigate();
-  const { employees, timeRecords, currentUser, getCurrentEmployee, refreshData } = useApp();
+  const { employees, timeRecords, currentUser, getCurrentEmployee, settings, refreshData } = useApp();
   const currentEmp = getCurrentEmployee();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCourse, setSelectedCourse] = useState('all');
   const [filterScope, setFilterScope] = useState<'all' | 'assigned'>('all');
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const targetAY = settings?.activeAcademicYear || '2026-2027';
+  const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
   const hteUser = React.useMemo(() => {
     try {
@@ -47,13 +50,14 @@ export function HTETrainees() {
   const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
   const currentCompany = (companyName || '').trim().toLowerCase();
 
-  // All active student trainees eligible for OJT
+  // All active student trainees eligible for OJT strictly in the active academic year
   const allOjtTrainees = useMemo(() => {
     return employees.filter((e) => {
       if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
-      return true;
+      const empAY = e.academicYear || defaultAY;
+      return empAY === targetAY;
     });
-  }, [employees]);
+  }, [employees, targetAY, defaultAY]);
 
   // Show trainees based on filter scope (All trainees vs assigned to this HTE)
   const trainees = useMemo(() => {

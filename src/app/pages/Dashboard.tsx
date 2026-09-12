@@ -173,18 +173,27 @@ export function Dashboard() {
       setLoading(true);
       setDashboardError(null);
 
-      // Student trainees in the system
+      const activeAY = settings.activeAcademicYear || '2026-2027';
+      const defaultAY = settings.academicYears?.[0] || '2025-2026';
+
+      // Student trainees strictly in the active academic year
       const studentEmployees = employees.filter(
         (e) =>
           e.position !== 'OJT Instructor' &&
           e.position !== 'HTE Representative' &&
           !e.employeeId?.startsWith('ADM-') &&
-          !e.employeeId?.startsWith('HTE-')
+          !e.employeeId?.startsWith('HTE-') &&
+          (e.academicYear === activeAY || (!e.academicYear && activeAY === defaultAY))
       );
 
       try {
         const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
-        let query = supabase.from('employees').select('*').neq('position', 'OJT Instructor').neq('position', 'HTE Representative');
+        let query = supabase
+          .from('employees')
+          .select('*')
+          .neq('position', 'OJT Instructor')
+          .neq('position', 'HTE Representative')
+          .eq('academic_year', activeAY);
         if (currentUser?.id && isUuid(currentUser.id)) {
           query = query.or(`instructor_id.eq.${currentUser.id},instructor_id.is.null`);
         }

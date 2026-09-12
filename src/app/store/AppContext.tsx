@@ -1497,6 +1497,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         let autoInstructorId: string | undefined;
         let autoHteId: string | undefined;
         const targetAcademicYear = cleanData.academicYear || newEmp.academicYear || settings.activeAcademicYear;
+        const defaultAY = settings.academicYears?.[0] || '2025-2026';
+
         if (!isInstructor && !isHTE) {
           try {
             const { data: matchingInstructor } = await supabase
@@ -1519,6 +1521,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
           } catch (e) {
             console.warn('Auto instructor linking lookup failed:', e);
+          }
+
+          if (!autoInstructorId) {
+            const localInst = employees.find(
+              (e) => (e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'))) &&
+                     (e.academicYear === targetAcademicYear || (!e.academicYear && targetAcademicYear === defaultAY))
+            ) || employees.find((e) => e.position === 'OJT Instructor');
+            if (localInst) autoInstructorId = localInst.id;
           }
 
           // Auto-link trainee to matching HTE supervisor by company name or any active HTE supervisor
@@ -1555,6 +1565,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
           } catch (hteErr) {
             console.warn('Auto HTE linking lookup failed:', hteErr);
+          }
+
+          if (!autoHteId && cleanData.companyName && cleanData.companyName.trim() !== '' && cleanData.companyName.toLowerCase() !== 'n/a') {
+            const comp = cleanData.companyName.trim().toLowerCase();
+            const localHte = employees.find(
+              (e) => (e.position === 'HTE Representative' || (e.position && e.position.toLowerCase().includes('hte'))) &&
+                     e.companyName && e.companyName.trim().toLowerCase() === comp
+            ) || hostSupervisors.find(
+              (h) => h.companyName && h.companyName.trim().toLowerCase() === comp
+            );
+            if (localHte?.id) autoHteId = localHte.id;
           }
         }
 
@@ -1596,7 +1617,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
         }
 
-        // If registering an HTE supervisor, also persist to host_supervisors table
+        // Cross-role sync: If registering an HTE supervisor, persist host supervisor and auto-link matching trainees in this academic year
         if (isHTE) {
           const hostPayload: HostSupervisor = {
             id: created.id,
@@ -1619,6 +1640,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
           supabaseService.createHostSupervisor(hostPayload).catch((hErr) => {
             console.debug('HostSupervisor creation notice:', hErr);
           });
+
+          // Bidirectional sync: Link all Trainees registered under this academic year with matching company name to this HTE
+          const comp = (created.companyName || cleanData.companyName || '').trim().toLowerCase();
+          if (comp && comp !== 'n/a' && comp !== 'host training establishment') {
+            const traineesToLink = employees.filter(
+              (e) =>
+                e.position !== 'OJT Instructor' &&
+                e.position !== 'HTE Representative' &&
+                (e.academicYear === targetAcademicYear || (!e.academicYear && targetAcademicYear === defaultAY)) &&
+                e.companyName &&
+                e.companyName.trim().toLowerCase() === comp &&
+                !e.hteId
+            );
+
+            if (traineesToLink.length > 0) {
+              traineesToLink.forEach((t) => {
+                t.hteId = created!.id;
+                supabase.from('employees').update({ hte_id: created!.id }).eq('id', t.id).then().catch(() => {});
+              });
+              setEmployees((prev) =>
+                prev.map((e) => (traineesToLink.some((t) => t.id === e.id) ? { ...e, hteId: created!.id } : e))
+              );
+            }
+          }
+        }
+
+        // Cross-role sync: If registering an Instructor, auto-link unassigned Trainees in this academic year
+        if (isInstructor) {
+          const traineesToLink = employees.filter(
+            (e) =>
+              e.position !== 'OJT Instructor' &&
+              e.position !== 'HTE Representative' &&
+              (e.academicYear === targetAcademicYear || (!e.academicYear && targetAcademicYear === defaultAY)) &&
+              !e.instructorId
+          );
+
+          if (traineesToLink.length > 0) {
+            traineesToLink.forEach((t) => {
+              t.instructorId = created!.id;
+              supabase.from('employees').update({ instructor_id: created!.id }).eq('id', t.id).then().catch(() => {});
+            });
+            setEmployees((prev) =>
+              prev.map((e) => (traineesToLink.some((t) => t.id === e.id) ? { ...e, instructorId: created!.id } : e))
+            );
+          }
         }
 
         // Auto-create/upsert station geofence zone in database and local state for all registered accounts
@@ -2732,72 +2798,94 @@ export function AppProvider({ children }: { children: ReactNode }) {
     targetAcademicYear?: string
   ): Promise<{ success: boolean; syncedCount: number; message: string }> => {
     const ay = targetAcademicYear || settings.activeAcademicYear;
+    const defaultAY = settings.academicYears?.[0] || '2025-2026';
 
-    // 1. Synchronize all employees (Trainees, Instructors, and HTE Representatives)
+    // 1. Locate Instructor for this academic year (or system administrator)
+    const inst = employees.find(
+      (e) =>
+        (e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'))) &&
+        (e.academicYear === ay || (!e.academicYear && ay === defaultAY))
+    ) || employees.find((e) => e.position === 'OJT Instructor');
+
+    // 2. Locate HTE partners registered for this academic year
+    const htePartners = employees.filter(
+      (e) =>
+        (e.position === 'HTE Representative' || (e.position && e.position.toLowerCase().includes('hte'))) &&
+        (e.academicYear === ay || (!e.academicYear && ay === defaultAY))
+    );
+
+    // 3. Bidirectionally synchronize Trainees, Instructor, and HTE partners within target academic year
+    // CRITICAL: Preserve each Trainee and HTE's registered academic year; accounts stay in their own academic year!
+    let updatedLinkages = 0;
     const updatedEmployees = employees.map((emp) => {
-      const isInstructor = emp.position === 'OJT Instructor' || (emp.position && emp.position.toLowerCase().includes('instructor'));
-      const isHTE = emp.position === 'HTE Representative' || (emp.position && emp.position.toLowerCase().includes('hte'));
+      const empAY = emp.academicYear || defaultAY;
+      // Only link trainees within this target academic year
+      if (empAY !== ay) {
+        return emp;
+      }
 
-      if (isInstructor || isHTE) {
+      const isTrainee = emp.position !== 'OJT Instructor' && emp.position !== 'HTE Representative';
+      if (!isTrainee) return emp;
+
+      let newInstructorId = emp.instructorId;
+      let newHteId = emp.hteId;
+
+      if (!newInstructorId && inst) {
+        newInstructorId = inst.id;
+      }
+
+      if (!newHteId && emp.companyName && emp.companyName.trim() !== '' && emp.companyName.toLowerCase() !== 'n/a') {
+        const comp = emp.companyName.trim().toLowerCase();
+        const matchedHte = htePartners.find((h) => h.companyName && h.companyName.trim().toLowerCase() === comp);
+        if (matchedHte) {
+          newHteId = matchedHte.id;
+        }
+      }
+
+      if (newInstructorId !== emp.instructorId || newHteId !== emp.hteId) {
+        updatedLinkages++;
         return {
           ...emp,
-          active: true,
-          approvalStatus: 'approved' as const,
-          academicYear: emp.academicYear || ay,
+          instructorId: newInstructorId,
+          hteId: newHteId,
         };
       }
 
-      return {
-        ...emp,
-        academicYear: emp.academicYear || ay,
-      };
+      return emp;
     });
 
     setEmployees(updatedEmployees);
     if (!useSupabase) {
       saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+    } else {
+      const affected = updatedEmployees.filter((e) => (e.academicYear || defaultAY) === ay);
+      if (affected.length > 0) {
+        await supabaseService.upsertEmployees(affected).catch(() => {});
+      }
     }
 
-    // 2. Ensure all Host Supervisors remain active
-    const updatedHosts = hostSupervisors.map((h) => ({
-      ...h,
-      active: true,
-      academicYear: h.academicYear || ay,
-    }));
-    setHostSupervisors(updatedHosts);
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
-    }
-
-    // 3. Persist to Supabase if configured
-    if (useSupabase) {
-      await supabaseService.upsertEmployees(updatedEmployees);
-      await supabaseService.upsertHostSupervisors(updatedHosts);
-      await supabaseService.repairDatabaseData(ay);
-    }
-
-    const totalSynced = updatedEmployees.length + updatedHosts.length;
     return {
       success: true,
-      syncedCount: totalSynced,
-      message: `Synchronized ${updatedEmployees.length} user accounts and ${updatedHosts.length} HTE partners for Academic Year ${ay}.`,
+      syncedCount: updatedLinkages,
+      message: `Synchronized accounts for Academic Year ${ay}: ${updatedLinkages} trainee linkages established across Instructor and HTE partners. Accounts in other academic years remain safely preserved.`,
     };
   };
 
   const repairAndPersistDatabase = async (): Promise<{ success: boolean; message: string; repairedCounts: any }> => {
     const activeAY = settings.activeAcademicYear;
+    const defaultAY = settings.academicYears?.[0] || '2025-2026';
 
-    // 1. Ensure all time records have academicYear & valid photo fields
+    // 1. Ensure time records have academicYear without shifting records across years
     const fixedRecords = timeRecords.map((r) => ({
       ...r,
-      academicYear: r.academicYear || activeAY,
+      academicYear: r.academicYear || defaultAY,
     }));
     setTimeRecords(fixedRecords);
     if (!useSupabase) {
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
     }
 
-    // 2. Ensure all employees have academicYear, normalized positions, and correct ID prefixes
+    // 2. Ensure all employees keep their academicYear and normalized positions
     const fixedEmployees = employees.map((e) => {
       const isHTE = e.position === 'HTE Representative' || e.position === 'Training Supervisor' || (e.position && e.position.toLowerCase().includes('hte'));
       const isInstructor = e.position === 'Administrator' || e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'));
@@ -2810,7 +2898,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...e,
         position: e.position === 'Administrator' ? 'OJT Instructor' : e.position,
-        academicYear: e.academicYear || activeAY,
+        academicYear: e.academicYear || defaultAY,
         employeeId,
       };
     });
@@ -2819,10 +2907,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
     }
 
-    // 3. Ensure host supervisors are also updated
+    // 3. Ensure host supervisors preserve their academicYear
     const fixedHosts = hostSupervisors.map((h) => ({
       ...h,
-      academicYear: h.academicYear || activeAY,
+      academicYear: h.academicYear || defaultAY,
       active: true,
     }));
     setHostSupervisors(fixedHosts);

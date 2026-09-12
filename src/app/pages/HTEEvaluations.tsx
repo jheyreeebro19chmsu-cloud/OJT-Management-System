@@ -205,9 +205,14 @@ export function HTEEvaluations() {
   const activeTrainees = useMemo(() => {
     const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
     const currentCompany = (companyName || '').trim().toLowerCase();
+    const targetAY = settings?.activeAcademicYear || '2026-2027';
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
     return employees.filter((e) => {
       if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+      const empAY = e.academicYear || defaultAY;
+      if (empAY !== targetAY) return false;
+
       const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
       const isCompanyMatched = Boolean(
         currentCompany &&
@@ -219,7 +224,7 @@ export function HTEEvaluations() {
       const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
       return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
     });
-  }, [employees, currentUser, currentEmp, hteUser, companyName]);
+  }, [employees, currentUser, currentEmp, hteUser, companyName, settings]);
 
   // Handle preselected student from URL
   React.useEffect(() => {

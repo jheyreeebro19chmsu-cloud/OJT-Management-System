@@ -65,7 +65,7 @@ export function AcademicYearManagement() {
     setForm(newSettings);
     updateSettings(newSettings);
     setNewAcademicYear('');
-    toast.success(`Academic environment ${academicYear} initialized and set as Active! System is ready for new compliance data.`);
+    toast.success(`Academic Year ${academicYear} created and activated! Initialized with 0 Trainees and 0 HTEs. Previous academic year accounts remain safely preserved.`);
   };
 
   const handleSwitchEnvironment = (year: string) => {
@@ -119,16 +119,38 @@ export function AcademicYearManagement() {
 
   // Helper stats per academic environment
   const getEnvStats = (year: string) => {
+    const defaultYear = form.academicYears[0] || '2025-2026';
     const envTrainees = employees.filter(
       (e) =>
         e.position !== 'OJT Instructor' &&
         e.position !== 'HTE Representative' &&
-        (e.academicYear === year || (!e.academicYear && year === form.academicYears[0]))
+        (e.academicYear === year || (!e.academicYear && year === defaultYear))
     );
-    const envRecords = timeRecords.filter((r) => r.academicYear === year || (!r.academicYear && year === form.academicYears[0]));
-    const envEvals = evaluations.filter((ev) => ev.academicYear === year || (!ev.academicYear && year === form.academicYears[0]));
-    const envGeofences = geofenceZones.filter((z) => !z.academicYear || z.academicYear === year);
-    return { trainees: envTrainees.length, records: envRecords.length, evals: envEvals.length, geofences: envGeofences.length };
+    const envHTE =
+      employees.filter(
+        (e) =>
+          e.position === 'HTE Representative' &&
+          (e.academicYear === year || (!e.academicYear && year === defaultYear))
+      ).length +
+      hostSupervisors.filter(
+        (h) => h.academicYear === year || (!h.academicYear && year === defaultYear)
+      ).length;
+    const envRecords = timeRecords.filter(
+      (r) => r.academicYear === year || (!r.academicYear && year === defaultYear)
+    );
+    const envEvals = evaluations.filter(
+      (ev) => ev.academicYear === year || (!ev.academicYear && year === defaultYear)
+    );
+    const envGeofences = geofenceZones.filter(
+      (z) => z.academicYear === year || (!z.academicYear && year === defaultYear)
+    );
+    return {
+      trainees: envTrainees.length,
+      hte: envHTE,
+      records: envRecords.length,
+      evals: envEvals.length,
+      geofences: envGeofences.length,
+    };
   };
 
   const activeStats = getEnvStats(form.activeAcademicYear);
@@ -177,22 +199,31 @@ export function AcademicYearManagement() {
           </div>
 
           <p className="text-xs text-blue-200 leading-relaxed max-w-2xl">
-            All account rosters, daily time records (DTR), and evaluation forms automatically operate under <strong>AY {form.activeAcademicYear}</strong>. Institutional HTE and Instructor accounts remain active across all years.
+            All account rosters, daily time records (DTR), and evaluation forms strictly operate under <strong>AY {form.activeAcademicYear}</strong>. Trainee and HTE accounts remain securely bound to the academic year in which they were registered. Newly created academic years initialize cleanly with 0 Trainees and 0 HTE Partners.
           </p>
 
-          <div className="grid grid-cols-3 gap-3 pt-2">
+          <div className="grid grid-cols-4 gap-2.5 pt-2">
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
               <div className="flex items-center justify-center gap-1.5 text-sky-300 mb-1">
-                <Users size={15} />
-                <span className="text-xs font-semibold">Trainees (Active AY)</span>
+                <Users size={14} />
+                <span className="text-xs font-semibold">Trainees</span>
               </div>
               <p className="text-xl font-extrabold text-white">{activeStats.trainees}</p>
-              <p className="text-[10px] text-blue-200">Enrolled</p>
+              <p className="text-[10px] text-blue-200">Enrolled (AY)</p>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-amber-300 mb-1">
+                <Building2 size={14} />
+                <span className="text-xs font-semibold">HTE Partners</span>
+              </div>
+              <p className="text-xl font-extrabold text-white">{activeStats.hte}</p>
+              <p className="text-[10px] text-blue-200">Active (AY)</p>
             </div>
 
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
               <div className="flex items-center justify-center gap-1.5 text-sky-300 mb-1">
-                <Clock size={15} />
+                <Clock size={14} />
                 <span className="text-xs font-semibold">DTR Logs</span>
               </div>
               <p className="text-xl font-extrabold text-white">{activeStats.records}</p>
@@ -201,7 +232,7 @@ export function AcademicYearManagement() {
 
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
               <div className="flex items-center justify-center gap-1.5 text-sky-300 mb-1">
-                <Award size={15} />
+                <Award size={14} />
                 <span className="text-xs font-semibold">Evaluations</span>
               </div>
               <p className="text-xl font-extrabold text-white">{activeStats.evals}</p>
@@ -406,18 +437,22 @@ export function AcademicYearManagement() {
                   )}
                 </div>
 
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs border-t border-slate-200/60 pt-3">
+                <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-xs border-t border-slate-200/60 pt-3">
                   <div className="bg-white/80 rounded-xl p-1.5 border border-slate-100">
                     <p className="font-bold text-slate-800">{stats.trainees}</p>
-                    <p className="text-[10px] text-slate-400">Trainees</p>
+                    <p className="text-[9px] text-slate-400">Trainees</p>
+                  </div>
+                  <div className="bg-white/80 rounded-xl p-1.5 border border-slate-100">
+                    <p className="font-bold text-amber-700">{stats.hte}</p>
+                    <p className="text-[9px] text-slate-400">HTE</p>
                   </div>
                   <div className="bg-white/80 rounded-xl p-1.5 border border-slate-100">
                     <p className="font-bold text-slate-800">{stats.records}</p>
-                    <p className="text-[10px] text-slate-400">DTRs</p>
+                    <p className="text-[9px] text-slate-400">DTRs</p>
                   </div>
                   <div className="bg-white/80 rounded-xl p-1.5 border border-slate-100">
                     <p className="font-bold text-slate-800">{stats.evals}</p>
-                    <p className="text-[10px] text-slate-400">Evals</p>
+                    <p className="text-[9px] text-slate-400">Evals</p>
                   </div>
                 </div>
 

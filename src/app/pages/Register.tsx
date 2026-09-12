@@ -753,6 +753,7 @@ export function Register() {
     try {
       result = await registerEmployee({
         ...form,
+        academicYear: settings.activeAcademicYear,
         name: composedName,
         employeeId: empId,
         address: residentialAddress,
@@ -790,6 +791,7 @@ export function Register() {
           const empToUpdateId = existing ? existing.id : empId;
           const updatedPayload: any = {
             id: empToUpdateId,
+            academicYear: existing?.academicYear || settings.activeAcademicYear,
             employeeId: form.employeeId || (existing?.employeeId ? (role === 'hte' && existing.employeeId.startsWith('OJT-') ? existing.employeeId.replace(/^OJT-/, 'HTE-') : existing.employeeId) : empId),
             name: composedName,
             firstName: form.firstName,
