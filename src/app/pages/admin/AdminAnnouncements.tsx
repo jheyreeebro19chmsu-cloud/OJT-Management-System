@@ -24,6 +24,8 @@ import { authAPI } from '../../services/authApi';
 import { useApp } from '../../store/AppContext';
 import { API_BASE } from '../../services/config';
 import { Announcement } from '../../types';
+import { AnnouncementAttachmentView } from '../../components/AnnouncementAttachmentView';
+import { formatFileSize, parseAnnouncementAttachment } from '../../utils/attachmentHelper';
 
 
 const TYPE_CONFIG: Record<
@@ -317,13 +319,7 @@ export function AdminAnnouncements() {
                       </div>
                       <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{ann.content}</p>
                       {ann.photo && (
-                        <div className="my-2.5 flex justify-center bg-slate-50/80 rounded-2xl p-2 border border-slate-200/80 overflow-hidden max-w-sm mx-auto shadow-sm">
-                          <img
-                            src={ann.photo}
-                            alt=""
-                            className="max-h-72 w-full aspect-square rounded-xl object-contain"
-                          />
-                        </div>
+                        <AnnouncementAttachmentView photo={ann.photo} allowDownload={true} />
                       )}
                       {ann.reminder && (
                         <p className="text-xs mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
@@ -514,41 +510,72 @@ export function AdminAnnouncements() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Photo (optional)</label>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Attachment (optional - Pictures, PDFs, Documents)</label>
                   <div className="flex items-center gap-3">
                     <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all text-gray-500 hover:text-blue-600">
                       <Camera size={18} />
-                      <span className="text-sm font-medium">Choose from device</span>
+                      <span className="text-sm font-medium">Choose file from device</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
                           if (!f) return;
                           const reader = new FileReader();
                           reader.onload = () => {
-                            upd('photo', String(reader.result || ''));
+                            const dataUrl = String(reader.result || '');
+                            if (f.type.startsWith('image/')) {
+                              upd('photo', dataUrl);
+                            } else {
+                              let type: 'pdf' | 'doc' | 'file' = 'file';
+                              if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
+                              else if (f.name.match(/\.(doc|docx|txt|rtf|csv|xlsx|xls)$/i)) type = 'doc';
+
+                              upd('photo', JSON.stringify({
+                                url: dataUrl,
+                                name: f.name,
+                                type,
+                                size: formatFileSize(f.size),
+                              }));
+                            }
                           };
                           reader.readAsDataURL(f);
                         }}
                         className="hidden"
                       />
                     </label>
-                    {form.photo && (
-                      <div className="relative shrink-0">
-                        <img
-                          src={form.photo}
-                          className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md"
-                          alt="Preview"
-                        />
-                        <button
-                          onClick={() => upd('photo', '')}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-sm hover:bg-red-600 transition-colors"
-                        >
-                          <X size={10} />
-                        </button>
-                      </div>
-                    )}
+                    {form.photo && (() => {
+                      const att = parseAnnouncementAttachment(form.photo);
+                      return (
+                        <div className="relative shrink-0 flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                          {att?.type === 'image' ? (
+                            <img
+                              src={att.url}
+                              className="w-10 h-10 rounded-lg object-cover"
+                              alt="Preview"
+                            />
+                          ) : att?.type === 'pdf' ? (
+                            <div className="w-10 h-10 rounded-lg bg-red-500 text-white flex items-center justify-center font-bold text-[10px]">
+                              PDF
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
+                              DOC
+                            </div>
+                          )}
+                          <span className="text-xs font-semibold text-slate-700 max-w-[120px] truncate" title={att?.name}>
+                            {att?.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => upd('photo', '')}
+                            className="bg-red-500 text-white rounded-full p-1 shadow-xs hover:bg-red-600 transition-colors"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 

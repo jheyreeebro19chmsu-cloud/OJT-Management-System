@@ -5,6 +5,7 @@ import { useApp } from '../store/AppContext';
 import { authAPI } from '../services/authApi';
 import { API_BASE } from '../services/config';
 import type { Announcement } from '../types';
+import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
 
 export function Announcements() {
   const {
@@ -258,13 +259,7 @@ export function Announcements() {
                     </div>
               </div>
               {announcement.photo && (
-                <div className="my-3 flex justify-center bg-slate-50/80 rounded-2xl p-2 border border-slate-200/80 overflow-hidden max-w-sm mx-auto shadow-sm">
-                  <img
-                    src={announcement.photo}
-                    alt="Announcement photo"
-                    className="max-h-72 w-full aspect-square rounded-xl object-contain"
-                  />
-                </div>
+                <AnnouncementAttachmentView photo={announcement.photo} allowDownload={true} />
               )}
               {announcement.reminder && (
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2">
