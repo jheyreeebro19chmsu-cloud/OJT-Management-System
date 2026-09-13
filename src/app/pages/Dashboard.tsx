@@ -760,24 +760,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Status Distribution */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Student Status Distribution</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {[
-              { label: 'Pending', count: metrics?.status_counts.pending, color: 'bg-yellow-100 text-yellow-800' },
-              { label: 'Approved', count: metrics?.status_counts.approved, color: 'bg-green-100 text-green-800' },
-              { label: 'Rejected', count: metrics?.status_counts.rejected, color: 'bg-red-100 text-red-800' },
-              { label: 'Completed', count: metrics?.status_counts.completed, color: 'bg-blue-100 text-blue-800' },
-              { label: 'Cancelled', count: metrics?.status_counts.cancelled, color: 'bg-gray-100 text-gray-800' },
-            ].map((status) => (
-              <div key={status.label} className={`p-4 rounded-lg ${status.color}`}>
-                <p className="text-sm font-semibold">{status.count}</p>
-                <p className="text-xs mt-1">{status.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {/* Linked Students Status */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
