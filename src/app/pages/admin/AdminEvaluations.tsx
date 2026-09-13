@@ -946,6 +946,18 @@ export function AdminEvaluations() {
                       <FileText size={14} />
                       View Form
                     </button>
+                    <button
+                      onClick={() => {
+                        setSelectedEmp(emp);
+                        setViewMode('view');
+                        setTimeout(() => window.print(), 250);
+                      }}
+                      className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs"
+                      title="Print Official Hard Copy"
+                    >
+                      <Printer size={13} />
+                      <span>Print</span>
+                    </button>
                     {ev.status !== 'reviewed_by_instructor' && (
                       <button
                         onClick={() => handleMarkDoneViewed(ev.id)}

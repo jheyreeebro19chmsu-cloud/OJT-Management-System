@@ -52,6 +52,10 @@
 }
 
 @media print {
+  @page {
+    margin: 10mm 12mm;
+    size: auto;
+  }
   .no-print {
     display: none !important;
   }
@@ -63,8 +67,22 @@
     padding: 0 !important;
     margin: 0 !important;
   }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
   .page-break {
     page-break-before: always;
+  }
+  input[type="range"] {
+    display: none !important;
+  }
+  textarea {
+    resize: none !important;
+    overflow: visible !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
   }
   /* Ensure colors and backgrounds print */
   * {

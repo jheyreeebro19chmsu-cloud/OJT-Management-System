@@ -437,6 +437,15 @@ export function HTEEvaluations() {
               Export CSV
             </button>
             <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Print Evaluation Sheet"
+            >
+              <Printer size={15} />
+              Print Form
+            </button>
+            <button
               onClick={() => handleSave('draft')}
               className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-2xl text-xs font-bold hover:bg-slate-50 transition-all flex items-center gap-1.5 shadow-sm"
             >
@@ -571,7 +580,7 @@ export function HTEEvaluations() {
                     </div>
 
                     {/* Interactive Slider */}
-                    <div className="pt-2">
+                    <div className="pt-2 no-print">
                       <input
                         type="range"
                         min={0}
@@ -686,6 +695,14 @@ export function HTEEvaluations() {
               </button>
               <button
                 type="button"
+                onClick={() => window.print()}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-2xl transition-all flex items-center gap-1.5 shadow-sm"
+              >
+                <Printer size={15} />
+                <span>Print Form</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => handleSave('submitted_to_instructor')}
                 className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5"
               >
@@ -719,6 +736,14 @@ export function HTEEvaluations() {
             Back to Trainees List
           </button>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <Printer size={15} />
+              <span>Print Form</span>
+            </button>
             <button
               onClick={() => openNewEval(selectedEmp)}
               className="px-4 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/20"
@@ -943,6 +968,18 @@ export function HTEEvaluations() {
                               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
                             >
                               View Sheet
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedEmp(emp);
+                                setViewMode('view');
+                                setTimeout(() => window.print(), 250);
+                              }}
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                              title="Print Evaluation Sheet"
+                            >
+                              <Printer size={14} />
+                              <span className="hidden sm:inline">Print</span>
                             </button>
                             <button
                               onClick={() => openNewEval(emp)}
