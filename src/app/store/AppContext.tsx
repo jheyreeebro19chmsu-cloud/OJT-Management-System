@@ -1658,7 +1658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (traineesToLink.length > 0) {
               traineesToLink.forEach((t) => {
                 t.hteId = created!.id;
-                supabase.from('employees').update({ hte_id: created!.id }).eq('id', t.id).then().catch(() => {});
+                supabase.from('employees').update({ hte_id: created!.id }).eq('id', t.id).then(undefined, () => {});
               });
               setEmployees((prev) =>
                 prev.map((e) => (traineesToLink.some((t) => t.id === e.id) ? { ...e, hteId: created!.id } : e))
@@ -1680,7 +1680,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (traineesToLink.length > 0) {
             traineesToLink.forEach((t) => {
               t.instructorId = created!.id;
-              supabase.from('employees').update({ instructor_id: created!.id }).eq('id', t.id).then().catch(() => {});
+              supabase.from('employees').update({ instructor_id: created!.id }).eq('id', t.id).then(undefined, () => {});
             });
             setEmployees((prev) =>
               prev.map((e) => (traineesToLink.some((t) => t.id === e.id) ? { ...e, instructorId: created!.id } : e))
@@ -2379,9 +2379,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   .filter((emp) => {
                     if (!emp.email || !emp.email.includes('@')) return false;
                     if (target === 'all') return true;
-                    if (target === 'employee') return emp.role === 'employee' || !emp.role;
-                    if (target === 'hte' || target === 'host') return emp.role === 'host' || emp.role === 'hte';
-                    if (target === 'admin') return emp.role === 'admin';
+                    const isInst = emp.position === 'OJT Instructor' || emp.role === 'admin';
+                    const isHte = emp.position === 'HTE Representative' || emp.role === 'host' || emp.role === 'hte';
+                    const isTrainee = !isInst && !isHte;
+                    if (target === 'employee') return isTrainee;
+                    if (target === 'hte' || target === 'host') return isHte;
+                    if (target === 'admin') return isInst;
                     return false;
                   })
                   .map((emp) => emp.email.trim().toLowerCase());

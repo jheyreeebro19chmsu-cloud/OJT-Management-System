@@ -1,7 +1,8 @@
-import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw, Compass } from 'lucide-react';
+import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw, Compass, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { FaceCapture } from '../components/FaceCapture';
 import { GeofenceChecker, type GeoState } from '../components/GeofenceChecker';
@@ -75,17 +76,28 @@ export function TimeRecord() {
     if (empLookupId) {
       const rec = getTodayRecord(empLookupId);
       setCurrentRecord(rec);
-      // Guard: do not flip the action state while viewing the completed confirmation,
-      // and do not override if the user explicitly clicked Clock In / Clock Out
-      if (pageState !== 'completed' && !userActionOverrideRef.current) {
+      // Guard: do not flip the action state while viewing the completed confirmation
+      if (pageState !== 'completed') {
         if (rec?.timeIn && !rec?.timeOut) {
-          setAction('out');
+          if (!userActionOverrideRef.current) {
+            setAction('out');
+          }
         } else {
+          // If not clocked in or already clocked out, Clock In is the only permissible action
           setAction('in');
+          userActionOverrideRef.current = false;
         }
       }
     }
   }, [employee, empLookupId, timeRecords, pageState]);
+
+  // Strict guard: Guarantee action cannot remain 'out' if there is no prior clock-in today
+  useEffect(() => {
+    if (!currentRecord?.timeIn && action === 'out') {
+      setAction('in');
+      userActionOverrideRef.current = false;
+    }
+  }, [currentRecord?.timeIn, action]);
 
   useEffect(() => {
     let mounted = true;
@@ -154,12 +166,23 @@ export function TimeRecord() {
 
   const proceedToFaceScan = () => {
     if (!geofencePassed) return;
+    if (action === 'out' && !currentRecord?.timeIn) {
+      toast.error('You must clock in first before you can clock out.');
+      setAction('in');
+      return;
+    }
     setPageState('face-scan');
   };
 
   const handleFaceSuccess = async (imageData?: string) => {
     if (!employee) return;
     const currentAction = action;
+    if (currentAction === 'out' && !currentRecord?.timeIn) {
+      toast.error('Cannot record Clock Out: No prior Clock In found for today.');
+      setAction('in');
+      setPageState('check-geofence');
+      return;
+    }
     setCompletedAction(currentAction);
 
     const now = new Date();
@@ -528,17 +551,26 @@ export function TimeRecord() {
               </button>
               <button
                 type="button"
+                disabled={!currentRecord?.timeIn}
                 onClick={() => {
+                  if (!currentRecord?.timeIn) {
+                    toast.error('Clock Out is closed. You must clock in first before you can clock out.');
+                    return;
+                  }
                   setAction('out');
                   userActionOverrideRef.current = true;
                 }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-                  action === 'out'
+                title={!currentRecord?.timeIn ? 'Clock Out closed — Clock In first' : 'Switch to Clock Out'}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  !currentRecord?.timeIn
+                    ? 'opacity-40 cursor-not-allowed text-slate-400 bg-transparent'
+                    : action === 'out'
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Clock Out
+                {!currentRecord?.timeIn && <Lock size={12} className="text-slate-400" />}
+                <span>Clock Out</span>
               </button>
             </div>
 

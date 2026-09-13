@@ -201,6 +201,16 @@ export function HTEEvaluations() {
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
 
+  const instructorName = useMemo(() => {
+    if (selectedEmp?.instructorId) {
+      const linked = employees.find((e) => e.id === selectedEmp.instructorId || e.employeeId === selectedEmp.instructorId);
+      if (linked?.name) return linked.name;
+    }
+    const anyInst = employees.find((e) => e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor')));
+    if (anyInst?.name) return anyInst.name;
+    return 'CHMSU OJT Instructor';
+  }, [selectedEmp, employees]);
+
   // Only trainees linked to the active HTE workflow should appear in evaluation queues.
   const activeTrainees = useMemo(() => {
     const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
@@ -392,7 +402,7 @@ export function HTEEvaluations() {
   // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === 'form' && selectedEmp) {
     return (
-      <div className="space-y-6 max-w-4xl mx-auto pb-12 font-sans">
+      <div className="space-y-6 max-w-5xl mx-auto pb-12 font-sans">
         {/* Navigation & Action Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 no-print">
           <button
@@ -487,14 +497,19 @@ export function HTEEvaluations() {
           <div className="p-6 sm:p-8 space-y-6">
             {/* Student & Host Establishment Particulars */}
             <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2 flex items-center gap-1.5">
-                <GraduationCap className="w-4 h-4 text-blue-600" />
-                <span>Trainee & Establishment Particulars</span>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <GraduationCap className="w-4 h-4 text-blue-600" />
+                  <span>Trainee & Establishment Particulars</span>
+                </span>
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  AY {selectedEmp.academicYear || settings?.activeAcademicYear || '2026-2027'}
+                </span>
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-xs">
                 <div>
-                  <span className="text-slate-400 font-semibold block">Student Trainee:</span>
+                  <span className="text-slate-400 font-semibold block">Student Trainee Name:</span>
                   <span className="font-extrabold text-slate-900 text-sm">{selectedEmp.name}</span>
                 </div>
                 <div>
@@ -502,28 +517,32 @@ export function HTEEvaluations() {
                   <span className="font-mono font-bold text-slate-800">{selectedEmp.employeeId || selectedEmp.id.slice(0, 8)}</span>
                 </div>
                 <div>
+                  <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
+                  <span className="font-bold text-slate-800">{selectedEmp.requiredHours || 486} Hours</span>
+                </div>
+                <div>
                   <span className="text-slate-400 font-semibold block">School & Program:</span>
-                  <span className="font-semibold text-slate-700">{selectedEmp.schoolName || 'CHMSU'} ({selectedEmp.course || 'OJT Trainee'})</span>
+                  <span className="font-semibold text-slate-700">{selectedEmp.schoolName || 'Carlos Hilado Memorial State University'} ({selectedEmp.course || 'OJT Trainee'})</span>
                 </div>
                 <div>
                   <span className="text-slate-400 font-semibold block">Campus & Department:</span>
                   <span className="font-medium text-slate-700">{selectedEmp.campus || 'Main Campus'} • {selectedEmp.department || 'N/A'}</span>
                 </div>
                 <div>
+                  <span className="text-slate-400 font-semibold block">CHMSU OJT Instructor / Coordinator:</span>
+                  <span className="font-bold text-blue-900">{instructorName}</span>
+                </div>
+                <div>
                   <span className="text-slate-400 font-semibold block">Host Establishment (HTE):</span>
                   <span className="font-extrabold text-blue-900">{companyName}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 font-semibold block">Authorizing Supervisor:</span>
+                  <span className="text-slate-400 font-semibold block">Immediate HTE Supervisor / Evaluator:</span>
                   <span className="font-bold text-slate-800">{supervisorName}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
-                  <span className="font-bold text-slate-800">{selectedEmp.requiredHours || 486} Hours</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Academic Year:</span>
-                  <span className="font-bold text-emerald-700">AY {settings?.activeAcademicYear || '2026-2027'}</span>
+                  <span className="text-slate-400 font-semibold block">Evaluation Date:</span>
+                  <span className="font-medium text-slate-700">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                 </div>
               </div>
             </div>
@@ -661,26 +680,51 @@ export function HTEEvaluations() {
             {/* Official Signatures Certification Box */}
             <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 space-y-4">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
-                Certification & Endorsement
+                Official Certification, Conforme & Endorsement
               </h4>
               <p className="text-xs text-slate-500 italic leading-relaxed">
-                I hereby certify that the scores and qualitative assessments recorded above represent a true, objective,
+                I hereby certify that the performance ratings, competency evaluations, and qualitative recommendations recorded above represent a true, objective,
                 and comprehensive evaluation of the student intern's on-the-job training performance.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 text-center text-xs">
-                <div>
-                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900">{supervisorName}</div>
-                  <div className="text-slate-500 mt-1">Host Training Supervisor Signature</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 text-center text-xs">
+                {/* 1. Student Intern / Trainee */}
+                <div className="flex flex-col justify-end">
+                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900 uppercase tracking-wider">
+                    {selectedEmp.name}
+                  </div>
+                  <div className="font-semibold text-slate-700 mt-1">Student Intern / Trainee</div>
+                  <div className="text-slate-500 text-[10px]">Conforme / Signature over Printed Name</div>
+                  <div className="text-slate-400 text-[10px]">ID: {selectedEmp.employeeId || selectedEmp.id.slice(0, 8)}</div>
+                </div>
+
+                {/* 2. Immediate HTE Supervisor */}
+                <div className="flex flex-col justify-end">
+                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900 uppercase tracking-wider">
+                    {supervisorName}
+                  </div>
+                  <div className="font-semibold text-slate-700 mt-1">HTE Immediate Supervisor / Evaluator</div>
+                  <div className="text-slate-500 text-[10px]">Signature over Printed Name</div>
                   <div className="text-slate-400 text-[10px]">{companyName}</div>
                 </div>
-                <div>
-                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900">
-                    {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+
+                {/* 3. CHMSU OJT Instructor / Coordinator */}
+                <div className="flex flex-col justify-end">
+                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900 uppercase tracking-wider">
+                    {instructorName}
                   </div>
-                  <div className="text-slate-500 mt-1">Evaluation Date & Verification</div>
-                  <div className="text-emerald-600 font-bold text-[10px]">Digitally Endorsed</div>
+                  <div className="font-semibold text-slate-700 mt-1">CHMSU OJT Instructor / Coordinator</div>
+                  <div className="text-slate-500 text-[10px]">Noted & Endorsed by</div>
+                  <div className="text-slate-400 text-[10px]">Office of Student Internship Program</div>
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 text-[11px] text-slate-500">
+                <span>Evaluation Date: <strong className="text-slate-800">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
+                <span className="text-emerald-700 font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  Official Digital Document Verification
+                </span>
               </div>
             </div>
 

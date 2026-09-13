@@ -570,7 +570,7 @@ export function AdminEvaluations() {
     const gc = GRADE_CONFIG[ev.grade];
 
     return (
-      <div className="space-y-6 max-w-3xl mx-auto pb-12">
+      <div className="space-y-6 max-w-5xl mx-auto pb-12">
         {/* Navigation & Print Action Bar */}
         <div className="flex items-center justify-between no-print">
           <button
@@ -642,9 +642,16 @@ export function AdminEvaluations() {
           <div className="p-6 space-y-6">
             {/* Particulars Header */}
             <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2 flex items-center justify-between">
+                <span>Trainee & Establishment Particulars</span>
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  AY {selectedEmp.academicYear || settings?.activeAcademicYear || '2026-2027'}
+                </span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-xs">
                 <div>
-                  <span className="text-slate-400 font-semibold block">Student Name:</span>
+                  <span className="text-slate-400 font-semibold block">Student Trainee Name:</span>
                   <span className="font-bold text-slate-800 text-sm">{selectedEmp.name}</span>
                 </div>
                 <div>
@@ -652,35 +659,48 @@ export function AdminEvaluations() {
                   <span className="font-mono font-bold text-slate-800">{selectedEmp.employeeId}</span>
                 </div>
                 <div>
+                  <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
+                  <span className="font-bold text-slate-800">{selectedEmp.requiredHours || 486} Hours</span>
+                </div>
+                <div>
                   <span className="text-slate-400 font-semibold block">School & Course:</span>
-                  <span className="font-medium text-slate-700">{selectedEmp.schoolName} ({selectedEmp.course || 'N/A'})</span>
+                  <span className="font-medium text-slate-700">{selectedEmp.schoolName || 'Carlos Hilado Memorial State University'} ({selectedEmp.course || 'N/A'})</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Campus & Department:</span>
+                  <span className="font-medium text-slate-700">{selectedEmp.campus || 'Main Campus'} • {selectedEmp.department || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">CHMSU OJT Instructor:</span>
+                  <span className="font-bold text-blue-900">{instructorName}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 font-semibold block">Host Training Establishment:</span>
                   <span className="font-bold text-blue-900">{selectedEmp.companyName || 'Not recorded'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 font-semibold block">Evaluation Date:</span>
-                  <span className="font-medium text-slate-700">
-                    {new Date(ev.evaluatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                  </span>
+                  <span className="text-slate-400 font-semibold block">HTE Training Supervisor:</span>
+                  <span className="font-bold text-slate-800">{selectedEmp.supervisorName || 'OJT SUPERVISOR'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 font-semibold block">Evaluation Status:</span>
-                  <span
-                    className={`inline-block font-bold px-2.5 py-0.5 rounded-full text-[11px] uppercase ${
-                      ev.status === 'reviewed_by_instructor'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  <span className="text-slate-400 font-semibold block">Evaluation Date & Status:</span>
+                  <span className="font-medium text-slate-700 flex items-center gap-1.5 mt-0.5">
+                    {new Date(ev.evaluatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    <span
+                      className={`inline-block font-bold px-2 py-0.2 rounded-full text-[10px] uppercase ${
+                        ev.status === 'reviewed_by_instructor'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : ev.status === 'final' || ev.status === 'submitted_to_instructor'
+                          ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {ev.status === 'reviewed_by_instructor'
+                        ? '✓ Viewed'
                         : ev.status === 'final' || ev.status === 'submitted_to_instructor'
-                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                        : 'bg-amber-100 text-amber-800'
-                    }`}
-                  >
-                    {ev.status === 'reviewed_by_instructor'
-                      ? '✓ Done Viewed by Instructor'
-                      : ev.status === 'final' || ev.status === 'submitted_to_instructor'
-                      ? 'Submitted by HTE (Pending Review)'
-                      : 'Draft Copy'}
+                        ? 'Submitted'
+                        : 'Draft'}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -756,21 +776,35 @@ export function AdminEvaluations() {
             </div>
 
             {/* Official Signatures */}
-            <div className="pt-8 border-t border-slate-200 grid grid-cols-2 gap-8 text-center text-xs">
-              <div>
+            <div className="pt-8 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs">
+              {/* 1. Student Intern / Trainee */}
+              <div className="flex flex-col justify-end">
+                <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                  <span className="font-bold text-slate-800 text-sm uppercase">{selectedEmp.name}</span>
+                </div>
+                <p className="font-semibold text-slate-600">Student Intern / Trainee</p>
+                <p className="text-slate-400 text-[10px]">Signature over Printed Name (Conforme)</p>
+                <p className="text-slate-400 text-[10px]">ID: {selectedEmp.employeeId || 'Student ID'}</p>
+              </div>
+
+              {/* 2. Immediate HTE Supervisor */}
+              <div className="flex flex-col justify-end">
                 <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
                   <span className="font-bold text-slate-800 text-sm uppercase">{selectedEmp.supervisorName || 'OJT SUPERVISOR'}</span>
                 </div>
                 <p className="font-semibold text-slate-600">HTE Training Supervisor / Evaluator</p>
                 <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+                <p className="text-slate-400 text-[10px]">{selectedEmp.companyName || 'Host Training Establishment'}</p>
               </div>
 
-              <div>
+              {/* 3. CHMSU OJT Instructor */}
+              <div className="flex flex-col justify-end">
                 <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
                   <span className="font-bold text-slate-800 text-sm uppercase">{instructorName}</span>
                 </div>
                 <p className="font-semibold text-slate-600">CHMSU OJT Coordinator / Instructor</p>
                 <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+                <p className="text-slate-400 text-[10px]">Office of Student Internship Program</p>
               </div>
             </div>
           </div>
