@@ -1122,17 +1122,17 @@ export function AdminEmployees() {
                                           : 'border-amber-200 shadow-sm shadow-amber-50/50'
                                       }`}
                                     >
-                                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                                        <div className="flex items-center gap-1.5">
+                                      <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                           <div
-                                            className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
                                               isPassed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                                             }`}
                                           >
                                             {docItem.num}
                                           </div>
-                                          <div>
-                                            <p className="text-xs font-bold text-gray-800">{docItem.title}</p>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-bold text-gray-800 truncate" title={docItem.title}>{docItem.title}</p>
                                             {doc?.name && (
                                               <p className="text-[10px] text-blue-600 truncate max-w-[140px]" title={doc.name}>
                                                 📁 {doc.name}
@@ -1141,7 +1141,7 @@ export function AdminEmployees() {
                                           </div>
                                         </div>
                                         <span
-                                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                                          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap ${
                                             isPassed
                                               ? 'bg-green-100 text-green-700 border-green-200'
                                               : 'bg-amber-100 text-amber-700 border-amber-200'

@@ -2771,19 +2771,19 @@ export function Register() {
                                 : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-2 mb-1.5">
-                              <div className="flex items-center gap-1.5">
+                            <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                 <div
-                                  className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
                                     uploaded ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'
                                   }`}
                                 >
                                   {item.num}
                                 </div>
-                                <h4 className="text-xs font-bold text-gray-800">{item.title}</h4>
+                                <h4 className="text-xs font-bold text-gray-800 truncate" title={item.title}>{item.title}</h4>
                               </div>
                               <span
-                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0 whitespace-nowrap ${
                                   uploaded
                                     ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
                                     : 'bg-amber-100 text-amber-700 border-amber-300'
@@ -2791,11 +2791,11 @@ export function Register() {
                               >
                                 {uploaded ? (
                                   <>
-                                    <Check size={11} className="stroke-[3]" /> PASSED
+                                    <Check size={9} className="stroke-[3]" /> PASSED
                                   </>
                                 ) : (
                                   <>
-                                    <Clock size={10} /> PENDING
+                                    <Clock size={9} /> PENDING
                                   </>
                                 )}
                               </span>
