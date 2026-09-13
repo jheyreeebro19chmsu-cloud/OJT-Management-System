@@ -160,6 +160,7 @@ export function HTEDashboard() {
           employeeName: displayName,
           ojtCode: displayCode || 'OJT-TRAINEE',
           course: emp?.course || 'OJT Trainee',
+          photo: emp?.photo || (r as any)?.timeInPhoto || (r as any)?.timeOutPhoto || '',
         };
       });
   }, [timeRecords, employees]);
@@ -392,8 +393,9 @@ export function HTEDashboard() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold">
               <tr>
-                <th className="px-4 py-3">Student Name</th>
+                <th className="px-4 py-3 w-14 text-center">Profile</th>
                 <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Student Name</th>
                 <th className="px-4 py-3">Time In</th>
                 <th className="px-4 py-3">Time Out</th>
                 <th className="px-4 py-3">Geofence Status</th>
@@ -402,6 +404,25 @@ export function HTEDashboard() {
             <tbody className="divide-y divide-slate-100">
               {recentLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-4 py-3 text-center">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
+                      {log.photo ? (
+                        <img
+                          src={getPhotoUrl(log.photo)}
+                          alt={log.employeeName}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <span className="text-blue-700 font-black text-xs">
+                          {log.employeeName ? log.employeeName.charAt(0).toUpperCase() : 'T'}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{log.date}</td>
                   <td className="px-4 py-3">
                     <div className="font-bold text-slate-900">{log.employeeName}</div>
                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -411,7 +432,6 @@ export function HTEDashboard() {
                       <span className="text-xs text-slate-500">• {log.course}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{log.date}</td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
                     {log.timeIn || '—'}
                   </td>
@@ -428,7 +448,7 @@ export function HTEDashboard() {
               ))}
               {recentLogs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
                     No recent time logs recorded yet.
                   </td>
                 </tr>
