@@ -1552,58 +1552,27 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
 
 export async function resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
   const cleanEmail = email.trim().toLowerCase();
-  const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 
-  // 1. Try Django backend if configured and active
   try {
-    const { authAPI } = await import('./authApi');
-    const resp = await authAPI.resetPassword(cleanEmail, newPassword).catch(() => null);
-    if (resp?.data?.success) {
-      return { success: true };
+    const { data, error } = await supabase.functions.invoke('reset-password-admin', {
+      body: {
+        email: cleanEmail,
+        newPassword,
+      },
+    });
+
+    if (error) {
+      console.warn('[resetPasswordDirect] Edge Function invocation error:', error);
+      return { success: false, message: error.message || 'Failed to update password.' };
     }
-  } catch {
-    // Continue to Supabase direct admin update
-  }
 
-  // 2. Direct Supabase Admin Auth update using service role
-  if (supabaseUrl && serviceKey) {
-    try {
-      const adminUrl = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/admin/users`;
-      const searchRes = await fetch(`${adminUrl}?email=${encodeURIComponent(cleanEmail)}`, {
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-        },
-      });
-
-      if (searchRes.ok) {
-        const usersData = await searchRes.json();
-        const usersList = Array.isArray(usersData) ? usersData : usersData?.users || [];
-        const user = usersList.find((u: any) => (u.email || '').toLowerCase() === cleanEmail);
-        if (user && user.id) {
-          const updateRes = await fetch(`${adminUrl}/${user.id}`, {
-            method: 'PUT',
-            headers: {
-              apikey: serviceKey,
-              Authorization: `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ password: newPassword }),
-          });
-          if (updateRes.ok) {
-            return { success: true };
-          } else {
-            const errJson = await updateRes.json().catch(() => ({}));
-            throw new Error(errJson?.message || 'Failed to update password in authentication service.');
-          }
-        }
-      }
-    } catch (adminErr: any) {
-      console.warn('Direct admin password update notice:', adminErr);
-      return { success: false, message: adminErr?.message || 'Failed to update password.' };
+    if (data && data.success === false) {
+      return { success: false, message: data.error || 'Failed to update password.' };
     }
-  }
 
-  return { success: true, message: 'Password updated.' };
+    return { success: true, message: data?.message || 'Password updated successfully.' };
+  } catch (err: any) {
+    console.error('[resetPasswordDirect] Unexpected error:', err);
+    return { success: false, message: err?.message || 'Unexpected error updating password.' };
+  }
 }

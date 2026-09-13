@@ -92,6 +92,8 @@ export function Login() {
   const [forgotStep, setForgotStep] = useState<'email' | 'otp'>('email');
   const [forgotOtp, setForgotOtp] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number>(0);
+  const [otpAttempts, setOtpAttempts] = useState<number>(0);
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
@@ -134,9 +136,11 @@ export function Login() {
         return;
       }
 
-      // 2. Generate random 6-digit OTP code
+      // 2. Generate random 6-digit OTP code and track 10-minute expiry
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       setGeneratedOtp(code);
+      setOtpExpiresAt(Date.now() + 10 * 60 * 1000); // 10 minutes
+      setOtpAttempts(0);
 
       // 3. Send email with verification code via Resend
       const result = await sendOtpEmail(cleanEmail, code, 'password_reset');
@@ -164,8 +168,21 @@ export function Login() {
       return;
     }
 
+    if (Date.now() > otpExpiresAt) {
+      setForgotError('Confirmation code has expired. Please request a new code.');
+      return;
+    }
+
+    if (otpAttempts >= 5) {
+      setGeneratedOtp('');
+      setForgotError('Too many invalid attempts. Please request a new confirmation code.');
+      return;
+    }
+
     if (forgotOtp.trim() !== generatedOtp.trim()) {
-      setForgotError('Invalid confirmation code. Please check your email.');
+      const newAttempts = otpAttempts + 1;
+      setOtpAttempts(newAttempts);
+      setForgotError(`Invalid confirmation code. (${5 - newAttempts} attempts remaining)`);
       return;
     }
 
