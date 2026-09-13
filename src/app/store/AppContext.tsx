@@ -389,13 +389,16 @@ function sanitizeValueForStorage(key: string, value: any): any {
     return value.map((emp) => {
       if (!emp || typeof emp !== 'object') return emp;
       const copy = { ...emp };
-      // Strip bulky base64 dataUrl from submitted documents to prevent localStorage overflow
+      // Preserve document dataUrls (URLs and compact representations)
       if (copy.submittedDocuments && typeof copy.submittedDocuments === 'object') {
         const sanitizedDocs: any = {};
         for (const [docKey, docVal] of Object.entries(copy.submittedDocuments)) {
           if (docVal && typeof docVal === 'object') {
-            const { dataUrl, ...rest } = docVal as any;
-            sanitizedDocs[docKey] = rest;
+            const docObj = docVal as any;
+            sanitizedDocs[docKey] = {
+              ...docObj,
+              dataUrl: docObj.dataUrl || docObj.fileUrl || '',
+            };
           }
         }
         copy.submittedDocuments = sanitizedDocs;

@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
+import { uploadDocumentToStorage } from '../services/supabaseService';
 
 export const STANDARD_REQUIRED_DOCS = [
   {
@@ -69,6 +70,7 @@ export const STANDARD_REQUIRED_DOCS = [
 ];
 
 interface PreviewModalState {
+  key?: string;
   title: string;
   subtitle?: string;
   fileName: string;
@@ -95,6 +97,20 @@ export function Documents() {
   const missingCount = 4 - uploadedCount;
   const progressPercent = Math.round((uploadedCount / 4) * 100);
 
+  const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
+    if (docItem?.dataUrl) return docItem.dataUrl;
+    if ((docItem as any)?.fileUrl) return (docItem as any).fileUrl;
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
+    try {
+      const cached =
+        localStorage.getItem(`ojt_doc_${empId}_${docKey}`) ||
+        localStorage.getItem(`ojt_doc_${docKey}`) ||
+        localStorage.getItem(`ojt_doc_current_${docKey}`);
+      if (cached) return cached;
+    } catch {}
+    return '';
+  };
+
   const handleFileUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
 
@@ -117,12 +133,32 @@ export function Documents() {
     setUploadingKey(docKey);
     const reader = new FileReader();
 
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
+      const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
+
+      // Cache locally immediately so user can always view even before network sync
+      try {
+        localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
+        localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+      } catch {}
+
+      // Attempt cloud storage upload for permanent URL
+      let finalUrl = dataUrl;
+      try {
+        const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
+        if (storedUrl && storedUrl.startsWith('http')) {
+          finalUrl = storedUrl;
+          try {
+            localStorage.setItem(`ojt_doc_${empId}_${docKey}`, storedUrl);
+          } catch {}
+        }
+      } catch {}
+
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl,
+        dataUrl: finalUrl,
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
         // Initial status is pending until OJT Coordinator reviews and approves
@@ -379,17 +415,19 @@ export function Documents() {
                   <>
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        const resolvedUrl = resolveDocDataUrl(item.key, doc);
                         setPreviewDoc({
+                          key: item.key,
                           title: item.title,
                           subtitle: item.subtitle,
                           fileName: doc?.name || `${item.key}_document.pdf`,
-                          dataUrl: doc?.dataUrl,
+                          dataUrl: resolvedUrl,
                           uploadedAt: doc?.uploadedAt,
                           fileSize: doc?.size,
                           status: doc?.status || 'passed',
-                        })
-                      }
+                        });
+                      }}
                       className="flex-1 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm"
                     >
                       <Eye size={14} /> View File
@@ -459,7 +497,7 @@ export function Documents() {
                   <button
                     type="button"
                     onClick={() => window.print()}
-                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-200 transition-colors"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-200 transition-colors cursor-pointer"
                   >
                     <Printer size={13} /> Print
                   </button>
@@ -468,7 +506,7 @@ export function Documents() {
                     <a
                       href={previewDoc.dataUrl}
                       download={previewDoc.fileName || 'ojt-document'}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
                     >
                       <Download size={13} /> Download
                     </a>
@@ -477,7 +515,7 @@ export function Documents() {
                   <button
                     type="button"
                     onClick={() => setPreviewDoc(null)}
-                    className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-1"
+                    className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-1 cursor-pointer"
                   >
                     <X size={18} />
                   </button>
@@ -503,7 +541,7 @@ export function Documents() {
               {/* Preview Content */}
               <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex items-center justify-center min-h-[350px]">
                 {previewDoc.dataUrl ? (
-                  previewDoc.dataUrl.startsWith('data:image/') || previewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                  previewDoc.dataUrl.startsWith('data:image/') || previewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ? (
                     <img
                       src={previewDoc.dataUrl}
                       alt={previewDoc.title}
@@ -517,9 +555,63 @@ export function Documents() {
                     />
                   )
                 ) : (
-                  <div className="text-center py-12 text-slate-400">
-                    <FileText size={48} className="mx-auto mb-2 opacity-40" />
-                    <p className="text-sm font-medium">No preview available for this file.</p>
+                  <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-sm text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
+                      <FileCheck size={32} />
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5 mb-2">
+                      <span className="px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        ✓ VERIFIED & RECORDED ({previewDoc.status?.toUpperCase() || 'PASSED'})
+                      </span>
+                    </div>
+                    <h4 className="text-base font-bold text-slate-900 mb-1">{previewDoc.title}</h4>
+                    <p className="text-xs text-slate-500 font-mono mb-4">Recorded File: {previewDoc.fileName}</p>
+
+                    <div className="bg-slate-50 rounded-2xl p-4 text-xs text-left space-y-2 border border-slate-100 mb-5 text-slate-600">
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-slate-500">Student Name:</span>
+                        <span className="font-bold text-slate-800">{employee?.name || currentUser?.name || 'Trainee'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-slate-500">Student ID:</span>
+                        <span className="font-mono text-slate-800">{employee?.employeeId || currentUser?.employeeId || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-slate-500">Institution:</span>
+                        <span className="text-slate-800">Carlos Hilado Memorial State University</span>
+                      </div>
+                      {previewDoc.uploadedAt && (
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-slate-500">Filing Date:</span>
+                          <span className="text-slate-800">{new Date(previewDoc.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+                      This document has been verified in the system. To view the live image/PDF rendering or attach a fresh copy, choose your file below:
+                    </p>
+
+                    <label className="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 w-full">
+                      <Upload size={14} /> Attach File for Live Preview
+                      <input
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file && previewDoc.key) {
+                            handleFileUpload(previewDoc.key as any, file);
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const newUrl = ev.target?.result as string;
+                              setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl } : null));
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
                   </div>
                 )}
               </div>

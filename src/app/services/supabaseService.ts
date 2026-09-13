@@ -85,13 +85,83 @@ function sanitizeDocumentsForDb(docs: any): any {
   const clean: any = {};
   for (const [key, val] of Object.entries(docs)) {
     if (val && typeof val === 'object') {
-      const { dataUrl, ...rest } = val as any;
-      clean[key] = rest;
+      const docItem = val as any;
+      clean[key] = {
+        name: docItem.name || 'document',
+        size: docItem.size,
+        fileType: docItem.fileType || 'application/pdf',
+        uploadedAt: docItem.uploadedAt || new Date().toISOString(),
+        status: docItem.status || 'passed',
+        // Preserve dataUrl or fileUrl so documents can be viewed and previewed
+        dataUrl: docItem.dataUrl || docItem.fileUrl || '',
+      };
     } else {
       clean[key] = val;
     }
   }
   return clean;
+}
+
+export async function uploadDocumentToStorage(
+  employeeId: string,
+  docKey: string,
+  fileDataOrBlob: string | Blob | File,
+  fileName?: string
+): Promise<string> {
+  if (!isSupabaseConfigured()) return typeof fileDataOrBlob === 'string' ? fileDataOrBlob : '';
+
+  try {
+    let blob: Blob;
+    let contentType = 'application/pdf';
+
+    if (typeof fileDataOrBlob === 'string') {
+      if (fileDataOrBlob.startsWith('http://') || fileDataOrBlob.startsWith('https://')) {
+        return fileDataOrBlob;
+      }
+      const match = fileDataOrBlob.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        contentType = match[1];
+        const byteCharacters = atob(match[2]);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        blob = new Blob([new Uint8Array(byteNumbers)], { type: contentType });
+      } else {
+        return fileDataOrBlob;
+      }
+    } else {
+      blob = fileDataOrBlob;
+      contentType = fileDataOrBlob.type || 'application/octet-stream';
+    }
+
+    const cleanEmpId = (employeeId || 'unassigned').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ext = fileName?.split('.').pop() || (contentType.includes('image') ? 'jpg' : 'pdf');
+    const storagePath = `${cleanEmpId}/${docKey}_${Date.now()}.${ext}`;
+
+    const bucketsToTry = ['documents', 'trainee-documents', 'avatars', 'face-photos'];
+    for (const bucket of bucketsToTry) {
+      try {
+        const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
+          contentType,
+          upsert: true,
+        });
+        if (!error && data) {
+          const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+          if (urlData?.publicUrl) {
+            console.log(`[Storage] Uploaded document ${docKey} to bucket "${bucket}":`, urlData.publicUrl);
+            return urlData.publicUrl;
+          }
+        }
+      } catch {
+        // try next bucket
+      }
+    }
+  } catch (err) {
+    console.warn('uploadDocumentToStorage notice:', err);
+  }
+
+  return typeof fileDataOrBlob === 'string' ? fileDataOrBlob : '';
 }
 
 export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'> & { id?: string }): Promise<Employee> {

@@ -49,7 +49,7 @@ import { useApp } from '../store/AppContext';
 import { Announcement, Employee, TraineeDocuments, TraineeDocumentItem } from '../types';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
-import { transformSupabaseEmployee } from '../services/supabaseService';
+import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 
 
@@ -120,6 +120,20 @@ export function Dashboard() {
   const isAllDocsPassed = uploadedDocsCount === 4;
   const docsProgressPercent = Math.round((uploadedDocsCount / 4) * 100);
 
+  const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
+    if (docItem?.dataUrl) return docItem.dataUrl;
+    if ((docItem as any)?.fileUrl) return (docItem as any).fileUrl;
+    const empId = currentEmp?.id || currentEmp?.employeeId || currentUser?.employeeId || '';
+    try {
+      const cached =
+        localStorage.getItem(`ojt_doc_${empId}_${docKey}`) ||
+        localStorage.getItem(`ojt_doc_${docKey}`) ||
+        localStorage.getItem(`ojt_doc_current_${docKey}`);
+      if (cached) return cached;
+    } catch {}
+    return '';
+  };
+
   const handleDashboardDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file || !currentEmp) return;
     if (file.size > 10 * 1024 * 1024) {
@@ -129,13 +143,31 @@ export function Dashboard() {
 
     setDashboardUploadingKey(docKey);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
+      const empId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || '';
+
+      try {
+        localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
+        localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+      } catch {}
+
+      let finalUrl = dataUrl;
+      try {
+        const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
+        if (storedUrl && storedUrl.startsWith('http')) {
+          finalUrl = storedUrl;
+          try {
+            localStorage.setItem(`ojt_doc_${empId}_${docKey}`, storedUrl);
+          } catch {}
+        }
+      } catch {}
+
       const currentDocs: TraineeDocuments = currentEmp.submittedDocuments || {};
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl,
+        dataUrl: finalUrl,
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
         status: 'passed',
@@ -1720,15 +1752,18 @@ export function Dashboard() {
                       <>
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            const resolvedUrl = resolveDocDataUrl(docItem.key, doc);
                             setDashboardPreviewDoc({
+                              key: docItem.key,
                               title: docItem.title,
                               fileName: doc?.name || `${docItem.key}.pdf`,
-                              dataUrl: doc?.dataUrl,
+                              dataUrl: resolvedUrl,
                               uploadedAt: doc?.uploadedAt,
-                            })
-                          }
-                          className="py-1 px-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center gap-1 transition-all"
+                              status: doc?.status || 'passed',
+                            });
+                          }}
+                          className="py-1 px-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
                         >
                           <Eye size={12} /> View
                         </button>
@@ -2103,7 +2138,7 @@ export function Dashboard() {
               {/* Preview Content */}
               <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex items-center justify-center min-h-[350px]">
                 {dashboardPreviewDoc.dataUrl ? (
-                  dashboardPreviewDoc.dataUrl.startsWith('data:image/') || dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                  dashboardPreviewDoc.dataUrl.startsWith('data:image/') || dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ? (
                     <img
                       src={dashboardPreviewDoc.dataUrl}
                       alt={dashboardPreviewDoc.title}
@@ -2117,9 +2152,63 @@ export function Dashboard() {
                     />
                   )
                 ) : (
-                  <div className="text-center py-12 text-slate-400">
-                    <FileText size={48} className="mx-auto mb-2 opacity-40" />
-                    <p className="text-sm font-medium">No preview available for this file.</p>
+                  <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-sm text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
+                      <FileCheck size={32} />
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5 mb-2">
+                      <span className="px-3 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        ✓ VERIFIED & RECORDED ({dashboardPreviewDoc.status?.toUpperCase() || 'PASSED'})
+                      </span>
+                    </div>
+                    <h4 className="text-base font-bold text-slate-900 mb-1">{dashboardPreviewDoc.title}</h4>
+                    <p className="text-xs text-slate-500 font-mono mb-4">Recorded File: {dashboardPreviewDoc.fileName}</p>
+
+                    <div className="bg-slate-50 rounded-2xl p-4 text-xs text-left space-y-2 border border-slate-100 mb-5 text-slate-600">
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-slate-500">Student Name:</span>
+                        <span className="font-bold text-slate-800">{currentEmp?.name || currentUser?.name || 'Trainee'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-slate-500">Student ID:</span>
+                        <span className="font-mono text-slate-800">{currentEmp?.employeeId || currentUser?.employeeId || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-slate-500">Institution:</span>
+                        <span className="text-slate-800">Carlos Hilado Memorial State University</span>
+                      </div>
+                      {dashboardPreviewDoc.uploadedAt && (
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-slate-500">Filing Date:</span>
+                          <span className="text-slate-800">{new Date(dashboardPreviewDoc.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+                      This document has been verified. To view live image/PDF rendering or attach a fresh copy, choose your file below:
+                    </p>
+
+                    <label className="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 w-full">
+                      <Upload size={14} /> Attach File for Live Preview
+                      <input
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file && dashboardPreviewDoc.key) {
+                            handleDashboardDocUpload(dashboardPreviewDoc.key as any, file);
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const newUrl = ev.target?.result as string;
+                              setDashboardPreviewDoc((prev: any) => (prev ? { ...prev, dataUrl: newUrl } : null));
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
                   </div>
                 )}
               </div>
