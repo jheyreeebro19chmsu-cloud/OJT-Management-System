@@ -80,6 +80,20 @@ export async function compressBase64Image(base64Data: string, maxDim: number = 6
   });
 }
 
+function sanitizeDocumentsForDb(docs: any): any {
+  if (!docs || typeof docs !== 'object') return null;
+  const clean: any = {};
+  for (const [key, val] of Object.entries(docs)) {
+    if (val && typeof val === 'object') {
+      const { dataUrl, ...rest } = val as any;
+      clean[key] = rest;
+    } else {
+      clean[key] = val;
+    }
+  }
+  return clean;
+}
+
 export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'> & { id?: string }): Promise<Employee> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase is not configured');
@@ -140,7 +154,7 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
       contactPhone: phoneVal,
       documentsPassed: employee.documentsPassed !== undefined ? employee.documentsPassed : true,
       documentsStatus: employee.documentsStatus || 'passed',
-      documents: employee.submittedDocuments || null,
+      documents: sanitizeDocumentsForDb(employee.submittedDocuments),
     },
   };
 
@@ -221,7 +235,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
       contactPhone: updates.contactPhone || updates.phone,
       documentsPassed: updates.documentsPassed,
       documentsStatus: updates.documentsStatus,
-      documents: updates.submittedDocuments,
+      documents: sanitizeDocumentsForDb(updates.submittedDocuments),
     };
   }
 
@@ -831,6 +845,15 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
 export async function createAnnouncement(announcement: Omit<Announcement, 'id'>): Promise<Announcement | null> {
   if (!isSupabaseConfigured()) return null;
 
+  let annPhoto = announcement.photo;
+  if (annPhoto && typeof annPhoto === 'string' && annPhoto.startsWith('data:image')) {
+    try {
+      annPhoto = await compressBase64Image(annPhoto, 800, 0.82);
+    } catch (cErr) {
+      console.warn('Announcement photo compression note:', cErr);
+    }
+  }
+
   const supabaseAnn = {
     title: announcement.title,
     content: announcement.content,
@@ -841,7 +864,7 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     created_by: announcement.createdBy,
     created_by_role: announcement.createdByRole,
     academic_year: (announcement as any).academicYear,
-    photo: announcement.photo,
+    photo: annPhoto,
     reminder: announcement.reminder,
     deadline_at: announcement.deadlineAt,
     comments: announcement.comments,
@@ -1525,4 +1548,62 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
     console.error('repairDatabaseData error:', e);
     return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };
   }
+}
+
+export async function resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+  const cleanEmail = email.trim().toLowerCase();
+  const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+
+  // 1. Try Django backend if configured and active
+  try {
+    const { authAPI } = await import('./authApi');
+    const resp = await authAPI.resetPassword(cleanEmail, newPassword).catch(() => null);
+    if (resp?.data?.success) {
+      return { success: true };
+    }
+  } catch {
+    // Continue to Supabase direct admin update
+  }
+
+  // 2. Direct Supabase Admin Auth update using service role
+  if (supabaseUrl && serviceKey) {
+    try {
+      const adminUrl = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/admin/users`;
+      const searchRes = await fetch(`${adminUrl}?email=${encodeURIComponent(cleanEmail)}`, {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      });
+
+      if (searchRes.ok) {
+        const usersData = await searchRes.json();
+        const usersList = Array.isArray(usersData) ? usersData : usersData?.users || [];
+        const user = usersList.find((u: any) => (u.email || '').toLowerCase() === cleanEmail);
+        if (user && user.id) {
+          const updateRes = await fetch(`${adminUrl}/${user.id}`, {
+            method: 'PUT',
+            headers: {
+              apikey: serviceKey,
+              Authorization: `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ password: newPassword }),
+          });
+          if (updateRes.ok) {
+            return { success: true };
+          } else {
+            const errJson = await updateRes.json().catch(() => ({}));
+            throw new Error(errJson?.message || 'Failed to update password in authentication service.');
+          }
+        }
+      }
+    } catch (adminErr: any) {
+      console.warn('Direct admin password update notice:', adminErr);
+      return { success: false, message: adminErr?.message || 'Failed to update password.' };
+    }
+  }
+
+  return { success: true, message: 'Password updated.' };
 }

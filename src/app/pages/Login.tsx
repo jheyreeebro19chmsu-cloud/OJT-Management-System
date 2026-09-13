@@ -1,18 +1,19 @@
-import { Clock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
+import { Clock, Eye, EyeOff, LogIn, AlertCircle, KeyRound, Mail, ArrowLeft, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getSchoolLogo } from '../utils/schoolLogos';
 import { supabase } from '../lib/supabase';
+import { sendOtpEmail } from '../lib/resend';
+import { resetPasswordDirect } from '../services/supabaseService';
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
-
-
 export function Login() {
-  const { login } = useApp();
+  const { login, setPasswordForEmail } = useApp();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -86,23 +87,124 @@ export function Login() {
     setLoading(false);
   };
 
-  const handleResetPassword = async (newPassword: string) => {
-    setLoading(true);
-    setError('');
+  // ── Forgot Password (Email OTP Recovery) State ─────────────────────────────
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp'>('email');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotError, setForgotError] = useState('');
+
+  const handleSendResetCode = async () => {
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    setForgotError('');
+    setForgotMessage('');
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setForgotError('Please enter a valid email address.');
+      return;
+    }
+
+    setForgotLoading(true);
+
     try {
-      const resp = await (await import('../services/authApi')).authAPI.resetPassword(email, newPassword);
-      if (resp && resp.data && resp.data.success) {
-        try {
-          localStorage.removeItem('ojt_passwords');
-        } catch {}
-        setError('Password updated successfully in database. Please sign in with your new password.');
+      // 1. Verify that an account exists for this email
+      let accountExists = false;
+      const inMemory = employees.some((e) => (e.email || '').toLowerCase() === cleanEmail);
+      if (inMemory) {
+        accountExists = true;
       } else {
-        setError('Failed to reset password.');
+        const [{ data: emps }, { data: hosts }] = await Promise.all([
+          supabase.from('employees').select('id,email').ilike('email', cleanEmail).limit(1),
+          supabase.from('host_supervisors').select('id,email').ilike('email', cleanEmail).limit(1),
+        ]);
+        if ((emps && emps.length > 0) || (hosts && hosts.length > 0)) {
+          accountExists = true;
+        }
       }
+
+      if (!accountExists) {
+        setForgotError('No registered account found with this email address.');
+        setForgotLoading(false);
+        return;
+      }
+
+      // 2. Generate random 6-digit OTP code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedOtp(code);
+
+      // 3. Send email with verification code via Resend
+      const result = await sendOtpEmail(cleanEmail, code, 'password_reset');
+      if (result?.error) {
+        throw new Error(typeof result.error === 'string' ? result.error : JSON.stringify(result.error));
+      }
+
+      setForgotStep('otp');
+      setForgotMessage(`A 6-digit confirmation code has been sent to ${cleanEmail}`);
+      toast.success('Reset code sent to your email!');
     } catch (err: any) {
-      setError(err?.message || 'Reset failed');
+      console.error('Password reset code sending failed:', err);
+      setForgotError(err?.message || 'Failed to send confirmation code. Please try again.');
     } finally {
-      setLoading(false);
+      setForgotLoading(false);
+    }
+  };
+
+  const handleVerifyAndResetPassword = async () => {
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    setForgotError('');
+
+    if (!forgotOtp.trim()) {
+      setForgotError('Please enter the 6-digit confirmation code.');
+      return;
+    }
+
+    if (forgotOtp.trim() !== generatedOtp.trim()) {
+      setForgotError('Invalid confirmation code. Please check your email.');
+      return;
+    }
+
+    if (!forgotNewPassword || forgotNewPassword.length < 6) {
+      setForgotError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setForgotError('Passwords do not match.');
+      return;
+    }
+
+    setForgotLoading(true);
+
+    try {
+      const res = await resetPasswordDirect(cleanEmail, forgotNewPassword);
+      if (!res.success) {
+        throw new Error(res.message || 'Failed to update password.');
+      }
+
+      setPasswordForEmail(cleanEmail, forgotNewPassword);
+      toast.success('Password reset successfully! Please sign in with your new password.');
+
+      // Populate main login form so the user can sign in immediately
+      setEmail(cleanEmail);
+      setPassword(forgotNewPassword);
+      setShowForgot(false);
+      setForgotStep('email');
+      setForgotOtp('');
+      setGeneratedOtp('');
+      setForgotNewPassword('');
+      setForgotConfirmPassword('');
+      setError('');
+    } catch (err: any) {
+      console.error('Reset password error:', err);
+      setForgotError(err?.message || 'Failed to reset password. Please try again.');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -291,7 +393,18 @@ export function Login() {
             <div className="mt-3 text-center">
               <button
                 type="button"
-                onClick={() => setShowForgot((s) => !s)}
+                onClick={() => {
+                  setShowForgot((s) => !s);
+                  if (!showForgot) {
+                    setForgotEmail(email);
+                    setForgotStep('email');
+                    setForgotError('');
+                    setForgotMessage('');
+                    setForgotOtp('');
+                    setForgotNewPassword('');
+                    setForgotConfirmPassword('');
+                  }
+                }}
                 className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
               >
                 Forgot password?
@@ -300,54 +413,213 @@ export function Login() {
 
             {showForgot && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-2xl text-sm"
+                initial={{ opacity: 0, scale: 0.95, y: -5 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="mt-4 p-4 bg-blue-50/90 border border-blue-200/80 rounded-2xl text-sm shadow-sm"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-blue-900 flex items-center gap-1.5">
-                    <Clock size={16} /> Password Recovery
+                <div className="flex items-center justify-between mb-2.5">
+                  <h3 className="font-bold text-blue-950 flex items-center gap-2">
+                    <KeyRound size={17} className="text-blue-600" />
+                    {forgotStep === 'email' ? 'Forgot Password' : 'Reset Password'}
                   </h3>
                   <button
                     type="button"
                     onClick={() => setShowForgot(false)}
-                    className="text-xs text-blue-500 hover:text-blue-700 font-medium"
+                    className="text-xs text-slate-500 hover:text-slate-800 font-medium px-2 py-1 rounded-md hover:bg-blue-100/60 transition-colors"
                   >
                     Close
                   </button>
                 </div>
-                <p className="text-xs text-blue-700/80 mb-3">
-                  Please enter your email above to verify your registered home address and recover your password.
-                </p>
-                {matchedEmployee ? (
-                  <div className="space-y-2 bg-white rounded-xl p-3 border border-blue-100">
-                    <div className="text-xs">
-                      <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">REGISTERED ADDRESS</span>
-                      <span className="text-gray-800 font-medium">{matchedEmployee.registrationAddress || 'No address registered.'}</span>
-                    </div>
-                    <div className="text-xs pt-1.5 border-t border-blue-100/50">
-                      <span className="font-semibold text-gray-500 block mb-0.5 text-[10px] tracking-wider uppercase">RESET PASSWORD</span>
-                      <div className="mt-2 flex gap-2">
-                        <input id="newpass" type="password" placeholder="New password" className="flex-1 px-3 py-2 rounded-lg border" />
-                        <button
-                          onClick={() => {
-                            const el = document.getElementById('newpass') as HTMLInputElement | null;
-                            if (el && el.value.length >= 6) {
-                              handleResetPassword(el.value);
-                            } else {
-                              setError('Please enter a new password (min 6 chars)');
+
+                {forgotStep === 'email' ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-blue-900/80 leading-relaxed">
+                      Enter your registered email address to receive a 6-digit confirmation code.
+                    </p>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        Registered Email
+                      </label>
+                      <div className="relative">
+                        <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="email"
+                          value={forgotEmail}
+                          onChange={(e) => {
+                            setForgotEmail(e.target.value);
+                            setForgotError('');
+                          }}
+                          placeholder="e.g. your.email@example.com"
+                          className="w-full pl-9 pr-3 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-blue-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSendResetCode();
                             }
                           }}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    {forgotError && (
+                      <div className="p-2.5 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-medium flex items-center gap-2">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>{forgotError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleSendResetCode}
+                      disabled={forgotLoading}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {forgotLoading ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Sending code...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mail size={14} />
+                          <span>Send Verification Code</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 bg-white rounded-xl p-3.5 border border-blue-100 shadow-sm">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                      <div className="text-xs">
+                        <span className="text-gray-500 block text-[10px] uppercase font-semibold">Code sent to:</span>
+                        <span className="font-semibold text-blue-900 truncate block max-w-[190px]">{forgotEmail}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotStep('email');
+                          setForgotError('');
+                        }}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                      >
+                        <ArrowLeft size={12} />
+                        Change
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        6-Digit Confirmation Code
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={forgotOtp}
+                        onChange={(e) => {
+                          setForgotOtp(e.target.value.replace(/\D/g, ''));
+                          setForgotError('');
+                        }}
+                        placeholder="• • • • • •"
+                        className="w-full text-center text-base tracking-[8px] font-mono font-bold py-2 bg-slate-50 text-blue-900 rounded-xl border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-300"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        New Password
+                      </label>
+                      <div className="relative">
+                        <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type={showForgotNewPassword ? 'text' : 'password'}
+                          value={forgotNewPassword}
+                          onChange={(e) => {
+                            setForgotNewPassword(e.target.value);
+                            setForgotError('');
+                          }}
+                          placeholder="Minimum 6 characters"
+                          className="w-full pl-8 pr-8 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowForgotNewPassword((s) => !s)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                         >
-                          Reset
+                          {showForgotNewPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="bg-red-50 text-red-700 text-xs p-2.5 rounded-xl border border-red-100 font-medium">
-                    No active account found. Enter your registered email in the input above.
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                        Confirm New Password
+                      </label>
+                      <div className="relative">
+                        <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type={showForgotConfirmPassword ? 'text' : 'password'}
+                          value={forgotConfirmPassword}
+                          onChange={(e) => {
+                            setForgotConfirmPassword(e.target.value);
+                            setForgotError('');
+                          }}
+                          placeholder="Re-type new password"
+                          className="w-full pl-8 pr-8 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleVerifyAndResetPassword();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowForgotConfirmPassword((s) => !s)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          {showForgotConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {forgotError && (
+                      <div className="p-2.5 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-medium flex items-center gap-2">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>{forgotError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleVerifyAndResetPassword}
+                      disabled={forgotLoading}
+                      className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {forgotLoading ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Resetting password...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 size={14} />
+                          <span>Reset Password</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="text-center pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSendResetCode}
+                        disabled={forgotLoading}
+                        className="text-[11px] text-gray-500 hover:text-blue-600 font-medium cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <RefreshCw size={11} />
+                        Resend verification code
+                      </button>
+                    </div>
                   </div>
                 )}
               </motion.div>
