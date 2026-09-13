@@ -2361,6 +2361,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (created) {
             // Swap the optimistic local copy for the real DB row (real id, timestamps, etc.)
             setAnnouncements((prev) => prev.map((a) => (a.id === newAnn.id ? created : a)));
+
+            // Background Fire-and-Forget Email Notification
+            (async () => {
+              try {
+                const target = created.targetRole || 'all';
+                const recipientEmails = employees
+                  .filter((emp) => {
+                    if (!emp.email || !emp.email.includes('@')) return false;
+                    if (target === 'all') return true;
+                    if (target === 'employee') return emp.role === 'employee' || !emp.role;
+                    if (target === 'hte' || target === 'host') return emp.role === 'host' || emp.role === 'hte';
+                    if (target === 'admin') return emp.role === 'admin';
+                    return false;
+                  })
+                  .map((emp) => emp.email.trim().toLowerCase());
+
+                const uniqueEmails = Array.from(new Set(recipientEmails));
+                if (uniqueEmails.length === 0) return;
+
+                const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
+                const snippet = created.content.length > 180
+                  ? `${created.content.slice(0, 180)}...`
+                  : created.content;
+
+                const emailHtml = `
+                  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1e293b; line-height: 1.6;">
+                    <div style="background: #2563eb; padding: 18px 24px; border-radius: 12px 12px 0 0; color: white;">
+                      <h2 style="margin: 0; font-size: 20px;">New System Announcement</h2>
+                      <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.9;">OJT Management System</p>
+                    </div>
+                    <div style="border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+                      <h3 style="margin-top: 0; color: #0f172a; font-size: 18px;">${created.title}</h3>
+                      <p style="color: #475569; font-size: 15px; margin-bottom: 24px;">${snippet}</p>
+                      ${appUrl ? `<a href="${appUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 14px;">View Announcement in App &rarr;</a>` : ''}
+                      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px;" />
+                      <p style="font-size: 12px; color: #94a3b8; margin: 0;">This is an automated notification. Please do not reply directly to this email.</p>
+                    </div>
+                  </div>
+                `;
+
+                const { error: fnError } = await supabase.functions.invoke('send-email', {
+                  body: {
+                    to: uniqueEmails,
+                    subject: `[OJT Announcement] ${created.title}`,
+                    html: emailHtml,
+                  },
+                });
+
+                if (fnError) {
+                  console.warn('Background announcement email delivery failed:', fnError);
+                }
+              } catch (emailErr) {
+                console.warn('Background announcement email notification error:', emailErr);
+              }
+            })();
           }
         })
         .catch((err) => {
