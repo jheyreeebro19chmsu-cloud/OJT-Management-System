@@ -551,7 +551,10 @@ export const mobileDb = {
       areas_for_improvement: evaluation.areasForImprovement,
       recommendations: evaluation.recommendations,
       evaluated_at: evaluation.evaluatedAt,
-      status: evaluation.status,
+      status:
+        evaluation.status === 'submitted_to_instructor' || evaluation.status === 'reviewed_by_instructor'
+          ? 'final'
+          : evaluation.status || 'final',
       // Note: Omit academic_year as evaluations table does not have an academic_year column
     };
     const { data, error } = await supabase.from('evaluations').insert([payload]).select().single();

@@ -721,6 +721,14 @@ export async function fetchEvaluations(): Promise<Evaluation[]> {
 export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Promise<Evaluation | null> {
   if (!isSupabaseConfigured()) return null;
 
+  // Live schema check constraint: CHECK (status IN ('draft', 'final'))
+  let dbStatus = evaluation.status;
+  if (dbStatus === 'submitted_to_instructor' || dbStatus === 'reviewed_by_instructor') {
+    dbStatus = 'final';
+  } else if (dbStatus !== 'final' && dbStatus !== 'draft') {
+    dbStatus = 'final';
+  }
+
   // Live schema has no academic_year column; send only live columns
   const supabaseEval: any = {
     employee_id: evaluation.employeeId,
@@ -736,7 +744,7 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     areas_for_improvement: evaluation.areasForImprovement,
     recommendations: evaluation.recommendations,
     evaluated_at: evaluation.evaluatedAt || new Date().toISOString(),
-    status: evaluation.status,
+    status: dbStatus,
   };
 
   const { data, error } = await supabase.from('evaluations').insert([supabaseEval]).select().single();
@@ -781,7 +789,15 @@ export async function updateEvaluation(id: string, updates: Partial<Evaluation>)
   if (updates.strengths !== undefined) supabaseUpdates.strengths = updates.strengths;
   if (updates.areasForImprovement !== undefined) supabaseUpdates.areas_for_improvement = updates.areasForImprovement;
   if (updates.recommendations !== undefined) supabaseUpdates.recommendations = updates.recommendations;
-  if (updates.status !== undefined) supabaseUpdates.status = updates.status;
+  if (updates.status !== undefined) {
+    let dbStatus = updates.status;
+    if (dbStatus === 'submitted_to_instructor' || dbStatus === 'reviewed_by_instructor') {
+      dbStatus = 'final';
+    } else if (dbStatus !== 'final' && dbStatus !== 'draft') {
+      dbStatus = 'final';
+    }
+    supabaseUpdates.status = dbStatus;
+  }
 
   const { error } = await supabase.from('evaluations').update(supabaseUpdates).eq('id', id);
 
