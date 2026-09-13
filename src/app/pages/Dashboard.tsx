@@ -32,6 +32,11 @@ import {
   Star,
   Award,
   ThumbsUp,
+  GraduationCap,
+  Mail,
+  Phone,
+  MapPin,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
@@ -106,6 +111,7 @@ export function Dashboard() {
   const [dashboardPreviewDoc, setDashboardPreviewDoc] = useState<any | null>(null);
   const [dashboardUploadingKey, setDashboardUploadingKey] = useState<string | null>(null);
   const [previewEvaluation, setPreviewEvaluation] = useState<any | null>(null);
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState<Employee | null>(null);
 
   const submittedDocs: TraineeDocuments = currentEmp?.submittedDocuments || {};
   const docKeys: (keyof TraineeDocuments)[] = ['endorsement', 'consent', 'medical', 'resume'];
@@ -277,6 +283,7 @@ export function Dashboard() {
           const totalHours = Number(r.total_hours || r.totalHours || r.hours_rendered || 0);
           return {
             id: r.id,
+            employee_id: emp?.id || empId,
             student_name: emp?.name || r.employee_name || r.employeeName || 'Student Trainee',
             student_id: emp?.employeeId || empId || 'OJT-TRAINEE',
             photo: emp?.photo || r.photo,
@@ -285,6 +292,7 @@ export function Dashboard() {
             hours_rendered: totalHours,
             is_approved: r.approval_status === 'approved' || r.approvalStatus === 'approved' || r.is_approved || r.status === 'present',
             status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approval_status === 'approved' || r.approvalStatus === 'approved' ? 'Approved' : 'Pending'),
+            rawEmployee: emp,
           };
         });
 
@@ -294,6 +302,7 @@ export function Dashboard() {
           .filter((s) => !studentsWithLogs.has(s.employeeId) && !studentsWithLogs.has(s.name))
           .map((s) => ({
             id: `enrolled-${s.id}`,
+            employee_id: s.id,
             student_name: s.name,
             student_id: s.employeeId || 'OJT-TRAINEE',
             photo: s.photo,
@@ -302,6 +311,7 @@ export function Dashboard() {
             hours_rendered: 0,
             is_approved: s.active && s.approvalStatus !== 'pending',
             status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
+            rawEmployee: s,
           }));
 
         const allStudentEntries = [...studentTimeLogs, ...enrolledWithoutLogs];
@@ -341,6 +351,7 @@ export function Dashboard() {
         const emp = allStudents.find((e) => e.id === r.employeeId || e.employeeId === r.employeeId);
         return {
           id: r.id,
+          employee_id: emp?.id || r.employeeId,
           student_name: emp?.name || 'Student Trainee',
           student_id: emp?.employeeId || r.employeeId || 'OJT-TRAINEE',
           photo: emp?.photo,
@@ -349,6 +360,7 @@ export function Dashboard() {
           hours_rendered: r.totalHours || 0,
           is_approved: r.approvalStatus === 'approved' || r.status === 'present',
           status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approvalStatus === 'approved' ? 'Approved' : 'Pending'),
+          rawEmployee: emp,
         };
       });
 
@@ -357,6 +369,7 @@ export function Dashboard() {
         .filter((s) => !seenStudents.has(s.employeeId) && !seenStudents.has(s.name))
         .map((s) => ({
           id: `enrolled-${s.id}`,
+          employee_id: s.id,
           student_name: s.name,
           student_id: s.employeeId || 'OJT-TRAINEE',
           photo: s.photo,
@@ -365,6 +378,7 @@ export function Dashboard() {
           hours_rendered: 0,
           is_approved: s.active && s.approvalStatus !== 'pending',
           status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
+          rawEmployee: s,
         }));
 
       setRecentRecords([...formatted, ...noLogStudents]);
@@ -665,6 +679,38 @@ export function Dashboard() {
     return { label: 'Not Clocked In', color: 'text-gray-500 bg-gray-100' };
   };
 
+  const handleStudentClick = (record: any) => {
+    let emp = record.rawEmployee;
+    if (!emp) {
+      emp = employees.find(
+        (e) =>
+          e.id === record.employee_id ||
+          e.id === record.id ||
+          e.employeeId === record.student_id ||
+          (record.student_name && e.name.toLowerCase().trim() === record.student_name.toLowerCase().trim())
+      );
+    }
+    if (emp) {
+      setSelectedStudentForModal(emp);
+    } else {
+      setSelectedStudentForModal({
+        id: record.employee_id || record.id,
+        name: record.student_name,
+        employeeId: record.student_id,
+        course: record.course,
+        department: 'College of Computer Studies',
+        schoolName: 'Carlos Hilado Memorial State University',
+        campus: 'Main Campus',
+        position: 'OJT Trainee',
+        companyName: 'Host Training Establishment',
+        supervisorName: 'HTE Supervisor',
+        requiredHours: 486,
+        active: true,
+        photo: record.photo,
+      } as Employee);
+    }
+  };
+
   // ── INSTRUCTOR DASHBOARD (HTE-style) ──
   if (isAdmin) {
     if (loading) {
@@ -811,12 +857,14 @@ export function Dashboard() {
 
         {/* Recent Time Records */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <div className="p-6 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
             <div>
               <h3 className="text-lg font-bold text-gray-900">Recent Time Records</h3>
-              <p className="text-sm text-gray-500 mt-0.5">Last entries and enrolled status from your students</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Click any student row to view full information, OJT attendance, and evaluations
+              </p>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full">
+            <span className="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-full">
               {recentRecords.length} student{recentRecords.length === 1 ? '' : 's'}
             </span>
           </div>
@@ -828,12 +876,18 @@ export function Dashboard() {
                   <th className="px-6 py-3.5">Date</th>
                   <th className="px-6 py-3.5">Hours</th>
                   <th className="px-6 py-3.5">Status</th>
+                  <th className="px-6 py-3.5 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {recentRecords.length > 0 ? (
                   recentRecords.map((record) => (
-                    <tr key={record.id} className="hover:bg-gray-50/80 transition-colors">
+                    <tr
+                      key={record.id}
+                      onClick={() => handleStudentClick(record)}
+                      className="hover:bg-blue-50/60 transition-all cursor-pointer group"
+                      title="Click to view student information & OJT progress"
+                    >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           {record.photo ? (
@@ -853,7 +907,9 @@ export function Dashboard() {
                             {record.student_name ? record.student_name.charAt(0).toUpperCase() : 'S'}
                           </div>
                           <div>
-                            <p className="font-semibold text-gray-900 leading-tight">{record.student_name}</p>
+                            <p className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors leading-tight">
+                              {record.student_name}
+                            </p>
                             <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 flex-wrap">
                               <span className="font-mono bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[11px] font-medium">
                                 {record.student_id}
@@ -897,11 +953,17 @@ export function Dashboard() {
                           {record.status || (record.is_approved ? 'Approved' : 'Pending')}
                         </span>
                       </td>
+                      <td className="px-6 py-4 text-sm text-right">
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 group-hover:text-blue-700 bg-blue-50 group-hover:bg-blue-100/90 px-3 py-1.5 rounded-xl transition-all">
+                          <Eye size={13} />
+                          View Info
+                        </span>
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
                       <Users size={36} className="mx-auto mb-2 text-gray-300" />
                       <p className="text-sm font-medium text-gray-600">No student records yet</p>
                       <p className="text-xs text-gray-400 mt-0.5">Enrolled student trainees and their daily time entries will appear here.</p>
@@ -912,6 +974,347 @@ export function Dashboard() {
             </table>
           </div>
         </div>
+
+        {/* Student Information & OJT Profile Modal */}
+        <AnimatePresence>
+          {selectedStudentForModal && (() => {
+            const target = selectedStudentForModal;
+            const empRecords = contextTimeRecords
+              .filter((r) => r.employeeId === target.id || r.employeeId === target.employeeId)
+              .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
+            const totalRendered = empRecords.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
+            const required = Number(target.requiredHours) || 486;
+            const progressPercent = Math.min(100, Math.round((totalRendered / required) * 100));
+            const remainingHours = Math.max(0, required - totalRendered);
+
+            const presentCount = empRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+            const lateCount = empRecords.filter((r) => r.status === 'late').length;
+
+            const evaluation = evaluations.find(
+              (e) => e.employeeId === target.id || e.employeeId === target.employeeId
+            );
+            const feedback = hostFeedback.find(
+              (f) => f.employeeId === target.id || f.employeeId === target.employeeId
+            );
+
+            const initials = target.name
+              ? target.name
+                  .split(' ')
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase()
+              : 'ST';
+
+            return (
+              <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-slate-900/60 backdrop-blur-sm">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden max-h-[90vh] flex flex-col"
+                >
+                  {/* Modal Header */}
+                  <div className="p-6 bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 text-white flex items-start justify-between gap-4 shrink-0">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
+                        {target.photo ? (
+                          <img
+                            src={getPhotoUrl(target.photo)}
+                            alt={target.name}
+                            className="w-full h-full object-cover"
+                            style={{ transform: 'scaleX(-1)' }}
+                          />
+                        ) : (
+                          <span className="text-xl font-extrabold text-white">{initials}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-xl font-bold text-white">{target.name}</h3>
+                          <span className="font-mono text-xs bg-white/20 text-white px-2 py-0.5 rounded-md border border-white/25">
+                            {target.employeeId || 'ID: Pending'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-blue-100/90 mt-1 flex items-center gap-1.5 flex-wrap">
+                          <span>{target.course || 'Bachelor of Science in Information Systems'}</span>
+                          <span>•</span>
+                          <span>{target.schoolName || 'Carlos Hilado Memorial State University'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentForModal(null)}
+                      className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="p-6 overflow-y-auto space-y-6">
+                    {/* KPI Quick Stats */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-3.5 text-center">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600">Rendered</p>
+                        <p className="text-xl font-black text-blue-900 mt-0.5">{totalRendered.toFixed(1)}h</p>
+                        <p className="text-[10px] text-blue-500 font-medium">{progressPercent}% done</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200/70 rounded-2xl p-3.5 text-center">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Remaining</p>
+                        <p className="text-xl font-black text-slate-800 mt-0.5">{remainingHours.toFixed(1)}h</p>
+                        <p className="text-[10px] text-slate-400 font-medium">of {required}h req.</p>
+                      </div>
+                      <div className="bg-emerald-50/70 border border-emerald-100 rounded-2xl p-3.5 text-center">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">Logged Days</p>
+                        <p className="text-xl font-black text-emerald-900 mt-0.5">{empRecords.length}</p>
+                        <p className="text-[10px] text-emerald-600 font-medium">{presentCount} on-time, {lateCount} late</p>
+                      </div>
+                      <div className="bg-purple-50/70 border border-purple-100 rounded-2xl p-3.5 text-center">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-purple-600">Evaluation</p>
+                        <p className="text-xl font-black text-purple-900 mt-0.5">
+                          {evaluation?.overallScore || feedback?.overallScore ? `${evaluation?.overallScore || feedback?.overallScore}%` : 'Pending'}
+                        </p>
+                        <p className="text-[10px] text-purple-600 font-medium">
+                          {evaluation?.grade || 'In progress'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-semibold text-slate-600">
+                        <span>OJT Hours Completion</span>
+                        <span className="text-blue-700 font-bold">{progressPercent}%</span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/80">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progressPercent}%` }}
+                          transition={{ duration: 0.6, ease: 'easeOut' }}
+                          className="h-full bg-gradient-to-r from-blue-600 to-emerald-500 rounded-full"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Information Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Academic & Personal Particulars */}
+                      <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2.5 text-xs">
+                        <h4 className="font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
+                          <GraduationCap size={14} className="text-blue-600" />
+                          Academic & Contact Details
+                        </h4>
+                        <div className="space-y-1.5 text-slate-600">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Academic Year:</span>
+                            <span className="font-bold text-slate-800">AY {target.academicYear || settings.activeAcademicYear || '2026-2027'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Campus:</span>
+                            <span className="font-medium text-slate-700">{target.campus || 'Main Campus'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Department:</span>
+                            <span className="font-medium text-slate-700">{target.department || 'College of Computer Studies'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Email:</span>
+                            <a href={`mailto:${target.email}`} className="font-medium text-blue-600 hover:underline">
+                              {target.email || 'No email registered'}
+                            </a>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Contact Phone:</span>
+                            <span className="font-mono text-slate-700">{target.contactPhone || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Training Period:</span>
+                            <span className="font-medium text-slate-700">
+                              {target.startDate || 'Start Date'} to {target.endDate || 'End Date'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* HTE Placement */}
+                      <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2.5 text-xs">
+                        <h4 className="font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-1.5">
+                          <Building size={14} className="text-blue-600" />
+                          Host Training Establishment (HTE)
+                        </h4>
+                        <div className="space-y-1.5 text-slate-600">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Company:</span>
+                            <span className="font-bold text-blue-900">{target.companyName || feedback?.hostCompany || 'Host Training Establishment'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Supervisor:</span>
+                            <span className="font-bold text-slate-800">{target.supervisorName || feedback?.hostName || 'HTE Supervisor'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Placement Address:</span>
+                            <span className="font-medium text-slate-700 text-right max-w-[200px] truncate">
+                              {target.companyAddress || 'Deployment premises'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Required Hours:</span>
+                            <span className="font-bold text-slate-800">{required} Hours</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Account Status:</span>
+                            <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              {target.approvalStatus === 'pending' ? 'Pending Approval' : 'Active / Enrolled'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Evaluation Snapshot (If Evaluated) */}
+                    {(evaluation || feedback) && (
+                      <div className="border border-blue-200 rounded-2xl p-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/40 space-y-3 text-xs">
+                        <div className="flex items-center justify-between border-b border-blue-200 pb-2">
+                          <h4 className="font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
+                            <Award size={15} className="text-blue-600" />
+                            Performance Evaluation & Rating
+                          </h4>
+                          <span className="font-bold px-2.5 py-0.5 bg-blue-600 text-white rounded-full text-[11px]">
+                            {evaluation?.overallScore || feedback?.overallScore}% • {evaluation?.grade || 'Very Good'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[11px]">
+                          <div className="bg-white/80 p-2 rounded-xl border border-blue-100">
+                            <p className="text-slate-400">Attendance</p>
+                            <p className="font-bold text-slate-800">{evaluation?.attendanceScore ?? feedback?.attendanceScore}%</p>
+                          </div>
+                          <div className="bg-white/80 p-2 rounded-xl border border-blue-100">
+                            <p className="text-slate-400">Performance</p>
+                            <p className="font-bold text-slate-800">{evaluation?.performanceScore ?? feedback?.performanceScore}%</p>
+                          </div>
+                          <div className="bg-white/80 p-2 rounded-xl border border-blue-100">
+                            <p className="text-slate-400">Attitude</p>
+                            <p className="font-bold text-slate-800">{evaluation?.attitudeScore ?? feedback?.attitudeScore}%</p>
+                          </div>
+                          <div className="bg-white/80 p-2 rounded-xl border border-blue-100">
+                            <p className="text-slate-400">Communication</p>
+                            <p className="font-bold text-slate-800">{evaluation?.communicationScore ?? feedback?.communicationScore}%</p>
+                          </div>
+                          <div className="bg-white/80 p-2 rounded-xl border border-blue-100 col-span-2 sm:col-span-1">
+                            <p className="text-slate-400">Teamwork</p>
+                            <p className="font-bold text-slate-800">{evaluation?.punctualityScore ?? feedback?.teamworkScore}%</p>
+                          </div>
+                        </div>
+
+                        {(evaluation?.strengths || feedback?.strengths) && (
+                          <div className="text-slate-700 bg-white/60 p-2.5 rounded-xl border border-blue-100/60 leading-relaxed">
+                            <strong className="text-blue-900">Strengths: </strong>
+                            {evaluation?.strengths || feedback?.strengths}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Recent Clock-in Logs Table */}
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Clock size={14} className="text-blue-600" />
+                          Recent Daily Time Records ({empRecords.length} total)
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedStudentForModal(null);
+                            navigate(`/admin/records`);
+                          }}
+                          className="text-blue-600 font-bold hover:underline cursor-pointer"
+                        >
+                          View all in DTR →
+                        </button>
+                      </div>
+
+                      <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-48 overflow-y-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
+                            <tr>
+                              <th className="p-2.5">Date</th>
+                              <th className="p-2.5">Time In</th>
+                              <th className="p-2.5">Time Out</th>
+                              <th className="p-2.5">Total Hours</th>
+                              <th className="p-2.5 text-right">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {empRecords.length > 0 ? (
+                              empRecords.slice(0, 8).map((rec) => (
+                                <tr key={rec.id} className="hover:bg-slate-50/60">
+                                  <td className="p-2.5 font-medium text-slate-800">
+                                    {rec.date ? new Date(rec.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                  </td>
+                                  <td className="p-2.5 font-mono text-slate-600">{rec.timeIn || '—'}</td>
+                                  <td className="p-2.5 font-mono text-slate-600">{rec.timeOut || '—'}</td>
+                                  <td className="p-2.5 font-semibold text-slate-900">{Number(rec.totalHours || 0).toFixed(1)}h</td>
+                                  <td className="p-2.5 text-right">
+                                    <span
+                                      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                        rec.status === 'present'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : rec.status === 'late'
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-blue-100 text-blue-800'
+                                      }`}
+                                    >
+                                      {rec.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="p-4 text-center text-slate-400 italic">
+                                  No attendance time entries logged yet for this student.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStudentForModal(null);
+                        navigate('/admin/host-feedback');
+                      }}
+                      className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold transition-all border border-blue-200/60 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Award size={14} />
+                      Host Feedback / Evaluations
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentForModal(null)}
+                      className="px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            );
+          })()}
+        </AnimatePresence>
       </div>
     );
   }
@@ -1406,37 +1809,23 @@ export function Dashboard() {
                   </span>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Manage mutual evaluations between trainee and host establishment supervisor
+                  Internship placement details and supervisor performance evaluation
                 </p>
               </div>
             </div>
-
-            <Link
-              to="/app/hte-feedback"
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all self-start sm:self-auto"
-            >
-              <Star size={13} />
-              <span>{traineeHostFeedback ? 'View HTE Evaluation' : 'Evaluate HTE Partner'}</span>
-            </Link>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {/* 1. Host Company Info & Trainee's Evaluation of HTE */}
+            {/* 1. Host Company Info & Placement Particulars */}
             <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between space-y-3">
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">
                     Assigned HTE Partner
                   </span>
-                  {traineeHostFeedback ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
-                      <CheckCircle2 size={11} /> You Evaluated HTE ({traineeHostFeedback.overallScore}%)
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
-                      <Clock size={11} /> Feedback Pending
-                    </span>
-                  )}
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
+                    <CheckCircle2 size={11} /> Active Placement
+                  </span>
                 </div>
 
                 <p className="text-base font-bold text-slate-900 mt-1 flex items-center gap-1.5">
@@ -1448,16 +1837,13 @@ export function Dashboard() {
                 </p>
               </div>
 
-              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                <span className="text-slate-500 text-[11px]">
-                  {traineeHostFeedback ? `Recommendation: ${traineeHostFeedback.recommendation}` : 'Rate your internship experience'}
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
+                <span className="text-[11px]">
+                  Required Hours: <strong className="text-slate-700">{employee?.requiredHours || 486}h</strong>
                 </span>
-                <Link
-                  to="/app/hte-feedback"
-                  className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                >
-                  {traineeHostFeedback ? 'Review / Edit' : 'Evaluate Now'} <ChevronRight size={13} />
-                </Link>
+                <span className="text-[11px] font-medium text-slate-600">
+                  {employee?.campus || 'CHMSU'}
+                </span>
               </div>
             </div>
 

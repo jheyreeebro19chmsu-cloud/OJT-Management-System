@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell, Star, Menu, X, FileCheck, Check } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -14,7 +14,6 @@ const navItems = [
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
-  { to: '/app/hte-feedback', label: 'Evaluate HTE', icon: Star, end: false },
 ];
 
 export function EmployeeLayout() {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter, isRouteErrorResponse, useRouteError } from 'react-router-dom';
+import { createBrowserRouter, isRouteErrorResponse, useRouteError, Navigate } from 'react-router-dom';
 
 import { AdminLayout } from './components/AdminLayout';
 import { EmployeeLayout } from './components/EmployeeLayout';
@@ -174,7 +174,7 @@ export const router = createBrowserRouter([
       { path: 'records', element: withSuspense(Records) },
       { path: 'documents', element: withSuspense(Documents) },
       { path: 'announcements', element: withSuspense(Announcements) },
-      { path: 'hte-feedback', element: withSuspense(HostFeedback) },
+      { path: 'hte-feedback', element: React.createElement(Navigate, { to: '/app', replace: true }) },
       { path: 'profile', element: withSuspense(Profile) },
       { path: 'instructor-qr', element: withSuspense(InstructorQR) },
       { path: 'scan-qr', element: withSuspense(QRScanner) },

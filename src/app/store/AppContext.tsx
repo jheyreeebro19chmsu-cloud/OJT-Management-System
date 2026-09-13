@@ -2770,6 +2770,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const newFeedback: HostFeedback = {
       ...data,
+      hostEmail: data.hostEmail || 'hte@chmsu.edu.ph',
       academicYear: (data as any).academicYear || settings.activeAcademicYear,
       id: tempId,
       overallScore,
@@ -2790,34 +2791,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           console.error('[AppContext] Failed to save host feedback to Supabase:', err);
           setHostFeedback((prev) => prev.filter((f) => f.id !== tempId));
-          alert('Failed to save host feedback to cloud. Please try again.');
         });
     }
 
     // Auto-sync into evaluations table so Instructor and Trainee see the evaluation in real-time
+    const existingEval = evaluations.find((e) => e.employeeId === data.employeeId);
     const grade: 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Needs Improvement' =
       overallScore >= 90 ? 'Excellent' :
         overallScore >= 80 ? 'Very Good' :
           overallScore >= 70 ? 'Good' :
             overallScore >= 60 ? 'Satisfactory' : 'Needs Improvement';
 
-    addEvaluation({
-      employeeId: data.employeeId,
-      evaluatedBy: data.hostName + (data.hostCompany ? ` (${data.hostCompany})` : ' [HTE Supervisor]'),
-      attendanceScore: data.attendanceScore,
-      performanceScore: data.performanceScore,
-      attitudeScore: data.attitudeScore,
-      punctualityScore: data.attendanceScore,
-      communicationScore: data.communicationScore,
-      overallScore: overallScore,
-      grade: grade,
-      strengths: data.strengths || 'Consistent performance and dedicated engagement.',
-      areasForImprovement: data.areasForImprovement || 'Continue developing technical problem-solving skills.',
-      recommendations: data.recommendation || 'Recommended for completion.',
-      evaluatedAt: new Date().toISOString(),
-      status: 'final',
-      academicYear: (data as any).academicYear || settings.activeAcademicYear,
-    });
+    if (existingEval) {
+      updateEvaluation(existingEval.id, {
+        evaluatedBy: data.hostName + (data.hostCompany ? ` (${data.hostCompany})` : ' [HTE Supervisor]'),
+        attendanceScore: data.attendanceScore,
+        performanceScore: data.performanceScore,
+        attitudeScore: data.attitudeScore,
+        punctualityScore: data.teamworkScore || data.attendanceScore,
+        communicationScore: data.communicationScore,
+        overallScore: overallScore,
+        grade: grade,
+        strengths: data.strengths || existingEval.strengths,
+        areasForImprovement: data.areasForImprovement || existingEval.areasForImprovement,
+        recommendations: data.recommendation || existingEval.recommendations,
+      });
+    } else {
+      addEvaluation({
+        employeeId: data.employeeId,
+        evaluatedBy: data.hostName + (data.hostCompany ? ` (${data.hostCompany})` : ' [HTE Supervisor]'),
+        attendanceScore: data.attendanceScore,
+        performanceScore: data.performanceScore,
+        attitudeScore: data.attitudeScore,
+        punctualityScore: data.teamworkScore || data.attendanceScore,
+        communicationScore: data.communicationScore,
+        overallScore: overallScore,
+        grade: grade,
+        strengths: data.strengths || 'Consistent performance and dedicated engagement.',
+        areasForImprovement: data.areasForImprovement || 'Continue developing technical problem-solving skills.',
+        recommendations: data.recommendation || 'Recommended for completion.',
+        evaluatedAt: new Date().toISOString(),
+        status: 'submitted_to_instructor',
+        academicYear: (data as any).academicYear || settings.activeAcademicYear,
+      });
+    }
 
     return newFeedback;
   };

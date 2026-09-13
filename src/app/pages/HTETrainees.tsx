@@ -11,6 +11,8 @@ import {
   Filter,
   CheckCircle2,
   Sparkles,
+  User,
+  X,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +30,7 @@ export function HTETrainees() {
   const [selectedCourse, setSelectedCourse] = useState('all');
   const [filterScope, setFilterScope] = useState<'all' | 'assigned'>('all');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [selectedProfileTrainee, setSelectedProfileTrainee] = useState<any | null>(null);
 
   const targetAY = settings?.activeAcademicYear || '2026-2027';
   const defaultAY = settings?.academicYears?.[0] || '2025-2026';
@@ -426,11 +429,11 @@ export function HTETrainees() {
                 <span>Evaluate</span>
               </button>
               <button
-                onClick={() => navigate(`/hte/records`)}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                onClick={() => setSelectedProfileTrainee(trainee)}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
-                <Clock size={14} />
-                <span>View DTR</span>
+                <User size={14} />
+                <span>View Profile</span>
               </button>
             </div>
           </div>
@@ -456,6 +459,152 @@ export function HTETrainees() {
           </div>
         )}
       </div>
+
+      {/* Trainee Profile Modal */}
+      {selectedProfileTrainee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 space-y-5">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
+                  {selectedProfileTrainee.photo ? (
+                    <img
+                      src={getPhotoUrl(selectedProfileTrainee.photo)}
+                      alt={selectedProfileTrainee.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User size={28} className="text-blue-600" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">{selectedProfileTrainee.name}</h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                      {selectedProfileTrainee.employeeId || selectedProfileTrainee.id.slice(0, 8)}
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700">
+                      {selectedProfileTrainee.course || 'OJT Trainee'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedProfileTrainee(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Academic & University Particulars */}
+            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <GraduationCap size={14} className="text-blue-600" />
+                <span>Academic & Institutional Details</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block">University:</span>
+                  <span className="font-medium text-slate-800">{selectedProfileTrainee.schoolName || 'Carlos Hilado Memorial State University'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Campus:</span>
+                  <span className="font-medium text-slate-800">{selectedProfileTrainee.campus || 'Main Campus'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">College Department:</span>
+                  <span className="font-medium text-slate-800">{selectedProfileTrainee.department || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Degree Program:</span>
+                  <span className="font-bold text-slate-900">{selectedProfileTrainee.course || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Academic Year:</span>
+                  <span className="font-bold text-emerald-700">AY {selectedProfileTrainee.academicYear || settings?.activeAcademicYear || '2026-2027'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Contact Information */}
+            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <User size={14} className="text-blue-600" />
+                <span>Contact & Personal Details</span>
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <span className="text-slate-400 font-semibold block">Email Address:</span>
+                  <span className="font-medium text-slate-800 break-all">{selectedProfileTrainee.email}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold block">Contact Number:</span>
+                  <span className="font-medium text-slate-800">{selectedProfileTrainee.contactPhone || selectedProfileTrainee.phone || 'Not specified'}</span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-slate-400 font-semibold block">Residential Address:</span>
+                  <span className="font-medium text-slate-800">
+                    {selectedProfileTrainee.address ||
+                      [selectedProfileTrainee.street, selectedProfileTrainee.barangay, selectedProfileTrainee.city, selectedProfileTrainee.province]
+                        .filter(Boolean)
+                        .join(', ') ||
+                      'Not recorded'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* OJT Rendered Hours & Progress */}
+            <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                  <Clock size={14} className="text-blue-600" />
+                  <span>OJT Rendered Hours</span>
+                </h4>
+                <span className="text-xs font-black text-blue-700">{selectedProfileTrainee.progressPercent}%</span>
+              </div>
+              <div className="h-2.5 bg-blue-200/60 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all"
+                  style={{ width: `${selectedProfileTrainee.progressPercent}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-600 font-medium pt-1">
+                <span>Rendered: <strong className="text-slate-900">{selectedProfileTrainee.renderedHours}h</strong></span>
+                <span>Required: <strong className="text-slate-900">{selectedProfileTrainee.requiredHours}h</strong></span>
+                <span>Logs: <strong className="text-slate-900">{selectedProfileTrainee.totalLogs}</strong></span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedProfileTrainee(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedProfileTrainee.id;
+                  setSelectedProfileTrainee(null);
+                  navigate(`/hte/evaluations?studentId=${id}`);
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Star size={13} />
+                <span>Evaluate Trainee</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

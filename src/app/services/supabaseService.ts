@@ -1136,8 +1136,8 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
     employee_id: feedback.employeeId,
     host_name: feedback.hostName,
     host_company: feedback.hostCompany,
-    host_position: feedback.hostPosition,
-    host_email: feedback.hostEmail,
+    host_position: feedback.hostPosition || 'Supervisor',
+    host_email: feedback.hostEmail || 'hte@chmsu.edu.ph',
     attendance_score: feedback.attendanceScore,
     performance_score: feedback.performanceScore,
     attitude_score: feedback.attitudeScore,
@@ -1148,7 +1148,7 @@ export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Pr
     areas_for_improvement: feedback.areasForImprovement,
     recommendation: feedback.recommendation,
     submitted_at: feedback.submittedAt || new Date().toISOString(),
-    status: feedback.status,
+    status: feedback.status || 'submitted',
   };
 
   const { data, error } = await supabase.from('host_feedback').insert([supabaseHf]).select().single();

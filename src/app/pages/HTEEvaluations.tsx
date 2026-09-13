@@ -163,6 +163,7 @@ export function HTEEvaluations() {
     deleteEvaluation,
     hostFeedback,
     addHostFeedback,
+    updateHostFeedback,
     currentUser,
     getCurrentEmployee,
     updateEmployee,
@@ -293,6 +294,8 @@ export function HTEEvaluations() {
     const overallScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     const grade = getGrade(overallScore);
 
+    const resolvedAcademicYear = selectedEmp.academicYear || settings?.activeAcademicYear || '2026-2027';
+
     const data = {
       employeeId: selectedEmp.id,
       evaluatedBy: supervisorName,
@@ -301,6 +304,7 @@ export function HTEEvaluations() {
       grade,
       evaluatedAt: new Date().toISOString(),
       status,
+      academicYear: resolvedAcademicYear,
     };
 
     if (editEvalId) {
@@ -333,11 +337,19 @@ export function HTEEvaluations() {
 
     // Also mirror to Host Feedback table for HTE cross-sync
     try {
-      addHostFeedback({
+      const existingHf = hostFeedback.find((f) => f.employeeId === selectedEmp.id);
+      const hfEmail =
+        currentUser?.email ||
+        currentEmp?.email ||
+        hteUser?.email ||
+        `${(companyName || 'hte').toLowerCase().replace(/[^a-z0-9]/g, '')}@chmsu.edu.ph`;
+
+      const feedbackPayload = {
         employeeId: selectedEmp.id,
         hostName: supervisorName,
         hostCompany: companyName,
         hostPosition: currentEmp?.position || hteUser?.position || 'Supervisor',
+        hostEmail: hfEmail,
         attendanceScore: form.attendanceScore,
         performanceScore: form.performanceScore,
         attitudeScore: form.attitudeScore,
@@ -345,9 +357,21 @@ export function HTEEvaluations() {
         teamworkScore: form.punctualityScore,
         strengths: form.strengths || 'Exemplary dedication and competence.',
         areasForImprovement: form.areasForImprovement || 'Continue active growth.',
-        recommendation: overallScore >= 80 ? 'Recommended' : 'For Improvement',
-      });
-    } catch {}
+        recommendation: (overallScore >= 80 ? 'Recommended' : 'For Improvement') as 'Recommended' | 'For Improvement',
+        academicYear: resolvedAcademicYear,
+      };
+
+      if (existingHf) {
+        updateHostFeedback(existingHf.id, {
+          ...feedbackPayload,
+          status: status === 'reviewed_by_instructor' ? 'reviewed' : 'submitted',
+        });
+      } else {
+        addHostFeedback(feedbackPayload);
+      }
+    } catch (err) {
+      console.warn('Mirror to host feedback caught:', err);
+    }
 
     setViewMode('list');
   };

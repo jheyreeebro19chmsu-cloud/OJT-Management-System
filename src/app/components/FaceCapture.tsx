@@ -5,9 +5,7 @@ import {
   RefreshCw,
   AlertCircle,
   Sun,
-  Eye,
   ShieldAlert,
-  Sparkles,
   AlertTriangle,
   Upload,
   Check,
@@ -19,7 +17,6 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   loadFaceModels,
   detectFaceInDataUrl,
-  computeDescriptorFromDataUrl,
   strictBiometricVerify,
   inspectFaceQuality,
   type FaceQualityReport,
@@ -40,7 +37,7 @@ type ScanState =
 
 export type SimMode = 'none' | 'mask' | 'sunglasses' | 'different_person' | 'poor_lighting';
 
-interface FaceCaptureProps {
+export interface FaceCaptureProps {
   mode: 'register' | 'verify';
   employeeName?: string;
   registeredImage?: string;
@@ -65,8 +62,6 @@ export function FaceCapture({
   const animFrameRef = useRef<number | null>(null);
   const scanLineRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const simCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const simTimerRef = useRef<any>(null);
 
   const [state, setState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
@@ -75,18 +70,10 @@ export function FaceCapture({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simObstruction, setSimObstruction] = useState<SimMode>('none');
-  const isSimulatingRef = useRef(isSimulating);
-  useEffect(() => {
-    isSimulatingRef.current = isSimulating;
-  }, [isSimulating]);
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
-  // Hard abort timer: if camera init doesn't resolve within 8s, surface no-camera state
-  const initAbortTimerRef = useRef<any>(null);
 
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => {
@@ -130,22 +117,7 @@ export function FaceCapture({
     mismatchErrorRef.current = mismatchError;
   }, [mismatchError]);
 
-  const simObstructionRef = useRef<SimMode>(simObstruction);
-  useEffect(() => {
-    simObstructionRef.current = simObstruction;
-  }, [simObstruction]);
-
   const stopCamera = useCallback(() => {
-    // Clear any pending hard abort timer
-    if (initAbortTimerRef.current) {
-      clearTimeout(initAbortTimerRef.current);
-      initAbortTimerRef.current = null;
-    }
-    if (simTimerRef.current) {
-      clearInterval(simTimerRef.current);
-      simTimerRef.current = null;
-    }
-    setIsSimulating(false);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => {
         try {
@@ -165,510 +137,8 @@ export function FaceCapture({
     }
   }, []);
 
-  const drawSimulatedFrame = useCallback((obstructionType: SimMode) => {
-    let canvas = simCanvasRef.current;
-    if (!canvas) {
-      canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      simCanvasRef.current = canvas;
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-
-    // SCENARIO 3: Poor Lighting / Dark Environment (Luminance < 32)
-    if (obstructionType === 'poor_lighting') {
-      ctx.fillStyle = '#06080c';
-      ctx.fillRect(0, 0, w, h);
-
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.02)';
-      ctx.beginPath();
-      ctx.arc(w / 2, h / 2, 180, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#0f141c';
-      ctx.beginPath();
-      ctx.ellipse(w / 2, h + 35, 190, 140, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#1c1714';
-      ctx.fillRect(w / 2 - 38, h / 2 + 50, 76, 80);
-
-      const cx = w / 2;
-      const cy = h / 2 - 20;
-      ctx.fillStyle = '#1f1a17';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, 105, 145, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#080808';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy - 85, 110, 65, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#12100e';
-      ctx.beginPath();
-      ctx.ellipse(cx - 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
-      ctx.fill();
-      return;
-    }
-
-    // SCENARIO 2: Different / Unregistered Person (Biometric Distance > 0.55)
-    if (obstructionType === 'different_person') {
-      const bgGrad = ctx.createLinearGradient(0, 0, w, h);
-      bgGrad.addColorStop(0, '#1e1b4b');
-      bgGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = bgGrad;
-      ctx.fillRect(0, 0, w, h);
-
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.10)';
-      ctx.beginPath();
-      ctx.arc(w / 2, h / 2, 220, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#3730a3';
-      ctx.beginPath();
-      ctx.ellipse(w / 2, h + 35, 190, 140, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#8c5634';
-      ctx.fillRect(w / 2 - 42, h / 2 + 50, 84, 80);
-
-      const cx = w / 2;
-      const cy = h / 2 - 15;
-      const rx = 115;
-      const ry = 138;
-
-      ctx.save();
-      ctx.fillStyle = '#9c6644';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#b45309';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy - 80, 120, 70, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(cx - 102, cy - 15, 34, 65, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(cx + 102, cy - 15, 34, 65, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = '#451a03';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(cx - 48, cy - 40, 26, Math.PI * 1.15, Math.PI * 1.85);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(cx + 48, cy - 40, 26, Math.PI * 1.15, Math.PI * 1.85);
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(cx - 48, cy - 20, 19, 11, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + 48, cy - 20, 19, 11, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#78350f';
-      ctx.beginPath();
-      ctx.arc(cx - 48, cy - 20, 7, 0, Math.PI * 2);
-      ctx.arc(cx + 48, cy - 20, 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = '#713f12';
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - 20);
-      ctx.lineTo(cx + 12, cy + 20);
-      ctx.lineTo(cx - 6, cy + 28);
-      ctx.stroke();
-
-      ctx.fillStyle = '#451a03';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 50, 32, 10, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#991b1b';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 64, 24, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore();
-      return;
-    }
-
-    // SCENARIOS 1 & 4: Registered Trainee Face (Matches Registered Profile)
-    // Ambient background
-    const bgGrad = ctx.createLinearGradient(0, 0, w, h);
-    bgGrad.addColorStop(0, '#1e293b');
-    bgGrad.addColorStop(1, '#0f172a');
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, w, h);
-
-    // Ambient glow
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
-    ctx.beginPath();
-    ctx.arc(w / 2, h / 2, 220, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Body / Shoulders
-    ctx.fillStyle = '#334155';
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h + 35, 190, 140, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Neck
-    ctx.fillStyle = '#c78f68';
-    ctx.fillRect(w / 2 - 38, h / 2 + 50, 76, 80);
-
-    // Head / Face (Skin tone, centered in oval guide)
-    const cx = w / 2;
-    const cy = h / 2 - 20;
-    const rx = 105;
-    const ry = 145;
-
-    ctx.save();
-    ctx.fillStyle = '#dfa882';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Hair
-    ctx.fillStyle = '#1e1b18';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - 85, 110, 65, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(cx - 95, cy - 20, 30, 70, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(cx + 95, cy - 20, 30, 70, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Eyebrows
-    ctx.strokeStyle = '#271c19';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(cx - 45, cy - 42, 28, Math.PI * 1.1, Math.PI * 1.8);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx + 45, cy - 42, 28, Math.PI * 1.2, Math.PI * 1.9);
-    ctx.stroke();
-
-    // Eyes
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.ellipse(cx - 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#1c1917';
-    ctx.beginPath();
-    ctx.arc(cx - 45, cy - 22, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.ellipse(cx + 45, cy - 22, 18, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#1c1917';
-    ctx.beginPath();
-    ctx.arc(cx + 45, cy - 22, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Nose
-    ctx.strokeStyle = '#b07853';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - 25);
-    ctx.lineTo(cx + 8, cy + 18);
-    ctx.lineTo(cx - 4, cy + 26);
-    ctx.stroke();
-
-    // Mouth / Lips
-    ctx.fillStyle = '#be5b50';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 62, 26, 9, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Obstruction overlay
-    if (obstructionType === 'sunglasses') {
-      ctx.fillStyle = '#09090b';
-      ctx.strokeStyle = '#27272a';
-      ctx.lineWidth = 4;
-
-      // Left lens
-      ctx.beginPath();
-      if (typeof (ctx as any).roundRect === 'function') {
-        (ctx as any).roundRect(cx - 84, cy - 38, 72, 38, 10);
-      } else {
-        ctx.rect(cx - 84, cy - 38, 72, 38);
-      }
-      ctx.fill();
-      ctx.stroke();
-
-      // Right lens
-      ctx.beginPath();
-      if (typeof (ctx as any).roundRect === 'function') {
-        (ctx as any).roundRect(cx + 12, cy - 38, 72, 38, 10);
-      } else {
-        ctx.rect(cx + 12, cy - 38, 72, 38);
-      }
-      ctx.fill();
-      ctx.stroke();
-
-      // Sunglasses bridge
-      ctx.beginPath();
-      ctx.moveTo(cx - 12, cy - 24);
-      ctx.lineTo(cx + 12, cy - 24);
-      ctx.stroke();
-
-      // Frame arms
-      ctx.beginPath();
-      ctx.moveTo(cx - 84, cy - 26);
-      ctx.lineTo(cx - 105, cy - 28);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx + 84, cy - 26);
-      ctx.lineTo(cx + 105, cy - 28);
-      ctx.stroke();
-    } else if (obstructionType === 'mask') {
-      // Surgical blue medical mask covering lower face
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.moveTo(cx - 88, cy + 10);
-      ctx.quadraticCurveTo(cx, cy - 2, cx + 88, cy + 10);
-      ctx.lineTo(cx + 78, cy + 115);
-      ctx.quadraticCurveTo(cx, cy + 135, cx - 78, cy + 115);
-      ctx.closePath();
-      ctx.fill();
-
-      // Mask fold lines
-      ctx.strokeStyle = '#0369a1';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx - 70, cy + 40);
-      ctx.lineTo(cx + 70, cy + 40);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx - 72, cy + 70);
-      ctx.lineTo(cx + 72, cy + 70);
-      ctx.stroke();
-
-      // Ear loops
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(cx - 85, cy + 20);
-      ctx.quadraticCurveTo(cx - 110, cy + 45, cx - 80, cy + 95);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx + 85, cy + 20);
-      ctx.quadraticCurveTo(cx + 110, cy + 45, cx + 80, cy + 95);
-      ctx.stroke();
-    }
-
-    ctx.restore();
-  }, []);
-
   /**
-   * Attach a simulated canvas as a video stream source.
-   * Tries captureStream() first (Chrome/Edge desktop); falls back to a
-   * requestAnimationFrame draw-loop that writes directly to a <video> element
-   * for browsers that don't expose captureStream (Firefox, many mobile browsers).
-   */
-  const attachSimStreamToVideo = useCallback((canvas: HTMLCanvasElement) => {
-    // Primary path: captureStream API (Chrome/Edge)
-    if (typeof (canvas as any).captureStream === 'function') {
-      try {
-        const stream = (canvas as any).captureStream(25) as MediaStream;
-        if (stream && stream.getVideoTracks().length > 0) {
-          streamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.play().catch(() => {});
-          }
-          return;
-        }
-      } catch {
-        // fall through to raf fallback
-      }
-    }
-
-    // Fallback path: requestAnimationFrame draw loop for Firefox / mobile browsers
-    // Create a minimal 1x1 silent canvas track to satisfy MediaStream,
-    // then continuously draw simCanvas frames into the video via srcObject = null
-    // and instead use the canvas element as imageSource for an OffscreenCanvas.
-    // Simplest cross-browser approach: draw simulated frames onto the overlay
-    // canvas directly and set video srcObject to a generated 1-track MediaStream.
-    try {
-      const fallbackCanvas = document.createElement('canvas');
-      fallbackCanvas.width = canvas.width || 640;
-      fallbackCanvas.height = canvas.height || 480;
-      const fallbackCtx = fallbackCanvas.getContext('2d');
-
-      const rafLoop = () => {
-        if (!isSimulatingRef.current) return;
-        if (fallbackCtx && simCanvasRef.current) {
-          fallbackCtx.drawImage(simCanvasRef.current, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
-        }
-        requestAnimationFrame(rafLoop);
-      };
-      requestAnimationFrame(rafLoop);
-
-      // Try to get a stream from the fallback canvas
-      if (typeof (fallbackCanvas as any).captureStream === 'function') {
-        const fbStream = (fallbackCanvas as any).captureStream(25) as MediaStream;
-        if (fbStream) {
-          streamRef.current = fbStream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = fbStream;
-            videoRef.current.play().catch(() => {});
-          }
-          return;
-        }
-      }
-    } catch {
-      // All stream paths exhausted — overlay will still draw directly from simCanvasRef
-    }
-
-    // Last resort: null srcObject and let drawOverlay render simulated frames directly
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, []);
-
-  const startSimulatedCamera = useCallback(
-    (obstruction: SimMode = 'none') => {
-      isSimulatingRef.current = true;
-      setIsSimulating(true);
-      setSimObstruction(obstruction);
-      simObstructionRef.current = obstruction;
-
-      drawSimulatedFrame(obstruction);
-
-      // Attach simulated canvas as video stream with cross-browser captureStream / RAF fallback
-      if (simCanvasRef.current) {
-        attachSimStreamToVideo(simCanvasRef.current);
-      }
-
-      if (simTimerRef.current) {
-        clearInterval(simTimerRef.current);
-      }
-      simTimerRef.current = setInterval(() => {
-        drawSimulatedFrame(simObstructionRef.current);
-      }, 150);
-
-      setState('scanning');
-      if (obstruction === 'different_person') {
-        const msg = '⚠️ Biometric Mismatch: Face does not match registered profile. (Distance: 0.78 > 0.55)';
-        setScanMessage(msg);
-        setMismatchError(msg);
-        setQualityReport({
-          ok: false,
-          faceDetected: true,
-          faceCentered: true,
-          faceObscured: false,
-          maskDetected: false,
-          glassesDetected: false,
-          capDetected: false,
-          tooDark: false,
-          tooBright: false,
-          blurry: false,
-          brightness: 120,
-          sharpness: 80,
-          issues: ['Biometric mismatch: Facial signature does not match registered profile.'],
-        });
-      } else if (obstruction === 'poor_lighting') {
-        const msg = '⚠️ Too dark! Move to a well-lit area.';
-        setScanMessage(msg);
-        setMismatchError('Photo is too dark. Please ensure better lighting.');
-        setQualityReport({
-          ok: false,
-          faceDetected: true,
-          faceCentered: true,
-          faceObscured: false,
-          maskDetected: false,
-          glassesDetected: false,
-          capDetected: false,
-          tooDark: true,
-          tooBright: false,
-          blurry: false,
-          brightness: 20,
-          sharpness: 70,
-          issues: ['Area is too dark. Please move to a brighter location.'],
-        });
-      } else if (obstruction === 'mask') {
-        const msg = '⚠️ Face mask detected! System prevents successful verification and prompts for a clear face.';
-        setScanMessage(msg);
-        setMismatchError(msg);
-        setQualityReport({
-          ok: false,
-          faceDetected: true,
-          faceCentered: true,
-          faceObscured: true,
-          maskDetected: true,
-          glassesDetected: false,
-          capDetected: false,
-          tooDark: false,
-          tooBright: false,
-          blurry: false,
-          brightness: 120,
-          sharpness: 80,
-          issues: ['Face mask detected. Please remove mask for biometric verification.'],
-        });
-      } else if (obstruction === 'sunglasses') {
-        const msg = '⚠️ Dark sunglasses detected! System prevents successful verification and prompts for a clear face.';
-        setScanMessage(msg);
-        setMismatchError(msg);
-        setQualityReport({
-          ok: false,
-          faceDetected: true,
-          faceCentered: true,
-          faceObscured: true,
-          maskDetected: false,
-          glassesDetected: true,
-          capDetected: false,
-          tooDark: false,
-          tooBright: false,
-          blurry: false,
-          brightness: 120,
-          sharpness: 80,
-          issues: ['Dark sunglasses detected. Please remove sunglasses for biometric verification.'],
-        });
-      } else {
-        setScanMessage('Biometric stream active. Position face inside oval.');
-        setMismatchError(null);
-        setQualityReport({
-          ok: true,
-          faceDetected: true,
-          faceCentered: true,
-          faceObscured: false,
-          maskDetected: false,
-          glassesDetected: false,
-          capDetected: false,
-          tooDark: false,
-          tooBright: false,
-          blurry: false,
-          brightness: 120,
-          sharpness: 80,
-          issues: [],
-        });
-      }
-    },
-    [drawSimulatedFrame, attachSimStreamToVideo]
-  );
-
-  /**
-   * Render vertical oval (ellipse) face framing layout
-   * - Height covers 60-70% of screen height
-   * - Height-to-width ratio ~1.3:1 to 1.5:1 (1.38:1)
-   * - Centered horizontally, slightly above center vertically
-   * - Minimum 10% margin padding from screen borders
-   * Optimized to avoid canvas buffer resets and eliminate all flickering/flashing
+   * Draw the biometric oval framing guide, scanning beam, and alignment notches on the canvas overlay
    */
   const drawOverlay = useCallback(() => {
     const canvas = canvasRef.current;
@@ -676,9 +146,8 @@ export function FaceCapture({
 
     const video = videoRef.current;
     const hasLiveVideo = Boolean(video && video.videoWidth > 0);
-    const hasSimFrame = Boolean(isSimulatingRef.current && simCanvasRef.current);
 
-    if (!hasLiveVideo && !hasSimFrame) {
+    if (!hasLiveVideo) {
       const curState = stateRef.current;
       if (curState === 'scanning' || curState === 'analyzing' || curState === 'verifying') {
         animFrameRef.current = requestAnimationFrame(drawOverlay);
@@ -704,22 +173,12 @@ export function FaceCapture({
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // If in simulated stream mode, draw the simulated camera frame directly onto canvas
-      if (hasSimFrame && simCanvasRef.current) {
-        ctx.drawImage(simCanvasRef.current, 0, 0, canvas.width, canvas.height);
-      }
-
-      // Oval dimensions & placement:
-      // 1. Centered horizontally (cx = W / 2)
-      // 2. Centered at 48.5% height to position eyes/nose in center and chin naturally above bottom border
-      // 3. Covers ~62% of viewport height (radiusY = H * 0.31)
-      // 4. Natural human face aspect ratio of ~1.30:1 (radiusX = radiusY / 1.30)
-      //    In 340x453 viewport, oval is ~215px wide x 280px high, comfortably framing forehead, cheeks, and chin.
+      // Oval layout dimensions
       const cx = canvas.width / 2;
       const cy = canvas.height * 0.485;
 
-      const maxRadiusY = canvas.height * 0.35; // leaves ~13.5% top and ~16.5% bottom margin
-      const maxRadiusX = canvas.width * 0.40;  // leaves 10% left and right margin
+      const maxRadiusY = canvas.height * 0.35;
+      const maxRadiusX = canvas.width * 0.40;
 
       let radiusY = canvas.height * 0.31;
       let radiusX = radiusY / 1.30;
@@ -733,18 +192,15 @@ export function FaceCapture({
       const currentState = stateRef.current;
       const currentQuality = qualityReportRef.current;
       const currentMismatch = mismatchErrorRef.current;
-      const currentSimObs = simObstructionRef.current;
       const isObscured = Boolean(
         currentMismatch ||
         currentQuality?.faceObscured ||
         currentQuality?.maskDetected ||
         currentQuality?.glassesDetected ||
-        currentQuality?.capDetected ||
-        currentSimObs === 'mask' ||
-        currentSimObs === 'sunglasses'
+        currentQuality?.capDetected
       );
 
-      // 1. Dark Backdrop Outside Oval using evenodd cutout
+      // 1. Dark Vignette Backdrop Outside Oval using evenodd cutout
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, canvas.width, canvas.height);
@@ -753,7 +209,7 @@ export function FaceCapture({
       ctx.fill('evenodd');
       ctx.restore();
 
-      // 2. Scanning Laser Line within oval
+      // 2. Animated Scanning Laser Line within oval
       ctx.save();
       ctx.beginPath();
       ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
@@ -780,7 +236,7 @@ export function FaceCapture({
       ctx.fillStyle = laserGrad;
       ctx.fillRect(cx - radiusX, currentScanY - laserThickness, radiusX * 2, laserThickness * 2);
 
-      // Laser thin bright center line
+      // Laser thin center line
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
@@ -790,7 +246,7 @@ export function FaceCapture({
 
       ctx.restore();
 
-      // 4. Glowing Oval Contour Border & Alignment Notches
+      // 3. Glowing Oval Contour Border & Alignment Notches
       ctx.save();
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 2.5 * dpr;
@@ -828,7 +284,7 @@ export function FaceCapture({
 
       ctx.restore();
 
-      // 5. Success Glow
+      // 4. Success Glow
       if (currentState === 'success') {
         ctx.save();
         ctx.beginPath();
@@ -842,167 +298,133 @@ export function FaceCapture({
         animFrameRef.current = requestAnimationFrame(drawOverlay);
       }
     } catch {
-      // silent overlay catch
+      // silent catch for overlay
     }
   }, []);
 
+  /**
+   * Capture a pristine JPEG snapshot from the live physical camera video
+   */
   const captureFrame = useCallback((): string | undefined => {
-    if (isSimulatingRef.current && simCanvasRef.current) {
-      return simCanvasRef.current.toDataURL('image/jpeg', 0.90);
-    }
     const video = videoRef.current;
-    if (!video || !video.videoWidth) {
-      if (simCanvasRef.current) {
-        return simCanvasRef.current.toDataURL('image/jpeg', 0.90);
-      }
-      return;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      return undefined;
     }
     const maxWidth = 640;
-    const ratio = Math.min(maxWidth / (video.videoWidth || 640), 1);
+    const ratio = Math.min(maxWidth / video.videoWidth, 1);
     const cap = document.createElement('canvas');
-    cap.width = (video.videoWidth || 640) * ratio;
-    cap.height = (video.videoHeight || 480) * ratio;
-    cap.getContext('2d')?.drawImage(video, 0, 0, cap.width, cap.height);
-    return cap.toDataURL('image/jpeg', 0.90);
+    cap.width = Math.round(video.videoWidth * ratio);
+    cap.height = Math.round(video.videoHeight * ratio);
+    const ctx = cap.getContext('2d');
+    if (!ctx) return undefined;
+    ctx.drawImage(video, 0, 0, cap.width, cap.height);
+    return cap.toDataURL('image/jpeg', 0.92);
   }, []);
 
+  /**
+   * Acquire live camera hardware stream and begin facial scanning
+   */
   const startScan = useCallback(async () => {
     stopCamera();
     setState('requesting');
     setMismatchError(null);
     setQualityReport(null);
     setCapturedImage(null);
-    setScanMessage('Initializing biometric scanner...');
+    setScanMessage('Requesting camera access...');
 
-    // Fast 4-second abort: if camera initialization is still not resolved by then,
-    // automatically fall back to simulated stream instead of hanging indefinitely
-    if (initAbortTimerRef.current) clearTimeout(initAbortTimerRef.current);
-    initAbortTimerRef.current = setTimeout(() => {
-      const currentSt = stateRef.current;
-      if (currentSt === 'requesting') {
-        console.warn('FaceCapture: camera init timed out (4s abort) — engaging simulated stream');
-        startSimulatedCamera(simObstructionRef.current || 'none');
-        // Ensure UI leaves 'requesting' state even though startSimulatedCamera sets 'scanning'
-        setState('scanning');
-        setProgress(20);
-        setScanMessage(
-          modeRef.current === 'register'
-            ? 'Position face inside the oval for facial recognition scan...'
-            : 'Position your face inside the oval for biometric verification...'
-        );
-      }
-    }, 4000);
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setState('no-camera');
+      setScanMessage('Camera API is not supported on this browser or device.');
+      return;
+    }
 
-    let hasLiveHardwareCamera = false;
+    let stream: MediaStream | null = null;
     try {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-        let stream: MediaStream;
+      // Attempt 1: Optimal front/user-facing camera with ideal resolution
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+          audio: false,
+        });
+      } catch (err1) {
+        console.warn('Initial camera constraint failed, trying facingMode fallback:', err1);
+        // Attempt 2: Simple user-facing camera without resolution constraints
         try {
-          const gUMPromise = navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 640 },
-              height: { ideal: 480 },
-              facingMode: 'user',
-            },
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+            audio: false,
           });
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Camera request timed out')), 12000)
-          );
-          stream = await Promise.race([gUMPromise, timeoutPromise]);
-        } catch (initialErr: any) {
-          if (String(initialErr?.message || '').includes('timed out')) {
-            throw initialErr;
-          }
-          if (
-            initialErr?.name === 'NotAllowedError' ||
-            initialErr?.name === 'PermissionDeniedError' ||
-            String(initialErr?.message || '').toLowerCase().includes('denied')
-          ) {
-            throw initialErr;
-          }
-          const gUMFallback = navigator.mediaDevices.getUserMedia({ video: true });
-          const timeoutPromise2 = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Camera request timed out')), 10000)
-          );
-          stream = await Promise.race([gUMFallback, timeoutPromise2]);
-        }
-
-        streamRef.current = stream;
-        setIsSimulating(false);
-        hasLiveHardwareCamera = true;
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await new Promise<void>((resolve) => {
-            if (!videoRef.current) return resolve();
-            videoRef.current.onloadedmetadata = () => resolve();
-            setTimeout(resolve, 800);
+        } catch (err2) {
+          console.warn('FacingMode fallback failed, trying basic video device:', err2);
+          // Attempt 3: Any available video device
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
           });
-          await videoRef.current.play().catch(() => {});
         }
       }
-    } catch (hwErr: any) {
-      console.warn('Camera stream request notice:', hwErr);
+    } catch (err: any) {
+      console.warn('Camera stream request error:', err);
       const isPermissionDenied =
-        hwErr?.name === 'NotAllowedError' ||
-        hwErr?.name === 'PermissionDeniedError' ||
-        String(hwErr?.message || '').toLowerCase().includes('denied') ||
-        String(hwErr?.message || '').toLowerCase().includes('permission');
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        String(err?.message || '').toLowerCase().includes('denied') ||
+        String(err?.message || '').toLowerCase().includes('permission');
 
       if (isPermissionDenied) {
-        if (initAbortTimerRef.current) {
-          clearTimeout(initAbortTimerRef.current);
-          initAbortTimerRef.current = null;
-        }
         setState('permission-denied');
-        setScanMessage('⚠️ Camera access denied. Please allow camera permission in browser settings.');
-        setMismatchError('Camera permission was denied. The system requires camera access to proceed with facial recognition.');
-        return;
+        setScanMessage('⚠️ Camera access denied. Please enable camera permission in your browser settings.');
+        setMismatchError('Camera access was denied. Facial recognition requires camera access to proceed.');
+      } else {
+        setState('no-camera');
+        setScanMessage('⚠️ Unable to access camera. Please ensure a camera is connected and not used by another application.');
+        setMismatchError('No camera feed available. Please check your camera connection.');
       }
+      return;
     }
 
-    // Clear hard abort timer — we reached this point so initialization is done
-    if (initAbortTimerRef.current) {
-      clearTimeout(initAbortTimerRef.current);
-      initAbortTimerRef.current = null;
+    if (!stream) {
+      setState('no-camera');
+      setScanMessage('No camera stream could be started.');
+      return;
     }
 
-    if (!hasLiveHardwareCamera) {
-      // Auto-fallback: simulated biometric stream when physical camera is absent or timed out
-      isSimulatingRef.current = true;
-      setIsSimulating(true);
-      const currentObs = simObstructionRef.current || 'none';
-      drawSimulatedFrame(currentObs);
+    streamRef.current = stream;
 
-      // Attach with cross-browser captureStream / RAF fallback
-      if (simCanvasRef.current) {
-        attachSimStreamToVideo(simCanvasRef.current);
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current?.play().catch((playErr) => console.warn('Video play error:', playErr));
+      };
+      try {
+        await videoRef.current.play();
+      } catch {
+        // Autoplay policy catch
       }
-
-      if (simTimerRef.current) clearInterval(simTimerRef.current);
-      simTimerRef.current = setInterval(() => {
-        drawSimulatedFrame(simObstructionRef.current || 'none');
-      }, 150);
     }
 
     const currentMode = modeRef.current;
     setState('scanning');
     setScanMessage(
       currentMode === 'register'
-        ? 'Position face inside the oval for facial recognition scan...'
-        : 'Position your face inside the oval for biometric verification...'
+        ? 'Position face inside the oval for biometric scan...'
+        : 'Align your face inside the oval for biometric verification...'
     );
     setProgress(20);
 
-    // Pre-load biometric recognition models in parallel
+    // Pre-load biometric recognition models in the background
     loadFaceModels().catch(() => {});
 
     try {
-      // For registration mode: continuous facial recognition biometric scan that auto-completes
+      // REGISTRATION MODE: continuous scan until stable clear face is detected
       if (currentMode === 'register') {
         let stableFrames = 0;
 
-        while ((streamRef.current || isSimulatingRef.current) && stateRef.current === 'scanning') {
+        while (streamRef.current && stateRef.current === 'scanning') {
           const currentFrame = captureFrame();
           if (currentFrame) {
             const quality = await inspectFaceQuality(currentFrame).catch(() => null);
@@ -1021,16 +443,15 @@ export function FaceCapture({
                 setProgress(Math.min(35 + stableFrames * 30, 95));
 
                 if (stableFrames < 2) {
-                  setScanMessage('Analyzing face biometrics with AI... Hold steady');
+                  setScanMessage('Analyzing face biometrics... Hold steady');
                 } else {
-                  // Confirmed face presence via AI neural network
                   const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => true);
                   if (hasFace) {
                     stopCamera();
                     setCapturedImage(currentFrame);
                     setProgress(100);
                     setState('success');
-                    setScanMessage('✓ Human Face Recognized & Enrolled!');
+                    setScanMessage('✓ Face Recognized & Enrolled!');
                     setTimeout(() => {
                       onSuccessRef.current?.(currentFrame);
                     }, 800);
@@ -1051,12 +472,12 @@ export function FaceCapture({
         return;
       }
 
-      // Verification mode: inspect biometrics against enrolled template using AI
+      // VERIFICATION MODE: match live camera stream against registered student photo
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
       for (let attempt = 1; attempt <= 45; attempt++) {
-        if ((!streamRef.current && !isSimulatingRef.current) || stateRef.current !== 'scanning') break;
+        if (!streamRef.current || stateRef.current !== 'scanning') break;
 
         const currentFrame = captureFrame();
         if (!currentFrame) {
@@ -1065,27 +486,27 @@ export function FaceCapture({
         }
         lastCaptured = currentFrame;
 
-        // Visual progress update
         setProgress(Math.min(20 + attempt * 2, 85));
 
-        // Face Quality inspection
-        const quality = await inspectFaceQuality(currentFrame);
-        setQualityReport(quality);
+        const quality = await inspectFaceQuality(currentFrame).catch(() => null);
+        if (quality) {
+          setQualityReport(quality);
 
-        if (quality.tooDark) {
-          setScanMessage('⚠️ Too dark! Move to a well-lit area.');
-          await new Promise((r) => setTimeout(r, 400));
-          continue;
-        }
-        if (quality.tooBright) {
-          setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
-          await new Promise((r) => setTimeout(r, 400));
-          continue;
+          if (quality.tooDark) {
+            setScanMessage('⚠️ Too dark! Move to a well-lit area.');
+            await new Promise((r) => setTimeout(r, 400));
+            continue;
+          }
+          if (quality.tooBright) {
+            setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
+            await new Promise((r) => setTimeout(r, 400));
+            continue;
+          }
         }
 
         const enrolledImage = registeredImageRef.current;
         if (enrolledImage) {
-          setScanMessage('Verifying face biometrics with AI algorithms...');
+          setScanMessage('Verifying facial biometrics with AI...');
           const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.65);
           if (bio.matched) {
             setMismatchError(null);
@@ -1095,8 +516,8 @@ export function FaceCapture({
             setScanMessage('Align face inside the oval guide...');
           }
         } else {
-          // If no enrolled image yet, any verified human face succeeds
-          if (quality.faceDetected) {
+          // If no template image yet, any verified clear face passes
+          if (quality?.faceDetected) {
             detectedSuccess = true;
             break;
           }
@@ -1115,14 +536,14 @@ export function FaceCapture({
         return;
       }
 
-      // If loop ended without match
+      // If loop completed without match, ready for manual verification
       setProgress(90);
       setState('scanning');
-      setScanMessage('Position face inside the oval and tap Verify Now.');
+      setScanMessage('Position face inside the oval and tap "Scan & Verify Now".');
     } catch (loopErr) {
       console.warn('Biometric scan loop error:', loopErr);
     }
-  }, [stopCamera, captureFrame, drawSimulatedFrame]);
+  }, [stopCamera, captureFrame]);
 
   useEffect(() => {
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
@@ -1138,17 +559,20 @@ export function FaceCapture({
     };
   }, [state, drawOverlay]);
 
+  /**
+   * Manual snapshot trigger
+   */
   const handleManualSnap = useCallback(async () => {
     if (state === 'success') return;
 
     const img = captureFrame();
     if (!img) {
       setState('failed');
-      setScanMessage('Failed to capture camera frame. Please try again.');
+      setScanMessage('Failed to capture camera frame. Please ensure camera is active.');
       return;
     }
 
-    // When registering: enforce lighting, obstructions, and face presence before saving
+    // When registering: enforce quality, lighting, and presence
     if (modeRef.current === 'register') {
       const quality = await inspectFaceQuality(img).catch(() => null);
       if (quality) {
@@ -1175,7 +599,6 @@ export function FaceCapture({
         }
       }
 
-      // Check human face presence and save
       const hasAnyFace = await detectFaceInDataUrl(img).catch(() => true);
       if (!hasAnyFace) {
         setScanMessage('❌ No face detected. Please position your face inside the oval.');
@@ -1227,7 +650,7 @@ export function FaceCapture({
           return;
         }
       } catch {
-        // fallback to client-verified descriptor
+        // client-verified descriptor fallback
       }
     }
 
@@ -1238,7 +661,7 @@ export function FaceCapture({
     setState('success');
     setScanMessage('✓ Identity Verified! Attendance Time Recorded.');
     setTimeout(() => onSuccessRef.current?.(img), 800);
-  }, [state, stopCamera]);
+  }, [state, stopCamera, captureFrame]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
@@ -1307,7 +730,7 @@ export function FaceCapture({
         className="hidden"
       />
 
-      {/* Real-time Environment & Obstruction Badges */}
+      {/* Real-time Environment & Quality Badges */}
       <div className="flex items-center justify-center gap-2 flex-wrap w-full max-w-[340px] text-[10px] font-bold">
         <div
           className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
@@ -1323,11 +746,11 @@ export function FaceCapture({
         <div
           className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
             qualityReport?.maskDetected
-              ? 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+              ? 'bg-red-50 text-red-700 border-red-200'
               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
           }`}
         >
-          <ShieldAlert size={11} />
+          <AlertTriangle size={11} />
           <span>{qualityReport?.maskDetected ? 'Mask Detected' : 'No Mask'}</span>
         </div>
 
@@ -1338,19 +761,8 @@ export function FaceCapture({
               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
           }`}
         >
-          <Eye size={11} />
+          <AlertCircle size={11} />
           <span>{qualityReport?.glassesDetected ? 'Glasses Detected' : 'No Glasses'}</span>
-        </div>
-
-        <div
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
-            qualityReport?.capDetected
-              ? 'bg-red-50 text-red-700 border-red-200'
-              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }`}
-        >
-          <Sparkles size={11} />
-          <span>{qualityReport?.capDetected ? 'Cap Detected' : 'No Cap'}</span>
         </div>
 
         <div
@@ -1365,74 +777,7 @@ export function FaceCapture({
         </div>
       </div>
 
-      {/* Quick Obstruction Testing Bar */}
-      <div className="flex items-center justify-between gap-1 w-full max-w-[340px] bg-slate-900/90 px-2 py-1.5 rounded-2xl border border-slate-800 text-[10px] font-bold text-slate-300">
-        <span className="text-[9px] uppercase tracking-wider text-slate-400">Test Guide:</span>
-        <div className="flex items-center gap-1 flex-wrap justify-end">
-          <button
-            type="button"
-            onClick={() => startSimulatedCamera('none')}
-            title="Registered face matching enrolled template"
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-              simObstruction === 'none' && !qualityReport?.faceObscured && !qualityReport?.tooDark && !mismatchError
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            ✨ Registered
-          </button>
-          <button
-            type="button"
-            onClick={() => startSimulatedCamera('different_person')}
-            title="Different unregistered person (distance > 0.55, rejects verification)"
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-              simObstruction === 'different_person' || (mismatchError && !qualityReport?.faceObscured && !qualityReport?.tooDark)
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            👤 Different
-          </button>
-          <button
-            type="button"
-            onClick={() => startSimulatedCamera('poor_lighting')}
-            title="Poor lighting / dark area (brightness < 32, warns trainee and prevents verification)"
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-              simObstruction === 'poor_lighting' || qualityReport?.tooDark
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            🌙 Dark
-          </button>
-          <button
-            type="button"
-            onClick={() => startSimulatedCamera('mask')}
-            title="Face mask obstruction (blocks verification)"
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-              simObstruction === 'mask' || qualityReport?.maskDetected
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            😷 Mask
-          </button>
-          <button
-            type="button"
-            onClick={() => startSimulatedCamera('sunglasses')}
-            title="Sunglasses obstruction (blocks verification)"
-            className={`px-2 py-0.5 rounded-lg transition-all cursor-pointer ${
-              simObstruction === 'sunglasses' || qualityReport?.glassesDetected
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            🕶️ Glasses
-          </button>
-        </div>
-      </div>
-
-      {/* Camera / Preview Viewport */}
+      {/* Camera / Live Viewport */}
       <div className="relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800">
         {state === 'preview' && capturedImage ? (
           <div className="relative w-full h-full">
@@ -1458,12 +803,12 @@ export function FaceCapture({
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ transform: 'scaleX(-1)' }} />
 
-            {/* Oval overlay instruction note */}
+            {/* Center face guide banner */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
               👤 Center Face inside the Oval
             </div>
 
-            {/* Obstruction warning overlay within viewport */}
+            {/* Obstruction warning banner within viewport */}
             {qualityReport?.faceObscured && (
               <div className="absolute top-11 left-3 right-3 bg-red-950/90 border border-red-500/80 text-white rounded-xl p-2 text-center backdrop-blur-md z-30 shadow-lg animate-pulse">
                 <p className="text-[11px] font-bold text-red-300 flex items-center justify-center gap-1.5">
@@ -1473,30 +818,30 @@ export function FaceCapture({
                   </span>
                 </p>
                 <p className="text-[10px] text-red-200/90 mt-0.5">
-                  Verification strictly prevented. Please present a clear, unobstructed face.
+                  Verification requires an unobstructed, clear view of your face.
                 </p>
               </div>
             )}
           </>
         )}
 
-        {/* Camera Permission Denied View */}
+        {/* Camera Permission Denied Screen */}
         {state === 'permission-denied' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-6 z-30 text-center space-y-3">
             <div className="w-14 h-14 rounded-2xl bg-red-900/50 text-red-400 border border-red-500/40 flex items-center justify-center shadow-lg">
               <ShieldAlert size={28} />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-white">Camera Permission Denied</h4>
+              <h4 className="text-sm font-bold text-white">Camera Permission Required</h4>
               <p className="text-xs text-red-300 mt-1 leading-relaxed max-w-[280px]">
-                Camera access was denied. The system requires camera permission to capture and register your facial biometrics.
+                Camera access was blocked by your browser. Please allow camera access to scan your face.
               </p>
             </div>
             <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-[10px] text-slate-300 text-left w-full max-w-[280px] space-y-1">
               <p className="font-bold text-slate-200">How to enable camera:</p>
-              <p>1. Click the lock or camera icon in your address bar</p>
-              <p>2. Change Camera permission to "Allow"</p>
-              <p>3. Tap "Grant Camera Access & Try Again" below</p>
+              <p>1. Tap the lock 🔒 or camera 📷 icon in your browser address bar</p>
+              <p>2. Set Camera permission to <strong>Allow</strong></p>
+              <p>3. Tap "Grant Permission & Try Again" below</p>
             </div>
             <button
               type="button"
@@ -1507,20 +852,27 @@ export function FaceCapture({
               className="w-full max-w-[280px] py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               <Camera size={14} />
-              <span>Grant Camera Access & Try Again</span>
+              <span>Grant Permission & Try Again</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full max-w-[280px] py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all border border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Upload size={13} /> Upload Face Photo Instead
             </button>
           </div>
         )}
 
-        {/* Idle / No Camera State */}
-        {(state === 'idle' || state === 'no-camera' || state === 'requesting') && !isSimulating && (
+        {/* Idle / No Camera / Requesting State */}
+        {(state === 'idle' || state === 'no-camera' || state === 'requesting') && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 p-5 z-30 text-center">
             <Camera size={44} className="text-slate-500 mb-3 animate-pulse" />
             <p className="text-slate-200 text-xs font-semibold leading-relaxed mb-4">
               {state === 'no-camera'
-                ? 'Camera access issue or device not available.'
+                ? 'Camera device not available or not detected.'
                 : state === 'requesting'
-                  ? 'Initializing biometric scanner...'
+                  ? 'Requesting camera access...'
                   : 'Scanner ready'}
             </p>
             {state === 'requesting' ? (
@@ -1529,28 +881,21 @@ export function FaceCapture({
                 <span>Starting camera...</span>
               </div>
             ) : (
-              <div className="flex flex-col gap-2 w-full max-w-[200px]">
-                <button
-                  type="button"
-                  onClick={() => startSimulatedCamera('none')}
-                  className="w-full text-xs font-bold bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-2 rounded-xl transition-colors shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Camera size={13} /> Activate Camera Stream
-                </button>
+              <div className="flex flex-col gap-2 w-full max-w-[220px]">
                 <button
                   type="button"
                   onClick={() => {
                     stopCamera();
                     setTimeout(startScan, 300);
                   }}
-                  className="w-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl transition-colors shadow-md cursor-pointer"
+                  className="w-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl transition-colors shadow-md cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  Retry Hardware Camera
+                  <Camera size={14} /> Start Camera
                 </button>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2.5 rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Upload size={13} /> Upload Photo
                 </button>
@@ -1681,7 +1026,7 @@ export function FaceCapture({
           </button>
         )}
 
-        {/* Scanning state: Shutter button & Upload button */}
+        {/* Scanning state: Manual Snap button & Upload button */}
         {['scanning', 'analyzing', 'verifying'].includes(state) && (
           <div className="flex gap-2 w-full">
             <button
@@ -1690,16 +1035,12 @@ export function FaceCapture({
               disabled={Boolean(
                 qualityReport?.faceObscured ||
                 qualityReport?.maskDetected ||
-                qualityReport?.glassesDetected ||
-                simObstruction === 'mask' ||
-                simObstruction === 'sunglasses'
+                qualityReport?.glassesDetected
               )}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
                 qualityReport?.faceObscured ||
                 qualityReport?.maskDetected ||
-                qualityReport?.glassesDetected ||
-                simObstruction === 'mask' ||
-                simObstruction === 'sunglasses'
+                qualityReport?.glassesDetected
                   ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20 cursor-pointer'
               }`}
@@ -1707,9 +1048,7 @@ export function FaceCapture({
               <Camera size={15} />
               {qualityReport?.faceObscured ||
               qualityReport?.maskDetected ||
-              qualityReport?.glassesDetected ||
-              simObstruction === 'mask' ||
-              simObstruction === 'sunglasses'
+              qualityReport?.glassesDetected
                 ? 'Face Obscured (Remove Coverings)'
                 : mode === 'register'
                   ? 'Scan Face Now'
