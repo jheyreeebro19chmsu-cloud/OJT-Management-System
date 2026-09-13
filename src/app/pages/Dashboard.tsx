@@ -378,12 +378,40 @@ export function Dashboard() {
     if (!isAdmin) return;
 
     try {
-      const { data } = await supabase
-        .from('hte_student_access')
-        .select('*, employees(*)')
-        .eq('instructor_id', currentUser?.id);
+      // Pull student trainees who have an assigned HTE
+      const studentEmployees = employees.filter((e) => {
+        const isStudent =
+          e.position !== 'OJT Instructor' &&
+          e.position !== 'HTE Representative' &&
+          !e.employeeId?.startsWith('ADM-') &&
+          !e.employeeId?.startsWith('HTE-');
 
-      if (data) setLinkedStudents(data);
+        const hasAssignedHte = Boolean(
+          (e.hteId && e.hteId.trim().length > 0) ||
+          (e.companyName &&
+            e.companyName.trim().length > 0 &&
+            !e.companyName.toLowerCase().includes('pending') &&
+            e.companyName !== 'N/A' &&
+            e.companyName !== 'None')
+        );
+
+        return isStudent && hasAssignedHte;
+      });
+
+      const formatted = studentEmployees.map((s) => ({
+        id: s.id,
+        status: s.active !== false ? 'approved' : 'pending',
+        employees: {
+          id: s.id,
+          name: s.name,
+          course: s.course || s.department || 'OJT Trainee',
+          companyName: s.companyName,
+          supervisorName: s.supervisorName,
+          photo: s.photo,
+        },
+      }));
+
+      setLinkedStudents(formatted);
     } catch (error) {
       console.error('Error fetching linked students:', error);
     }
@@ -753,14 +781,27 @@ export function Dashboard() {
 
         {/* Linked Students Status */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">HTE Linked Students</h3>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">HTE Linked Students</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Trainees officially assigned to Host Training Establishments</p>
+            </div>
+            <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">
+              {linkedStudents.length} Assigned
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {linkedStudents.map((link) => (
-              <div key={link.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50">
+              <div key={link.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50/70 hover:bg-white hover:shadow-sm transition-all">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="font-bold text-gray-800">{link.employees?.name}</p>
+                    <p className="font-bold text-gray-800 text-sm">{link.employees?.name}</p>
                     <p className="text-xs text-gray-500">{link.employees?.course}</p>
+                    <div className="flex items-center gap-1.5 mt-2 text-xs font-semibold text-blue-700 bg-blue-50/80 px-2.5 py-1 rounded-lg border border-blue-100/60 inline-flex">
+                      <Building size={12} className="text-blue-600 shrink-0" />
+                      <span className="truncate max-w-[150px]">{link.employees?.companyName || 'Host Establishment'}</span>
+                    </div>
                   </div>
                   <span
                     className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${
@@ -771,7 +812,7 @@ export function Dashboard() {
                           : 'bg-amber-100 text-amber-700'
                     }`}
                   >
-                    {link.status}
+                    {link.status === 'approved' ? 'Assigned' : link.status}
                   </span>
                 </div>
               </div>
@@ -779,7 +820,8 @@ export function Dashboard() {
             {linkedStudents.length === 0 && (
               <div className="col-span-full py-10 text-center text-gray-400">
                 <Users size={32} className="mx-auto mb-2 opacity-20" />
-                <p>No HTE students linked yet.</p>
+                <p className="font-medium text-sm">No HTE students linked yet.</p>
+                <p className="text-xs text-gray-400 mt-1">Assign trainees to an HTE via Student Trainees management.</p>
               </div>
             )}
           </div>

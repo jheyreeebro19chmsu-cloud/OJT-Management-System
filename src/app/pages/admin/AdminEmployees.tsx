@@ -44,6 +44,7 @@ export function AdminEmployees() {
     rejectEmployee,
     settings,
     refreshData,
+    hostSupervisors,
     addRequiredDocument,
     getEmployeeRequiredDocuments,
     submitRequiredDocument,
@@ -63,6 +64,8 @@ export function AdminEmployees() {
   const [docTitle, setDocTitle] = useState('');
   const [docDescription, setDocDescription] = useState('');
   const [docDueDate, setDocDueDate] = useState('');
+  const [assigningHte, setAssigningHte] = useState(false);
+  const [selectedHteId, setSelectedHteId] = useState('');
 
   const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -949,6 +952,95 @@ export function AdminEmployees() {
                               <span className="font-medium text-gray-700">{val}</span>
                             </div>
                           ))}
+
+                          {/* HTE Placement & Assignment - Trainees ONLY */}
+                          {isTrainee && (
+                            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Building size={16} className="text-blue-600" />
+                                  <span className="text-xs font-bold uppercase tracking-wider text-blue-900">
+                                    HTE Placement
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAssigningHte(!assigningHte);
+                                    setSelectedHteId(selectedEmp.hteId || '');
+                                  }}
+                                  className="text-xs font-bold text-blue-700 hover:text-blue-900 underline cursor-pointer"
+                                >
+                                  {assigningHte ? 'Cancel' : selectedEmp.companyName && !selectedEmp.companyName.toLowerCase().includes('pending') ? 'Change HTE' : 'Assign to HTE'}
+                                </button>
+                              </div>
+
+                              {assigningHte ? (
+                                <div className="space-y-2 pt-1">
+                                  <label className="text-xs font-medium text-slate-700 block">Select Host Training Establishment (HTE):</label>
+                                  <select
+                                    value={selectedHteId}
+                                    onChange={(e) => setSelectedHteId(e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                                  >
+                                    <option value="">-- Choose Host Supervisor / Company --</option>
+                                    {hostSupervisors.map((h) => (
+                                      <option key={h.id} value={h.id}>
+                                        {h.companyName} — {h.name} ({h.email})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <div className="flex justify-end gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      disabled={!selectedHteId}
+                                      onClick={() => {
+                                        const matchedHost = hostSupervisors.find((h) => h.id === selectedHteId);
+                                        if (!matchedHost) return;
+                                        updateEmployee(selectedEmp.id, {
+                                          hteId: matchedHost.id,
+                                          companyName: matchedHost.companyName,
+                                          supervisorName: matchedHost.name,
+                                        });
+                                        setSelectedEmp((prev) => prev ? {
+                                          ...prev,
+                                          hteId: matchedHost.id,
+                                          companyName: matchedHost.companyName,
+                                          supervisorName: matchedHost.name,
+                                        } : null);
+                                        setAssigningHte(false);
+                                        toast.success(`Assigned ${selectedEmp.name} to ${matchedHost.companyName}!`);
+                                      }}
+                                      className="px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 disabled:opacity-50 cursor-pointer shadow-sm"
+                                    >
+                                      Confirm & Assign HTE
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-slate-600">
+                                  {selectedEmp.companyName && !selectedEmp.companyName.toLowerCase().includes('pending') ? (
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="font-bold text-slate-900 text-sm">{selectedEmp.companyName}</p>
+                                        <p className="text-slate-500 mt-0.5">Supervisor: {selectedEmp.supervisorName || 'N/A'}</p>
+                                      </div>
+                                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px] uppercase">
+                                        Assigned
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-amber-700 font-medium">Unassigned • Awaiting Admin HTE Placement</p>
+                                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full font-bold text-[10px] uppercase">
+                                        Unassigned
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {/* Standard Required OJT Documents Monitoring - Trainees ONLY */}
                           {isTrainee && (

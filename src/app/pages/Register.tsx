@@ -800,7 +800,8 @@ export function Register() {
             email: form.email,
             department: form.department,
             position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-            companyName: form.companyName,
+            companyName: role === 'hte' ? form.companyName : (role === 'admin' ? 'Carlos Hilado Memorial State University' : (form.companyName || 'Pending Admin Assignment')),
+            supervisorName: role === 'hte' ? (form.supervisorName || form.contactPerson) : (role === 'admin' ? 'College Dean' : (form.supervisorName || 'Pending Admin Assignment')),
             companyAddress: form.companyAddress,
             contactPerson: form.contactPerson,
             contactPhone: form.contactPhone,
@@ -2520,27 +2521,21 @@ export function Register() {
                     </>
                   ) : (
                     <>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Company Name *</label>
-                        <input
-                          value={form.companyName}
-                          onChange={(e) => update('companyName', e.target.value)}
-                          placeholder="Company Name"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
+                      <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100 flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                          <Building size={16} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-blue-900">HTE Placement via OJT Instructor</p>
+                          <p className="text-xs text-blue-700/90 mt-0.5 leading-relaxed">
+                            Your Host Training Establishment (HTE) partner and supervisor will be officially assigned to your account by your OJT Instructor / Admin upon enrollment approval.
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Supervisor Name *</label>
-                        <input
-                          value={form.supervisorName}
-                          onChange={(e) => update('supervisorName', e.target.value)}
-                          placeholder="Mr./Ms. Supervisor"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
-                      </div>
+
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Start Date *</label>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Target Start Date</label>
                           <input
                             type="date"
                             value={form.startDate}
@@ -2549,7 +2544,7 @@ export function Register() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">End Date *</label>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Target End Date</label>
                           <input
                             type="date"
                             value={form.endDate}
@@ -2562,10 +2557,12 @@ export function Register() {
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
                         <input
                           type="number"
-                          value={form.requiredHours}
+                          value={form.requiredHours || 486}
                           onChange={(e) => update('requiredHours', e.target.value)}
+                          placeholder="486"
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                         />
+                        <p className="text-[10px] text-gray-400 mt-1">Standard academic requirement (e.g. 486 hours)</p>
                       </div>
                     </>
                   )}
