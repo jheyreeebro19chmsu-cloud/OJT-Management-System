@@ -24,6 +24,7 @@ import {
   TraineeDocumentItem,
 } from '../types';
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
+import { getCampusLocation } from '../utils/campusLocations';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -1688,22 +1689,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         // Auto-create/upsert station geofence zone in database and local state for all registered accounts
-        if (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) {
+        const campusInfo = getCampusLocation(cleanData.campus || created.campus);
+        const hasCoords = (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) || isInstructor;
+
+        if (hasCoords) {
           const isCreatedUuid = created.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(created.id);
           const zoneName = isInstructor
             ? `${created.name} - Official Station`
             : isHTE
             ? `${created.name} - ${cleanData.companyName || 'HTE Workplace'}`
             : `${created.name} - Registered Account Geofence`;
-          const zoneAddr = cleanData.registrationAddress || `${Number(cleanData.registrationLocation.lat).toFixed(6)}, ${Number(cleanData.registrationLocation.lng).toFixed(6)}`;
+          const zoneAddr = isInstructor
+            ? campusInfo.address
+            : cleanData.companyAddress || cleanData.registrationAddress || `${Number(cleanData.registrationLocation?.lat).toFixed(6)}, ${Number(cleanData.registrationLocation?.lng).toFixed(6)}`;
+
+          const zoneLat = isInstructor ? campusInfo.lat : Number(cleanData.registrationLocation?.lat);
+          const zoneLng = isInstructor ? campusInfo.lng : Number(cleanData.registrationLocation?.lng);
 
           const stationZone: GeofenceZone = {
             id: isCreatedUuid ? created.id : `station-${created.id}`,
             name: zoneName,
             address: zoneAddr,
-            lat: Number(cleanData.registrationLocation.lat),
-            lng: Number(cleanData.registrationLocation.lng),
-            radius: 100,
+            lat: zoneLat,
+            lng: zoneLng,
+            radius: isInstructor ? campusInfo.radius : 100,
             active: true,
             academicYear: cleanData.academicYear || settings.activeAcademicYear,
           };

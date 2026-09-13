@@ -33,6 +33,7 @@ import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
 import { GeofenceZone, Employee } from '../../types';
 import { GEOFENCE_RADIUS_METERS } from '../../utils/geo';
+import { getCampusLocation } from '../../utils/campusLocations';
 import { getPhotoUrl } from '../../services/config';
 
 const BLANK_ZONE = {
@@ -213,12 +214,32 @@ export function AdminGeofence() {
         const normPerson = account ? normalizeName(account.name) : normalizeName(z.name.split(' - ')[0] || z.name);
         const personKey = normPerson ? `acc-${normPerson}` : `zone-${z.lat.toFixed(3)},${z.lng.toFixed(3)}`;
 
+        // If zone belongs to an instructor, ensure address and coordinates are based on campus station geofencing location
+        let zoneData: GeofenceZone = { ...z, active: z.active !== false };
+        if (isInstructorZone(z)) {
+          const campusInfo = getCampusLocation(account?.campus || (account as any)?.schoolName || z.name);
+          const rawAddr = (zoneData.address || '').toLowerCase();
+          const isResidential =
+            rawAddr.includes('lantad') ||
+            rawAddr.includes('banago') ||
+            rawAddr.includes('silay') ||
+            rawAddr.includes('bacolod') ||
+            rawAddr.includes('region vi') ||
+            (!rawAddr.includes('chmsu') && !rawAddr.includes('campus') && !rawAddr.includes('carlos hilado'));
+
+          if (!zoneData.address || isResidential) {
+            zoneData.address = campusInfo.address;
+            zoneData.lat = campusInfo.lat;
+            zoneData.lng = campusInfo.lng;
+          }
+        }
+
         if (!zoneMap.has(personKey)) {
-          zoneMap.set(personKey, { ...z, active: z.active !== false });
+          zoneMap.set(personKey, zoneData);
         } else {
           const existing = zoneMap.get(personKey)!;
-          if ((!existing.address || existing.address === 'Official Workplace GPS') && z.address) {
-            zoneMap.set(personKey, { ...z, active: z.active !== false });
+          if ((!existing.address || existing.address === 'Official Workplace GPS') && zoneData.address) {
+            zoneMap.set(personKey, zoneData);
           }
         }
       });
@@ -241,9 +262,10 @@ export function AdminGeofence() {
       );
       if (!isInst && !isHte) return;
 
-      let regLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat;
-      let regLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng;
-      if ((regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
+      const campusInfo = getCampusLocation(emp.campus);
+      let regLat = isInst ? campusInfo.lat : (emp.registrationLocation?.lat ?? (emp as any)?.registration_lat);
+      let regLng = isInst ? campusInfo.lng : (emp.registrationLocation?.lng ?? (emp as any)?.registration_lng);
+      if (!isInst && (regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
         const addrStr = String(emp.registrationAddress || (emp as any)?.registration_address);
         const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
         if (match) {
@@ -256,13 +278,17 @@ export function AdminGeofence() {
         const personKey = `acc-${normEmp}`;
         if (!zoneMap.has(personKey)) {
           const defaultName = isInst ? `${emp.name} - Official Station` : `${emp.name} - ${emp.companyName || 'HTE Workplace'}`;
+          const stationAddr = isInst
+            ? campusInfo.address
+            : (emp.companyAddress || emp.registrationAddress || 'HTE Workplace GPS');
+
           zoneMap.set(personKey, {
             id: `station-${emp.id}`,
             name: defaultName,
-            address: emp.registrationAddress || emp.companyAddress || (isInst ? 'Official Campus Station GPS' : 'HTE Workplace GPS'),
+            address: stationAddr,
             lat: Number(regLat),
             lng: Number(regLng),
-            radius: 100,
+            radius: isInst ? campusInfo.radius : 100,
             active: true,
             academicYear: emp.academicYear || settings.activeAcademicYear,
           });

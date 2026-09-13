@@ -40,6 +40,7 @@ import { TraineeDocuments, TraineeDocumentItem } from '../types';
 
 import { PH_ADDRESS_DATA } from '../data/ph_address_data';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
+import { getCampusLocation } from '../utils/campusLocations';
 import { Country, State, City } from 'country-state-city';
 
 
@@ -733,7 +734,10 @@ export function Register() {
     };
 
     // Ensure registration address is strictly device GPS coordinates where account was registered (NOT text address)
-    const computedRegistrationAddress = registrationLocation
+    const campusInfo = getCampusLocation(form.campus);
+    const computedRegistrationAddress = role === 'admin'
+      ? campusInfo.address
+      : registrationLocation
       ? `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}`
       : registrationAddress || undefined;
 
@@ -768,8 +772,8 @@ export function Register() {
         documentsPassed: role === 'trainee' ? (hasAnyDocs ? isAllDocsPassed : false) : undefined,
         documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : undefined,
         submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : undefined,
-        // Registration location & address strictly bound to device GPS establishment
-        registrationLocation: registrationLocation || undefined,
+        // Registration location & address strictly bound to device GPS establishment or campus station
+        registrationLocation: role === 'admin' ? { lat: campusInfo.lat, lng: campusInfo.lng } : (registrationLocation || undefined),
         registrationAddress: computedRegistrationAddress,
         companyAddress: form.companyAddress || undefined,
         password: form.password,
@@ -828,16 +832,19 @@ export function Register() {
             updateEmployee(existing.id, updatedPayload);
           }
 
-          if (registrationLocation?.lat && registrationLocation?.lng) {
+          const hasCoords = role === 'admin' || (registrationLocation?.lat && registrationLocation?.lng);
+          if (hasCoords) {
             const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - Registered Account Geofence`;
-            const zoneAddr = computedRegistrationAddress || `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}`;
+            const zoneAddr = role === 'admin'
+              ? campusInfo.address
+              : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
             addGeofenceZone({
               id: `personal-${empToUpdateId}`,
               name: zoneName,
               address: zoneAddr,
-              lat: registrationLocation.lat,
-              lng: registrationLocation.lng,
-              radius: 100,
+              lat: role === 'admin' ? campusInfo.lat : registrationLocation!.lat,
+              lng: role === 'admin' ? campusInfo.lng : registrationLocation!.lng,
+              radius: role === 'admin' ? campusInfo.radius : 100,
               active: true,
               academicYear: settings.activeAcademicYear,
             });

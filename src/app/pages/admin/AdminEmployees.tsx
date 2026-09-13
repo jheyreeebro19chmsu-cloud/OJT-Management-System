@@ -9,6 +9,7 @@ import { useApp } from '../../store/AppContext';
 import { Employee } from '../../types';
 import { getPhotoUrl } from '../../services/config';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
+import { getCampusLocation } from '../../utils/campusLocations';
 
 
 
@@ -1301,6 +1302,7 @@ export function AdminEmployees() {
                               {isInstructor ? (
                                 <>
                                   <p><span className="font-semibold text-blue-900">Campus Station:</span> {selectedEmp.campus || 'CHMSU Talisay (Main Campus)'}</p>
+                                  <p><span className="font-semibold text-blue-900">Station Geofence Address:</span> {getCampusLocation(selectedEmp.campus).address}</p>
                                   <p><span className="font-semibold text-blue-900">Department / Office:</span> {selectedEmp.department || 'College of Computer Studies'}</p>
                                 </>
                               ) : (
@@ -1312,7 +1314,13 @@ export function AdminEmployees() {
                                       z.id === `personal-${selectedEmp.id}` ||
                                       (selectedEmp.name && z.name.toLowerCase().includes(selectedEmp.name.toLowerCase()))
                                     );
-                                    const workplaceAddr = selectedEmp.companyAddress || matchingZone?.address || (selectedEmp.companyName && selectedEmp.companyName !== 'N/A' ? `${selectedEmp.companyName} Workplace` : 'Campus Location');
+                                    const rawZoneAddr = matchingZone?.address || '';
+                                    const isResidential =
+                                      rawZoneAddr.toLowerCase().includes('lantad') ||
+                                      rawZoneAddr.toLowerCase().includes('banago') ||
+                                      (!rawZoneAddr.toLowerCase().includes('chmsu') && !rawZoneAddr.toLowerCase().includes('campus') && !rawZoneAddr.toLowerCase().includes('concentrix') && !rawZoneAddr.toLowerCase().includes('focus') && !rawZoneAddr.toLowerCase().includes('mcdonald'));
+
+                                    const workplaceAddr = selectedEmp.companyAddress || (!isResidential && rawZoneAddr ? rawZoneAddr : null) || (selectedEmp.companyName && selectedEmp.companyName !== 'N/A' && !selectedEmp.companyName.toLowerCase().includes('pending') ? `${selectedEmp.companyName} Workplace Premises` : 'Campus Location');
                                     return (
                                       <p><span className="font-semibold text-blue-900">Workplace Address:</span> {workplaceAddr}</p>
                                     );
@@ -1341,7 +1349,7 @@ export function AdminEmployees() {
                             </div>
                           </div>
 
-                          {selectedEmp.registrationAddress && (
+                          {selectedEmp.registrationAddress && !isInstructor && (
                             <div className="flex gap-3 text-sm border-t border-gray-50 pt-2">
                               <span className="text-gray-400 w-28 shrink-0 flex items-center gap-1">
                                 <MapPin size={11} /> Registered At

@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { getCurrentLocation, reverseGeocode } from '../utils/geo';
+import { getCampusLocation } from '../utils/campusLocations';
 
 export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
   const { currentUser, getCurrentEmployee, employees, updateEmployee, updateHostSupervisor, addGeofenceZone, settings } = useApp();
@@ -111,11 +112,12 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     }
   }, [employee?.registrationLocation, employee?.registrationAddress]);
 
-  const registrationAddress =
-    resolvedGpsAddress ||
-    employee?.registrationAddress ||
-    employee?.companyAddress ||
-    (role === 'hte' ? company : 'Negros Occidental, Philippines');
+  const isHte = role === 'hte';
+  const campusInfo = getCampusLocation(campus);
+
+  const registrationAddress = isHte
+    ? (resolvedGpsAddress || employee?.registrationAddress || employee?.companyAddress || company || 'Host Training Establishment Premises')
+    : campusInfo.address;
 
   // Construct readable home address
   const address = (() => {
@@ -133,16 +135,19 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     return 'Residential Address on File';
   })();
 
-  const geofenceCoords = employee?.registrationLocation
-    ? `${employee.registrationLocation.lat.toFixed(6)}, ${employee.registrationLocation.lng.toFixed(6)}`
-    : 'Location not captured yet';
+  const geofenceCoords = isHte
+    ? (employee?.registrationLocation
+      ? `${employee.registrationLocation.lat.toFixed(6)}, ${employee.registrationLocation.lng.toFixed(6)}`
+      : 'Location not captured yet')
+    : (employee?.registrationLocation?.lat && Math.abs(employee.registrationLocation.lat - campusInfo.lat) < 0.1
+      ? `${employee.registrationLocation.lat.toFixed(6)}, ${employee.registrationLocation.lng.toFixed(6)}`
+      : `${campusInfo.lat.toFixed(6)}, ${campusInfo.lng.toFixed(6)}`);
 
   const employeeId =
     employee?.employeeId ||
     currentUser?.employeeId ||
     (role === 'hte' ? `HTE-${(currentUser?.id || '88392').slice(0, 6).toUpperCase()}` : 'INSTR-001');
 
-  const isHte = role === 'hte';
 
   const handleSyncRealTimeLocation = async () => {
     const targetId = employee?.id || currentUser?.id;
@@ -363,7 +368,9 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Registered Address</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+              {isHte ? 'Registered Establishment Address' : 'Official Campus Station Geofence'}
+            </div>
             <div className="text-sm font-semibold text-slate-800 leading-relaxed">{registrationAddress}</div>
           </div>
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
