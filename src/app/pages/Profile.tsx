@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useApp, DEFAULT_OJT_REQUIRED_DOCUMENTS } from '../store/AppContext';
@@ -624,6 +625,14 @@ export function Profile() {
                   <p className="text-sm text-gray-700">{evaluation.recommendations}</p>
                 </div>
               )}
+              <div className="mt-3 pt-3 border-t border-slate-200/50 flex justify-end">
+                <Link
+                  to="/app/evaluation"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 bg-white/80 hover:bg-white px-3 py-1.5 rounded-xl transition-all shadow-xs"
+                >
+                  <Award size={13} /> View Full HTE Performance Report →
+                </Link>
+              </div>
             </motion.div>
           );
         })()}

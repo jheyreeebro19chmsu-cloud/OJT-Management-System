@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -13,11 +13,12 @@ const navItems = [
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
+  { to: '/app/evaluation', label: 'HTE Evaluation', icon: Award, end: false, isEvalNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
 ];
 
 export function EmployeeLayout() {
-  const { currentUser, logout, getCurrentEmployee, settings } = useApp();
+  const { currentUser, logout, getCurrentEmployee, settings, evaluations } = useApp();
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -61,6 +62,10 @@ export function EmployeeLayout() {
   const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as const;
   const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
   const missingDocsCount = 4 - uploadedDocsCount;
+
+  const traineeEvaluation = evaluations.find(
+    (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
+  );
 
   const renderSidebarContent = (isMobile = false) => (
     <>
@@ -133,6 +138,23 @@ export function EmployeeLayout() {
                       }`}
                     >
                       {missingDocsCount > 0 ? `${missingDocsCount} left` : '4/4'}
+                    </span>
+                  )}
+                  {(item as any).isEvalNav && (
+                    <span
+                      className={`ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                        traineeEvaluation?.status === 'reviewed_by_instructor'
+                          ? 'bg-emerald-400/25 text-emerald-300 border border-emerald-400/40'
+                          : traineeEvaluation
+                          ? 'bg-blue-400/25 text-blue-200 border border-blue-400/40'
+                          : 'bg-white/10 text-blue-300'
+                      }`}
+                    >
+                      {traineeEvaluation?.status === 'reviewed_by_instructor'
+                        ? 'Verified'
+                        : traineeEvaluation
+                        ? 'Evaluated'
+                        : 'Pending'}
                     </span>
                   )}
                 </>

@@ -1937,17 +1937,22 @@ export function Dashboard() {
                   <span className="text-slate-500 text-[11px]">
                     Evaluated by {traineeEvaluation.evaluatedBy}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewEvaluation(traineeEvaluation)}
+                  <Link
+                    to="/app/evaluation"
                     className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                   >
-                    View Scorecard <ChevronRight size={13} />
-                  </button>
+                    View Evaluation Report <ChevronRight size={13} />
+                  </Link>
                 </div>
               ) : (
-                <div className="pt-2 border-t border-slate-200/60 text-[11px] text-slate-400">
-                  Evaluation status is synchronized live with supervisor.
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-400">
+                  <span className="text-[11px]">Status is synchronized live with supervisor.</span>
+                  <Link
+                    to="/app/evaluation"
+                    className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    Check Status <ChevronRight size={13} />
+                  </Link>
                 </div>
               )}
             </div>

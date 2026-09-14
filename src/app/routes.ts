@@ -64,6 +64,7 @@ const Records = lazyWithRetry(() => import('./pages/Records').then(m => ({ defau
 const Register = lazyWithRetry(() => import('./pages/Register').then(m => ({ default: m.Register })), 'Register');
 const TimeRecord = lazyWithRetry(() => import('./pages/TimeRecord').then(m => ({ default: m.TimeRecord })), 'TimeRecord');
 const Documents = lazyWithRetry(() => import('./pages/Documents').then(m => ({ default: m.Documents })), 'Documents');
+const TraineeEvaluation = lazyWithRetry(() => import('./pages/TraineeEvaluation').then(m => ({ default: m.TraineeEvaluation })), 'TraineeEvaluation');
 
 function RouteErrorFallback() {
   const error = useRouteError();
@@ -174,7 +175,8 @@ export const router = createBrowserRouter([
       { path: 'records', element: withSuspense(Records) },
       { path: 'documents', element: withSuspense(Documents) },
       { path: 'announcements', element: withSuspense(Announcements) },
-      { path: 'hte-feedback', element: React.createElement(Navigate, { to: '/app', replace: true }) },
+      { path: 'evaluation', element: withSuspense(TraineeEvaluation) },
+      { path: 'hte-feedback', element: withSuspense(TraineeEvaluation) },
       { path: 'profile', element: withSuspense(Profile) },
       { path: 'instructor-qr', element: withSuspense(InstructorQR) },
       { path: 'scan-qr', element: withSuspense(QRScanner) },
