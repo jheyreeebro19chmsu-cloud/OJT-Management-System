@@ -969,7 +969,7 @@ export function Register() {
     const hasValidCountry = form.country === 'other' ? Boolean(form.countryManual?.trim()) : Boolean(form.country);
     const hasValidRegion = form.region === 'other' ? Boolean(form.regionManual?.trim()) : Boolean(form.region);
     const hasValidCity = form.city === 'other' ? Boolean(form.cityManual?.trim()) : Boolean(form.city);
-    const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangayManual?.trim()) : Boolean(form.barangay);
+    const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangayManual?.trim()) : Boolean(form.barangay?.trim());
     const hasValidProvince =
       form.country === 'PH'
         ? form.province === 'other'
@@ -997,6 +997,7 @@ export function Register() {
         if (!hasValidRegion) errors.push('Please select your Region');
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
+        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
         if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
     }
@@ -1018,6 +1019,7 @@ export function Register() {
         if (!hasValidRegion) errors.push('Please select your Region');
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
+        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
       }
       if (step === 1) {
         // Company fields are optional for initial trainee enrollment
@@ -1045,6 +1047,7 @@ export function Register() {
         if (!hasValidRegion) errors.push('Please select Region');
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select Province');
         if (!hasValidCity) errors.push('Please select City/Municipality');
+        if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter Barangay');
         if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
       }
       if (step === 1) {
@@ -1081,6 +1084,7 @@ export function Register() {
   const hasValidCountry = form.country === 'other' ? Boolean(form.countryManual?.trim()) : Boolean(form.country);
   const hasValidRegion = form.region === 'other' ? Boolean(form.regionManual?.trim()) : Boolean(form.region);
   const hasValidCity = form.city === 'other' ? Boolean(form.cityManual?.trim()) : Boolean(form.city);
+  const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangayManual?.trim()) : Boolean(form.barangay?.trim());
   const hasValidProvince =
     form.country === 'PH'
       ? form.province === 'other'
@@ -1521,7 +1525,7 @@ export function Register() {
                         {form.country === 'PH' && (
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <label className="text-xs font-semibold text-gray-600">Barangay (Optional)</label>
+                              <label className="text-xs font-semibold text-gray-600">Barangay *</label>
                             </div>
                             <input
                               value={form.barangay}
@@ -1529,8 +1533,15 @@ export function Register() {
                                 update('barangay', e.target.value);
                               }}
                               placeholder="Enter barangay"
-                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                attemptedNext && !hasValidBarangay
+                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                  : 'border-gray-200 focus:ring-blue-500'
+                              }`}
                             />
+                            {attemptedNext && !hasValidBarangay && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Barangay</p>
+                            )}
                           </div>
                         )}
 
@@ -2356,7 +2367,7 @@ export function Register() {
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-semibold text-gray-600">
-                            {form.country === 'PH' || !form.country ? 'Barangay (Optional)' : 'Neighborhood/Area'}
+                            {form.country === 'PH' || !form.country ? 'Barangay *' : 'Neighborhood/Area'}
                           </label>
                         </div>
                         {/* Always use manual input for Barangay to avoid select fallback */}
@@ -2366,8 +2377,15 @@ export function Register() {
                             update('barangay', e.target.value);
                           }}
                           placeholder="Enter barangay"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay
+                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                              : 'border-gray-200 focus:ring-blue-500'
+                          }`}
                         />
+                        {attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay && (
+                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter Barangay</p>
+                        )}
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
