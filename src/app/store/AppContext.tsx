@@ -1716,7 +1716,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ? `${created.name} - Official Station`
             : isHTE
             ? `${created.name} - ${cleanData.companyName || 'HTE Workplace'}`
-            : `${created.name} - Registered Account Geofence`;
+            : `${created.name} - Trainee Geofence (${cleanData.companyName || 'Assigned Workplace'})`;
           const zoneAddr = isInstructor
             ? campusInfo.address
             : cleanData.companyAddress || cleanData.registrationAddress || `${Number(cleanData.registrationLocation?.lat).toFixed(6)}, ${Number(cleanData.registrationLocation?.lng).toFixed(6)}`;
@@ -1753,6 +1753,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPasswordForEmail(employeeData.email, password);
       }
       setEmployees((prev) => [...prev, newEmp]);
+
+      // Local storage station geofence auto-creation
+      const campusInfo = getCampusLocation(cleanData.campus || newEmp.campus);
+      const hasCoords = (cleanData.registrationLocation?.lat && cleanData.registrationLocation?.lng) || isInstructor;
+      if (hasCoords) {
+        const zoneName = isInstructor
+          ? `${newEmp.name} - Official Station`
+          : isHTE
+          ? `${newEmp.name} - ${cleanData.companyName || 'HTE Workplace'}`
+          : `${newEmp.name} - Trainee Geofence (${cleanData.companyName || 'Assigned Workplace'})`;
+        const zoneAddr = isInstructor
+          ? campusInfo.address
+          : cleanData.companyAddress || cleanData.registrationAddress || `${Number(cleanData.registrationLocation?.lat).toFixed(6)}, ${Number(cleanData.registrationLocation?.lng).toFixed(6)}`;
+
+        const localZone: GeofenceZone = {
+          id: `station-${newEmp.id}`,
+          name: zoneName,
+          address: zoneAddr,
+          lat: isInstructor ? campusInfo.lat : Number(cleanData.registrationLocation?.lat),
+          lng: isInstructor ? campusInfo.lng : Number(cleanData.registrationLocation?.lng),
+          radius: isInstructor ? campusInfo.radius : 100,
+          active: true,
+          academicYear: cleanData.academicYear || settings.activeAcademicYear,
+        };
+        setGeofenceZones((prev) => {
+          const next = [localZone, ...prev.filter((z) => z.id !== localZone.id)];
+          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, next);
+          return next;
+        });
+      }
 
       // Local storage face enrollment fallback
       if (

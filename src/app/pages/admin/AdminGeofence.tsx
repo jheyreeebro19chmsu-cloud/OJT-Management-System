@@ -45,7 +45,7 @@ const BLANK_ZONE = {
   active: true,
 };
 
-type ZoneTypeFilter = 'all' | 'instructor' | 'hte' | 'institutional';
+type ZoneTypeFilter = 'all' | 'trainee' | 'instructor' | 'hte' | 'institutional';
 
 export function AdminGeofence() {
   const { currentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, settings } = useApp();
@@ -224,50 +224,35 @@ export function AdminGeofence() {
     return account?.academicYear || null;
   };
 
-  // Combine explicit geofenceZones with instructor/HTE registered stations (strictly excluding all Trainees)
+  const isTraineeZone = (zone: any): boolean => {
+    const acc = getAccountForZone(zone);
+    if (acc && isTraineeAccount(acc)) return true;
+    const zoneName = (zone?.name || '').toLowerCase();
+    const zoneId = (zone?.id || '').toLowerCase();
+    return Boolean(
+      zoneId.startsWith('personal-') ||
+      zoneName.includes('trainee') ||
+      zoneName.includes('intern') ||
+      zoneName.includes('student') ||
+      zoneName.includes('registered account geofence')
+    );
+  };
+
+  // Combine explicit geofenceZones with instructor, HTE, and Trainee registered stations
   const allCombinedZones = useMemo<GeofenceZone[]>(() => {
     const zoneMap = new Map<string, GeofenceZone>();
 
-    // Set of all known trainee identities to strictly block from geofencing
-    const traineeIdentities = new Set<string>();
-    employees.forEach((e) => {
-      if (isTraineeAccount(e)) {
-        if (e.id) traineeIdentities.add(e.id.toLowerCase());
-        if (e.employeeId) traineeIdentities.add(e.employeeId.toLowerCase());
-        if (e.name) traineeIdentities.add(e.name.toLowerCase().trim());
-      }
-    });
-
-    const isTraineeZone = (z: GeofenceZone): boolean => {
-      const zId = (z.id || '').toLowerCase();
-      const zName = (z.name || '').toLowerCase();
-      if (zId.startsWith('personal-')) return true;
-      if (zName.includes('trainee') || zName.includes('student') || zName.includes('intern')) return true;
-
-      const acc = getAccountForZone(z);
-      if (acc && isTraineeAccount(acc)) return true;
-
-      const prefix = (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || '').toLowerCase();
-      if (prefix && traineeIdentities.has(prefix)) {
-        if (!acc || isTraineeAccount(acc)) return true;
-      }
-      return false;
-    };
-
-    // 1. Process explicit geofence zones from DB/Storage, strictly filtering out any personal trainee zones
+    // 1. Process explicit geofence zones from DB/Storage
     geofenceZones
       .filter(
         (z) =>
           !z.name.toLowerCase().includes('main training center') &&
           z.id !== 'zone-1' &&
-          !z.id.startsWith('personal-') &&
           !z.name.toLowerCase().includes('rainer') &&
-          !z.name.toLowerCase().includes('dooms') &&
-          !isTraineeZone(z)
+          !z.name.toLowerCase().includes('dooms')
       )
       .forEach((z) => {
         const account = getAccountForZone(z);
-        if (account && isTraineeAccount(account)) return;
         const normPerson = account ? normalizeName(account.name) : normalizeName(z.name.split(' - ')[0] || z.name);
         const personKey = normPerson ? `acc-${normPerson}` : `zone-${z.lat.toFixed(3)},${z.lng.toFixed(3)}`;
 
@@ -301,9 +286,8 @@ export function AdminGeofence() {
         }
       });
 
-    // 2. Include registered Instructors and HTEs with GPS coordinates (strictly excluding Trainees)
+    // 2. Include registered Instructors, HTEs, and Trainees with GPS coordinates
     employees.forEach((emp: Employee) => {
-      if (isTraineeAccount(emp)) return; // Strictly ignore any Trainee account
       if (emp.name?.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
       const isInst = Boolean(
         emp.position === 'OJT Instructor' ||
@@ -317,11 +301,11 @@ export function AdminGeofence() {
         (emp.employeeId && emp.employeeId.startsWith('HTE-')) ||
         (emp.id && emp.id.toLowerCase().startsWith('hte'))
       );
-      if (!isInst && !isHte) return;
+      const isTr = isTraineeAccount(emp);
 
       const campusInfo = getCampusLocation(emp.campus);
-      let regLat = isInst ? campusInfo.lat : (emp.registrationLocation?.lat ?? (emp as any)?.registration_lat);
-      let regLng = isInst ? campusInfo.lng : (emp.registrationLocation?.lng ?? (emp as any)?.registration_lng);
+      let regLat = isInst ? campusInfo.lat : (emp.registrationLocation?.lat ?? (emp as any)?.registration_lat ?? (emp as any)?.latitude);
+      let regLng = isInst ? campusInfo.lng : (emp.registrationLocation?.lng ?? (emp as any)?.registration_lng ?? (emp as any)?.longitude);
       if (!isInst && (regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
         const addrStr = String(emp.registrationAddress || (emp as any)?.registration_address);
         const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
@@ -332,12 +316,16 @@ export function AdminGeofence() {
       }
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
         const normEmp = normalizeName(emp.name);
-        const personKey = `acc-${normEmp}`;
+        const personKey = isTr ? `trainee-${emp.id || normEmp}` : `acc-${normEmp}`;
         if (!zoneMap.has(personKey)) {
-          const defaultName = isInst ? `${emp.name} - Official Station` : `${emp.name} - ${emp.companyName || 'HTE Workplace'}`;
+          const defaultName = isInst
+            ? `${emp.name} - Official Station`
+            : isHte
+            ? `${emp.name} - ${emp.companyName || 'HTE Workplace'}`
+            : `${emp.name} - Trainee Geofence (${emp.companyName || 'Assigned Workplace'})`;
           const stationAddr = isInst
             ? campusInfo.address
-            : (emp.companyAddress || emp.registrationAddress || 'HTE Workplace GPS');
+            : (emp.companyAddress || emp.registrationAddress || 'Trainee GPS Locked Station');
 
           zoneMap.set(personKey, {
             id: `station-${emp.id}`,
@@ -358,10 +346,6 @@ export function AdminGeofence() {
 
   const filteredZones = useMemo(() => {
     return allCombinedZones.filter((zone) => {
-      // Strictly exclude any trainee account
-      const account = getAccountForZone(zone);
-      if (account && isTraineeAccount(account)) return false;
-
       // Academic year filter
       if (selectedAcademicYear !== 'all') {
         const zoneAY = getZoneAcademicYear(zone);
@@ -369,9 +353,10 @@ export function AdminGeofence() {
       }
 
       // Zone category filter
+      if (zoneTypeFilter === 'trainee' && !isTraineeZone(zone)) return false;
       if (zoneTypeFilter === 'instructor' && !isInstructorZone(zone)) return false;
       if (zoneTypeFilter === 'hte' && !isHTEZone(zone)) return false;
-      if (zoneTypeFilter === 'institutional' && (isInstructorZone(zone) || isHTEZone(zone))) return false;
+      if (zoneTypeFilter === 'institutional' && (isInstructorZone(zone) || isHTEZone(zone) || isTraineeZone(zone))) return false;
 
       // Search query filter
       if (searchQuery.trim()) {
@@ -383,7 +368,8 @@ export function AdminGeofence() {
           account.name.toLowerCase().includes(q) ||
           (account.employeeId || '').toLowerCase().includes(q) ||
           (account.companyName || '').toLowerCase().includes(q) ||
-          (account.position || '').toLowerCase().includes(q)
+          (account.position || '').toLowerCase().includes(q) ||
+          ((account as any).course || '').toLowerCase().includes(q)
         );
         if (!matchName && !matchAddress && !matchAccount) return false;
       }
@@ -577,9 +563,10 @@ export function AdminGeofence() {
 
   // Statistics
   const totalActive = allCombinedZones.filter((z) => z.active).length;
+  const totalTraineeZones = allCombinedZones.filter((z) => isTraineeZone(z)).length;
   const totalInstructorZones = allCombinedZones.filter((z) => isInstructorZone(z)).length;
   const totalHTEZones = allCombinedZones.filter((z) => isHTEZone(z)).length;
-  const totalInstitutional = allCombinedZones.filter((z) => !isInstructorZone(z) && !isHTEZone(z)).length;
+  const totalInstitutional = allCombinedZones.filter((z) => !isInstructorZone(z) && !isHTEZone(z) && !isTraineeZone(z)).length;
 
   // Currently dragged zone
   const draggedZone = useMemo(() => {
@@ -609,7 +596,7 @@ export function AdminGeofence() {
         <div>
           <h2 className="text-xl font-bold text-gray-800">Geofence Location Monitoring</h2>
           <p className="text-sm text-gray-500">
-            Monitor OJT instructor stations, HTE partner workplaces, and campus boundaries for attendance verification.
+            Monitor Trainee registered GPS perimeters, OJT instructor stations, HTE partner workplaces, and campus boundaries for attendance verification.
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -644,14 +631,24 @@ export function AdminGeofence() {
       </div>
 
       {/* Metric Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
           <div className="w-11 h-11 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
             <MapPin size={22} />
           </div>
           <div>
-            <p className="text-xs font-semibold text-gray-500">Total Active Zones</p>
+            <p className="text-xs font-semibold text-gray-500">Total Active</p>
             <p className="text-xl font-black text-gray-900">{totalActive}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center gap-3">
+          <div className="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+            <User size={22} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-500">Trainee Geofences</p>
+            <p className="text-xl font-black text-emerald-700">{totalTraineeZones}</p>
           </div>
         </div>
 
@@ -680,7 +677,7 @@ export function AdminGeofence() {
             <GraduationCap size={22} />
           </div>
           <div>
-            <p className="text-xs font-semibold text-gray-500">Campus Institutional</p>
+            <p className="text-xs font-semibold text-gray-500">Campus Stations</p>
             <p className="text-xl font-black text-sky-700">{totalInstitutional}</p>
           </div>
         </div>
@@ -691,7 +688,7 @@ export function AdminGeofence() {
         <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl flex-wrap">
           <button
             onClick={() => setZoneTypeFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               zoneTypeFilter === 'all'
                 ? 'bg-white text-gray-900 shadow-xs'
                 : 'text-gray-500 hover:text-gray-800'
@@ -700,8 +697,18 @@ export function AdminGeofence() {
             All Zones ({allCombinedZones.length})
           </button>
           <button
+            onClick={() => setZoneTypeFilter('trainee')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              zoneTypeFilter === 'trainee'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            Trainees ({totalTraineeZones})
+          </button>
+          <button
             onClick={() => setZoneTypeFilter('instructor')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               zoneTypeFilter === 'instructor'
                 ? 'bg-purple-700 text-white shadow-xs'
                 : 'text-gray-500 hover:text-gray-800'
@@ -711,7 +718,7 @@ export function AdminGeofence() {
           </button>
           <button
             onClick={() => setZoneTypeFilter('hte')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               zoneTypeFilter === 'hte'
                 ? 'bg-amber-600 text-white shadow-xs'
                 : 'text-gray-500 hover:text-gray-800'
@@ -721,7 +728,7 @@ export function AdminGeofence() {
           </button>
           <button
             onClick={() => setZoneTypeFilter('institutional')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               zoneTypeFilter === 'institutional'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-gray-500 hover:text-gray-800'
@@ -867,6 +874,7 @@ export function AdminGeofence() {
             const account = getAccountForZone(zone);
             const isInstructor = isInstructorZone(zone);
             const isHTE = isHTEZone(zone);
+            const isTrainee = isTraineeZone(zone);
 
             return (
               <motion.div
@@ -885,6 +893,8 @@ export function AdminGeofence() {
                 } ${
                   selectedZoneId === zone.id
                     ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/20'
+                    : isTrainee
+                    ? 'border-emerald-100 hover:border-emerald-300'
                     : isInstructor
                     ? 'border-purple-100 hover:border-purple-300'
                     : isHTE
@@ -923,7 +933,7 @@ export function AdminGeofence() {
                         {/* Zone Icon or Account Avatar */}
                         {account?.photo ? (
                           <div className={`w-12 h-12 rounded-2xl overflow-hidden shrink-0 border ${
-                            isInstructor ? 'bg-purple-100 border-purple-200' : 'bg-amber-100 border-amber-200'
+                            isTrainee ? 'bg-emerald-100 border-emerald-200' : isInstructor ? 'bg-purple-100 border-purple-200' : 'bg-amber-100 border-amber-200'
                           }`}>
                             <img
                               src={getPhotoUrl(account.photo)}
@@ -935,14 +945,18 @@ export function AdminGeofence() {
                         ) : (
                           <div
                             className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-                              isInstructor
+                              isTrainee
+                                ? 'bg-emerald-50 border border-emerald-200'
+                                : isInstructor
                                 ? 'bg-purple-50 border border-purple-200'
                                 : isHTE
                                 ? 'bg-amber-50 border border-amber-200'
                                 : 'bg-blue-50 border border-blue-200'
                             }`}
                           >
-                            {isInstructor ? (
+                            {isTrainee ? (
+                              <User size={20} className="text-emerald-600" />
+                            ) : isInstructor ? (
                               <ShieldCheck size={20} className="text-purple-600" />
                             ) : isHTE ? (
                               <Building size={20} className="text-amber-600" />
@@ -958,7 +972,11 @@ export function AdminGeofence() {
                               {zone.name}
                             </h4>
 
-                            {isInstructor ? (
+                            {isTrainee ? (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200">
+                                <User size={10} /> Trainee Geofence
+                              </span>
+                            ) : isInstructor ? (
                               <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1 border border-purple-200">
                                 <ShieldCheck size={10} /> OJT Instructor Station
                               </span>
@@ -993,8 +1011,12 @@ export function AdminGeofence() {
 
                           {/* Account Metadata strip */}
                           {account && (
-                            <p className={`text-xs font-medium mt-1 ${isInstructor ? 'text-purple-700' : 'text-amber-700'}`}>
-                              {isInstructor ? (
+                            <p className={`text-xs font-medium mt-1 ${isTrainee ? 'text-emerald-700' : isInstructor ? 'text-purple-700' : 'text-amber-700'}`}>
+                              {isTrainee ? (
+                                <>
+                                  Trainee: <span className="font-bold">{account.name}</span> ({account.employeeId || account.email}) • {(account as any).course || account.department || 'BSIS'} • Assigned HTE: <span className="font-semibold">{account.companyName || 'Host Establishment'}</span>
+                                </>
+                              ) : isInstructor ? (
                                 <>
                                   OJT Instructor: <span className="font-bold">{account.name}</span> ({account.employeeId || account.email}) • {account.department || 'College of Computer Studies'}
                                 </>
@@ -1302,14 +1324,18 @@ export function AdminGeofence() {
                 <div className="flex items-center gap-3">
                   <div
                     className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
-                      isInstructorZone(viewModalZone)
+                      isTraineeZone(viewModalZone)
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : isInstructorZone(viewModalZone)
                         ? 'bg-purple-100 text-purple-700'
                         : isHTEZone(viewModalZone)
                         ? 'bg-amber-100 text-amber-700'
                         : 'bg-blue-100 text-blue-700'
                     }`}
                   >
-                    {isInstructorZone(viewModalZone) ? (
+                    {isTraineeZone(viewModalZone) ? (
+                      <User size={20} />
+                    ) : isInstructorZone(viewModalZone) ? (
                       <ShieldCheck size={20} />
                     ) : isHTEZone(viewModalZone) ? (
                       <Building size={20} />
@@ -1320,7 +1346,9 @@ export function AdminGeofence() {
                   <div>
                     <h3 className="font-bold text-gray-900 text-base">{viewModalZone.name}</h3>
                     <p className="text-xs text-gray-500">
-                      {isInstructorZone(viewModalZone)
+                      {isTraineeZone(viewModalZone)
+                        ? 'Trainee Official Registered Geofence'
+                        : isInstructorZone(viewModalZone)
                         ? 'OJT Instructor Station'
                         : isHTEZone(viewModalZone)
                         ? 'HTE Partner Workplace'

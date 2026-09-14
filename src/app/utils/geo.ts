@@ -20,9 +20,9 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // Allow a realistic GPS variance margin based on device-reported accuracy
-  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 80) : 30;
-  const maxAllowedDistance = Math.max(radiusMeters, 100) + accuracyAllowance;
+  // Allow a realistic GPS sensor variance (clamped to max 25m) to prevent false-rejections while maintaining high boundary precision
+  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 25) : 15;
+  const maxAllowedDistance = radiusMeters + accuracyAllowance;
   return distance <= maxAllowedDistance;
 }
 
@@ -65,7 +65,11 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
 }
 
 // Multi-tiered high-res GPS locator with instant fallback for desktop browsers & Windows Location Services
-export function getCurrentLocation(): Promise<any> {
+export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?: number; maximumAge?: number }): Promise<any> {
+  const highAccuracy = options?.highAccuracy ?? true;
+  const timeoutMs = options?.timeout ?? 10000;
+  const maxAgeMs = options?.maximumAge ?? 0; // Fresh satellite fix by default
+
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
       return fallbackIpLocation().then(resolve).catch(reject);
@@ -131,10 +135,10 @@ export function getCurrentLocation(): Promise<any> {
               reject(err2);
             }
           },
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
         );
       },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 5000 }
+      { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: maxAgeMs }
     );
   });
 }
