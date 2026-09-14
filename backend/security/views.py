@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 
 def _face_backend_available() -> bool:
     try:
+        from deepface_service import is_deepface_available
+        if is_deepface_available():
+            return True
+    except Exception:
+        pass
+    try:
         import face_recognition  # noqa: F401
         return True
     except BaseException:
@@ -464,13 +470,25 @@ def verify_face(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
+    has_deepface = False
+    try:
+        from deepface_service import verify_face_pair, is_deepface_available
+        has_deepface = is_deepface_available()
+    except Exception:
+        verify_face_pair = None
+
+    has_legacy = False
     try:
         import face_recognition  # type: ignore
+        has_legacy = True
     except BaseException:
+        pass
+
+    if not has_deepface and not has_legacy:
         return JsonResponse(
             {
                 "success": False,
-                "message": "face_recognition is not installed on the server.",
+                "message": "Neither DeepFace nor face_recognition is installed on the server.",
             },
             status=501,
         )
@@ -571,6 +589,21 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 },
                 status=422
             )
+
+    # Attempt primary DeepFace verification if available
+    if has_deepface and verify_face_pair:
+        try:
+            df_result = verify_face_pair(
+                known_image,
+                unknown_image,
+                model_name=data.get("model_name", "VGG-Face"),
+                detector_backend=data.get("detector_backend", "opencv"),
+                distance_metric=data.get("distance_metric", "cosine"),
+            )
+            if df_result.get("success"):
+                return JsonResponse(df_result)
+        except Exception as df_err:
+            logger.warning(f"DeepFace verification error, falling back to dlib: {df_err}")
 
     unknown_encodings = _encode_face_with_fallback(unknown_image)
 

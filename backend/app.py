@@ -32,16 +32,21 @@ def check_location():
 @app.route("/check-face", methods=["POST"])
 def check_face():
     """
+    Verify captured face against registered face using DeepFace.
     Expects:
-    - registered_image: saved official image
-    - captured_image: live captured image
+    - registered_image: saved official image (file upload or base64)
+    - captured_image: live captured image (file upload or base64)
+    - model_name: optional (default: VGG-Face, supports Facenet, ArcFace, etc.)
+    - detector_backend: optional (default: opencv)
     """
 
     registered_image = request.files.get("registered_image")
     captured_image = request.files.get("captured_image")
+    model_name = request.form.get("model_name", "VGG-Face")
+    detector_backend = request.form.get("detector_backend", "opencv")
 
     if not registered_image or not captured_image:
-        return jsonify({"error": "Both images are required."}), 400
+        return jsonify({"error": "Both registered_image and captured_image are required."}), 400
 
     os.makedirs("temp", exist_ok=True)
 
@@ -51,9 +56,34 @@ def check_face():
     registered_image.save(registered_path)
     captured_image.save(captured_path)
 
-    result = compare_faces(registered_path, captured_path)
+    result = compare_faces(
+        registered_path,
+        captured_path,
+        model_name=model_name,
+        detector_backend=detector_backend
+    )
 
     return jsonify(result)
+
+@app.route("/analyze-face", methods=["POST"])
+def analyze_face():
+    """
+    Analyze facial attributes (age, gender, emotion) using DeepFace.
+    Expects:
+    - image: captured face image
+    """
+    from deepface_service import analyze_face_attributes
+
+    image = request.files.get("image")
+    if not image:
+        return jsonify({"error": "Image file is required."}), 400
+
+    os.makedirs("temp", exist_ok=True)
+    temp_path = os.path.join("temp", "analyze_temp.jpg")
+    image.save(temp_path)
+
+    analysis = analyze_face_attributes(temp_path)
+    return jsonify(analysis)
 
 if __name__ == "__main__":
     app.run(debug=True)

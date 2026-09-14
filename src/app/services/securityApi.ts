@@ -17,7 +17,12 @@ export interface FaceVerifyResponse {
   matched?: boolean;
   distance?: number;
   tolerance?: number;
+  threshold?: number;
   confidence?: number;
+  similarity_percent?: number;
+  model?: string;
+  detector_backend?: string;
+  backend?: string;
   message?: string;
 }
 

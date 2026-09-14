@@ -1,33 +1,19 @@
-import face_recognition # type: ignore
+"""
+Face Recognition Checker powered by DeepFace with fallback support.
+"""
 
-def compare_faces(known_image_path, unknown_image_path):
+from deepface_service import verify_face_pair, is_deepface_available
+
+def compare_faces(known_image_path, unknown_image_path, model_name="VGG-Face", detector_backend="opencv"):
     """
-    Compare a registered face and a captured face.
-    Returns True if matched, otherwise False.
+    Compare a registered face and a captured face using DeepFace.
+    Returns rich verification metadata including matched status, distance, threshold, and confidence.
     """
-
-    # Load images
-    known_image = face_recognition.load_image_file(known_image_path)
-    unknown_image = face_recognition.load_image_file(unknown_image_path)
-
-    # Encode faces
-    known_encodings = face_recognition.face_encodings(known_image)
-    unknown_encodings = face_recognition.face_encodings(unknown_image)
-
-    # Check if a face was detected
-    if not known_encodings:
-        return {"success": False, "message": "No face found in registered image."}
-
-    if not unknown_encodings:
-        return {"success": False, "message": "No face found in captured image."}
-
-    # Compare first detected face
-    match = face_recognition.compare_faces(
-        [known_encodings[0]],
-        unknown_encodings[0]
-    )[0]
-
-    if match:
-        return {"success": True, "matched": True, "message": "Face matched."}
-    else:
-        return {"success": True, "matched": False, "message": "Face did not match."}
+    return verify_face_pair(
+        img1=known_image_path,
+        img2=unknown_image_path,
+        model_name=model_name,
+        detector_backend=detector_backend,
+        distance_metric="cosine",
+        enforce_detection=False,
+    )
