@@ -272,11 +272,11 @@ export function Login() {
             <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
           </div>
           <h1 className="text-white text-2xl sm:text-3xl font-black tracking-tight drop-shadow-[0_3px_12px_rgba(0,0,0,0.8)]">
-            OJT Daily Time Record
+            OJT Management System
           </h1>
           <div className="mt-2">
             <span className="inline-flex items-center px-3.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-sky-100 text-xs font-semibold tracking-wide border border-white/20 shadow-sm">
-              On-the-Job Training Management System
+              Carlos Hilado Memorial State University
             </span>
           </div>
         </div>

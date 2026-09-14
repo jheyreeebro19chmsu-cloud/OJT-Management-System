@@ -348,7 +348,7 @@ export function AdminLayout() {
               <Menu size={22} />
             </button>
             <div className="flex-1 flex items-center gap-3">
-              <h1 className="text-gray-800 font-semibold text-base">OJT Daily Time Record — Instructor</h1>
+              <h1 className="text-gray-800 font-semibold text-base">OJT Management System — Instructor</h1>
             </div>
             <div className="hidden lg:flex items-center gap-2">
               <div className="flex items-center gap-3">
