@@ -167,6 +167,55 @@ export function AdminGeofence() {
     return null;
   };
 
+  const isInstructorZone = (zone: any): boolean => {
+    const acc = getAccountForZone(zone);
+    if (acc && isTraineeAccount(acc)) return false;
+    const normPos = acc?.position?.toLowerCase() || '';
+    const empId = acc?.employeeId?.toLowerCase() || '';
+    const accId = (acc?.id || '').toLowerCase();
+    const zoneName = (zone?.name || '').toLowerCase();
+    const zoneId = (zone?.id || '').toLowerCase();
+    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
+    return Boolean(
+      normPos.includes('instructor') ||
+      normPos.includes('faculty') ||
+      normPos.includes('admin') ||
+      empId.startsWith('adm-') ||
+      empId.startsWith('instr-') ||
+      accId.startsWith('adm') ||
+      accId.startsWith('instr') ||
+      zoneName.includes('instructor') ||
+      zoneName.includes('official station') ||
+      zoneName.includes('faculty') ||
+      zoneId.includes('instructor') ||
+      zoneId.includes('faculty')
+    );
+  };
+
+  const isHTEZone = (zone: any): boolean => {
+    const acc = getAccountForZone(zone);
+    if (acc && isTraineeAccount(acc)) return false;
+    const normPos = acc?.position?.toLowerCase() || '';
+    const empId = acc?.employeeId?.toLowerCase() || '';
+    const zoneName = (zone?.name || '').toLowerCase();
+    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
+    return Boolean(
+      normPos.includes('hte') ||
+      normPos.includes('host training') ||
+      empId.startsWith('hte-') ||
+      (acc?.id && acc.id.toLowerCase().startsWith('hte')) ||
+      zoneName.includes('hte') ||
+      zoneName.includes('host training') ||
+      zoneName.includes('partner workplace')
+    );
+  };
+
+  const getZoneAcademicYear = (zone: any): string | null => {
+    if (zone.academicYear) return zone.academicYear;
+    const account = getAccountForZone(zone);
+    return account?.academicYear || null;
+  };
+
   // Combine explicit geofenceZones with instructor/HTE registered stations (strictly excluding all Trainees)
   const allCombinedZones = useMemo<GeofenceZone[]>(() => {
     const zoneMap = new Map<string, GeofenceZone>();
@@ -298,55 +347,6 @@ export function AdminGeofence() {
 
     return Array.from(zoneMap.values());
   }, [geofenceZones, employees, settings.activeAcademicYear]);
-
-  const isInstructorZone = (zone: any): boolean => {
-    const acc = getAccountForZone(zone);
-    if (acc && isTraineeAccount(acc)) return false;
-    const normPos = acc?.position?.toLowerCase() || '';
-    const empId = acc?.employeeId?.toLowerCase() || '';
-    const accId = (acc?.id || '').toLowerCase();
-    const zoneName = (zone?.name || '').toLowerCase();
-    const zoneId = (zone?.id || '').toLowerCase();
-    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
-    return Boolean(
-      normPos.includes('instructor') ||
-      normPos.includes('faculty') ||
-      normPos.includes('admin') ||
-      empId.startsWith('adm-') ||
-      empId.startsWith('instr-') ||
-      accId.startsWith('adm') ||
-      accId.startsWith('instr') ||
-      zoneName.includes('instructor') ||
-      zoneName.includes('official station') ||
-      zoneName.includes('faculty') ||
-      zoneId.includes('instructor') ||
-      zoneId.includes('faculty')
-    );
-  };
-
-  const isHTEZone = (zone: any): boolean => {
-    const acc = getAccountForZone(zone);
-    if (acc && isTraineeAccount(acc)) return false;
-    const normPos = acc?.position?.toLowerCase() || '';
-    const empId = acc?.employeeId?.toLowerCase() || '';
-    const zoneName = (zone?.name || '').toLowerCase();
-    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
-    return Boolean(
-      normPos.includes('hte') ||
-      normPos.includes('host training') ||
-      empId.startsWith('hte-') ||
-      (acc?.id && acc.id.toLowerCase().startsWith('hte')) ||
-      zoneName.includes('hte') ||
-      zoneName.includes('host training') ||
-      zoneName.includes('partner workplace')
-    );
-  };
-
-  const getZoneAcademicYear = (zone: any): string | null => {
-    if (zone.academicYear) return zone.academicYear;
-    const account = getAccountForZone(zone);
-    return account?.academicYear || null;
-  };
 
   const filteredZones = useMemo(() => {
     return allCombinedZones.filter((zone) => {
