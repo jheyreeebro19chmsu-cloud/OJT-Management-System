@@ -2748,6 +2748,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedDocItem = emp.submittedDocuments.moa;
       } else if (lowerDoc.includes('internship') || lowerDoc.includes('agreement') || lowerDoc.includes('contract') || lowerDoc.includes('doc-8')) {
         matchedDocItem = emp.submittedDocuments.internshipAgreement;
+      } else if ((lowerDoc.includes('evaluation') && lowerDoc.includes('report')) || lowerDoc.includes('doc-10')) {
+        matchedDocItem = emp.submittedDocuments.evaluationReport;
       } else if (lowerDoc.includes('evaluation') || lowerDoc.includes('appraisal') || lowerDoc.includes('doc-9')) {
         matchedDocItem = emp.submittedDocuments.evaluationForm;
       } else if (lowerDoc.includes('endorsement')) {

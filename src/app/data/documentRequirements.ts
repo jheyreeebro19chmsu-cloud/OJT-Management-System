@@ -126,6 +126,17 @@ export const REQUIRED_TRAINEE_DOCUMENTS: RequiredDocMetadata[] = [
     color: 'from-rose-500 to-red-600',
     badgeColor: 'bg-rose-100 text-rose-800 border-rose-200',
   },
+  {
+    key: 'evaluationReport',
+    id: 'doc-report',
+    num: '10',
+    title: 'Evaluation Report',
+    subtitle: 'Official Trainee Performance Assessment',
+    desc: 'Comprehensive post-training performance report, competency appraisal ratings, and final evaluation summary from the HTE.',
+    icon: FileText,
+    color: 'from-emerald-600 to-teal-700',
+    badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  },
 ];
 
 export const REQUIRED_TRAINEE_DOC_KEYS: (keyof TraineeDocuments)[] = [
@@ -138,4 +149,5 @@ export const REQUIRED_TRAINEE_DOC_KEYS: (keyof TraineeDocuments)[] = [
   'moa',
   'internshipAgreement',
   'evaluationForm',
+  'evaluationReport',
 ];

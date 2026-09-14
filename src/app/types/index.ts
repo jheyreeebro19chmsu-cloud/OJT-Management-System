@@ -66,6 +66,7 @@ export interface TraineeDocuments {
   moa?: TraineeDocumentItem;
   internshipAgreement?: TraineeDocumentItem;
   evaluationForm?: TraineeDocumentItem;
+  evaluationReport?: TraineeDocumentItem;
   // Legacy / backward-compatible aliases
   endorsement?: TraineeDocumentItem;
 }
