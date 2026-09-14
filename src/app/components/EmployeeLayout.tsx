@@ -6,6 +6,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
+import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
 const navItems = [
@@ -59,9 +60,10 @@ export function EmployeeLayout() {
   const displayEmail = employee?.email || currentUser?.email || '';
 
   const submittedDocs = employee?.submittedDocuments || {};
-  const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as const;
+  const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+  const totalRequired = docKeys.length;
   const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
-  const missingDocsCount = 4 - uploadedDocsCount;
+  const missingDocsCount = totalRequired - uploadedDocsCount;
 
   const traineeEvaluation = evaluations.find(
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
@@ -137,7 +139,7 @@ export function EmployeeLayout() {
                           : 'bg-emerald-400/25 text-emerald-300 border border-emerald-400/40'
                       }`}
                     >
-                      {missingDocsCount > 0 ? `${missingDocsCount} left` : '4/4'}
+                      {missingDocsCount > 0 ? `${missingDocsCount} left` : `${totalRequired}/${totalRequired}`}
                     </span>
                   )}
                   {(item as any).isEvalNav && (

@@ -51,6 +51,7 @@ import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
 import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
+import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -114,11 +115,12 @@ export function Dashboard() {
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<Employee | null>(null);
 
   const submittedDocs: TraineeDocuments = currentEmp?.submittedDocuments || {};
-  const docKeys: (keyof TraineeDocuments)[] = ['endorsement', 'consent', 'medical', 'resume'];
+  const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+  const totalRequired = docKeys.length;
   const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
-  const missingDocsCount = 4 - uploadedDocsCount;
-  const isAllDocsPassed = uploadedDocsCount === 4;
-  const docsProgressPercent = Math.round((uploadedDocsCount / 4) * 100);
+  const missingDocsCount = totalRequired - uploadedDocsCount;
+  const isAllDocsPassed = uploadedDocsCount === totalRequired;
+  const docsProgressPercent = Math.round((uploadedDocsCount / totalRequired) * 100);
 
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
     if (docItem?.dataUrl) return docItem.dataUrl;
@@ -179,7 +181,7 @@ export function Dashboard() {
       };
 
       const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
-      const newIsAllPassed = newUploadedCount === 4;
+      const newIsAllPassed = newUploadedCount === totalRequired;
 
       updateEmployee(currentEmp.id, {
         submittedDocuments: updatedDocs,
@@ -1701,7 +1703,7 @@ export function Dashboard() {
             </div>
           )}
 
-          {/* The 4 Document Items List */}
+          {/* The Supporting Document Items List */}
           <div className="space-y-2">
             {STANDARD_REQUIRED_DOCS.map((docItem) => {
               const doc = submittedDocs[docItem.key];

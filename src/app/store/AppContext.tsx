@@ -2706,9 +2706,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
               name: payload.fileName || 'Uploaded Document.pdf',
               dataUrl: payload.fileUrl || '',
               uploadedAt: now,
-              status: 'passed',
+              status: 'passed' as const,
             },
-          },
+          } as TraineeDocuments,
         });
       }
     }
@@ -2732,16 +2732,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (emp?.submittedDocuments) {
       let matchedDocItem: TraineeDocumentItem | undefined = undefined;
       const lowerDoc = documentId.toLowerCase();
-      if (lowerDoc.includes('endorsement') || lowerDoc.includes('doc-1') || lowerDoc.includes('std-doc-1')) {
-        matchedDocItem = emp.submittedDocuments.endorsement;
-      } else if (lowerDoc.includes('consent') || lowerDoc.includes('doc-2') || lowerDoc.includes('std-doc-2')) {
-        matchedDocItem = emp.submittedDocuments.consent;
-      } else if (lowerDoc.includes('medical') || lowerDoc.includes('doc-3') || lowerDoc.includes('std-doc-3')) {
+      if (lowerDoc.includes('pledge') || lowerDoc.includes('conduct') || lowerDoc.includes('doc-1')) {
+        matchedDocItem = emp.submittedDocuments.pledgeOfConduct;
+      } else if (lowerDoc.includes('medical') || lowerDoc.includes('doc-2')) {
         matchedDocItem = emp.submittedDocuments.medical;
-      } else if (lowerDoc.includes('resume') || lowerDoc.includes('doc-4') || lowerDoc.includes('std-doc-4')) {
+      } else if (lowerDoc.includes('enrolment') || lowerDoc.includes('enrollment') || lowerDoc.includes('cor') || lowerDoc.includes('doc-3')) {
+        matchedDocItem = emp.submittedDocuments.enrolmentForm;
+      } else if (lowerDoc.includes('consent') || lowerDoc.includes('waiver') || lowerDoc.includes('parental') || lowerDoc.includes('doc-4')) {
+        matchedDocItem = emp.submittedDocuments.consent;
+      } else if (lowerDoc.includes('resume') || lowerDoc.includes('biodata') || lowerDoc.includes('bio-data') || lowerDoc.includes('cv') || lowerDoc.includes('doc-5')) {
         matchedDocItem = emp.submittedDocuments.resume;
-      } else if (lowerDoc.includes('moa') || lowerDoc.includes('doc-5') || lowerDoc.includes('std-doc-5')) {
-        matchedDocItem = (emp.submittedDocuments as any).moa;
+      } else if (lowerDoc.includes('duties') || lowerDoc.includes('responsibilities') || lowerDoc.includes('bsis') || lowerDoc.includes('doc-6')) {
+        matchedDocItem = emp.submittedDocuments.dutiesAndResponsibilities;
+      } else if (lowerDoc.includes('moa') || lowerDoc.includes('memorandum') || lowerDoc.includes('doc-7')) {
+        matchedDocItem = emp.submittedDocuments.moa;
+      } else if (lowerDoc.includes('internship') || lowerDoc.includes('agreement') || lowerDoc.includes('contract') || lowerDoc.includes('doc-8')) {
+        matchedDocItem = emp.submittedDocuments.internshipAgreement;
+      } else if (lowerDoc.includes('evaluation') || lowerDoc.includes('appraisal') || lowerDoc.includes('doc-9')) {
+        matchedDocItem = emp.submittedDocuments.evaluationForm;
+      } else if (lowerDoc.includes('endorsement')) {
+        matchedDocItem = emp.submittedDocuments.endorsement;
+      } else {
+        // Direct key lookup
+        matchedDocItem = (emp.submittedDocuments as any)[documentId];
       }
 
       if (matchedDocItem && (matchedDocItem.dataUrl || matchedDocItem.name)) {

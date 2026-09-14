@@ -38,6 +38,7 @@ import { readAsDataUrl } from './Announcements';
 import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
+import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
 const GRADE_CONFIG = {
@@ -189,7 +190,8 @@ export function Profile() {
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
   const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
-  const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as const;
+  const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+  const totalRequired = docKeys.length;
   const uploadedDocCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
 
   const handleProfileDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
@@ -717,11 +719,11 @@ export function Profile() {
             </div>
           </div>
           <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-            uploadedDocCount === 4
+            uploadedDocCount === totalRequired
               ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
               : 'bg-amber-50 text-amber-700 border-amber-300'
           }`}>
-            {uploadedDocCount === 4 ? '✓ All Submitted' : `${4 - uploadedDocCount} Missing`}
+            {uploadedDocCount === totalRequired ? '✓ All Submitted' : `${totalRequired - uploadedDocCount} Missing`}
           </span>
         </div>
 
@@ -729,7 +731,7 @@ export function Profile() {
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
           <div
             className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
-            style={{ width: `${(uploadedDocCount / 4) * 100}%` }}
+            style={{ width: `${(uploadedDocCount / totalRequired) * 100}%` }}
           />
         </div>
 

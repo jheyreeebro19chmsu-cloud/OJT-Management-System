@@ -57,10 +57,17 @@ export interface TraineeDocumentItem {
 }
 
 export interface TraineeDocuments {
-  endorsement?: TraineeDocumentItem;
-  consent?: TraineeDocumentItem;
+  pledgeOfConduct?: TraineeDocumentItem;
   medical?: TraineeDocumentItem;
+  enrolmentForm?: TraineeDocumentItem;
+  consent?: TraineeDocumentItem;
   resume?: TraineeDocumentItem;
+  dutiesAndResponsibilities?: TraineeDocumentItem;
+  moa?: TraineeDocumentItem;
+  internshipAgreement?: TraineeDocumentItem;
+  evaluationForm?: TraineeDocumentItem;
+  // Legacy / backward-compatible aliases
+  endorsement?: TraineeDocumentItem;
 }
 
 export interface TimeRecord {

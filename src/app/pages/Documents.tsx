@@ -25,49 +25,9 @@ import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
 import { uploadDocumentToStorage } from '../services/supabaseService';
+import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
-export const STANDARD_REQUIRED_DOCS = [
-  {
-    key: 'endorsement' as keyof TraineeDocuments,
-    num: '1',
-    title: 'Endorsement Letter',
-    subtitle: 'Institutional Endorsement',
-    desc: 'Official endorsement letter issued and signed by the College Dean / Department Chair / OJT Coordinator.',
-    icon: FileText,
-    color: 'from-blue-500 to-indigo-600',
-    badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  {
-    key: 'consent' as keyof TraineeDocuments,
-    num: '2',
-    title: 'Parental / Guardian Consent Form',
-    subtitle: 'Signed Student Waiver & Consent',
-    desc: 'Signed student waiver, assumption of liability, and parent/guardian emergency contact authorization.',
-    icon: FileCheck,
-    color: 'from-violet-500 to-purple-600',
-    badgeColor: 'bg-violet-100 text-violet-800 border-violet-200',
-  },
-  {
-    key: 'medical' as keyof TraineeDocuments,
-    num: '3',
-    title: 'Medical Certificate / Clearance',
-    subtitle: 'Health & Physical Fitness Clearance',
-    desc: 'Valid medical examination clearance & physical fitness certification issued by a licensed physician or university clinic.',
-    icon: Shield,
-    color: 'from-emerald-500 to-teal-600',
-    badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  },
-  {
-    key: 'resume' as keyof TraineeDocuments,
-    num: '4',
-    title: 'Student Bio-data / Resume',
-    subtitle: 'Updated Profile & Resume',
-    desc: 'Comprehensive student profile, academic background, contact details, skill highlights, and formal 2x2 ID photo.',
-    icon: User,
-    color: 'from-amber-500 to-orange-600',
-    badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
-  },
-];
+export const STANDARD_REQUIRED_DOCS = REQUIRED_TRAINEE_DOCUMENTS;
 
 interface PreviewModalState {
   key?: string;
@@ -90,12 +50,13 @@ export function Documents() {
 
   const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
 
-  const docKeys: (keyof TraineeDocuments)[] = ['endorsement', 'consent', 'medical', 'resume'];
+  const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+  const totalRequired = docKeys.length;
   const uploadedCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
   const passedCount = docKeys.filter((k) => submittedDocs[k]?.status === 'passed').length;
-  const isAllPassed = uploadedCount === 4 && passedCount === 4;
-  const missingCount = 4 - uploadedCount;
-  const progressPercent = Math.round((uploadedCount / 4) * 100);
+  const isAllPassed = uploadedCount === totalRequired && passedCount === totalRequired;
+  const missingCount = totalRequired - uploadedCount;
+  const progressPercent = Math.round((uploadedCount / totalRequired) * 100);
 
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
     if (docItem?.dataUrl) return docItem.dataUrl;
@@ -174,13 +135,13 @@ export function Documents() {
       const allPreviouslyPassed = docKeys.every((k) =>
         k === docKey ? true : updatedDocs[k]?.status === 'passed'
       );
-      const newIsAllPassed = newUploadedCount === 4 && allPreviouslyPassed;
+      const newIsAllPassed = newUploadedCount === totalRequired && allPreviouslyPassed;
 
       if (employee) {
         updateEmployee(employee.id, {
           submittedDocuments: updatedDocs,
           documentsPassed: newIsAllPassed,
-          documentsStatus: newUploadedCount === 4 ? 'submitted' : 'partial',
+          documentsStatus: newUploadedCount === totalRequired ? 'submitted' : 'partial',
         });
       }
 
@@ -241,7 +202,7 @@ export function Documents() {
             <FileCheck className="text-blue-600" size={26} /> Required OJT Documents
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Manage, review, and submit the 4 mandatory compliance documents required for your OJT internship program.
+            Manage, review, and submit the {totalRequired} mandatory compliance documents required for your OJT internship program.
           </p>
         </div>
 
@@ -256,7 +217,7 @@ export function Documents() {
             {isAllPassed ? (
               <>
                 <CheckCircle2 size={15} className="text-emerald-600 stroke-[2.5]" />
-                4/4 Completed (Compliant)
+                {totalRequired}/{totalRequired} Completed (Compliant)
               </>
             ) : (
               <>
@@ -285,12 +246,12 @@ export function Documents() {
             </h3>
             <p className="text-xs text-slate-600 mt-0.5">
               {isAllPassed
-                ? 'Congratulations! You have fulfilled all 4 registration document requirements. Your OJT Instructor can review them anytime.'
-                : `You have submitted ${uploadedCount} of 4 documents (${progressPercent}%). Please upload the remaining ${missingCount} document${missingCount > 1 ? 's' : ''} to maintain full compliance.`}
+                ? `Congratulations! You have fulfilled all ${totalRequired} registration document requirements. Your OJT Instructor can review them anytime.`
+                : `You have submitted ${uploadedCount} of ${totalRequired} documents (${progressPercent}%). Please upload the remaining ${missingCount} document${missingCount > 1 ? 's' : ''} to maintain full compliance.`}
             </p>
           </div>
           <div className="text-right shrink-0">
-            <span className="text-xs font-extrabold text-slate-700">{uploadedCount}/4 Completed</span>
+            <span className="text-xs font-extrabold text-slate-700">{uploadedCount}/{totalRequired} Completed</span>
           </div>
         </div>
 

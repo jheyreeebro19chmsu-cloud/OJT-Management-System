@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { FaceCapture } from '../components/FaceCapture';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
+import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
 import { PH_ADDRESS_DATA } from '../data/ph_address_data';
@@ -143,6 +144,16 @@ export function Register() {
 
   const handleDocumentUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
+    const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(`Unsupported file: "${file.name}". Please attach a PDF, JPG, or PNG document.`);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size exceeds 10MB limit. Please choose a smaller file.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target?.result as string;
@@ -150,13 +161,14 @@ export function Register() {
         ...prev,
         [docKey]: {
           name: file.name,
+          size: file.size,
           dataUrl,
           fileType: file.type || 'application/octet-stream',
           uploadedAt: new Date().toISOString(),
-          status: 'passed',
+          status: 'passed' as const,
         },
       }));
-      toast.success(`${file.name} attached — automatically marked as PASSED`);
+      toast.success(`${file.name} attached — status set to PASSED`);
     };
     reader.onerror = () => {
       toast.error('Failed to read file. Please try again.');
@@ -748,10 +760,10 @@ export function Register() {
       [form.firstName, form.middleInitial, form.lastName].filter(Boolean).join(' ') ||
       (form.email ? form.email.split('@')[0] : 'User');
 
-    const docKeys = ['endorsement', 'consent', 'medical', 'resume'] as (keyof TraineeDocuments)[];
+    const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
     const uploadedDocsCount = docKeys.filter((k) => Boolean(documents[k])).length;
     const hasAnyDocs = uploadedDocsCount > 0;
-    const isAllDocsPassed = uploadedDocsCount === 4;
+    const isAllDocsPassed = uploadedDocsCount === docKeys.length;
 
     let result: { success: boolean; message?: string; employee?: any };
     try {
@@ -2724,42 +2736,18 @@ export function Register() {
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
                         <ShieldCheck size={14} className="text-blue-600" />
-                        <span>Required OJT Documents (Auto-Verified)</span>
+                        <span>Supporting OJT Documents ({REQUIRED_TRAINEE_DOCUMENTS.length} Requirements)</span>
                       </label>
-                      <span className="text-[10px] text-gray-400 font-medium">PDF / JPG / PNG</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        {REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(documents[k])).length} of {REQUIRED_TRAINEE_DOCUMENTS.length} Attached
+                      </span>
                     </div>
+                    <p className="text-[11px] text-gray-500">
+                      Attach your onboarding credentials now or complete them later in your Trainee Dashboard. Submissions reflect directly in your assigned Instructor's account.
+                    </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {[
-                        {
-                          key: 'endorsement' as keyof TraineeDocuments,
-                          num: '1',
-                          title: 'Endorsement Letter',
-                          desc: 'Official institutional endorsement from Department Chair / Coordinator',
-                          icon: FileText,
-                        },
-                        {
-                          key: 'consent' as keyof TraineeDocuments,
-                          num: '2',
-                          title: 'Parental Consent Form',
-                          desc: 'Signed student waiver & parent/guardian emergency authorization',
-                          icon: FileCheck,
-                        },
-                        {
-                          key: 'medical' as keyof TraineeDocuments,
-                          num: '3',
-                          title: 'Medical Certificate',
-                          desc: 'Medical examination clearance & physical fitness certification',
-                          icon: Shield,
-                        },
-                        {
-                          key: 'resume' as keyof TraineeDocuments,
-                          num: '4',
-                          title: 'Student Bio-data / Resume',
-                          desc: 'Updated student profile, academic background & contact bio-data',
-                          icon: User,
-                        },
-                      ].map((item) => {
+                      {REQUIRED_TRAINEE_DOCUMENTS.map((item) => {
                         const uploaded = documents[item.key];
                         const Icon = item.icon;
                         return (
@@ -2801,7 +2789,7 @@ export function Register() {
                               </span>
                             </div>
 
-                            <p className="text-[10px] text-gray-500 leading-tight mb-2.5">{item.desc}</p>
+                            <p className="text-[10px] text-gray-500 leading-tight mb-2.5 line-clamp-2">{item.desc}</p>
 
                             <div className="pt-2 border-t border-gray-100">
                               <input

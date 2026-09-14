@@ -6,10 +6,11 @@ import { toast } from 'sonner';
 import { FaceCapture } from '../../components/FaceCapture';
 import { isSecurityApiConfigured, registerFace } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
-import { Employee } from '../../types';
+import { Employee, TraineeDocuments } from '../../types';
 import { getPhotoUrl } from '../../services/config';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
+import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../../data/documentRequirements';
 
 
 
@@ -1050,10 +1051,10 @@ export function AdminEmployees() {
                                 <div>
                                   <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
                                     <FileCheck size={16} className="text-violet-600" />
-                                    Required OJT Documents Monitoring
+                                    Required OJT Documents Monitoring ({REQUIRED_TRAINEE_DOCUMENTS.length} Credentials)
                                   </p>
                                   <p className="text-[11px] text-violet-600 mt-0.5">
-                                    4 Standard Compliance Documents Required for Trainee Activation
+                                    {REQUIRED_TRAINEE_DOCUMENTS.length} Official Compliance Documents Required for Trainee Activation & Deployment
                                   </p>
                                 </div>
                                 <span
@@ -1064,47 +1065,14 @@ export function AdminEmployees() {
                                   }`}
                                 >
                                   {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                    ? '4/4 Passed (Compliant)'
-                                    : 'Pending Verification'}
+                                    ? `${REQUIRED_TRAINEE_DOCUMENTS.length}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed (Compliant)`
+                                    : `${REQUIRED_TRAINEE_DOC_KEYS.filter((k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed').length}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed`}
                                 </span>
                               </div>
 
-                              {/* The 4 Standard Documents Grid */}
+                              {/* The 9 Standard Documents Grid */}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                {[
-                                  {
-                                    id: 'doc-endorsement',
-                                    key: 'endorsement' as const,
-                                    num: '1',
-                                    title: 'Endorsement Letter',
-                                    desc: 'Official institutional endorsement from Department Chair / Coordinator',
-                                    icon: FileText,
-                                  },
-                                  {
-                                    id: 'doc-consent',
-                                    key: 'consent' as const,
-                                    num: '2',
-                                    title: 'Parental Consent Form',
-                                    desc: 'Signed student waiver & parent/guardian emergency authorization',
-                                    icon: FileCheck,
-                                  },
-                                  {
-                                    id: 'doc-medical',
-                                    key: 'medical' as const,
-                                    num: '3',
-                                    title: 'Medical Certificate',
-                                    desc: 'Medical examination clearance & physical fitness certification',
-                                    icon: Shield,
-                                  },
-                                  {
-                                    id: 'doc-resume',
-                                    key: 'resume' as const,
-                                    num: '4',
-                                    title: 'Student Bio-data / Resume',
-                                    desc: 'Updated student profile, academic background & contact bio-data',
-                                    icon: User,
-                                  },
-                                ].map((docItem) => {
+                                {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                                   const doc = selectedEmp.submittedDocuments?.[docItem.key];
                                   const isPassed = doc
                                     ? doc.status === 'passed'
@@ -1150,7 +1118,7 @@ export function AdminEmployees() {
                                           {isPassed ? '✓ PASSED' : 'PENDING'}
                                         </span>
                                       </div>
-                                      <p className="text-[10px] text-gray-500 leading-tight mb-2.5">{docItem.desc}</p>
+                                      <p className="text-[10px] text-gray-500 leading-tight mb-2.5 line-clamp-2">{docItem.desc}</p>
 
                                       <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100">
                                         <button
@@ -1176,9 +1144,9 @@ export function AdminEmployees() {
                                         <button
                                           type="button"
                                           onClick={async () => {
-                                            const newDocStatus = isPassed ? 'pending' : 'passed';
+                                            const newDocStatus: 'passed' | 'pending' = isPassed ? 'pending' : 'passed';
                                             const currentDocs = selectedEmp.submittedDocuments || {};
-                                            const updatedDocs = {
+                                            const updatedDocs: TraineeDocuments = {
                                               ...currentDocs,
                                               [docItem.key]: {
                                                 ...(currentDocs[docItem.key] || {
@@ -1190,7 +1158,7 @@ export function AdminEmployees() {
                                                 status: newDocStatus,
                                               },
                                             };
-                                            const docKeys: (keyof typeof updatedDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
+                                            const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
                                             const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
                                             const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
 
@@ -1231,7 +1199,7 @@ export function AdminEmployees() {
                                   Status:{' '}
                                   <span className="font-bold">
                                     {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                      ? 'All 4 Required Documents Certified'
+                                      ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} Required Documents Certified`
                                       : 'Pending Verification of Registration Documents'}
                                   </span>
                                 </p>
@@ -1239,10 +1207,10 @@ export function AdminEmployees() {
                                   type="button"
                                   onClick={async () => {
                                     const willPass = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
-                                    const targetStatus = willPass ? 'passed' : 'pending';
+                                    const targetStatus: 'passed' | 'pending' = willPass ? 'passed' : 'pending';
                                     const currentDocs = selectedEmp.submittedDocuments || {};
-                                    const docKeys: (keyof typeof currentDocs)[] = ['endorsement', 'consent', 'medical', 'resume'];
-                                    const updatedDocs = { ...currentDocs };
+                                    const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                    const updatedDocs: TraineeDocuments = { ...currentDocs };
                                     docKeys.forEach((k) => {
                                       updatedDocs[k] = {
                                         ...(currentDocs[k] || {
@@ -1268,7 +1236,7 @@ export function AdminEmployees() {
                                     });
                                     toast.success(
                                       willPass
-                                        ? 'All 4 required documents marked as PASSED!'
+                                        ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} required documents marked as PASSED!`
                                         : 'Documents marked as PENDING verification.'
                                     );
                                   }}
@@ -1280,7 +1248,7 @@ export function AdminEmployees() {
                                 >
                                   {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
                                     ? 'Set All as Pending'
-                                    : '✓ Approve All 4 Documents'}
+                                    : `✓ Approve All ${REQUIRED_TRAINEE_DOCUMENTS.length} Documents`}
                                 </button>
                               </div>
                             </div>
