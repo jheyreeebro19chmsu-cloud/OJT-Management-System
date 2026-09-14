@@ -70,6 +70,14 @@ export function AdminGeofence() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
+  // Close open action menu when clicking outside
+  useEffect(() => {
+    if (!openMenuId) return;
+    const handleOutsideClick = () => setOpenMenuId(null);
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, [openMenuId]);
+
   // View Zone Modal State
   const [viewModalZone, setViewModalZone] = useState<GeofenceZone | null>(null);
 
@@ -873,6 +881,8 @@ export function AdminGeofence() {
                   }
                 }}
                 className={`bg-white rounded-2xl shadow-sm border transition-all cursor-pointer hover:shadow-md ${
+                  openMenuId === zone.id ? 'relative z-30' : 'relative z-0'
+                } ${
                   selectedZoneId === zone.id
                     ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/20'
                     : isInstructor
@@ -880,7 +890,7 @@ export function AdminGeofence() {
                     : isHTE
                     ? 'border-amber-100 hover:border-amber-300'
                     : 'border-gray-100 hover:border-blue-300'
-                } overflow-hidden`}
+                }`}
               >
                 {editId === zone.id ? (
                   <div className="p-5" onClick={(e) => e.stopPropagation()}>

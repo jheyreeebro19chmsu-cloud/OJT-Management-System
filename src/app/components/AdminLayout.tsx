@@ -349,10 +349,6 @@ export function AdminLayout() {
             </button>
             <div className="flex-1 flex items-center gap-3">
               <h1 className="text-gray-800 font-semibold text-base">OJT Daily Time Record — Instructor</h1>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full text-xs font-bold shadow-sm" title="Active System Academic Environment">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
-              </div>
             </div>
             <div className="hidden lg:flex items-center gap-2">
               <div className="flex items-center gap-3">

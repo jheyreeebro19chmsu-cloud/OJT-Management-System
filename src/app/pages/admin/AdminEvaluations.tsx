@@ -141,18 +141,9 @@ export function AdminEvaluations() {
     const existing = evaluations.find((e) => e.employeeId === emp.id);
     setSelectedEmp(emp);
     if (existing) {
-      setEditEvalId(existing.id);
-      setForm({
-        attendanceScore: existing.attendanceScore,
-        performanceScore: existing.performanceScore,
-        attitudeScore: existing.attitudeScore,
-        punctualityScore: existing.punctualityScore,
-        communicationScore: existing.communicationScore,
-        strengths: existing.strengths,
-        areasForImprovement: existing.areasForImprovement,
-        recommendations: existing.recommendations,
-        status: existing.status,
-      });
+      // Instructors cannot edit evaluations evaluated by HTE
+      setViewMode('view');
+      return;
     } else {
       // Auto-calculate attendance score from DTR
       const recs = timeRecords.filter((r) => r.employeeId === emp.id);
@@ -601,18 +592,10 @@ export function AdminEvaluations() {
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
               <Printer size={15} />
               Print Official Hard Copy
-            </button>
-            <button
-              type="button"
-              onClick={() => openNewEval(selectedEmp)}
-              className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-all flex items-center gap-1.5"
-            >
-              <Edit2 size={15} />
-              Edit Evaluation
             </button>
           </div>
         </div>
@@ -975,7 +958,7 @@ export function AdminEvaluations() {
                   <>
                     <button
                       onClick={() => viewEval(emp)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
                     >
                       <FileText size={14} />
                       View Form
@@ -1002,23 +985,12 @@ export function AdminEvaluations() {
                         Done Viewed
                       </button>
                     )}
-                    <button
-                      onClick={() => openNewEval(emp)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 text-white rounded-xl text-xs font-bold hover:bg-blue-800 transition-colors"
-                    >
-                      <Edit2 size={14} />
-                      Edit
-                    </button>
                   </>
                 ) : (
-                  <button
-                    onClick={() => openNewEval(emp)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-bold hover:bg-blue-800 transition-colors shadow-sm"
-                  >
-                    <Star size={15} />
-                    Evaluate Trainee Performance
-                    <ChevronRight size={14} />
-                  </button>
+                  <div className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold">
+                    <Clock size={14} />
+                    Awaiting HTE Evaluation
+                  </div>
                 )}
               </div>
             </motion.div>

@@ -36,8 +36,48 @@ export function AdminReports() {
     return { value: val, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
   });
 
+  // Trainee role filter helper: strictly exclude Instructors and HTEs
+  const isTrainee = (emp: any): boolean => {
+    if (!emp) return false;
+    const pos = (emp.position || '').toLowerCase();
+    const empId = (emp.employeeId || '').toLowerCase();
+    const role = (emp.role || '').toLowerCase();
+    if (
+      role === 'instructor' ||
+      role === 'admin' ||
+      pos.includes('instructor') ||
+      pos.includes('admin') ||
+      pos.includes('faculty') ||
+      empId.startsWith('adm-') ||
+      empId.startsWith('instr-')
+    ) {
+      return false;
+    }
+    if (
+      role === 'hte' ||
+      role === 'host' ||
+      pos.includes('hte') ||
+      pos.includes('host training') ||
+      pos.includes('supervisor') ||
+      empId.startsWith('hte-')
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  const traineeEmployees = useMemo(() => {
+    return employees.filter((e) => e.active && isTrainee(e));
+  }, [employees]);
+
+  const traineeIds = useMemo(() => {
+    return new Set(traineeEmployees.map((e) => e.id));
+  }, [traineeEmployees]);
+
   const filteredRecords = useMemo(() => {
     return timeRecords.filter((r) => {
+      const isTraineeRec = traineeIds.has(r.employeeId);
+      if (!isTraineeRec) return false;
       const matchMonth = r.date.startsWith(selectedMonth);
       const matchEmp = selectedEmpId === 'all' || r.employeeId === selectedEmpId;
       const matchYear =
@@ -46,7 +86,7 @@ export function AdminReports() {
         (!r.academicYear && selectedAcademicYear === settings?.academicYears?.[0]);
       return matchMonth && matchEmp && matchYear;
     });
-  }, [timeRecords, selectedMonth, selectedEmpId, selectedAcademicYear, settings]);
+  }, [timeRecords, selectedMonth, selectedEmpId, selectedAcademicYear, settings, traineeIds]);
 
   // Daily chart data
   const dailyData = useMemo(() => {
@@ -67,13 +107,13 @@ export function AdminReports() {
     });
   }, [filteredRecords, selectedMonth]);
 
-  // Per-employee summary
+  // Per-employee summary: strictly Trainees only
   const employeeSummary = useMemo(() => {
-    const activeEmps =
+    const activeTrainees =
       selectedEmpId === 'all'
-        ? employees.filter((e) => e.active)
-        : employees.filter((e) => e.id === selectedEmpId && e.active);
-    return activeEmps
+        ? traineeEmployees
+        : traineeEmployees.filter((e) => e.id === selectedEmpId);
+    return activeTrainees
       .map((emp) => {
         const recs = filteredRecords.filter((r) => r.employeeId === emp.id);
         const totalHours = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
@@ -83,14 +123,14 @@ export function AdminReports() {
         return { emp, totalHours, present, late, absent, records: recs };
       })
       .sort((a, b) => b.totalHours - a.totalHours);
-  }, [filteredRecords, employees, selectedEmpId]);
+  }, [filteredRecords, traineeEmployees, selectedEmpId]);
 
   const totalHours = filteredRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
   const presentCount = filteredRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
   const lateCount = filteredRecords.filter((r) => r.status === 'late').length;
   const avgHoursPerDay = filteredRecords.length > 0 ? totalHours / filteredRecords.length : 0;
 
-  const activeEmployees = employees.filter((e) => e.active);
+  const activeEmployees = traineeEmployees;
 
   const exportCsv = () => {
     const headers = ['Date', 'Trainee', 'Time In', 'Time Out', 'Hours', 'Status', 'Face Verified', 'Geofenced', 'DTR Approval'];
@@ -320,7 +360,8 @@ export function AdminReports() {
                 </tr>
               ) : (
                 employeeSummary.map(({ emp, totalHours, present, late }) => {
-                  const prog = Math.min((totalHours / emp.requiredHours) * 100, 100);
+                  const reqHours = emp.requiredHours || 300;
+                  const prog = reqHours > 0 ? Math.min((totalHours / reqHours) * 100, 100) : 0;
                   return (
                     <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3">
@@ -357,7 +398,7 @@ export function AdminReports() {
                           <div className="h-full bg-blue-500 rounded-full" style={{ width: `${prog}%` }} />
                         </div>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          {Math.round(prog)}% of {emp.requiredHours}h
+                          {isNaN(prog) ? 0 : Math.round(prog)}% of {reqHours}h
                         </p>
                       </td>
                     </tr>

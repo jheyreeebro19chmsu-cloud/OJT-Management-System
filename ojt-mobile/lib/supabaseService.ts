@@ -90,7 +90,7 @@ export interface Evaluation {
   areasForImprovement?: string;
   recommendations?: string;
   evaluatedAt: string;
-  status: 'draft' | 'submitted';
+  status: 'draft' | 'final' | 'submitted' | 'submitted_to_instructor' | 'reviewed_by_instructor';
   academicYear?: string;
 }
 
@@ -551,10 +551,7 @@ export const mobileDb = {
       areas_for_improvement: evaluation.areasForImprovement,
       recommendations: evaluation.recommendations,
       evaluated_at: evaluation.evaluatedAt,
-      status:
-        evaluation.status === 'submitted_to_instructor' || evaluation.status === 'reviewed_by_instructor'
-          ? 'final'
-          : evaluation.status || 'final',
+      status: evaluation.status === 'draft' ? 'draft' : 'final',
       // Note: Omit academic_year as evaluations table does not have an academic_year column
     };
     const { data, error } = await supabase.from('evaluations').insert([payload]).select().single();
