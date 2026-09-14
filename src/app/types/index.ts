@@ -147,6 +147,32 @@ export interface Evaluation {
   academicYear?: string;
 }
 
+export interface MonthlyDttrDayEntry {
+  day: number;
+  amArrival?: string;
+  amDeparture?: string;
+  pmArrival?: string;
+  pmDeparture?: string;
+  hours?: number;
+  tasks?: string;
+}
+
+export interface MonthlyDttrRecord {
+  id: string; // e.g. `${employeeId}_${year}_${month}`
+  employeeId: string;
+  year: number;
+  month: number; // 1-12
+  academicYear?: string;
+  customEntries?: Record<number, MonthlyDttrDayEntry>;
+  hteSupervisorName?: string;
+  hteSupervisorTitle?: string;
+  hteSignedAt?: string;
+  hteSignatureStatus?: 'signed' | 'pending';
+  hteSignatureNotes?: string;
+  studentSignedAt?: string;
+  updatedAt?: string;
+}
+
 export interface HostSupervisor {
   id: string;
   name: string;

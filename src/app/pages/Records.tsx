@@ -15,6 +15,7 @@ import React, { useState } from 'react';
 
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
+import { MonthlyDTTRView } from '../components/MonthlyDTTRView';
 
 
 const STATUS_COLORS: Record<string, string> = {
@@ -31,6 +32,7 @@ export function Records() {
   const currentEmp = employee || getCurrentEmployee();
   const empLookupId = currentEmp?.id || currentEmp?.employeeId || '';
   const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
+  const [viewMode, setViewMode] = useState<'timeline' | 'monthly_dttr'>('timeline');
   const [filterMonth, setFilterMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -71,9 +73,36 @@ export function Records() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 text-white"
       >
-        <div className="flex items-center gap-2 mb-3">
-          <FileText size={18} />
-          <h2 className="font-bold">Daily Time Records</h2>
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <FileText size={18} />
+            <h2 className="font-bold">Daily Time Records</h2>
+          </div>
+
+          <div className="flex bg-white/10 p-1 rounded-2xl border border-white/20">
+            <button
+              type="button"
+              onClick={() => setViewMode('timeline')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                viewMode === 'timeline'
+                  ? 'bg-white text-blue-900 shadow-xs'
+                  : 'text-blue-200 hover:text-white'
+              }`}
+            >
+              Log History
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('monthly_dttr')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                viewMode === 'monthly_dttr'
+                  ? 'bg-white text-blue-900 shadow-xs'
+                  : 'text-blue-200 hover:text-white'
+              }`}
+            >
+              Official Monthly DTTR
+            </button>
+          </div>
         </div>
         <p className="text-blue-200 text-xs mb-4">
           {currentEmp?.name} • {currentEmp?.employeeId || 'OJT Trainee'}
@@ -100,16 +129,24 @@ export function Records() {
         </div>
       </motion.div>
 
-      {/* Month Filter */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.1 }}
-        className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100"
-      >
-        <div className="flex items-center gap-2">
-          <Filter size={14} className="text-gray-400" />
-          <span className="text-xs text-gray-500 font-medium">Filter by month:</span>
+      {viewMode === 'monthly_dttr' ? (
+        <MonthlyDTTRView
+          defaultEmployeeId={currentEmp?.id}
+          viewerRole="employee"
+          readOnlyTrainee={true}
+        />
+      ) : (
+        <>
+          {/* Month Filter */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100"
+          >
+            <div className="flex items-center gap-2">
+              <Filter size={14} className="text-gray-400" />
+              <span className="text-xs text-gray-500 font-medium">Filter by month:</span>
           <select
             value={filterMonth}
             onChange={(e) => setFilterMonth(e.target.value)}
@@ -328,6 +365,8 @@ export function Records() {
             );
           })}
         </div>
+      )}
+      </>
       )}
 
       {/* Photo Modal */}

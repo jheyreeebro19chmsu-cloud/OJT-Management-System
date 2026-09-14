@@ -6,14 +6,17 @@ import {
   Download,
   Filter,
   Users,
+  FileText,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { MonthlyDTTRView } from '../components/MonthlyDTTRView';
 
 export function HTERecords() {
   const { timeRecords, employees } = useApp();
+  const [viewMode, setViewMode] = useState<'daily' | 'monthly_dttr'>('daily');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
 
@@ -112,21 +115,59 @@ export function HTERecords() {
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
             <Clock className="text-blue-600" size={26} />
-            <span>Trainee DTR Records</span>
+            <span>{viewMode === 'monthly_dttr' ? 'Monthly DTTR Monitoring & Sign-off' : 'Trainee DTR Records'}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Complete daily time records, verified coordinates, and rendered hours for all assigned students
+            {viewMode === 'monthly_dttr'
+              ? 'Official CHMSU Daily Time & Tasks Record (DTTR), automatic hours computation, task inspection, and HTE supervisor endorsement'
+              : 'Complete daily time records, verified coordinates, and rendered hours for all assigned students'}
           </p>
         </div>
 
-        <button
-          onClick={handleExportCSV}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-2xl shadow-sm transition-all shrink-0 self-start sm:self-auto"
-        >
-          <Download size={14} />
-          <span>Export CSV</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap no-print">
+          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setViewMode('daily')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                viewMode === 'daily'
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Clock size={14} />
+              <span>Daily Logs</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('monthly_dttr')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                viewMode === 'monthly_dttr'
+                  ? 'bg-white text-emerald-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText size={14} />
+              <span>Monthly DTTR &amp; Sign</span>
+            </button>
+          </div>
+
+          {viewMode === 'daily' && (
+            <button
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-2xl shadow-xs transition-all shrink-0"
+            >
+              <Download size={14} />
+              <span>Export CSV</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {viewMode === 'monthly_dttr' ? (
+        <MonthlyDTTRView viewerRole="hte" />
+      ) : (
+        <>
 
       {/* Filter Bar */}
       <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs flex flex-wrap items-center gap-3">
@@ -244,6 +285,8 @@ export function HTERecords() {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

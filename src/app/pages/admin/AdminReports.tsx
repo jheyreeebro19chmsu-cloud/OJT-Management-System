@@ -40,6 +40,7 @@ import { useApp } from '../../store/AppContext';
 import { formatTime } from '../../utils/geo';
 import { getPhotoUrl } from '../../services/config';
 import { Employee, Evaluation } from '../../types';
+import { MonthlyDTTRView } from '../../components/MonthlyDTTRView';
 
 const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }> = {
   Excellent: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
@@ -52,8 +53,8 @@ const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }>
 export function AdminReports() {
   const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, settings } = useApp();
 
-  // Active Top Tab: 'attendance' or 'evaluation'
-  const [activeTab, setActiveTab] = useState<'attendance' | 'evaluation'>('attendance');
+  // Active Top Tab: 'attendance', 'monthly_dttr', or 'evaluation'
+  const [activeTab, setActiveTab] = useState<'attendance' | 'monthly_dttr' | 'evaluation'>('attendance');
 
   // Attendance Filters
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
@@ -368,11 +369,17 @@ export function AdminReports() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 flex-wrap no-print">
         <div>
           <h2 className="text-xl font-black text-gray-900 tracking-tight">
-            {activeTab === 'evaluation' ? 'HTE Evaluation Reports' : 'Attendance & DTR Reports'}
+            {activeTab === 'evaluation'
+              ? 'HTE Evaluation Reports'
+              : activeTab === 'monthly_dttr'
+              ? 'Monthly DTTR Monitoring Form'
+              : 'Attendance & DTR Reports'}
           </h2>
           <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
             {activeTab === 'evaluation'
               ? 'Trainee performance appraisal, competency breakdowns, and supervisor remarks'
+              : activeTab === 'monthly_dttr'
+              ? 'Official CHMSU Daily Time & Tasks Record (DTTR) with automatic hours and HTE supervisor sign-off'
               : 'Detailed time record analysis, rendered hours, and biometric clock-in logs'}
           </p>
         </div>
@@ -394,16 +401,28 @@ export function AdminReports() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab('monthly_dttr')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'monthly_dttr'
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText size={14} />
+              <span>Monthly DTTR</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab('evaluation')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'evaluation'
-                  ? 'bg-white text-emerald-700 shadow-sm'
+                  ? 'bg-white text-purple-700 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Award size={14} />
               <span>Evaluation Report</span>
-              <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-full font-extrabold">
+              <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-purple-100 text-purple-800 rounded-full font-extrabold">
                 {evaluatedCount}/{totalTraineesCount}
               </span>
             </button>
@@ -425,6 +444,13 @@ export function AdminReports() {
           </button>
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* MONTHLY DTTR MONITORING VIEW                               */}
+      {/* ========================================================= */}
+      {activeTab === 'monthly_dttr' && (
+        <MonthlyDTTRView viewerRole="admin" />
+      )}
 
       {/* ========================================================= */}
       {/* EVALUATION REPORT VIEW                                    */}

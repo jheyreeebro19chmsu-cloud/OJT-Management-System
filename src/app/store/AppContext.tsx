@@ -22,6 +22,7 @@ import {
   HostSupervisor,
   TraineeDocuments,
   TraineeDocumentItem,
+  MonthlyDttrRecord,
 } from '../types';
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
@@ -42,6 +43,7 @@ const STORAGE_KEYS = {
   HOST_FEEDBACK: 'ojt_host_feedback',
   HOST_SUPERVISORS: 'ojt_host_supervisors',
   PASSWORDS: 'ojt_passwords',
+  MONTHLY_DTTR: 'ojt_monthly_dttr',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -234,6 +236,11 @@ interface AppContextType {
   setPasswordForEmail: (email: string, password: string) => void;
   syncAllAccountsAcrossAcademicYears: (targetAcademicYear?: string) => Promise<{ success: boolean; syncedCount: number; message: string }>;
   repairAndPersistDatabase: () => Promise<{ success: boolean; message: string; repairedCounts: any }>;
+  // Monthly DTTR Monitoring
+  monthlyDttrs: MonthlyDttrRecord[];
+  saveMonthlyDttr: (record: MonthlyDttrRecord) => void;
+  getMonthlyDttr: (employeeId: string, year: number, month: number) => MonthlyDttrRecord | null;
+  signMonthlyDttr: (employeeId: string, year: number, month: number, supervisorName: string, supervisorTitle?: string) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -584,6 +591,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return normalized;
   });
 
+  const [monthlyDttrs, setMonthlyDttrs] = useState<MonthlyDttrRecord[]>(() =>
+    loadFromStorage<MonthlyDttrRecord[]>(STORAGE_KEYS.MONTHLY_DTTR, [])
+  );
+
   // Check if Supabase is configured and load initial data
   useEffect(() => {
     let isMounted = true;
@@ -879,6 +890,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, requiredDocumentSubmissions);
     }
   }, [requiredDocumentSubmissions, useSupabase]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, monthlyDttrs);
+  }, [monthlyDttrs]);
 
   useEffect(() => {
     if (!useSupabase && hostSupervisors.length > 0) {
@@ -3043,6 +3058,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteEmployee(id);
   };
 
+  const saveMonthlyDttr = useCallback((record: MonthlyDttrRecord) => {
+    setMonthlyDttrs((prev) => {
+      const id = record.id || `${record.employeeId}_${record.year}_${record.month}`;
+      const existingIndex = prev.findIndex(
+        (r) => r.id === id || (r.employeeId === record.employeeId && r.year === record.year && r.month === record.month)
+      );
+      const updatedRecord = { ...record, id, updatedAt: new Date().toISOString() };
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = { ...next[existingIndex], ...updatedRecord };
+        return next;
+      }
+      return [...prev, updatedRecord];
+    });
+  }, []);
+
+  const getMonthlyDttr = useCallback((employeeId: string, year: number, month: number): MonthlyDttrRecord | null => {
+    const id = `${employeeId}_${year}_${month}`;
+    const found = monthlyDttrs.find(
+      (r) => r.id === id || (r.employeeId === employeeId && r.year === year && r.month === month)
+    );
+    return found || null;
+  }, [monthlyDttrs]);
+
+  const signMonthlyDttr = useCallback((employeeId: string, year: number, month: number, supervisorName: string, supervisorTitle?: string) => {
+    const id = `${employeeId}_${year}_${month}`;
+    setMonthlyDttrs((prev) => {
+      const existingIndex = prev.findIndex(
+        (r) => r.id === id || (r.employeeId === employeeId && r.year === year && r.month === month)
+      );
+      const updated: MonthlyDttrRecord = {
+        id,
+        employeeId,
+        year,
+        month,
+        ...(existingIndex >= 0 ? prev[existingIndex] : {}),
+        hteSupervisorName: supervisorName,
+        hteSupervisorTitle: supervisorTitle || 'HTE Supervisor',
+        hteSignedAt: new Date().toISOString(),
+        hteSignatureStatus: 'signed',
+        updatedAt: new Date().toISOString(),
+      };
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = updated;
+        return next;
+      }
+      return [...prev, updated];
+    });
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -3131,6 +3197,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPasswordForEmail,
         syncAllAccountsAcrossAcademicYears,
         repairAndPersistDatabase,
+        monthlyDttrs,
+        saveMonthlyDttr,
+        getMonthlyDttr,
+        signMonthlyDttr,
       }}
     >
       {children}
