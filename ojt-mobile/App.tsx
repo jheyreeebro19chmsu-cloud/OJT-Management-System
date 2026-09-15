@@ -49,6 +49,8 @@ import {
   Navigation,
   Fingerprint,
   Zap,
+  GraduationCap,
+  Briefcase,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -68,6 +70,7 @@ import InstructorQRScreen from './screens/InstructorQRScreen';
 import HTEDashboardScreen from './screens/HTEDashboardScreen';
 import HTEEvaluationScreen from './screens/HTEEvaluationScreen';
 import HTEDTRScreen from './screens/HTEDTRScreen';
+import HTEGeofenceScreen from './screens/HTEGeofenceScreen';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
 import BiometricBridge from './components/BiometricBridge';
@@ -111,6 +114,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [schoolLogo, setSchoolLogo] = useState<string | null>(null);
   const [view, setView] = useState<'login' | 'register'>('login');
+  const [selectedRole, setSelectedRole] = useState<'trainee' | 'admin' | 'hte'>('trainee');
 
   // Trainee modals & sub-screens
   const [scanning, setScanning] = useState(false);
@@ -132,6 +136,7 @@ export default function App() {
   const [showHTETrainees, setShowHTETrainees] = useState(false);
   const [showHTEDTR, setShowHTEDTR] = useState(false);
   const [showHTEEvaluation, setShowHTEEvaluation] = useState(false);
+  const [showHTEGeofence, setShowHTEGeofence] = useState(false);
 
   // Trainee Records Viewer
   const [showRecords, setShowRecords] = useState(false);
@@ -1024,6 +1029,7 @@ export default function App() {
         <BiometricBridge />
         <RegisterScreen
           activeAcademicYear={activeAcademicYear}
+          initialRole={selectedRole}
           onCancel={() => setView('login')}
           onSuccess={() => setView('login')}
         />
@@ -1208,6 +1214,11 @@ export default function App() {
                 activeAcademicYear={activeAcademicYear}
                 onBack={() => setShowHTEEvaluation(false)}
               />
+            ) : showHTEGeofence ? (
+              <HTEGeofenceScreen
+                profile={profile}
+                onBack={() => setShowHTEGeofence(false)}
+              />
             ) : profile.role === 'admin' ? (
               /* ─── INSTRUCTOR / ADMIN DASHBOARD PORTAL ─── */
               <View style={styles.dashboardContainer}>
@@ -1269,6 +1280,7 @@ export default function App() {
                     if (screen === 'hte_trainees') setShowInstructorTrainees(true);
                     if (screen === 'hte_dtr') setShowHTEDTR(true);
                     if (screen === 'hte_evaluation') setShowHTEEvaluation(true);
+                    if (screen === 'hte_geofence') setShowHTEGeofence(true);
                   }}
                 />
               </View>
@@ -1731,15 +1743,99 @@ export default function App() {
                 </View>
               </View>
 
+              {/* Role Selection Tabs */}
+              <View style={styles.roleSelectionContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.roleTabCard,
+                    selectedRole === 'trainee' && styles.roleTabCardActiveTrainee,
+                  ]}
+                  onPress={() => setSelectedRole('trainee')}
+                >
+                  <View style={[styles.roleTabIconBg, selectedRole === 'trainee' ? { backgroundColor: '#eff6ff' } : { backgroundColor: '#f1f5f9' }]}>
+                    <GraduationCap size={18} color={selectedRole === 'trainee' ? '#2563eb' : '#64748b'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.roleTabTitle, selectedRole === 'trainee' && { color: '#1e3a8a', fontWeight: '800' }]}>
+                      Continue as Trainee
+                    </Text>
+                    <Text style={styles.roleTabSubtitle}>DTR, Face Biometrics & Geofencing</Text>
+                  </View>
+                  {selectedRole === 'trainee' && <CheckCircle2 size={16} color="#2563eb" />}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.roleTabCard,
+                    selectedRole === 'admin' && styles.roleTabCardActiveInstructor,
+                  ]}
+                  onPress={() => setSelectedRole('admin')}
+                >
+                  <View style={[styles.roleTabIconBg, selectedRole === 'admin' ? { backgroundColor: '#eef2ff' } : { backgroundColor: '#f1f5f9' }]}>
+                    <ShieldCheck size={18} color={selectedRole === 'admin' ? '#4f46e5' : '#64748b'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.roleTabTitle, selectedRole === 'admin' && { color: '#312e81', fontWeight: '800' }]}>
+                      Continue as Instructor
+                    </Text>
+                    <Text style={styles.roleTabSubtitle}>Trainee Roster, QR & DTR Monitor</Text>
+                  </View>
+                  {selectedRole === 'admin' && <CheckCircle2 size={16} color="#4f46e5" />}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.roleTabCard,
+                    selectedRole === 'hte' && styles.roleTabCardActiveHte,
+                  ]}
+                  onPress={() => setSelectedRole('hte')}
+                >
+                  <View style={[styles.roleTabIconBg, selectedRole === 'hte' ? { backgroundColor: '#ecfdf5' } : { backgroundColor: '#f1f5f9' }]}>
+                    <Building size={18} color={selectedRole === 'hte' ? '#059669' : '#64748b'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.roleTabTitle, selectedRole === 'hte' && { color: '#064e3b', fontWeight: '800' }]}>
+                      Continue as HTE
+                    </Text>
+                    <Text style={styles.roleTabSubtitle}>Interns, Evaluations & Geofence</Text>
+                  </View>
+                  {selectedRole === 'hte' && <CheckCircle2 size={16} color="#059669" />}
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.loginCard}>
-                <Text style={styles.cardTitle}>Sign In</Text>
-                <Text style={styles.cardSubtitle}>Access your Trainee, Instructor or HTE portal</Text>
+                <Text style={styles.cardTitle}>
+                  {selectedRole === 'trainee'
+                    ? 'Trainee Portal'
+                    : selectedRole === 'admin'
+                    ? 'Faculty Portal'
+                    : 'Supervisor Portal'}
+                </Text>
+                <Text style={styles.cardSubtitle}>
+                  {selectedRole === 'trainee'
+                    ? 'Sign in to access your DTR, biometrics & internship progress'
+                    : selectedRole === 'admin'
+                    ? 'Sign in to manage assigned trainees & monitor attendance'
+                    : 'Sign in to evaluate interns & review company time logs'}
+                </Text>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Email Address or Student / Employee ID</Text>
+                  <Text style={styles.inputLabel}>
+                    {selectedRole === 'trainee'
+                      ? 'Student Email or OJT / Trainee ID'
+                      : selectedRole === 'admin'
+                      ? 'Instructor Email or Employee ID'
+                      : 'Supervisor / Company Email'}
+                  </Text>
                   <TextInput
                     style={styles.textInput}
-                    placeholder="student@chmsu.edu.ph or 2026-CHMSU-001"
+                    placeholder={
+                      selectedRole === 'trainee'
+                        ? 'student@chmsu.edu.ph or 2026-CHMSU-001'
+                        : selectedRole === 'admin'
+                        ? 'instructor@chmsu.edu.ph'
+                        : 'supervisor@company.com'
+                    }
                     placeholderTextColor="#94a3b8"
                     value={email}
                     onChangeText={setEmail}
@@ -1764,13 +1860,30 @@ export default function App() {
                   {authLoading ? (
                     <ActivityIndicator color="#ffffff" />
                   ) : (
-                    <Text style={styles.loginButtonText}>SIGN IN TO PORTAL</Text>
+                    <Text style={styles.loginButtonText}>
+                      {`SIGN IN AS ${
+                        selectedRole === 'trainee'
+                          ? 'TRAINEE'
+                          : selectedRole === 'admin'
+                          ? 'INSTRUCTOR'
+                          : 'HTE SUPERVISOR'
+                      }`}
+                    </Text>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.registerLink} onPress={() => setView('register')}>
                   <Text style={styles.registerLinkText}>
-                    Don't have an account? <Text style={{ color: '#2563eb', fontWeight: '900' }}>Register Now</Text>
+                    Don't have an account?{' '}
+                    <Text style={{ color: '#2563eb', fontWeight: '900' }}>
+                      {`Register as ${
+                        selectedRole === 'trainee'
+                          ? 'Trainee'
+                          : selectedRole === 'admin'
+                          ? 'Instructor'
+                          : 'HTE'
+                      }`}
+                    </Text>
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2235,4 +2348,48 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   faceVerifyBtnText: { color: '#7c3aed', fontSize: 12, fontWeight: '800' },
+  roleSelectionContainer: {
+    width: '100%',
+    marginBottom: 16,
+    gap: 8,
+  },
+  roleTabCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    gap: 10,
+  },
+  roleTabCardActiveTrainee: {
+    borderColor: '#2563eb',
+    backgroundColor: '#f8faff',
+  },
+  roleTabCardActiveInstructor: {
+    borderColor: '#4f46e5',
+    backgroundColor: '#f5f7ff',
+  },
+  roleTabCardActiveHte: {
+    borderColor: '#059669',
+    backgroundColor: '#f0fdf4',
+  },
+  roleTabIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleTabTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  roleTabSubtitle: {
+    fontSize: 10,
+    color: '#64748b',
+    marginTop: 1,
+  },
 });

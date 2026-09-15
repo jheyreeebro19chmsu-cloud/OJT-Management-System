@@ -43,7 +43,7 @@ import * as Location from 'expo-location';
 
 import { supabase } from '../lib/supabase';
 import { mobileApi } from '../lib/api';
-import { mobileDb } from '../lib/supabaseService';
+import { mobileDb, uploadFacePhoto } from '../lib/supabaseService';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 import DropdownPicker from '../components/DropdownPicker';
@@ -63,14 +63,16 @@ interface RegisterScreenProps {
   onCancel: () => void;
   onSuccess: () => void;
   activeAcademicYear?: string;
+  initialRole?: Role;
 }
 
 export default function RegisterScreen({
   onCancel,
   onSuccess,
   activeAcademicYear = '2026-2027',
+  initialRole = null,
 }: RegisterScreenProps) {
-  const [role, setRole] = useState<Role>(null);
+  const [role, setRole] = useState<Role>(initialRole);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -565,6 +567,15 @@ export default function RegisterScreen({
           : gpsAddress || null;
 
       // 2. Build Profile Data Partitioned by Academic Year with valid schema columns
+      let uploadedPhotoUrl = form.photo || null;
+      if (uploadedPhotoUrl && !uploadedPhotoUrl.startsWith('http')) {
+        try {
+          uploadedPhotoUrl = await uploadFacePhoto(form.employeeId || validUserId || form.email, uploadedPhotoUrl, 'profile');
+        } catch (phErr) {
+          console.warn('Face photo storage upload notice during registration:', phErr);
+        }
+      }
+
       const profileData: any = {
         name: fullName,
         email: form.email.trim().toLowerCase(),
@@ -575,8 +586,8 @@ export default function RegisterScreen({
         registration_lat: location.lat || null,
         registration_lng: location.lng || null,
         registration_address: computedRegistrationAddress,
-        photo: form.photo || null,
-        face_registered: Boolean(form.photo),
+        photo: uploadedPhotoUrl,
+        face_registered: Boolean(uploadedPhotoUrl),
       };
 
       if (validUserId) {

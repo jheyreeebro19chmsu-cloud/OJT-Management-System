@@ -9,7 +9,7 @@ import {
   FlatList,
   Image,
 } from 'react-native';
-import { Building2, Users, Clock, Star, ArrowRight, ShieldCheck, CheckCircle2, User } from 'lucide-react-native';
+import { Building2, Users, Clock, Star, ArrowRight, ShieldCheck, CheckCircle2, User, MapPin } from 'lucide-react-native';
 import { mobileDb, Employee, TimeRecord } from '../lib/supabaseService';
 
 export default function HTEDashboardScreen({
@@ -117,6 +117,17 @@ export default function HTEDashboardScreen({
           <View style={{ flex: 1 }}>
             <Text style={styles.actionTitle}>Evaluate Trainees</Text>
             <Text style={styles.actionDesc}>Submit performance grades & feedback rubric</Text>
+          </View>
+          <ArrowRight size={18} color="#94a3b8" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionCard} onPress={() => onNavigate('hte_geofence')}>
+          <View style={[styles.actionIcon, { backgroundColor: '#ecfdf5' }]}>
+            <MapPin size={20} color="#059669" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>Workplace Geofence Settings</Text>
+            <Text style={styles.actionDesc}>Configure company office GPS & radius</Text>
           </View>
           <ArrowRight size={18} color="#94a3b8" />
         </TouchableOpacity>

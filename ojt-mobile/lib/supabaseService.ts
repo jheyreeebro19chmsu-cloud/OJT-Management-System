@@ -1,4 +1,43 @@
+import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+
+export async function uploadFacePhoto(
+  employeeId: string,
+  base64Data: string,
+  type: 'profile' | 'time_in' | 'time_out' = 'profile'
+): Promise<string> {
+  if (!base64Data) return base64Data;
+  if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) return base64Data;
+
+  try {
+    const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    const arrayBuffer = decode(base64Content);
+    const cleanEmpId = (employeeId || 'unassigned').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${cleanEmpId}/${type}_${Date.now()}.jpg`;
+
+    const bucketsToTry = ['face-photos', 'avatars'];
+    for (const bucketName of bucketsToTry) {
+      try {
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from(bucketName)
+          .upload(fileName, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
+
+        if (!uploadError && uploadData) {
+          const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+          if (urlData?.publicUrl) {
+            return urlData.publicUrl;
+          }
+        }
+      } catch (bErr) {
+        console.warn(`[Storage] Exception uploading to bucket "${bucketName}":`, bErr);
+      }
+    }
+  } catch (err) {
+    console.debug('Storage upload fallback notice:', err);
+  }
+
+  return base64Data;
+}
 
 export interface Employee {
   id: string;
@@ -295,7 +334,17 @@ export const mobileDb = {
     if (updates.campus !== undefined) payload.campus = updates.campus;
     if (updates.course !== undefined) payload.course = updates.course;
     if (updates.requiredHours !== undefined) payload.required_hours = updates.requiredHours;
-    if (updates.photo !== undefined) payload.photo = updates.photo;
+    if (updates.photo !== undefined) {
+      let photoUrl = updates.photo;
+      if (photoUrl && !photoUrl.startsWith('http')) {
+        try {
+          photoUrl = await uploadFacePhoto(updates.employeeId || id, photoUrl, 'profile');
+        } catch (pErr) {
+          console.warn('Face photo upload notice:', pErr);
+        }
+      }
+      payload.photo = photoUrl;
+    }
     if (updates.faceRegistered !== undefined) payload.face_registered = updates.faceRegistered;
     if (updates.active !== undefined) payload.active = updates.active;
     if (updates.academicYear !== undefined) payload.academic_year = updates.academicYear;
@@ -352,6 +401,24 @@ export const mobileDb = {
   },
 
   async saveTimeRecord(record: Omit<TimeRecord, 'id'> & { id?: string }): Promise<TimeRecord | null> {
+    let timeInPhoto = record.timeInPhoto;
+    if (timeInPhoto && !timeInPhoto.startsWith('http')) {
+      try {
+        timeInPhoto = await uploadFacePhoto(record.employeeId, timeInPhoto, 'time_in');
+      } catch (e) {
+        console.warn('Time in photo storage upload notice:', e);
+      }
+    }
+
+    let timeOutPhoto = record.timeOutPhoto;
+    if (timeOutPhoto && !timeOutPhoto.startsWith('http')) {
+      try {
+        timeOutPhoto = await uploadFacePhoto(record.employeeId, timeOutPhoto, 'time_out');
+      } catch (e) {
+        console.warn('Time out photo storage upload notice:', e);
+      }
+    }
+
     const payload: any = {
       employee_id: record.employeeId,
       date: record.date,
@@ -365,8 +432,8 @@ export const mobileDb = {
       time_out_geofenced: record.timeOutGeofenced,
       time_in_face_verified: record.timeInFaceVerified,
       time_out_face_verified: record.timeOutFaceVerified,
-      time_in_photo: record.timeInPhoto,
-      time_out_photo: record.timeOutPhoto,
+      time_in_photo: timeInPhoto,
+      time_out_photo: timeOutPhoto,
       total_hours: record.totalHours,
       status: record.status,
       notes: record.notes,
