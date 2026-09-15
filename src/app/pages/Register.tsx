@@ -190,6 +190,8 @@ export function Register() {
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
+  const [googleAvatar, setGoogleAvatar] = useState<string | null>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailTaken, setEmailTaken] = useState<null | boolean>(null);
   const [emailMsg, setEmailMsg] = useState('');
@@ -253,6 +255,28 @@ export function Register() {
     localStorage.setItem('pending_oauth_role', nextRole || '');
   };
 
+  const handleGoogleRegister = async (targetRole?: UserRole) => {
+    if (targetRole) {
+      localStorage.setItem('pending_oauth_role', targetRole);
+    }
+    setGoogleLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/oauth-callback`,
+        },
+      });
+      if (error) {
+        toast.error(error.message || 'Failed to initialize Google sign-in.');
+        setGoogleLoading(false);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to initialize Google sign-in.');
+      setGoogleLoading(false);
+    }
+  };
+
   // Force-submit removed: face capture/force submit is disabled for HTE and Instructors
 
   useEffect(() => {
@@ -263,23 +287,17 @@ export function Register() {
     }
   }, [registrationComplete, role]);
 
-  // Detect OAuth prefill on mount (for HTE, Trainee, or general OAuth registration)
+  // Detect OAuth prefill on mount (for HTE, Trainee, Instructor, or general OAuth registration)
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const h = params.get('h');
-      const pending = localStorage.getItem('pending_oauth_role');
+      const pending = localStorage.getItem('pending_oauth_role') as UserRole;
       const oauthEmail = localStorage.getItem('oauth_email');
       const oauthName = localStorage.getItem('oauth_name');
       const oauthPhoto = localStorage.getItem('oauth_photo');
 
-      if (h === 'hte' || pending === 'hte') {
-        setRole('hte');
-        setOauthPending(true);
-        if (oauthEmail) update('email', oauthEmail);
-        if (oauthName) update('name', oauthName);
-      } else if (oauthEmail || oauthName) {
-        setRole((currentRole) => currentRole || 'trainee');
+      if (oauthEmail || oauthName) {
         setOauthPending(true);
         if (oauthEmail) update('email', oauthEmail);
         if (oauthName) {
@@ -289,9 +307,28 @@ export function Register() {
           if (parts.length > 1) update('lastName', parts.slice(1).join(' '));
         }
         if (oauthPhoto) {
+          setGoogleAvatar(oauthPhoto);
+          // Set as preview photo, but note that trainee must still complete live facial capture
           setPhoto(oauthPhoto);
         }
-        toast.info('Google profile loaded. Please complete your registration details.');
+      }
+
+      if (h === 'hte' || pending === 'hte') {
+        setRole('hte');
+      } else if (pending === 'admin') {
+        setRole('admin');
+      } else if (pending === 'trainee') {
+        setRole('trainee');
+      } else {
+        // Leave role as null so the user chooses Instructor, Trainee, or HTE!
+      }
+
+      if (oauthEmail || oauthName) {
+        if (pending || h) {
+          toast.info('Google account loaded. Please complete your registration details.');
+        } else {
+          toast.info('Google profile loaded. Please choose your role below to complete registration.');
+        }
       }
 
       // Clear pending handoff markers
@@ -689,12 +726,20 @@ export function Register() {
     // ── Standard Supabase registration path ──────────────────────────────────
     // Validate required fields before proceeding
     if (role === 'admin' || role === 'trainee' || role === 'hte') {
-      if (!form.email || !form.password) {
-        setSubmitError('Email and password are required');
+      if (!form.email) {
+        setSubmitError('Email address is required');
+        setIsSubmitting(false);
+        return;
+      }
+      if (!oauthPending && !form.password) {
+        setSubmitError('Password is required');
         setIsSubmitting(false);
         return;
       }
     }
+
+    // Auto-generate secure password for Google OAuth users if left blank
+    const effectivePassword = form.password || (oauthPending ? `GoogleOAuth_${Math.random().toString(36).slice(-8)}!Aa1` : '');
 
     // ── Validate and sanitize form data to prevent dirty data ──
     try {
@@ -705,8 +750,8 @@ export function Register() {
         lastName: form.lastName,
         middleInitial: form.middleInitial,
         name: form.name,
-        password: form.password,
-        confirmPassword: form.confirmPassword,
+        password: effectivePassword,
+        confirmPassword: effectivePassword,
         street: form.street,
         barangay: form.barangay,
         barangayManual: form.barangayManual,
@@ -728,7 +773,7 @@ export function Register() {
       };
 
       // This will throw if validation fails
-      validateRegistrationData(validationFormData, role || 'trainee');
+      validateRegistrationData(validationFormData, role || 'trainee', oauthPending);
     } catch (validationErr) {
       const msg = (validationErr as any)?.message || String(validationErr);
       setSubmitError(msg);
@@ -811,7 +856,7 @@ export function Register() {
         registrationLocation: role === 'admin' ? { lat: campusInfo.lat, lng: campusInfo.lng } : (registrationLocation || undefined),
         registrationAddress: computedRegistrationAddress,
         companyAddress: form.companyAddress || undefined,
-        password: form.password,
+        password: effectivePassword,
       });
     } catch (err: any) {
       console.error('registerEmployee threw:', err);
@@ -1042,7 +1087,8 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
-        if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
       }
     }
 
@@ -1052,7 +1098,11 @@ export function Register() {
         if (!form.firstName?.trim()) errors.push('Please enter your First Name');
         if (!hasEmail) errors.push('Please enter your Email Address');
         if (emailExists) errors.push('Email is already registered. Please sign in or use another email.');
-        if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        if (!oauthPending && !hasValidPassword) {
+          errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        } else if (oauthPending && form.password && !hasValidPassword) {
+          errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
+        }
         if (!form.contactPhone?.trim()) {
           errors.push('Please enter your Philippine contact number (+639...)');
         } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
@@ -1064,6 +1114,10 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
+        if (!form.street?.trim()) errors.push('Please enter your Street Address / House Number / Subd.');
+        if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
+          errors.push('High-accuracy GPS Geofence coordinates are required for Trainee attendance. Please calibrate GPS or adjust the map pin.');
+        }
       }
       if (step === 1) {
         // Company fields are optional for initial trainee enrollment
@@ -1078,8 +1132,8 @@ export function Register() {
         }
       }
       if (step === 3) {
-        if (!photo && !faceRegistered) {
-          errors.push('Please complete face biometrics registration');
+        if (!faceRegistered) {
+          errors.push('Live facial biometrics registration is mandatory for Trainees. Please activate your camera and register your face.');
         }
       }
     }
@@ -1092,7 +1146,8 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select Province');
         if (!hasValidCity) errors.push('Please select City/Municipality');
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter Barangay');
-        if (!hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
       }
       if (step === 1) {
         if (!hasEmail) errors.push('Please enter your contact email');
@@ -1122,13 +1177,17 @@ export function Register() {
   const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
   const hasLength = (form.password || '').length >= 8;
   const passwordsMatch = Boolean(form.password && form.password === form.confirmPassword);
-  const isPasswordValid = Boolean(hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch);
+  const isPasswordValid = oauthPending
+    ? (!form.password || Boolean(hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch))
+    : Boolean(hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch);
   const isPhoneValid = Boolean(form.contactPhone?.trim() && form.contactPhone.replace(/[^\d]/g, '').length >= 10);
   const isBirthdateValid = Boolean(form.birthdate?.trim());
   const hasValidCountry = form.country === 'other' ? Boolean(form.countryManual?.trim()) : Boolean(form.country);
   const hasValidRegion = form.region === 'other' ? Boolean(form.regionManual?.trim()) : Boolean(form.region);
   const hasValidCity = form.city === 'other' ? Boolean(form.cityManual?.trim()) : Boolean(form.city);
   const hasValidBarangay = form.barangay === 'other' ? Boolean(form.barangayManual?.trim()) : Boolean(form.barangay?.trim());
+  const hasValidStreet = Boolean(form.street?.trim());
+  const hasValidLocation = Boolean(registrationLocation && typeof registrationLocation.lat === 'number' && typeof registrationLocation.lng === 'number');
   const hasValidProvince =
     form.country === 'PH'
       ? form.province === 'other'
@@ -1282,64 +1341,182 @@ export function Register() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="space-y-4"
               >
+                {/* Google Connected Banner */}
+                {oauthPending && (
+                  <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200/80 rounded-2xl flex items-center gap-3.5 shadow-sm">
+                    {googleAvatar || photo ? (
+                      <img
+                        src={googleAvatar || photo}
+                        alt="Google Avatar"
+                        className="w-12 h-12 rounded-full border-2 border-white shadow-sm shrink-0 object-cover"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center shrink-0">
+                        {form.firstName ? form.firstName[0] : 'G'}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase font-black tracking-wider bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                          Google Account Connected
+                        </span>
+                      </div>
+                      <p className="font-bold text-gray-900 text-sm truncate mt-0.5">
+                        {form.name || [form.firstName, form.lastName].filter(Boolean).join(' ') || 'Google User'}
+                      </p>
+                      <p className="text-xs text-gray-500 font-mono truncate">{form.email}</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="text-center mb-4">
-                  <h2 className="font-bold text-gray-800 text-lg">Choose Your Role</h2>
-                  <p className="text-sm text-gray-500 mt-1">Select how you want to register</p>
+                  <h2 className="font-bold text-gray-800 text-lg">
+                    {oauthPending ? 'Select Your Role to Continue' : 'Choose Your Role'}
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {oauthPending
+                      ? 'Choose how you will register with your Google account. Trainees require GPS geofencing & facial biometrics.'
+                      : 'Select your account role to begin registration'}
+                  </p>
                 </div>
 
-                <button
-                  onClick={() => selectRole('trainee')}
-                  className="w-full p-5 border-2 border-blue-200 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left group"
-                >
+                {/* Role Option 1: Trainee */}
+                <div className="p-5 border-2 border-blue-200 rounded-2xl hover:border-blue-500 hover:bg-blue-50/40 transition-all text-left group bg-white shadow-xs">
                   <div className="flex items-start gap-4">
                     <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center group-hover:bg-blue-500 transition-colors shrink-0">
                       <UserCircle size={28} className="text-blue-600 group-hover:text-white" />
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-gray-800 mb-1">Trainee / Employee</h3>
-                      <p className="text-xs text-gray-500">
-                        Register as an OJT trainee or employee. You'll complete a full registration with company and
-                        school information.
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                        <h3 className="font-bold text-gray-800 text-base">Trainee / Student</h3>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full border border-blue-200">
+                          Mandatory Geofence & Facial
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed mb-3">
+                        Register as an OJT Trainee. Name and email are provided by Google, while high-accuracy GPS geofencing, complete Philippine address, school details, and live webcam facial biometrics are required.
                       </p>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => selectRole('trainee')}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>{oauthPending ? 'Continue as Trainee' : 'Register as Trainee'}</span>
+                          <ArrowRight size={13} />
+                        </button>
+                        {!oauthPending && (
+                          <button
+                            type="button"
+                            onClick={() => handleGoogleRegister('trainee')}
+                            disabled={googleLoading}
+                            className="px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                            </svg>
+                            <span>With Google</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </button>
+                </div>
 
-                <button
-                  onClick={() => selectRole('admin')}
-                  className="w-full p-5 border-2 border-purple-200 rounded-2xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left group"
-                >
+                {/* Role Option 2: Instructor */}
+                <div className="p-5 border-2 border-purple-200 rounded-2xl hover:border-purple-500 hover:bg-purple-50/40 transition-all text-left group bg-white shadow-xs">
                   <div className="flex items-start gap-4">
                     <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center group-hover:bg-purple-500 transition-colors shrink-0">
                       <ShieldCheck size={28} className="text-purple-600 group-hover:text-white" />
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-gray-800 mb-1">OJT Instructor</h3>
-                      <p className="text-xs text-gray-500">
-                        Register as an OJT Instructor or supervisor. You'll have access to manage employees, view
-                        reports, and configure settings.
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                        <h3 className="font-bold text-gray-800 text-base">OJT Instructor / Faculty</h3>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">
+                          Supervisor
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed mb-3">
+                        Register as an OJT Instructor or faculty supervisor. Manage student attendance, verify geofence locations, review documents, and configure course evaluations.
                       </p>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => selectRole('admin')}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>{oauthPending ? 'Continue as Instructor' : 'Register as Instructor'}</span>
+                          <ArrowRight size={13} />
+                        </button>
+                        {!oauthPending && (
+                          <button
+                            type="button"
+                            onClick={() => handleGoogleRegister('admin')}
+                            disabled={googleLoading}
+                            className="px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                            </svg>
+                            <span>With Google</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </button>
+                </div>
 
-                <button
-                  onClick={() => selectRole('hte')}
-                  className="w-full p-5 border-2 border-green-200 rounded-2xl hover:border-green-500 hover:bg-green-50 transition-all text-left group"
-                >
+                {/* Role Option 3: HTE */}
+                <div className="p-5 border-2 border-emerald-200 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50/40 transition-all text-left group bg-white shadow-xs">
                   <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center group-hover:bg-green-500 transition-colors shrink-0">
-                      <Building size={28} className="text-green-600 group-hover:text-white" />
+                    <div className="w-14 h-14 bg-emerald-100 rounded-xl flex items-center justify-center group-hover:bg-emerald-500 transition-colors shrink-0">
+                      <Building size={28} className="text-emerald-600 group-hover:text-white" />
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-gray-800 mb-1">Host Training Establishment (HTE)</h3>
-                      <p className="text-xs text-gray-500">
-                        Register as an HTE representative. You'll monitor employee attendance, rendered hours, and
-                        provide feedback on their performance.
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                        <h3 className="font-bold text-gray-800 text-base">Host Training Establishment (HTE)</h3>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                          Industry Partner
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed mb-3">
+                        Register as an HTE representative or company supervisor. Monitor trainee workplace hours, review daily time logs, and submit performance evaluations.
                       </p>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => selectRole('hte')}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>{oauthPending ? 'Continue as HTE' : 'Register as HTE'}</span>
+                          <ArrowRight size={13} />
+                        </button>
+                        {!oauthPending && (
+                          <button
+                            type="button"
+                            onClick={() => handleGoogleRegister('hte')}
+                            disabled={googleLoading}
+                            className="px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                            </svg>
+                            <span>With Google</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </button>
+                </div>
 
                 <div className="mt-6 pt-4 border-t border-gray-100">
                   <p className="text-center text-xs text-gray-400">
@@ -1360,6 +1537,33 @@ export function Register() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
+                {/* Header Role Bar with Switch Role option */}
+                <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100 flex-wrap">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-semibold text-gray-500">Registering as:</span>
+                    <span className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                      role === 'admin'
+                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                        : role === 'hte'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : 'bg-blue-100 text-blue-800 border border-blue-200'
+                    }`}>
+                      {role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee'}
+                    </span>
+                    {oauthPending && (
+                      <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200 font-medium truncate max-w-xs">
+                        Google: {form.email}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setRole(null); setStep(0); }}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline cursor-pointer ml-auto"
+                  >
+                    <ArrowLeft size={12} /> Switch Role
+                  </button>
+                </div>
                 {role === 'hte' ? (
                   <>
                     <div className="flex items-center gap-2 mb-4">
@@ -1821,7 +2025,14 @@ export function Register() {
                     <div className="space-y-3">
                       <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Last Name *</label>
+                          <label className="text-xs font-semibold text-gray-600 flex items-center justify-between mb-1">
+                            <span>Last Name *</span>
+                            {oauthPending && (
+                              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                From Google
+                              </span>
+                            )}
+                          </label>
                           <input
                             value={form.lastName}
                             onChange={(e) => update('lastName', e.target.value)}
@@ -1837,7 +2048,14 @@ export function Register() {
                           )}
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">First Name *</label>
+                          <label className="text-xs font-semibold text-gray-600 flex items-center justify-between mb-1">
+                            <span>First Name *</span>
+                            {oauthPending && (
+                              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                From Google
+                              </span>
+                            )}
+                          </label>
                           <input
                             value={form.firstName}
                             onChange={(e) => update('firstName', e.target.value)}
@@ -1864,14 +2082,24 @@ export function Register() {
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Email Address *</label>
+                        <label className="text-xs font-semibold text-gray-600 flex items-center justify-between mb-1">
+                          <span>Email Address *</span>
+                          {oauthPending && (
+                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                              Verified by Google
+                            </span>
+                          )}
+                        </label>
                         <input
                           type="email"
                           value={form.email}
                           onChange={(e) => { update('email', e.target.value); setEmailTaken(null); }}
                           onBlur={() => checkEmailExists(form.email)}
                           placeholder="your@email.com"
-                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                          readOnly={oauthPending}
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
+                            oauthPending ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-gray-200' : 'bg-gray-50'
+                          } ${
                             (attemptedNext && !isEmailValid) || emailTaken
                               ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
                               : 'border-gray-200 focus:ring-blue-500'
@@ -1888,38 +2116,46 @@ export function Register() {
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">
+                            Password {oauthPending ? '(Optional with Google)' : '*'}
+                          </label>
                           <div className="relative">
                             <input
                               type={showPassword ? 'text' : 'password'}
                               value={form.password}
                               onChange={(e) => update('password', e.target.value)}
-                              placeholder="Min 8 characters"
+                              placeholder={oauthPending ? 'Optional for Google login' : 'Min 8 characters'}
                               className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                                attemptedNext && !isPasswordValid
+                                (!oauthPending && attemptedNext && !isPasswordValid) || (oauthPending && form.password && !isPasswordValid)
                                   ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
                                   : 'border-gray-200 focus:ring-blue-500'
                               }`}
                             />
                           </div>
-                          {attemptedNext && !form.password && (
-                            <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
+                          {oauthPending ? (
+                            <p className="text-[10px] text-gray-500 mt-1">Leave blank to use Google Sign-in only</p>
+                          ) : (
+                            attemptedNext && !form.password && (
+                              <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
+                            )
                           )}
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">
+                            Confirm Password {oauthPending ? '(Optional)' : '*'}
+                          </label>
                           <input
                             type={showPassword ? 'text' : 'password'}
                             value={form.confirmPassword}
                             onChange={(e) => update('confirmPassword', e.target.value)}
-                            placeholder="Repeat password"
+                            placeholder={oauthPending ? 'Repeat if set above' : 'Repeat password'}
                             className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                              (form.confirmPassword && form.password !== form.confirmPassword) || (attemptedNext && !form.confirmPassword)
+                              (form.confirmPassword && form.password !== form.confirmPassword) || (!oauthPending && attemptedNext && !form.confirmPassword)
                                 ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
                                 : 'border-gray-200 focus:ring-blue-500'
                             }`}
                           />
-                          {attemptedNext && !form.confirmPassword && (
+                          {!oauthPending && attemptedNext && !form.confirmPassword && (
                             <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
                           )}
                           {form.confirmPassword && form.password !== form.confirmPassword && (
@@ -2408,6 +2644,26 @@ export function Register() {
                         </div>
                       )}
 
+                      {/* Street Address / House No. for all addresses */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Street Address / House No. / Subd. {role === 'trainee' ? '*' : ''}
+                        </label>
+                        <input
+                          value={form.street}
+                          onChange={(e) => update('street', e.target.value)}
+                          placeholder="e.g. Block 5 Lot 12, Rose Street, Villa Angela Subd."
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            attemptedNext && role === 'trainee' && !isStreetValid
+                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                              : 'border-gray-200 focus:ring-blue-500'
+                          }`}
+                        />
+                        {attemptedNext && role === 'trainee' && !isStreetValid && (
+                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Street Address / House Number</p>
+                        )}
+                      </div>
+
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-semibold text-gray-600">
@@ -2470,90 +2726,97 @@ export function Register() {
 
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <h4 className="font-bold text-sm">
-                                    {locationStatus === 'capturing'
-                                      ? 'Acquiring High-Accuracy GPS Lock...'
-                                      : locationStatus === 'denied'
-                                      ? 'GPS Location Access Required'
-                                      : 'Official Trainee Attendance Geofence'}
-                                  </h4>
-                                  {registrationLocation && (
-                                    <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300">
-                                      ±{Math.round(registrationLocation.accuracy || 10)}m Accuracy
+                                <h4 className="font-bold text-sm">
+                                  {locationStatus === 'capturing'
+                                    ? 'Acquiring High-Accuracy GPS Lock...'
+                                    : locationStatus === 'denied'
+                                    ? 'GPS Location Access Required'
+                                    : 'Official Trainee Attendance Geofence'}
+                                </h4>
+                                {registrationLocation && (
+                                  <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300">
+                                    ±{Math.round(registrationLocation.accuracy || 10)}m Accuracy
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-xs mt-1 opacity-85">
+                                {locationStatus === 'capturing'
+                                  ? 'Connecting to satellite GPS sensor for accurate workplace coordinates...'
+                                  : locationStatus === 'denied'
+                                  ? 'Browser location access was denied. Please allow GPS to link your attendance geofence.'
+                                  : 'Accurate GPS locked. This position is monitored in your OJT Instructor’s Geofence Zones.'}
+                              </p>
+
+                              {registrationLocation && (
+                                <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                                  <span className="font-mono font-semibold bg-white/80 px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-800">
+                                    📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
+                                  </span>
+                                  {registrationAddress && registrationAddress !== `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` && (
+                                    <span className="text-emerald-900 font-medium truncate max-w-xs text-[11px]">
+                                      {registrationAddress}
                                     </span>
                                   )}
                                 </div>
-
-                                <p className="text-xs mt-1 opacity-85">
-                                  {locationStatus === 'capturing'
-                                    ? 'Connecting to satellite GPS sensor for accurate workplace coordinates...'
-                                    : locationStatus === 'denied'
-                                    ? 'Browser location access was denied. Please allow GPS to link your attendance geofence.'
-                                    : 'Accurate GPS locked. This position is monitored in your OJT Instructor’s Geofence Zones.'}
-                                </p>
-
-                                {registrationLocation && (
-                                  <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
-                                    <span className="font-mono font-semibold bg-white/80 px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-800">
-                                      📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
-                                    </span>
-                                    {registrationAddress && registrationAddress !== `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` && (
-                                      <span className="text-emerald-900 font-medium truncate max-w-xs text-[11px]">
-                                        {registrationAddress}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* GPS Control Buttons */}
-                            <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => captureLocation()}
-                                disabled={locationStatus === 'capturing'}
-                                className="px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                                title="Acquire a fresh, high-accuracy satellite fix"
-                              >
-                                <RefreshCw size={12} className={locationStatus === 'capturing' ? 'animate-spin text-blue-600' : 'text-gray-500'} />
-                                Recalibrate GPS
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowLocationMap(true);
-                                  setPickingLocation(!pickingLocation);
-                                }}
-                                className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                                  pickingLocation
-                                    ? 'bg-blue-600 border-blue-700 text-white'
-                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                                }`}
-                                title="Click on map to pin your exact workplace building"
-                              >
-                                <Crosshair size={12} className={pickingLocation ? 'text-white' : 'text-blue-600'} />
-                                {pickingLocation ? 'Done Pinning' : 'Adjust Pin'}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setShowLocationMap(!showLocationMap)}
-                                className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all shadow-xs cursor-pointer"
-                              >
-                                {showLocationMap ? 'Hide Map' : 'View Map'}
-                              </button>
+                              )}
                             </div>
                           </div>
 
-                          {pickingLocation && (
-                            <div className="mt-3 p-2 bg-blue-100/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center gap-2">
-                              <Crosshair size={14} className="text-blue-700 shrink-0 animate-pulse" />
-                              <span>Pinpoint mode active: Click anywhere on the map to place your exact official workplace pin.</span>
-                            </div>
-                          )}
+                          {/* GPS Control Buttons */}
+                          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => captureLocation()}
+                              disabled={locationStatus === 'capturing'}
+                              className="px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                              title="Acquire a fresh, high-accuracy satellite fix"
+                            >
+                              <RefreshCw size={12} className={locationStatus === 'capturing' ? 'animate-spin text-blue-600' : 'text-gray-500'} />
+                              Recalibrate GPS
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowLocationMap(true);
+                                setPickingLocation(!pickingLocation);
+                              }}
+                              className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                                pickingLocation
+                                  ? 'bg-blue-600 border-blue-700 text-white'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                              }`}
+                              title="Click on map to pin your exact workplace building"
+                            >
+                              <Crosshair size={12} className={pickingLocation ? 'text-white' : 'text-blue-600'} />
+                              {pickingLocation ? 'Done Pinning' : 'Adjust Pin'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setShowLocationMap(!showLocationMap)}
+                              className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all shadow-xs cursor-pointer"
+                            >
+                              {showLocationMap ? 'Hide Map' : 'View Map'}
+                            </button>
+                          </div>
                         </div>
+
+                        {pickingLocation && (
+                          <div className="mt-3 p-2 bg-blue-100/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center gap-2">
+                            <Crosshair size={14} className="text-blue-700 shrink-0 animate-pulse" />
+                            <span>Pinpoint mode active: Click anywhere on the map to place your exact official workplace pin.</span>
+                          </div>
+                        )}
+
+                        {attemptedNext && role === 'trainee' && !hasValidLocation && (
+                          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
+                            <AlertCircle size={16} className="text-red-600 shrink-0" />
+                            <span>GPS Geofence Required: Please acquire a high-accuracy GPS satellite fix or click &quot;Adjust Pin&quot; to mark your attendance location.</span>
+                          </div>
+                        )}
+                      </div>
 
                         {/* Interactive Geofence Map Preview */}
                         <AnimatePresence>
@@ -3009,14 +3272,20 @@ export function Register() {
                   </div>
                   <h2 className="font-bold text-gray-800">Face Registration</h2>
                 </div>
-                <div className="text-sm text-gray-500 mb-4 space-y-1">
+                <div className="text-sm text-gray-500 mb-4 space-y-2">
                   <p>
-                    Register your face for biometric time recording. The captured image will be stored in the system for
-                    identity verification during clock-in/out.
+                    Register your face for biometric time recording. Live webcam capture is processed by DeepFace AI models for identity verification during clock-in and clock-out.
                   </p>
-                  <p className="text-xs text-gray-400">
-                    Optional: you can skip this and enroll your face later from your Profile after logging in.
-                  </p>
+                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900 font-semibold flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-purple-700 shrink-0" />
+                    <span>Mandatory Trainee Verification: Live webcam facial capture is required for AI attendance verification and anti-spoofing fraud prevention.</span>
+                  </div>
+                  {attemptedNext && !faceRegistered && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
+                      <AlertCircle size={16} className="text-red-600 shrink-0" />
+                      <span>Biometric Face Scan Required: Click &quot;Open Camera &amp; Capture Face&quot; to complete registration.</span>
+                    </div>
+                  )}
                 </div>
 
                 {faceCapturing ? (

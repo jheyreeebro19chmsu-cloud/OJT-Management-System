@@ -246,7 +246,8 @@ export function validateAndSanitizeForm(
  */
 export function validateRegistrationData(
   formData: Record<string, any>,
-  role: string
+  role: string,
+  isOAuth: boolean = false
 ): Record<string, any> {
   const isHTE = role === 'hte';
   const isNameProvided = Boolean(
@@ -262,8 +263,8 @@ export function validateRegistrationData(
     lastName: { required: !isHTE && !isNameProvided, type: 'text', maxLength: 100, maxSentences: 0 },
     middleInitial: { type: 'text', maxLength: 20, maxSentences: 0 },
     name: { required: false, type: 'text', maxLength: 150, maxSentences: 0 },
-    password: { required: true, minLength: 8, maxLength: 128 },
-    confirmPassword: { required: true, minLength: 8, maxLength: 128 },
+    password: { required: !isOAuth, minLength: isOAuth && !formData.password ? 0 : 8, maxLength: 128 },
+    confirmPassword: { required: !isOAuth && Boolean(formData.password), minLength: isOAuth && !formData.password ? 0 : 8, maxLength: 128 },
     
     // Address fields (accommodates full official Philippine names and street details)
     street: { type: 'text', maxLength: 300, maxSentences: 0 },
