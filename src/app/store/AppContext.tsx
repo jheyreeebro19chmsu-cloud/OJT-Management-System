@@ -78,9 +78,9 @@ const DEFAULT_PASSWORDS: Record<string, string> = {
 const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
   {
     id: 'ann-1',
-    title: 'Welcome to OJT DTR System!',
+    title: 'Welcome to CHMSU OJT Management System!',
     content:
-      'Welcome to the On-the-Job Training Daily Time Record system. Please make sure to clock in and out every working day using facial recognition and location verification.',
+      'Welcome to the Carlos Hilado Memorial State University On-the-Job Training Management System. Please make sure to clock in and out every working day using facial recognition and location verification.',
     type: 'success',
     targetRole: 'all',
     isPinned: true,
@@ -3141,10 +3141,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading OJT DTR System...</p>
+          <p className="text-gray-700 font-semibold text-sm">Loading CHMSU OJT Management System...</p>
         </div>
       </div>
     );

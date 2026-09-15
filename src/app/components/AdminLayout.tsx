@@ -165,7 +165,7 @@ export function AdminLayout() {
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div>
-              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT DTR</div>
+              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT System</div>
               <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
             </div>
           </div>
@@ -261,7 +261,7 @@ export function AdminLayout() {
                       <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
                     </div>
                     <div>
-                      <div className="text-white font-bold text-sm">CHMSU OJT DTR</div>
+                      <div className="text-white font-bold text-sm">CHMSU OJT System</div>
                       <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
                     </div>
                   </div>
@@ -348,7 +348,7 @@ export function AdminLayout() {
               <Menu size={22} />
             </button>
             <div className="flex-1 flex items-center gap-3">
-              <h1 className="text-gray-800 font-semibold text-base">OJT Management System — Instructor</h1>
+              <h1 className="text-gray-800 font-semibold text-base">CHMSU OJT Management System — Instructor</h1>
             </div>
             <div className="hidden lg:flex items-center gap-2">
               <div className="flex items-center gap-3">
