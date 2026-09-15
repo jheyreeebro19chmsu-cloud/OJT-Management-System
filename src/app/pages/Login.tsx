@@ -34,10 +34,15 @@ export function Login() {
     setLoadingRole(targetRole);
     try {
       localStorage.setItem('pending_oauth_role', targetRole);
+      const redirectOrigin =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          ? window.location.origin
+          : 'https://chmsuojtmis.site';
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/oauth-callback`,
+          redirectTo: `${redirectOrigin}/oauth-callback`,
         },
       });
       if (oauthError) {
