@@ -29,6 +29,7 @@ export default function OAuthCallback() {
         const matchedUser = await loginWithOAuthUser(authUser);
 
         if (matchedUser) {
+          localStorage.removeItem('pending_oauth_role');
           // Existing user: direct to role-specific dashboard
           if (matchedUser.role === 'admin') {
             navigate('/admin');

@@ -1,5 +1,5 @@
-import { Clock, Eye, EyeOff, LogIn, AlertCircle, KeyRound, Mail, ArrowLeft, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Clock, Eye, EyeOff, LogIn, AlertCircle, KeyRound, Mail, ArrowLeft, CheckCircle2, Lock, RefreshCw, GraduationCap, UserCheck, Building2, X, Sparkles, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -23,14 +23,22 @@ export function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [faceDisabled, setFaceDisabled] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [selectedRoleForGoogle, setSelectedRoleForGoogle] = useState<'trainee' | 'admin' | 'hte'>('trainee');
   const { employees } = useApp();
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
-  const handleGoogleSignIn = async () => {
+  const openGoogleModal = (role: 'trainee' | 'admin' | 'hte') => {
+    setSelectedRoleForGoogle(role);
+    setShowGoogleModal(true);
+  };
+
+  const handleGoogleSignInWithRole = async (targetRole: 'trainee' | 'admin' | 'hte') => {
     setError('');
     setGoogleLoading(true);
     try {
+      localStorage.setItem('pending_oauth_role', targetRole);
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -45,6 +53,10 @@ export function Login() {
       setError(err?.message || 'Failed to initialize Google sign-in.');
       setGoogleLoading(false);
     }
+  };
+
+  const handleGoogleSignIn = async () => {
+    openGoogleModal('trainee');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -363,39 +375,52 @@ export function Login() {
             </div>
           </div>
 
-          {/* Google Sign-in Button */}
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={googleLoading || loading}
-            className="w-full flex items-center justify-center gap-3 py-3 border border-gray-200 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm bg-white"
-          >
-            {googleLoading ? (
-              <div className="w-5 h-5 border-2 border-gray-400/30 border-t-gray-600 rounded-full animate-spin" />
-            ) : (
-              <>
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <span>Sign in with Google</span>
-              </>
-            )}
-          </button>
+          {/* Continue with Trainee, Instructor, or HTE */}
+          <div className="space-y-2">
+            <p className="text-center text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+              Continue with role:
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {/* Trainee */}
+              <button
+                type="button"
+                onClick={() => openGoogleModal('trainee')}
+                className="group flex flex-col items-center justify-center p-2.5 rounded-2xl border border-blue-200 bg-gradient-to-b from-blue-50/60 to-white hover:border-blue-500 hover:from-blue-100/70 hover:to-blue-50 hover:shadow-md transition-all cursor-pointer text-center"
+              >
+                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center mb-1 group-hover:scale-110 transition-transform shadow-xs">
+                  <GraduationCap size={18} />
+                </div>
+                <span className="text-xs font-bold text-gray-800 group-hover:text-blue-700">Trainee</span>
+                <span className="text-[10px] text-gray-400 font-medium">Student</span>
+              </button>
+
+              {/* Instructor */}
+              <button
+                type="button"
+                onClick={() => openGoogleModal('admin')}
+                className="group flex flex-col items-center justify-center p-2.5 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/60 to-white hover:border-indigo-500 hover:from-indigo-100/70 hover:to-indigo-50 hover:shadow-md transition-all cursor-pointer text-center"
+              >
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-1 group-hover:scale-110 transition-transform shadow-xs">
+                  <UserCheck size={18} />
+                </div>
+                <span className="text-xs font-bold text-gray-800 group-hover:text-indigo-700">Instructor</span>
+                <span className="text-[10px] text-gray-400 font-medium">Faculty</span>
+              </button>
+
+              {/* HTE */}
+              <button
+                type="button"
+                onClick={() => openGoogleModal('hte')}
+                className="group flex flex-col items-center justify-center p-2.5 rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50/60 to-white hover:border-emerald-500 hover:from-emerald-100/70 hover:to-emerald-50 hover:shadow-md transition-all cursor-pointer text-center"
+              >
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-1 group-hover:scale-110 transition-transform shadow-xs">
+                  <Building2 size={18} />
+                </div>
+                <span className="text-xs font-bold text-gray-800 group-hover:text-emerald-700">HTE</span>
+                <span className="text-[10px] text-gray-400 font-medium">Partner</span>
+              </button>
+            </div>
+          </div>
 
           <div className="mt-6 pt-5 border-t border-gray-100">
             <p className="text-center text-sm text-gray-600">
@@ -651,6 +676,158 @@ export function Login() {
           <p className="text-[10px] text-slate-500 mt-0.5">Official OJT Student & Host Training Portal</p>
         </div>
       </motion.div>
+
+      {/* Pop Up: Continue with Google for Selected Role */}
+      <AnimatePresence>
+        {showGoogleModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.93, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.93, y: 12 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="relative w-full max-w-md bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-gray-100 text-left overflow-hidden"
+            >
+              {/* Glowing accent corner */}
+              <div
+                className={`absolute top-0 right-0 w-44 h-44 rounded-full blur-3xl opacity-25 -mr-16 -mt-16 pointer-events-none ${
+                  selectedRoleForGoogle === 'trainee'
+                    ? 'bg-blue-500'
+                    : selectedRoleForGoogle === 'admin'
+                      ? 'bg-indigo-500'
+                      : 'bg-emerald-500'
+                }`}
+              />
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowGoogleModal(false)}
+                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+
+              {/* Role Header Badge */}
+              <div className="flex items-center gap-2 mb-3">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                    selectedRoleForGoogle === 'trainee'
+                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                      : selectedRoleForGoogle === 'admin'
+                        ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                        : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                  }`}
+                >
+                  {selectedRoleForGoogle === 'trainee' && <GraduationCap size={14} />}
+                  {selectedRoleForGoogle === 'admin' && <UserCheck size={14} />}
+                  {selectedRoleForGoogle === 'hte' && <Building2 size={14} />}
+                  {selectedRoleForGoogle === 'trainee' && 'Trainee (Student)'}
+                  {selectedRoleForGoogle === 'admin' && 'OJT Instructor (Faculty)'}
+                  {selectedRoleForGoogle === 'hte' && 'Host Training Establishment'}
+                </span>
+              </div>
+
+              {/* Title & Description */}
+              <h3 className="text-xl font-black text-gray-900 tracking-tight">
+                Continue with Google
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                You are connecting as a{' '}
+                <strong className="text-gray-800">
+                  {selectedRoleForGoogle === 'trainee' && 'CHMSU OJT Trainee'}
+                  {selectedRoleForGoogle === 'admin' && 'CHMSU OJT Instructor'}
+                  {selectedRoleForGoogle === 'hte' && 'HTE Supervisor'}
+                </strong>
+                . Click the button below to sign in or register with Google.
+              </p>
+
+              {/* Role Guidance Box */}
+              <div
+                className={`my-4 p-3.5 rounded-2xl border text-xs leading-relaxed ${
+                  selectedRoleForGoogle === 'trainee'
+                    ? 'bg-blue-50/80 border-blue-200 text-blue-950'
+                    : selectedRoleForGoogle === 'admin'
+                      ? 'bg-indigo-50/80 border-indigo-200 text-indigo-950'
+                      : 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                }`}
+              >
+                {selectedRoleForGoogle === 'trainee' && (
+                  <p>
+                    🎓 <strong>Trainee Registration:</strong> If registering for the first time, you will be prompted to lock your <strong>GPS Geofence location</strong> and register your <strong>face biometrics</strong> via camera.
+                  </p>
+                )}
+                {selectedRoleForGoogle === 'admin' && (
+                  <p>
+                    👨‍🏫 <strong>Instructor Access:</strong> Faculty members will have immediate access to trainee monitoring, class rosters, attendance verification, and geofence zone setup.
+                  </p>
+                )}
+                {selectedRoleForGoogle === 'hte' && (
+                  <p>
+                    🏢 <strong>HTE Supervisor Access:</strong> Host company supervisors can monitor daily time records, verify training hours, and submit evaluations.
+                  </p>
+                )}
+              </div>
+
+              {/* Continue with Google Action Button */}
+              <button
+                type="button"
+                onClick={() => handleGoogleSignInWithRole(selectedRoleForGoogle)}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3 py-3.5 border border-gray-300 rounded-xl font-bold text-gray-800 hover:bg-gray-50 hover:border-blue-500 hover:shadow-lg transition-all disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm bg-white shadow-sm"
+              >
+                {googleLoading ? (
+                  <div className="w-5 h-5 border-2 border-gray-400/30 border-t-gray-600 rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                    <span>Continue with Google</span>
+                  </>
+                )}
+              </button>
+
+              {/* Switch Role Inside Modal */}
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                <span className="font-medium">Change role:</span>
+                <div className="flex gap-1.5">
+                  {(['trainee', 'admin', 'hte'] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setSelectedRoleForGoogle(r)}
+                      className={`px-2.5 py-1 rounded-lg font-semibold capitalize transition-all cursor-pointer ${
+                        selectedRoleForGoogle === r
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {r === 'admin' ? 'Instructor' : r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
