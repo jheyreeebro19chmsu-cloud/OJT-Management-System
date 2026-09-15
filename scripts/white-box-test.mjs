@@ -987,6 +987,146 @@ assert('Browser native denial prevents camera feed even if modal Allow was click
 assert('Browser native denial presents instruction message to trainee', browserDeniedFlow.instructionMessageVisible === true);
 
 // ----------------------------------------------------------------------------
+// 13. WHITE BOX TESTS: Google OAuth Token Extraction & Role-Based Routing
+// ----------------------------------------------------------------------------
+printSectionHeader('13. WHITE BOX TESTS: Google OAuth Token Extraction & Role Routing');
+
+function parseOAuthTokens(url) {
+  if (!url || typeof url !== 'string') return { error: 'Invalid URL' };
+  const hashIndex = url.indexOf('#');
+  const queryIndex = url.indexOf('?');
+  let paramString = '';
+  if (hashIndex !== -1) {
+    paramString = url.substring(hashIndex + 1);
+  } else if (queryIndex !== -1) {
+    paramString = url.substring(queryIndex + 1);
+  } else {
+    return { error: 'No tokens found' };
+  }
+  const params = new URLSearchParams(paramString);
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  const code = params.get('code');
+
+  if (accessToken && refreshToken) {
+    return { type: 'implicit', accessToken, refreshToken };
+  }
+  if (code) {
+    return { type: 'code', code };
+  }
+  return { error: 'No valid auth parameters' };
+}
+
+function handleGoogleRoleRouting(selectedRole, existingUser, googleUser) {
+  if (existingUser) {
+    const role = existingUser.role || 'employee';
+    return {
+      action: 'direct_dashboard',
+      role,
+      targetView: `${role}_dashboard`,
+      requiresRegistration: false,
+    };
+  }
+
+  if (selectedRole === 'admin') {
+    return {
+      action: 'auto_provision_instructor',
+      role: 'admin',
+      position: 'OJT Instructor',
+      application_status: 'approved',
+      targetView: 'instructor_dashboard',
+      requiresRegistration: false,
+    };
+  } else if (selectedRole === 'hte') {
+    return {
+      action: 'auto_provision_hte',
+      role: 'hte',
+      position: 'HTE Representative',
+      application_status: 'approved',
+      syncHostSupervisors: true,
+      targetView: 'hte_dashboard',
+      requiresRegistration: false,
+    };
+  } else if (selectedRole === 'trainee') {
+    return {
+      action: 'open_trainee_registration',
+      role: 'trainee',
+      targetView: 'register',
+      requiresRegistration: true,
+      prefilledProfile: {
+        name: googleUser.name,
+        email: googleUser.email,
+        photo: googleUser.photo,
+      },
+      mandatorySteps: [
+        'residential_address',
+        'academic_details',
+        'facial_recognition_enrollment',
+        'workplace_geofence_lock',
+        'document_upload',
+      ],
+    };
+  }
+  return { error: 'Invalid role selected' };
+}
+
+// OAuth URL Tests
+const implicitRes = parseOAuthTokens('https://chmsuojtmis.site/oauth-callback#access_token=token_xyz&refresh_token=refresh_123');
+assert('OAuth implicit grant token fragment parsed correctly', implicitRes.type === 'implicit' && implicitRes.accessToken === 'token_xyz');
+
+const codeRes = parseOAuthTokens('https://chmsuojtmis.site/oauth-callback?code=auth_code_789');
+assert('OAuth code grant query parameter parsed correctly', codeRes.type === 'code' && codeRes.code === 'auth_code_789');
+
+const invalidOAuthRes = parseOAuthTokens('https://chmsuojtmis.site/oauth-callback');
+assert('OAuth missing token URL safely handled with error', Boolean(invalidOAuthRes.error));
+
+// Role Routing Tests
+const existingInstructor = handleGoogleRoleRouting('admin', { role: 'admin', email: 'inst@chmsu.edu.ph' }, { email: 'inst@chmsu.edu.ph' });
+assert('Existing Instructor directs straight to dashboard without registration', existingInstructor.action === 'direct_dashboard' && existingInstructor.requiresRegistration === false);
+
+const newInstructor = handleGoogleRoleRouting('admin', null, { name: 'Dr. Santos', email: 'santos@chmsu.edu.ph' });
+assert('New Instructor auto-provisions and bypasses registration', newInstructor.action === 'auto_provision_instructor' && newInstructor.requiresRegistration === false && newInstructor.targetView === 'instructor_dashboard');
+
+const newHte = handleGoogleRoleRouting('hte', null, { name: 'Engr. Cruz', email: 'cruz@company.com' });
+assert('New HTE auto-provisions with host_supervisor sync and bypasses registration', newHte.action === 'auto_provision_hte' && newHte.requiresRegistration === false && newHte.syncHostSupervisors === true);
+
+const newTrainee = handleGoogleRoleRouting('trainee', null, { name: 'Maria Dela Cruz', email: 'maria@chmsu.edu.ph', photo: 'https://lh3.google.com/avatar.png' });
+assert('New Trainee strictly requires registration after Google authenticate', newTrainee.requiresRegistration === true && newTrainee.targetView === 'register');
+assert('New Trainee registration includes mandatory facial enrollment and geofence lock', newTrainee.mandatorySteps.includes('facial_recognition_enrollment') && newTrainee.mandatorySteps.includes('workplace_geofence_lock'));
+assert('New Trainee pre-fills Google Name, Email, and Photo', newTrainee.prefilledProfile.name === 'Maria Dela Cruz' && Boolean(newTrainee.prefilledProfile.photo));
+
+// ----------------------------------------------------------------------------
+// 14. WHITE BOX TESTS: Biometric Face Recognition Euclidean Distance & Thresholds
+// ----------------------------------------------------------------------------
+printSectionHeader('14. WHITE BOX TESTS: Facial Biometrics Distance & Anti-Spoofing');
+
+function calculateFaceEuclideanDistance(v1, v2) {
+  if (v1.length !== v2.length) throw new Error('Vector dimension mismatch');
+  let sum = 0;
+  for (let i = 0; i < v1.length; i++) {
+    sum += Math.pow(v1[i] - v2[i], 2);
+  }
+  return Math.sqrt(sum);
+}
+
+function verifyFacialBiometrics(distance, threshold = 0.60, faceDetected = true, obscured = false) {
+  if (!faceDetected) return { matched: false, reason: 'No face detected', hudColor: '#ef4444' };
+  if (obscured) return { matched: false, reason: 'Face obstructed by mask or accessories', hudColor: '#ef4444' };
+  if (distance <= threshold) return { matched: true, reason: 'Biometric matched', hudColor: '#22c55e' };
+  return { matched: false, reason: 'Biometric mismatch', hudColor: '#ef4444' };
+}
+
+const faceV1 = [0.15, -0.22, 0.45, 0.88, -0.05];
+assert('Identical face embedding vectors produce 0.0 Euclidean distance', calculateFaceEuclideanDistance(faceV1, faceV1) === 0);
+
+assert('Face distance 0.35 is below 0.60 threshold -> High confidence match (verified: true)', verifyFacialBiometrics(0.35).matched === true && verifyFacialBiometrics(0.35).hudColor === '#22c55e');
+assert('Boundary face distance exactly 0.60 -> Match verified', verifyFacialBiometrics(0.60).matched === true);
+assert('Boundary face distance 0.61 -> Strictly rejected (fail-closed)', verifyFacialBiometrics(0.61).matched === false && verifyFacialBiometrics(0.61).hudColor === '#ef4444');
+assert('High face distance 0.95 -> Strictly rejected as mismatch', verifyFacialBiometrics(0.95).matched === false);
+assert('Obstructed face (mask/shades) fails closed even if distance is 0.10', verifyFacialBiometrics(0.10, 0.60, true, true).matched === false);
+assert('Missing face in frame strictly rejected', verifyFacialBiometrics(0.00, 0.60, false, false).matched === false);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);
