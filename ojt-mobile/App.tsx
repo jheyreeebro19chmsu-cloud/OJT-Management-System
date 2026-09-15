@@ -74,6 +74,7 @@ import HTEGeofenceScreen from './screens/HTEGeofenceScreen';
 import TraineeRecordsScreen from './screens/TraineeRecordsScreen';
 import FaceScanner from './components/FaceScanner';
 import BiometricBridge from './components/BiometricBridge';
+import GoogleAuthModal from './components/GoogleAuthModal';
 import { biometricService } from './services/biometricService';
 import AnnouncementsScreen from './screens/AnnouncementsScreen';
 import ProfileScreen from './screens/ProfileScreen';
@@ -115,6 +116,8 @@ export default function App() {
   const [schoolLogo, setSchoolLogo] = useState<string | null>(null);
   const [view, setView] = useState<'login' | 'register'>('login');
   const [selectedRole, setSelectedRole] = useState<'trainee' | 'admin' | 'hte'>('trainee');
+  const [showGoogleAuth, setShowGoogleAuth] = useState(false);
+  const [pendingGoogleUser, setPendingGoogleUser] = useState<any | null>(null);
 
   // Trainee modals & sub-screens
   const [scanning, setScanning] = useState(false);
@@ -560,6 +563,157 @@ export default function App() {
       Alert.alert('Invalid Code', 'This QR code is not valid for instructor enrollment.');
     }
   };
+
+  // ─── GOOGLE OAUTH FLOW ───
+  async function handleGoogleAuthSuccess(googleSession: any, authUser: any) {
+    setShowGoogleAuth(false);
+    setLoading(true);
+
+    try {
+      const authEmail = (authUser.email || '').trim().toLowerCase();
+      const authId = authUser.id;
+      const fullName =
+        authUser.user_metadata?.full_name ||
+        authUser.user_metadata?.name ||
+        authEmail.split('@')[0];
+      const avatarUrl =
+        authUser.user_metadata?.avatar_url ||
+        authUser.user_metadata?.picture ||
+        '';
+
+      // 1. Check if user already exists in employees or host_supervisors table
+      const { data: existingEmp } = await supabase
+        .from('employees')
+        .select('*')
+        .or(`id.eq.${authId},email.ilike.${authEmail}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingEmp) {
+        const np = normalizeProfile(existingEmp);
+        await authStore.saveUser(np);
+        setSession(googleSession);
+        setProfile(np);
+        setLoading(false);
+        return;
+      }
+
+      // Check host_supervisors if not in employees
+      const { data: existingHost } = await supabase
+        .from('host_supervisors')
+        .select('*')
+        .or(`id.eq.${authId},email.ilike.${authEmail}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingHost) {
+        const hostProfile = {
+          id: existingHost.id,
+          name: existingHost.name,
+          email: existingHost.email,
+          role: 'hte',
+          position: 'HTE Representative',
+          companyName: existingHost.company_name,
+          supervisorName: existingHost.name,
+          active: existingHost.active !== false,
+          application_status: 'approved',
+        };
+        const np = normalizeProfile(hostProfile);
+        await authStore.saveUser(np);
+        setSession(googleSession);
+        setProfile(np);
+        setLoading(false);
+        return;
+      }
+
+      // 2. First-time authentication based on selected role:
+      // "the Instructor and HTE are no longer to fill up the registration, only Trainee register after google authenticate"
+      if (selectedRole === 'admin') {
+        // Instructor: Auto-provision immediately with approved status
+        const instructorData: any = {
+          id: authId,
+          name: fullName,
+          email: authEmail,
+          position: 'OJT Instructor',
+          role: 'admin',
+          academic_year: activeAcademicYear,
+          department: 'College of Computer Studies',
+          campus: 'Talisay Campus',
+          school_name: 'Carlos Hilado Memorial State University',
+          photo: avatarUrl || null,
+          active: true,
+          application_status: 'approved',
+          documents_passed: true,
+          documents_status: 'passed',
+          face_registered: false,
+          required_hours: 0,
+        };
+        await supabase.from('employees').upsert(instructorData, { onConflict: 'email' });
+        const np = normalizeProfile(instructorData);
+        await authStore.saveUser(np);
+        setSession(googleSession);
+        setProfile(np);
+        setLoading(false);
+        return;
+      }
+
+      if (selectedRole === 'hte') {
+        // HTE Supervisor: Auto-provision immediately with approved status
+        const hteData: any = {
+          id: authId,
+          name: fullName,
+          email: authEmail,
+          position: 'HTE Representative',
+          role: 'hte',
+          academic_year: activeAcademicYear,
+          company_name: 'Host Training Establishment',
+          supervisor_name: fullName,
+          photo: avatarUrl || null,
+          active: true,
+          application_status: 'approved',
+          documents_passed: true,
+          documents_status: 'passed',
+          face_registered: false,
+          required_hours: 0,
+        };
+        await supabase.from('employees').upsert(hteData, { onConflict: 'email' });
+        try {
+          await supabase.from('host_supervisors').upsert(
+            {
+              id: authId,
+              name: fullName,
+              email: authEmail,
+              company_name: 'Host Training Establishment',
+              contact_person: fullName,
+              is_approved: true,
+              active: true,
+            },
+            { onConflict: 'email' }
+          );
+        } catch {}
+        const np = normalizeProfile(hteData);
+        await authStore.saveUser(np);
+        setSession(googleSession);
+        setProfile(np);
+        setLoading(false);
+        return;
+      }
+
+      // Trainee: Only Trainee registers after Google authenticate (for face biometrics & geofencing)
+      setPendingGoogleUser({
+        id: authId,
+        email: authEmail,
+        fullName,
+        photo: avatarUrl,
+      });
+      setLoading(false);
+      setView('register');
+    } catch (err: any) {
+      console.error('Google auth processing error:', err);
+      Alert.alert('Google Authentication Notice', err?.message || 'Could not complete Google authentication.');
+      setLoading(false);
+    }
+  }
 
   // ─── CROSS-PLATFORM MULTI-TIER LOGIN ───
   async function handleLogin() {
@@ -1030,8 +1184,15 @@ export default function App() {
         <RegisterScreen
           activeAcademicYear={activeAcademicYear}
           initialRole={selectedRole}
-          onCancel={() => setView('login')}
-          onSuccess={() => setView('login')}
+          googleUser={pendingGoogleUser}
+          onCancel={() => {
+            setPendingGoogleUser(null);
+            setView('login');
+          }}
+          onSuccess={() => {
+            setPendingGoogleUser(null);
+            setView('login');
+          }}
         />
       </SafeAreaProvider>
     );
@@ -1750,7 +1911,10 @@ export default function App() {
                     styles.roleTabCard,
                     selectedRole === 'trainee' && styles.roleTabCardActiveTrainee,
                   ]}
-                  onPress={() => setSelectedRole('trainee')}
+                  onPress={() => {
+                    setSelectedRole('trainee');
+                    setShowGoogleAuth(true);
+                  }}
                 >
                   <View style={[styles.roleTabIconBg, selectedRole === 'trainee' ? { backgroundColor: '#eff6ff' } : { backgroundColor: '#f1f5f9' }]}>
                     <GraduationCap size={18} color={selectedRole === 'trainee' ? '#2563eb' : '#64748b'} />
@@ -1759,7 +1923,7 @@ export default function App() {
                     <Text style={[styles.roleTabTitle, selectedRole === 'trainee' && { color: '#1e3a8a', fontWeight: '800' }]}>
                       Continue as Trainee
                     </Text>
-                    <Text style={styles.roleTabSubtitle}>DTR, Face Biometrics & Geofencing</Text>
+                    <Text style={styles.roleTabSubtitle}>Sign in with Google • DTR & Face Biometrics</Text>
                   </View>
                   {selectedRole === 'trainee' && <CheckCircle2 size={16} color="#2563eb" />}
                 </TouchableOpacity>
@@ -1769,7 +1933,10 @@ export default function App() {
                     styles.roleTabCard,
                     selectedRole === 'admin' && styles.roleTabCardActiveInstructor,
                   ]}
-                  onPress={() => setSelectedRole('admin')}
+                  onPress={() => {
+                    setSelectedRole('admin');
+                    setShowGoogleAuth(true);
+                  }}
                 >
                   <View style={[styles.roleTabIconBg, selectedRole === 'admin' ? { backgroundColor: '#eef2ff' } : { backgroundColor: '#f1f5f9' }]}>
                     <ShieldCheck size={18} color={selectedRole === 'admin' ? '#4f46e5' : '#64748b'} />
@@ -1778,7 +1945,7 @@ export default function App() {
                     <Text style={[styles.roleTabTitle, selectedRole === 'admin' && { color: '#312e81', fontWeight: '800' }]}>
                       Continue as Instructor
                     </Text>
-                    <Text style={styles.roleTabSubtitle}>Trainee Roster, QR & DTR Monitor</Text>
+                    <Text style={styles.roleTabSubtitle}>Sign in with Google • Instant Direct Access</Text>
                   </View>
                   {selectedRole === 'admin' && <CheckCircle2 size={16} color="#4f46e5" />}
                 </TouchableOpacity>
@@ -1788,7 +1955,10 @@ export default function App() {
                     styles.roleTabCard,
                     selectedRole === 'hte' && styles.roleTabCardActiveHte,
                   ]}
-                  onPress={() => setSelectedRole('hte')}
+                  onPress={() => {
+                    setSelectedRole('hte');
+                    setShowGoogleAuth(true);
+                  }}
                 >
                   <View style={[styles.roleTabIconBg, selectedRole === 'hte' ? { backgroundColor: '#ecfdf5' } : { backgroundColor: '#f1f5f9' }]}>
                     <Building size={18} color={selectedRole === 'hte' ? '#059669' : '#64748b'} />
@@ -1797,7 +1967,7 @@ export default function App() {
                     <Text style={[styles.roleTabTitle, selectedRole === 'hte' && { color: '#064e3b', fontWeight: '800' }]}>
                       Continue as HTE
                     </Text>
-                    <Text style={styles.roleTabSubtitle}>Interns, Evaluations & Geofence</Text>
+                    <Text style={styles.roleTabSubtitle}>Sign in with Google • Instant Direct Access</Text>
                   </View>
                   {selectedRole === 'hte' && <CheckCircle2 size={16} color="#059669" />}
                 </TouchableOpacity>
@@ -1818,6 +1988,32 @@ export default function App() {
                     ? 'Sign in to manage assigned trainees & monitor attendance'
                     : 'Sign in to evaluate interns & review company time logs'}
                 </Text>
+
+                {/* Primary Google Auth Button */}
+                <TouchableOpacity
+                  style={styles.googleHeroBtn}
+                  onPress={() => setShowGoogleAuth(true)}
+                  disabled={authLoading}
+                >
+                  <View style={styles.googleIconBadge}>
+                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#4285F4' }}>G</Text>
+                  </View>
+                  <Text style={styles.googleHeroBtnText}>
+                    {`Continue with Google as ${
+                      selectedRole === 'trainee'
+                        ? 'Trainee'
+                        : selectedRole === 'admin'
+                        ? 'Instructor'
+                        : 'HTE'
+                    }`}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or sign in with password</Text>
+                  <View style={styles.dividerLine} />
+                </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>
@@ -1930,6 +2126,14 @@ export default function App() {
           </View>
         </View>
       </Modal>
+
+      {/* Google Authentication WebView Modal */}
+      <GoogleAuthModal
+        visible={showGoogleAuth}
+        onClose={() => setShowGoogleAuth(false)}
+        onSuccess={handleGoogleAuthSuccess}
+        onError={(err) => Alert.alert('Google Sign-In', err)}
+      />
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -2391,5 +2595,51 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#64748b',
     marginTop: 1,
+  },
+  googleHeroBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#ffffff',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  googleIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleHeroBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1e293b',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0',
+  },
+  dividerText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
 });

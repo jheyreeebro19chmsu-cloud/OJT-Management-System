@@ -64,6 +64,7 @@ interface RegisterScreenProps {
   onSuccess: () => void;
   activeAcademicYear?: string;
   initialRole?: Role;
+  googleUser?: { id?: string; email?: string; fullName?: string; photo?: string } | null;
 }
 
 export default function RegisterScreen({
@@ -71,6 +72,7 @@ export default function RegisterScreen({
   onSuccess,
   activeAcademicYear = '2026-2027',
   initialRole = null,
+  googleUser = null,
 }: RegisterScreenProps) {
   const [role, setRole] = useState<Role>(initialRole);
   const [step, setStep] = useState(0);
@@ -93,54 +95,65 @@ export default function RegisterScreen({
   const [registrationComplete, setRegistrationComplete] = useState(false);
   const [registeredInstructorId, setRegisteredInstructorId] = useState('');
 
-  // Form State
-  const [form, setForm] = useState({
-    // Personal Information
-    firstName: '',
-    lastName: '',
-    middleInitial: '',
-    suffix: '',
-    birthdate: '',
-    age: '',
-    phone: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
+  // Form State initialized with Google Auth data if available
+  const [form, setForm] = useState(() => {
+    let initFirst = '';
+    let initLast = '';
+    if (googleUser?.fullName) {
+      const parts = googleUser.fullName.trim().split(' ');
+      initFirst = parts[0] || '';
+      initLast = parts.slice(1).join(' ') || '';
+    }
+    const defaultPassword = googleUser ? `G_${Date.now()}_Auth!` : '';
 
-    // Address & Location
-    country: 'Philippines',
-    region: 'Region VI (Western Visayas)',
-    province: 'Negros Occidental',
-    city: 'Talisay City',
-    barangay: '',
-    street: '',
-    address: '',
+    return {
+      // Personal Information
+      firstName: initFirst,
+      lastName: initLast,
+      middleInitial: '',
+      suffix: '',
+      birthdate: '',
+      age: '',
+      phone: '',
+      email: (googleUser?.email || '').trim().toLowerCase(),
+      password: defaultPassword,
+      confirmPassword: defaultPassword,
+      emergencyContactName: '',
+      emergencyContactPhone: '',
 
-    // Academic Profile
-    schoolName: 'Carlos Hilado Memorial State University',
-    campus: 'Talisay Campus',
-    department: 'College of Computer Studies',
-    course: 'Bachelor of Science in Information Systems',
-    yearLevel: '4th Year',
-    section: '',
-    instructorEmail: '',
-    employeeId: '', // For instructor
+      // Address & Location
+      country: 'Philippines',
+      region: 'Region VI (Western Visayas)',
+      province: 'Negros Occidental',
+      city: 'Talisay City',
+      barangay: '',
+      street: '',
+      address: '',
 
-    // HTE / Host Establishment
-    companyName: '',
-    companyAddress: '',
-    supervisorName: '',
-    supervisorPhone: '',
-    supervisorEmail: '',
-    requiredHours: '486',
-    startDate: '',
-    endDate: '',
+      // Academic Profile
+      schoolName: 'Carlos Hilado Memorial State University',
+      campus: 'Talisay Campus',
+      department: 'College of Computer Studies',
+      course: 'Bachelor of Science in Information Systems',
+      yearLevel: '4th Year',
+      section: '',
+      instructorEmail: '',
+      employeeId: '', // For instructor
 
-    // Biometrics & Documents
-    photo: '',
-    documentsPassed: true,
+      // HTE / Host Establishment
+      companyName: '',
+      companyAddress: '',
+      supervisorName: '',
+      supervisorPhone: '',
+      supervisorEmail: '',
+      requiredHours: '486',
+      startDate: '',
+      endDate: '',
+
+      // Biometrics & Documents
+      photo: googleUser?.photo || '',
+      documentsPassed: true,
+    };
   });
 
   // Email Validation State
@@ -441,14 +454,16 @@ export default function RegisterScreen({
           Alert.alert('Email Required', 'Please enter a valid, available email address.');
           return false;
         }
-        const checks = passwordChecks(form.password);
-        if (!checks.length || !checks.uppercase || !checks.number) {
-          Alert.alert('Password Security', 'Your password must be at least 8 characters long and include uppercase letters and numbers.');
-          return false;
-        }
-        if (form.password !== form.confirmPassword) {
-          Alert.alert('Password Mismatch', 'Your passwords do not match. Please verify.');
-          return false;
+        if (!googleUser) {
+          const checks = passwordChecks(form.password);
+          if (!checks.length || !checks.uppercase || !checks.number) {
+            Alert.alert('Password Security', 'Your password must be at least 8 characters long and include uppercase letters and numbers.');
+            return false;
+          }
+          if (form.password !== form.confirmPassword) {
+            Alert.alert('Password Mismatch', 'The passwords you entered do not match.');
+            return false;
+          }
         }
       }
       if (step === 1) {
@@ -533,25 +548,29 @@ export default function RegisterScreen({
     try {
       const fullName = `${form.firstName} ${form.lastName}`.trim() || 'User';
 
-      // 1. Supabase Auth Sign-Up
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-        options: {
-          data: {
-            full_name: fullName,
-            role: role === 'admin' ? 'admin' : role === 'hte' ? 'host' : 'employee',
+      let validUserId = googleUser?.id;
+
+      if (!validUserId) {
+        // 1. Supabase Auth Sign-Up
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          options: {
+            data: {
+              full_name: fullName,
+              role: role === 'admin' ? 'admin' : role === 'hte' ? 'host' : 'employee',
+            },
           },
-        },
-      });
+        });
 
-      if (authError && !authError.message.toLowerCase().includes('already registered')) {
-        throw authError;
+        if (authError && !authError.message.toLowerCase().includes('already registered')) {
+          throw authError;
+        }
+
+        const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+        const userId = authData?.user?.id || '';
+        validUserId = isUuid(userId) ? userId : undefined;
       }
-
-      const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
-      const userId = authData?.user?.id || '';
-      const validUserId = isUuid(userId) ? userId : undefined;
 
       // Compute strictly decoupled addresses:
       // 1. Residential Home Address: where the user lives
@@ -662,6 +681,8 @@ export default function RegisterScreen({
         console.error('Profile creation error:', profileError);
         throw profileError;
       }
+
+      const userId = validUserId || form.employeeId || form.email.replace(/[^a-zA-Z0-9]/g, '_');
 
       // Sync Host Supervisor if HTE Role
       if (role === 'hte') {
