@@ -730,52 +730,7 @@ export function FaceCapture({
         className="hidden"
       />
 
-      {/* Real-time Environment & Quality Badges */}
-      <div className="flex items-center justify-center gap-2 flex-wrap w-full max-w-[340px] text-[10px] font-bold">
-        <div
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
-            qualityReport?.tooDark
-              ? 'bg-red-50 text-red-700 border-red-200'
-              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }`}
-        >
-          <Sun size={11} />
-          <span>{qualityReport?.tooDark ? 'Too Dark' : 'Lighting OK'}</span>
-        </div>
 
-        <div
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
-            qualityReport?.maskDetected
-              ? 'bg-red-50 text-red-700 border-red-200'
-              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }`}
-        >
-          <AlertTriangle size={11} />
-          <span>{qualityReport?.maskDetected ? 'Mask Detected' : 'No Mask'}</span>
-        </div>
-
-        <div
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
-            qualityReport?.glassesDetected
-              ? 'bg-red-50 text-red-700 border-red-200'
-              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }`}
-        >
-          <AlertCircle size={11} />
-          <span>{qualityReport?.glassesDetected ? 'Glasses Detected' : 'No Glasses'}</span>
-        </div>
-
-        <div
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all ${
-            qualityReport?.faceObscured
-              ? 'bg-red-600 text-white border-red-700 shadow-sm'
-              : 'bg-blue-50 text-blue-700 border-blue-200'
-          }`}
-        >
-          <AlertCircle size={11} />
-          <span>{qualityReport?.faceObscured ? 'Face Obscured' : 'Clear Face'}</span>
-        </div>
-      </div>
 
       {/* Camera / Live Viewport */}
       <div className="relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800">

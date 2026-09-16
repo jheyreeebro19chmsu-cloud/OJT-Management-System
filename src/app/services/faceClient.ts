@@ -494,146 +494,95 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
         const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
 
         // 2. HAT / CAP / HEADWEAR DETECTION
-        let eyebrowMinY = box.y + box.height * 0.28;
+        // A hat or low-slung cap covers the central forehead down to the eyebrows.
+        // If the central forehead between the eyebrows and hairline has bare skin matching the cheeks, it is NOT a cap.
         if (landmarks && landmarks.length >= 68) {
-          eyebrowMinY = Math.min(...[17, 18, 19, 20, 21, 22, 23, 24, 25, 26].map((i) => landmarks[i].y));
-        }
+          const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
+          const noseBridgeX = landmarks[27].x;
 
-        const foreheadHeight = eyebrowMinY - box.y;
-        if (foreheadHeight < box.height * 0.12 && foreheadHeight >= 0) {
-          result.capDetected = true;
-        }
+          // Sample 3 points on central forehead directly above nose bridge
+          const fore1 = getPatchAvg(noseBridgeX, browMidY - 14, 2);
+          const fore2 = getPatchAvg(noseBridgeX, browMidY - 26, 2);
+          const fore3 = getPatchAvg(noseBridgeX, browMidY - 38, 2);
 
-        let fabricCoverCount = 0;
-        const foreheadCols = [0.25, 0.38, 0.50, 0.62, 0.75];
-        const foreheadRowFracs = [0.25, 0.55, 0.85];
+          const foreColorDiff1 = Math.abs(fore1.r - skinR) + Math.abs(fore1.g - skinG) + Math.abs(fore1.b - skinB);
+          const foreColorDiff2 = Math.abs(fore2.r - skinR) + Math.abs(fore2.g - skinG) + Math.abs(fore2.b - skinB);
+          const foreColorDiff3 = Math.abs(fore3.r - skinR) + Math.abs(fore3.g - skinG) + Math.abs(fore3.b - skinB);
 
-        foreheadRowFracs.forEach((rf) => {
-          const fy = eyebrowMinY - (eyebrowMinY - box.y) * rf;
-          foreheadCols.forEach((cf) => {
-            const fx = box.x + box.width * cf;
-            const p = getPatchAvg(fx, fy, 2);
-            const colorDiff = Math.abs(p.r - skinR) + Math.abs(p.g - skinG) + Math.abs(p.b - skinB);
-            const isFabricDark = p.lum < 42 && skinLum > 60;
-            const isFabricColor = colorDiff > 60;
-            const isSeverelyUnderLum = p.lum < skinLum * 0.45;
-            if (isFabricDark || isFabricColor || isSeverelyUnderLum) {
-              fabricCoverCount++;
-            }
-          });
-        });
-
-        let browDarkCount = 0;
-        const browY = eyebrowMinY + 4;
-        [0.30, 0.40, 0.50, 0.60, 0.70].forEach((cf) => {
-          const bx = box.x + box.width * cf;
-          const bp = getPixel(bx, browY);
-          if (bp.lum < skinLum * 0.46 && skinLum > 60) {
-            browDarkCount++;
+          // Only flag if ALL 3 central forehead points right above the eyebrows are dark/fabric covering
+          const isForeheadFabric = (foreColorDiff1 > 70 || fore1.lum < 28) &&
+                                   (foreColorDiff2 > 70 || fore2.lum < 28) &&
+                                   (foreColorDiff3 > 70 || fore3.lum < 28);
+          const foreheadHeight = browMidY - box.y;
+          if (isForeheadFabric && foreheadHeight > 20) {
+            result.capDetected = true;
+            result.issues.push('🚨 HAT / CAP DETECTED! Please remove headwear/cap to scan.');
           }
-        });
-
-        if (fabricCoverCount >= 4 || browDarkCount >= 3 || (foreheadHeight < box.height * 0.15 && fabricCoverCount >= 2)) {
-          result.capDetected = true;
-          result.issues.push('🚨 HAT / CAP DETECTED! Please remove headwear/cap to scan.');
         }
 
-        // 3. GLASSES DETECTION (SUNGLASSES & CLEAR/PRESCRIPTION FRAMES)
-        let rEyeX: number, rEyeY: number, lEyeX: number, lEyeY: number, bridgeX: number, bridgeY: number;
+        // 3. SUNGLASSES / OPAQUE EYEWEAR DETECTION
+        // Only detect dark sunglasses or mirrored opaque lenses that completely hide the eyes.
+        // On a normal unobstructed eye, the sclera (white of eye) has higher brightness than pupil/iris.
         if (landmarks && landmarks.length >= 68) {
-          rEyeX = (landmarks[36].x + landmarks[39].x) / 2;
-          rEyeY = (landmarks[37].y + landmarks[40].y) / 2;
-          lEyeX = (landmarks[42].x + landmarks[45].x) / 2;
-          lEyeY = (landmarks[43].y + landmarks[46].y) / 2;
-          bridgeX = landmarks[27].x;
-          bridgeY = landmarks[27].y;
-        } else {
-          rEyeX = box.x + box.width * 0.33;
-          rEyeY = box.y + box.height * 0.35;
-          lEyeX = box.x + box.width * 0.67;
-          lEyeY = box.y + box.height * 0.35;
-          bridgeX = box.x + box.width * 0.50;
-          bridgeY = box.y + box.height * 0.35;
+          // Right eye: landmarks 36 (outer) to 39 (inner)
+          const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
+          const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
+          const rOuterSclera = getPixel(landmarks[36].x + 4, rPupilY);
+          const rInnerSclera = getPixel(landmarks[39].x - 4, rPupilY);
+          const rCenter = getPixel(rPupilX, rPupilY);
+
+          // Left eye: landmarks 42 (inner) to 45 (outer)
+          const lPupilX = (landmarks[42].x + landmarks[45].x) / 2;
+          const lPupilY = (landmarks[43].y + landmarks[46].y) / 2;
+          const lInnerSclera = getPixel(landmarks[42].x + 4, lPupilY);
+          const lOuterSclera = getPixel(landmarks[45].x - 4, lPupilY);
+          const lCenter = getPixel(lPupilX, lPupilY);
+
+          // In dark sunglasses, the entire eye socket (pupil and sclera) is pitch dark:
+          const rAllDark = rCenter.lum < 30 && rOuterSclera.lum < 35 && rInnerSclera.lum < 35;
+          const lAllDark = lCenter.lum < 30 && lInnerSclera.lum < 35 && lOuterSclera.lum < 35;
+
+          // Mirrored sunglasses check (high reflection and drastic color mismatch on both lenses):
+          const rEyeColorDiff = Math.abs(rCenter.r - skinR) + Math.abs(rCenter.g - skinG) + Math.abs(rCenter.b - skinB);
+          const lEyeColorDiff = Math.abs(lCenter.r - skinR) + Math.abs(lCenter.g - skinG) + Math.abs(lCenter.b - skinB);
+          const mirroredSunglasses = (rEyeColorDiff > 85 && rCenter.lum > 225) && (lEyeColorDiff > 85 && lCenter.lum > 225);
+
+          if ((rAllDark && lAllDark && skinLum > 55) || mirroredSunglasses) {
+            result.glassesDetected = true;
+            result.issues.push('🚨 SUNGLASSES DETECTED! Please remove sunglasses to scan.');
+          }
         }
 
-        let darkEyeSamples = 0;
-        const eyeOffsets = [
-          { dx: 0, dy: 0 },
-          { dx: -6, dy: 0 },
-          { dx: 6, dy: 0 },
-          { dx: 0, dy: -4 },
-          { dx: 0, dy: 4 },
-        ];
-        let rEyeLumSum = 0;
-        let lEyeLumSum = 0;
+        // 4. MASK DETECTION (Surgical / Fabric Mask)
+        // A mask covers the philtrum (between nose tip and mouth), chin, and lower cheeks.
+        // If the philtrum and chin have visible bare skin matching the cheeks, it is NOT a mask!
+        if (landmarks && landmarks.length >= 68) {
+          // Philtrum: point between base of nose (33) and top of upper lip (51)
+          const philtrumX = (landmarks[33].x + landmarks[51].x) / 2;
+          const philtrumY = (landmarks[33].y + landmarks[51].y) / 2;
+          const philtrumP = getPatchAvg(philtrumX, philtrumY, 2);
 
-        eyeOffsets.forEach((o) => {
-          const rp = getPixel(rEyeX + o.dx, rEyeY + o.dy);
-          const lp = getPixel(lEyeX + o.dx, lEyeY + o.dy);
-          rEyeLumSum += rp.lum;
-          lEyeLumSum += lp.lum;
-          if (rp.lum < 42) darkEyeSamples++;
-          if (lp.lum < 42) darkEyeSamples++;
-        });
+          // Chin: point between lower lip (57) and jaw bottom (8)
+          const chinX = (landmarks[57].x + landmarks[8].x) / 2;
+          const chinY = (landmarks[57].y + landmarks[8].y) / 2;
+          const chinP = getPatchAvg(chinX, chinY, 2);
 
-        const rEyeAvgLum = rEyeLumSum / eyeOffsets.length;
-        const lEyeAvgLum = lEyeLumSum / eyeOffsets.length;
-        const isDarkSunglasses = (darkEyeSamples >= 4 && skinLum > 60) || (rEyeAvgLum < skinLum * 0.52 && lEyeAvgLum < skinLum * 0.52 && skinLum > 65);
+          const philColorDiff = Math.abs(philtrumP.r - skinR) + Math.abs(philtrumP.g - skinG) + Math.abs(philtrumP.b - skinB);
+          const chinColorDiff = Math.abs(chinP.r - skinR) + Math.abs(chinP.g - skinG) + Math.abs(chinP.b - skinB);
 
-        const bridgeP = getPixel(bridgeX, bridgeY);
-        const bridgeTopP = getPixel(bridgeX, bridgeY - 5);
-        const bridgeBotP = getPixel(bridgeX, bridgeY + 5);
-        const bridgeGrad = Math.abs(bridgeTopP.lum - bridgeP.lum) + Math.abs(bridgeBotP.lum - bridgeP.lum);
-        const bridgeColorDiff = Math.abs(bridgeP.r - skinR) + Math.abs(bridgeP.g - skinG) + Math.abs(bridgeP.b - skinB);
-        const bridgeIsFrame = bridgeGrad > 24 || bridgeColorDiff > 45 || (bridgeP.lum < skinLum * 0.58 && skinLum > 65);
+          // Check if philtrum and chin match normal skin tone:
+          const philtrumIsSkin = philColorDiff < 60 && philtrumP.lum > skinLum * 0.45;
+          const chinIsSkin = chinColorDiff < 60 && chinP.lum > skinLum * 0.45;
 
-        let frameEdgeCount = 0;
-        const rimDist = landmarks ? 11 : box.height * 0.08;
-        [-14, -7, 0, 7, 14].forEach((dx) => {
-          const pRTop = getPixel(rEyeX + dx, rEyeY + rimDist - 3);
-          const pRBot = getPixel(rEyeX + dx, rEyeY + rimDist + 3);
-          if (Math.abs(pRTop.lum - pRBot.lum) > 24) frameEdgeCount++;
+          // A mask is ONLY present if BOTH philtrum and chin are covered in non-skin mask material:
+          const isSurgicalBlue = (philtrumP.b > philtrumP.r + 28 && philtrumP.b > 75) || (chinP.b > chinP.r + 28 && chinP.b > 75);
+          const isBlackMask = (philtrumP.lum < 24 && chinP.lum < 24 && skinLum > 60);
+          const isMaskFabric = (!philtrumIsSkin && !chinIsSkin && (philColorDiff > 70 && chinColorDiff > 70));
 
-          const pLTop = getPixel(lEyeX + dx, lEyeY + rimDist - 3);
-          const pLBot = getPixel(lEyeX + dx, lEyeY + rimDist + 3);
-          if (Math.abs(pLTop.lum - pLBot.lum) > 24) frameEdgeCount++;
-        });
-
-        let rGlare = false;
-        let lGlare = false;
-        [-5, 0, 5].forEach((dx) => {
-          [-4, 0, 4].forEach((dy) => {
-            const rp = getPixel(rEyeX + dx, rEyeY + dy);
-            const lp = getPixel(lEyeX + dx, lEyeY + dy);
-            if (rp.lum > 225) rGlare = true;
-            if (lp.lum > 225) lGlare = true;
-          });
-        });
-        const glareInBothEyes = rGlare && lGlare;
-
-        if (isDarkSunglasses || (bridgeIsFrame && frameEdgeCount >= 2) || frameEdgeCount >= 4 || (glareInBothEyes && (bridgeIsFrame || frameEdgeCount >= 1))) {
-          result.glassesDetected = true;
-          result.issues.push('🚨 GLASSES DETECTED! Please remove all eyeglasses/sunglasses to scan.');
-        }
-
-        // 4. MASK DETECTION
-        let maskColorMatch = 0;
-        const mouthCenterY = landmarks && landmarks.length >= 68 ? landmarks[57].y : box.y + box.height * 0.74;
-        const mouthCenterX = landmarks && landmarks.length >= 68 ? landmarks[57].x : box.x + box.width * 0.50;
-
-        [-18, -9, 0, 9, 18].forEach((dx) => {
-          [-6, 0, 6].forEach((dy) => {
-            const mp = getPixel(mouthCenterX + dx, mouthCenterY + dy);
-            const mDiff = Math.abs(mp.r - skinR) + Math.abs(mp.g - skinG) + Math.abs(mp.b - skinB);
-            if (mDiff > 50 || (mp.b > mp.r + 20 && mp.b > 65) || (mp.lum < 38 && skinLum > 65)) {
-              maskColorMatch++;
-            }
-          });
-        });
-
-        if (maskColorMatch >= 6) {
-          result.maskDetected = true;
-          result.issues.push('🚨 FACE MASK DETECTED! Please remove your face mask to scan.');
+          if (isSurgicalBlue || isBlackMask || isMaskFabric) {
+            result.maskDetected = true;
+            result.issues.push('🚨 FACE MASK DETECTED! Please remove your face mask to scan.');
+          }
         }
 
         result.faceObscured = Boolean(result.capDetected || result.glassesDetected || result.maskDetected);
