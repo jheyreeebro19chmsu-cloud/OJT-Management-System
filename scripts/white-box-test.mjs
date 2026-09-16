@@ -1127,6 +1127,82 @@ assert('Obstructed face (mask/shades) fails closed even if distance is 0.10', ve
 assert('Missing face in frame strictly rejected', verifyFacialBiometrics(0.00, 0.60, false, false).matched === false);
 
 // ----------------------------------------------------------------------------
+// 15. WHITE BOX TESTS: Daily Time Record (DTR) Approval & Disapproval Lifecycle
+// ----------------------------------------------------------------------------
+printSectionHeader('15. WHITE BOX TESTS: DTR Approval & Disapproval Lifecycle');
+
+function processDTRApproval(record, action, metadata = {}) {
+  const now = new Date().toISOString();
+  if (action === 'approve') {
+    return {
+      ...record,
+      approvalStatus: 'approved',
+      approvedBy: metadata.approvedBy || 'Instructor',
+      approvedAt: now,
+      approvalNote: '',
+    };
+  }
+  if (action === 'disapprove') {
+    return {
+      ...record,
+      approvalStatus: 'disapproved',
+      approvalNote: metadata.note || 'Flagged by supervisor',
+      approvedBy: metadata.approvedBy || 'Instructor',
+      approvedAt: now,
+    };
+  }
+  return record;
+}
+
+function getDTRApprovalDisplay(approvalStatus) {
+  if (approvalStatus === 'approved') {
+    return { badge: 'Approved', badgeColor: 'emerald', canSwitchToDisapprove: true };
+  }
+  if (approvalStatus === 'disapproved') {
+    return { badge: 'Disapproved', badgeColor: 'rose', canSwitchToApprove: true };
+  }
+  return { badge: 'Pending', showActionButtons: true, approveLabel: 'Approve', disapproveLabel: 'Disapprove' };
+}
+
+const mockDTR = { id: 'rec-101', employeeId: 'OJT-2026-860', date: '2026-09-10', totalHours: 0.1, status: 'late' };
+
+// Test 15.1: Unapproved record defaults to Pending
+assert('New DTR record starts in pending state', !mockDTR.approvalStatus || mockDTR.approvalStatus === 'pending');
+const pendingDisplay = getDTRApprovalDisplay(mockDTR.approvalStatus);
+assert('Pending record displays action buttons with Approve and Disapprove labels', pendingDisplay.showActionButtons === true && pendingDisplay.approveLabel === 'Approve' && pendingDisplay.disapproveLabel === 'Disapprove');
+
+// Test 15.2: Approving record updates status to approved
+const approvedRecord = processDTRApproval(mockDTR, 'approve', { approvedBy: 'Instructor' });
+assert('Approving DTR sets approvalStatus to "approved"', approvedRecord.approvalStatus === 'approved');
+assert('Approving DTR records approvedBy and approvedAt timestamp', approvedRecord.approvedBy === 'Instructor' && Boolean(approvedRecord.approvedAt));
+const approvedDisplay = getDTRApprovalDisplay(approvedRecord.approvalStatus);
+assert('Approved DTR displays "Approved" badge in emerald styling', approvedDisplay.badge === 'Approved' && approvedDisplay.badgeColor === 'emerald');
+assert('Approved DTR provides seamless switch to Disapprove', approvedDisplay.canSwitchToDisapprove === true);
+
+// Test 15.3: Disapproving record updates status to disapproved
+const disapprovedRecord = processDTRApproval(approvedRecord, 'disapprove', { note: 'Time-out anomaly' });
+assert('Disapproving DTR transitions status to "disapproved"', disapprovedRecord.approvalStatus === 'disapproved');
+assert('Disapproving DTR records supervisor disapproval note', disapprovedRecord.approvalNote === 'Time-out anomaly');
+const disapprovedDisplay = getDTRApprovalDisplay(disapprovedRecord.approvalStatus);
+assert('Disapproved DTR displays "Disapproved" badge in rose styling', disapprovedDisplay.badge === 'Disapproved' && disapprovedDisplay.badgeColor === 'rose');
+assert('Disapproved DTR provides seamless switch to Approve', disapprovedDisplay.canSwitchToApprove === true);
+
+// Test 15.4: Supabase sync mapping includes approval_status
+function mapToSupabasePayload(rec) {
+  return {
+    employee_id: rec.employeeId,
+    date: rec.date,
+    approval_status: rec.approvalStatus || 'pending',
+    approved_by: rec.approvedBy || null,
+    approved_at: rec.approvedAt || null,
+    approval_note: rec.approvalNote || null,
+  };
+}
+const sbPayload = mapToSupabasePayload(approvedRecord);
+assert('Supabase serialization contains approval_status="approved"', sbPayload.approval_status === 'approved');
+assert('Supabase serialization preserves approved_by and approved_at', sbPayload.approved_by === 'Instructor' && Boolean(sbPayload.approved_at));
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

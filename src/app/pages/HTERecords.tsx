@@ -7,6 +7,8 @@ import {
   Filter,
   Users,
   FileText,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 
@@ -15,7 +17,7 @@ import { getPhotoUrl } from '../services/config';
 import { MonthlyDTTRView } from '../components/MonthlyDTTRView';
 
 export function HTERecords() {
-  const { timeRecords, employees } = useApp();
+  const { timeRecords, employees, approveTimeRecord, disapproveTimeRecord } = useApp();
   const [viewMode, setViewMode] = useState<'daily' | 'monthly_dttr'>('daily');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
@@ -221,6 +223,7 @@ export function HTERecords() {
                 <th className="px-4 py-3">Time Out</th>
                 <th className="px-4 py-3">Rendered</th>
                 <th className="px-4 py-3">Verification</th>
+                <th className="px-4 py-3 text-center">DTR Approval</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -271,12 +274,64 @@ export function HTERecords() {
                       Verified In Zone
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      {r.approvalStatus === 'approved' ? (
+                        <div className="inline-flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                            <CheckCircle size={12} className="text-emerald-600" /> Approved
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => disapproveTimeRecord(r.id)}
+                            title="Change status to Disapproved"
+                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-all"
+                          >
+                            Disapprove
+                          </button>
+                        </div>
+                      ) : r.approvalStatus === 'disapproved' ? (
+                        <div className="inline-flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">
+                            <XCircle size={12} className="text-rose-600" /> Disapproved
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => approveTimeRecord(r.id, 'HTE Supervisor')}
+                            title="Change status to Approved"
+                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all"
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => approveTimeRecord(r.id, 'HTE Supervisor')}
+                            title="Approve DTR"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-xs transition-colors"
+                          >
+                            <CheckCircle size={12} /> Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => disapproveTimeRecord(r.id)}
+                            title="Disapprove DTR"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-colors"
+                          >
+                            <XCircle size={12} /> Disapprove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     No DTR records found for this period.
                   </td>
                 </tr>

@@ -403,6 +403,10 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     total_hours: record.totalHours,
     status: record.status,
     notes: record.notes,
+    approval_status: record.approvalStatus || 'pending',
+    approved_by: record.approvedBy || null,
+    approved_at: record.approvedAt || null,
+    approval_note: record.approvalNote || null,
   };
 
   const { data, error } = await supabase.from('time_records').insert([supabaseRecord]).select().single();
@@ -438,6 +442,10 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (updates.totalHours !== undefined) supabaseUpdates.total_hours = updates.totalHours;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
+  if (updates.approvalStatus !== undefined) supabaseUpdates.approval_status = updates.approvalStatus;
+  if (updates.approvedBy !== undefined) supabaseUpdates.approved_by = updates.approvedBy;
+  if (updates.approvedAt !== undefined) supabaseUpdates.approved_at = updates.approvedAt;
+  if (updates.approvalNote !== undefined) supabaseUpdates.approval_note = updates.approvalNote;
 
   if (Object.keys(supabaseUpdates).length === 0) {
     return true;
@@ -1374,6 +1382,10 @@ function transformSupabaseTimeRecord(data: any): TimeRecord {
     status: data.status,
     notes: data.notes,
     academicYear: data.academic_year,
+    approvalStatus: (data.approval_status as any) || 'pending',
+    approvedBy: data.approved_by || undefined,
+    approvedAt: data.approved_at || undefined,
+    approvalNote: data.approval_note || undefined,
   };
 }
 

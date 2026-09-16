@@ -63,6 +63,7 @@ export function AdminReports() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [selectedEmpId, setSelectedEmpId] = useState('all');
+  const [selectedApprovalStatus, setSelectedApprovalStatus] = useState<'all' | 'pending' | 'approved' | 'disapproved'>('all');
 
   // Evaluation Filters
   const [evalSearch, setEvalSearch] = useState('');
@@ -171,6 +172,47 @@ export function AdminReports() {
   const presentCount = filteredRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
   const lateCount = filteredRecords.filter((r) => r.status === 'late').length;
   const avgHoursPerDay = filteredRecords.length > 0 ? totalHours / filteredRecords.length : 0;
+
+  // Approval counts & filtered detailed records
+  const approvedCount = useMemo(() => {
+    return filteredRecords.filter((r) => r.approvalStatus === 'approved').length;
+  }, [filteredRecords]);
+
+  const disapprovedCount = useMemo(() => {
+    return filteredRecords.filter((r) => r.approvalStatus === 'disapproved').length;
+  }, [filteredRecords]);
+
+  const pendingApprovalCount = useMemo(() => {
+    return filteredRecords.filter((r) => !r.approvalStatus || r.approvalStatus === 'pending').length;
+  }, [filteredRecords]);
+
+  const displayedDetailedRecords = useMemo(() => {
+    let list = filteredRecords;
+    if (selectedApprovalStatus === 'pending') {
+      list = list.filter((r) => !r.approvalStatus || r.approvalStatus === 'pending');
+    } else if (selectedApprovalStatus === 'approved') {
+      list = list.filter((r) => r.approvalStatus === 'approved');
+    } else if (selectedApprovalStatus === 'disapproved') {
+      list = list.filter((r) => r.approvalStatus === 'disapproved');
+    }
+    return list.slice().sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredRecords, selectedApprovalStatus]);
+
+  const handleApproveAllPending = () => {
+    const pending = filteredRecords.filter((r) => !r.approvalStatus || r.approvalStatus === 'pending');
+    if (pending.length === 0) return;
+    if (window.confirm(`Approve all ${pending.length} pending time record(s)?`)) {
+      pending.forEach((r) => approveTimeRecord(r.id, 'Instructor'));
+    }
+  };
+
+  const handleDisapproveAllPending = () => {
+    const pending = filteredRecords.filter((r) => !r.approvalStatus || r.approvalStatus === 'pending');
+    if (pending.length === 0) return;
+    if (window.confirm(`Disapprove all ${pending.length} pending time record(s)?`)) {
+      pending.forEach((r) => disapproveTimeRecord(r.id));
+    }
+  };
 
   // Evaluation dataset calculation
   const evaluatedTraineesList = useMemo(() => {
@@ -835,6 +877,20 @@ export function AdminReports() {
                 ))}
               </select>
             </div>
+
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
+              <span className="text-xs font-semibold text-gray-500">DTR Status:</span>
+              <select
+                value={selectedApprovalStatus}
+                onChange={(e) => setSelectedApprovalStatus(e.target.value as any)}
+                className="text-sm font-semibold text-blue-700 bg-transparent focus:outline-none"
+              >
+                <option value="all">All Approval Statuses ({filteredRecords.length})</option>
+                <option value="pending">Pending Approval ({pendingApprovalCount})</option>
+                <option value="approved">Approved ({approvedCount})</option>
+                <option value="disapproved">Disapproved ({disapprovedCount})</option>
+              </select>
+            </div>
           </div>
 
           {/* Stats Cards */}
@@ -874,13 +930,21 @@ export function AdminReports() {
 
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-500">Avg Hours / Shift</span>
-                <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-                  <TrendingUp size={16} />
+                <span className="text-xs font-medium text-gray-500">DTR Approval Status</span>
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <CheckCircle size={16} />
                 </div>
               </div>
-              <div className="text-2xl font-bold text-gray-800">{avgHoursPerDay.toFixed(1)}h</div>
-              <p className="text-xs text-gray-400 mt-1">Per recorded shift</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-xl font-bold text-emerald-700">{approvedCount}</span>
+                <span className="text-xs text-gray-400">Approved</span>
+                <span className="text-gray-300">/</span>
+                <span className="text-xl font-bold text-rose-600">{disapprovedCount}</span>
+                <span className="text-xs text-gray-400">Disapproved</span>
+              </div>
+              <p className="text-xs text-amber-600 font-semibold mt-1">
+                {pendingApprovalCount} pending review
+              </p>
             </div>
           </div>
 
@@ -980,6 +1044,289 @@ export function AdminReports() {
               </table>
             </div>
           </div>
+
+          {/* Detailed Records */}
+          {filteredRecords.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+            >
+              <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-blue-600" />
+                    <h3 className="font-bold text-gray-800">
+                      Detailed Records ({displayedDetailedRecords.length})
+                    </h3>
+                    {pendingApprovalCount > 0 && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        {pendingApprovalCount} pending
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Individual attendance check-ins with face/geofence verification and DTR approval actions
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Status Filter Pills */}
+                  <div className="inline-flex p-1 bg-gray-50 border border-gray-200 rounded-xl text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedApprovalStatus('all')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        selectedApprovalStatus === 'all'
+                          ? 'bg-white text-gray-800 shadow-xs font-bold'
+                          : 'text-gray-500 hover:text-gray-800'
+                      }`}
+                    >
+                      All ({filteredRecords.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedApprovalStatus('pending')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        selectedApprovalStatus === 'pending'
+                          ? 'bg-amber-50 text-amber-800 shadow-xs border border-amber-200 font-bold'
+                          : 'text-amber-700 hover:text-amber-900'
+                      }`}
+                    >
+                      Pending ({pendingApprovalCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedApprovalStatus('approved')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        selectedApprovalStatus === 'approved'
+                          ? 'bg-emerald-50 text-emerald-800 shadow-xs border border-emerald-200 font-bold'
+                          : 'text-emerald-700 hover:text-emerald-900'
+                      }`}
+                    >
+                      Approved ({approvedCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedApprovalStatus('disapproved')}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        selectedApprovalStatus === 'disapproved'
+                          ? 'bg-rose-50 text-rose-800 shadow-xs border border-rose-200 font-bold'
+                          : 'text-rose-700 hover:text-rose-900'
+                      }`}
+                    >
+                      Disapproved ({disapprovedCount})
+                    </button>
+                  </div>
+
+                  {/* Bulk Quick Actions */}
+                  {pendingApprovalCount > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleApproveAllPending}
+                        title="Approve all visible pending records"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors"
+                      >
+                        <CheckCircle size={12} /> Approve All Pending
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisapproveAllPending}
+                        title="Disapprove all visible pending records"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition-colors"
+                      >
+                        <XCircle size={12} /> Disapprove All Pending
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
+                    <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-2 text-left">Date</th>
+                      <th className="px-4 py-2 text-left">Trainee</th>
+                      <th className="px-4 py-2 text-center">Time In</th>
+                      <th className="px-4 py-2 text-center">Time Out</th>
+                      <th className="px-4 py-2 text-center">Hours</th>
+                      <th className="px-4 py-2 text-center">Status</th>
+                      <th className="px-4 py-2 text-center">Verified</th>
+                      <th className="px-4 py-2 text-center">DTR Approval</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedDetailedRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-8 text-gray-400 text-xs">
+                          No records match the selected approval filter.
+                        </td>
+                      </tr>
+                    ) : (
+                      displayedDetailedRecords.map((record) => {
+                        const emp = employees.find(
+                          (e) =>
+                            e.id === record.employeeId ||
+                            e.employeeId === record.employeeId ||
+                            (e.email && record.employeeId && e.email.toLowerCase() === record.employeeId.toLowerCase())
+                        );
+                        let displayName = emp?.name;
+                        let displayCode = emp?.employeeId;
+                        if (!displayName) {
+                          if (record.employeeId === 'emp-1') {
+                            displayName = 'Juan Dela Cruz';
+                            displayCode = 'OJT-2024-001';
+                          } else if (record.employeeId === 'emp-2') {
+                            displayName = 'Maria Santos';
+                            displayCode = 'OJT-2024-002';
+                          } else if (record.employeeId === 'emp-3') {
+                            displayName = 'Carlo Reyes';
+                            displayCode = 'OJT-2024-003';
+                          } else if (record.employeeId === 'admin-1') {
+                            displayName = 'OJT Instructor';
+                            displayCode = 'ADM-2024-001';
+                          } else {
+                            displayName = record.employeeId;
+                            displayCode =
+                              record.employeeId.startsWith('OJT-') || record.employeeId.startsWith('HTE-')
+                                ? record.employeeId
+                                : `OJT-${record.employeeId.slice(0, 8)}`;
+                          }
+                        }
+                        const approvalStatus = record.approvalStatus || 'pending';
+
+                        return (
+                          <tr key={record.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
+                              {new Date(record.date + 'T00:00:00').toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-700 overflow-hidden shrink-0 border border-blue-200">
+                                  {emp?.photo ? (
+                                    <img
+                                      src={getPhotoUrl(emp.photo)}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                      style={{ transform: 'scaleX(-1)' }}
+                                    />
+                                  ) : (
+                                    <span>{(displayName || 'U').charAt(0)}</span>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-gray-800 text-xs">{displayName}</p>
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
+                                    {displayCode || 'OJT-TRAINEE'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-center text-xs text-gray-600 font-mono">
+                              {record.timeIn ? formatTime(record.timeIn) : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-center text-xs text-gray-600 font-mono">
+                              {record.timeOut ? formatTime(record.timeOut) : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-center text-xs font-semibold text-blue-700">
+                              {record.totalHours ? `${record.totalHours.toFixed(1)}h` : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                  record.status === 'present'
+                                    ? 'bg-green-100 text-green-700'
+                                    : record.status === 'late'
+                                      ? 'bg-orange-100 text-orange-700'
+                                      : record.status === 'overtime'
+                                        ? 'bg-blue-100 text-blue-700'
+                                        : 'bg-gray-100 text-gray-500'
+                                }`}
+                              >
+                                {record.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {record.timeInFaceVerified && (
+                                  <span title="Face Verified" className="text-purple-500">
+                                    👤
+                                  </span>
+                                )}
+                                {record.timeInGeofenced && (
+                                  <span title="Geofenced" className="text-green-500">
+                                    📍
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {approvalStatus === 'approved' ? (
+                                  <div className="inline-flex items-center gap-1">
+                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shadow-2xs">
+                                      <CheckCircle size={12} className="text-emerald-600" /> Approved
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => disapproveTimeRecord(record.id)}
+                                      title="Change status to Disapproved"
+                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-all"
+                                    >
+                                      Disapprove
+                                    </button>
+                                  </div>
+                                ) : approvalStatus === 'disapproved' ? (
+                                  <div className="inline-flex items-center gap-1">
+                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 shadow-2xs">
+                                      <XCircle size={12} className="text-rose-600" /> Disapproved
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => approveTimeRecord(record.id, 'Instructor')}
+                                      title="Change status to Approved"
+                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all"
+                                    >
+                                      Approve
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => approveTimeRecord(record.id, 'Instructor')}
+                                      title="Approve DTR"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-xs transition-colors"
+                                    >
+                                      <CheckCircle size={12} /> Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => disapproveTimeRecord(record.id)}
+                                      title="Disapprove DTR"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-colors"
+                                    >
+                                      <XCircle size={12} /> Disapprove
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
         </>
       )}
 

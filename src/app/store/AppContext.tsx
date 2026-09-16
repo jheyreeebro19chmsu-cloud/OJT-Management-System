@@ -2048,6 +2048,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const previous = timeRecords.find((r) => r.id === id);
     const now = new Date().toISOString();
     const update: Partial<TimeRecord> = {
+      employeeId: previous?.employeeId,
+      date: previous?.date,
       approvalStatus: 'approved',
       approvedBy: approvedBy || 'Instructor',
       approvedAt: now,
@@ -2067,6 +2069,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const previous = timeRecords.find((r) => r.id === id);
     const now = new Date().toISOString();
     const update: Partial<TimeRecord> = {
+      employeeId: previous?.employeeId,
+      date: previous?.date,
       approvalStatus: 'disapproved',
       approvalNote: note || '',
       approvedAt: now,
