@@ -125,7 +125,7 @@ export function Register() {
     employeeId: '',
     startDate: '',
     endDate: '',
-    requiredHours: 486,
+    requiredHours: 486 as number | string,
   });
 
   const selectedProgramOptions = useMemo(() => {
@@ -848,7 +848,7 @@ export function Register() {
         address: residentialAddress,
         userId: localStorage.getItem('oauth_user_id') || undefined,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-        requiredHours: role === 'admin' ? 0 : Number(form.requiredHours),
+        requiredHours: role === 'admin' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
         faceRegistered,
         photo,
         active: true,
@@ -899,7 +899,7 @@ export function Register() {
             course: form.course,
             startDate: form.startDate,
             endDate: form.endDate,
-            requiredHours: Number(form.requiredHours) || (role === 'admin' || role === 'hte' ? 0 : 486),
+            requiredHours: role === 'admin' || role === 'hte' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
             address: residentialAddress,
             registrationLocation: registrationLocation || undefined,
             registrationAddress: computedRegistrationAddress,
@@ -2996,13 +2996,28 @@ export function Register() {
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
-                        <input
-                          type="number"
-                          value={form.requiredHours || 486}
-                          onChange={(e) => update('requiredHours', e.target.value)}
-                          placeholder="486"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={form.requiredHours ?? ''}
+                            onChange={(e) => update('requiredHours', e.target.value)}
+                            placeholder="486"
+                            className="w-full px-3 py-2.5 pr-8 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                          {form.requiredHours !== '' && form.requiredHours !== undefined && form.requiredHours !== null && (
+                            <button
+                              type="button"
+                              onClick={() => update('requiredHours', '')}
+                              aria-label="Clear required hours"
+                              title="Clear required hours"
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200 transition-colors"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
                         <p className="text-[10px] text-gray-400 mt-1">Standard academic requirement (e.g. 486 hours)</p>
                       </div>
                     </>

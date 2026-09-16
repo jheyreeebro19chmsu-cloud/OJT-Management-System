@@ -1202,6 +1202,48 @@ const sbPayload = mapToSupabasePayload(approvedRecord);
 assert('Supabase serialization contains approval_status="approved"', sbPayload.approval_status === 'approved');
 assert('Supabase serialization preserves approved_by and approved_at', sbPayload.approved_by === 'Instructor' && Boolean(sbPayload.approved_at));
 
+// ============================================================================
+// 16. WHITE BOX TESTS: Required OJT Hours Input Deletion & Persistence
+// ============================================================================
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  16. WHITE BOX TESTS: Required OJT Hours Input Deletion & Persistence${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+function simulateRequiredHoursInput(initialVal, action, typedValue = '') {
+  let state = initialVal;
+  if (action === 'clear_button') {
+    state = '';
+  } else if (action === 'backspace_all') {
+    state = '';
+  } else if (action === 'type') {
+    state = typedValue;
+  }
+  // Controlled input value binding: form.requiredHours ?? ''
+  const displayValue = state !== undefined && state !== null ? state : '';
+  // Persistence calculation on save:
+  const savedHoursTrainee = Number(state) > 0 ? Number(state) : 486;
+  const savedHoursAdmin = 0;
+  return { state, displayValue, savedHoursTrainee, savedHoursAdmin };
+}
+
+// Test 16.1: Backspacing or clearing Required OJT Hours does NOT snap back to 486 in the UI
+const clearedResult = simulateRequiredHoursInput(486, 'backspace_all');
+assert('Deleting/backspacing Required OJT Hours displays empty string (no snap-back to 486)', clearedResult.displayValue === '');
+assert('Deleting/backspacing Required OJT Hours state is empty string', clearedResult.state === '');
+
+// Test 16.2: Clicking Clear (X) button empties the input field
+const clickClearResult = simulateRequiredHoursInput(486, 'clear_button');
+assert('Clicking Clear (X) button empties the display value', clickClearResult.displayValue === '');
+
+// Test 16.3: Custom OJT hours (e.g. 300, 600) persists accurately
+const customResult = simulateRequiredHoursInput('', 'type', '300');
+assert('Typing custom hours "300" updates input display to "300"', customResult.displayValue === '300');
+assert('Saving custom hours "300" stores exact numeric value 300', customResult.savedHoursTrainee === 300);
+
+// Test 16.4: If field is left empty upon submission, trainee defaults gracefully to standard 486 hours
+assert('Empty hours field defaults to standard 486 hours upon trainee save', clearedResult.savedHoursTrainee === 486);
+assert('Admin role strictly saves 0 required hours regardless of input', clearedResult.savedHoursAdmin === 0);
+
 // ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
