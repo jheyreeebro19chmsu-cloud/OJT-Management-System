@@ -5,8 +5,6 @@
  * with automatic on-device biometric neural fallback when offline.
  */
 
-import { biometricService, BiometricMatchResult } from './biometricService';
-
 export type DeepFaceModel = 'VGG-Face' | 'Facenet' | 'ArcFace' | 'SFace';
 export type DeepFaceDetector = 'opencv' | 'ssd' | 'mtcnn' | 'retinaface';
 
@@ -27,7 +25,7 @@ export interface DeepFaceVerifyResult {
   distance: number;            // Cosine or Euclidean distance
   threshold: number;           // Rejection threshold
   model: string;               // Model used: 'VGG-Face', 'Facenet', etc.
-  detector_backend: string;    // Detector used: 'opencv', etc.
+  detector_backend: string;    // Detector used: 'retinaface', etc.
   similarity_metric: string;   // 'cosine' | 'euclidean'
   backend: 'deepface' | 'on-device-fallback';
   message: string;
@@ -60,7 +58,7 @@ function resolveBackendUrls(): string[] {
 
 class DeepFaceService {
   private defaultModel: DeepFaceModel = 'VGG-Face';
-  private defaultDetector: DeepFaceDetector = 'opencv';
+  private defaultDetector: DeepFaceDetector = 'retinaface';
 
   public getDefaultModel(): DeepFaceModel {
     return this.defaultModel;
@@ -71,18 +69,15 @@ class DeepFaceService {
   }
 
   /**
-   * Verify face pair using DeepFace AI models.
+   * Verify face pair using server-authoritative DeepFace AI models.
    * Compares registered template photo against live captured photo.
-   * Falls back seamlessly to on-device biometrics if the backend is unreachable.
+   * Fails closed if the backend is unreachable (no silent bypass to spoofable local fallback).
    */
   public async verifyFace(
     registeredImageBase64: string,
     capturedImageBase64: string,
     options: DeepFaceVerifyOptions = {}
   ): Promise<DeepFaceVerifyResult> {
-    const model = options.modelName || this.defaultModel;
-    const detector = options.detectorBackend || this.defaultDetector;
-    const metric = options.distanceMetric || 'cosine';
     const timeout = options.timeoutMs || 7000;
 
     if (!registeredImageBase64 || !capturedImageBase64) {
@@ -93,10 +88,10 @@ class DeepFaceService {
         confidence: 0,
         similarity_percent: 0,
         distance: 1.0,
-        threshold: 0.4,
-        model,
-        detector_backend: detector,
-        similarity_metric: metric,
+        threshold: 0.6,
+        model: 'VGG-Face',
+        detector_backend: 'retinaface',
+        similarity_metric: 'cosine',
         backend: 'deepface',
         message: 'Missing reference or captured face photo.',
         error: 'Missing image inputs',
@@ -131,8 +126,8 @@ class DeepFaceService {
           type: 'image/jpeg',
         } as any);
 
-        formData.append('model_name', model);
-        formData.append('detector_backend', detector);
+        // Server is authoritative: model_name, detector_backend, and distance_metric
+        // are hardcoded server-side and no longer sent by the client.
 
         const res = await fetch(`${baseUrl}/check-face`, {
           method: 'POST',
@@ -142,9 +137,9 @@ class DeepFaceService {
 
         clearTimeout(timer);
 
-        if (res.ok) {
+        if (res.ok || res.status === 422 || res.status === 400 || res.status === 404) {
           deepFaceResponse = await res.json();
-          if (deepFaceResponse && (deepFaceResponse.success || deepFaceResponse.matched !== undefined)) {
+          if (deepFaceResponse) {
             break;
           }
         }
@@ -157,6 +152,8 @@ class DeepFaceService {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeout);
 
+        // Server is authoritative: only send images and employee_id.
+        // model_name, detector_backend, distance_metric, and tolerance are enforced server-side.
         const res = await fetch(`${baseUrl}/api/security/face/verify/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -164,18 +161,15 @@ class DeepFaceService {
             registered_image: registeredImageBase64,
             captured_image: capturedImageBase64,
             employee_id: options.employeeId,
-            model_name: model,
-            detector_backend: detector,
-            distance_metric: metric,
           }),
           signal: controller.signal,
         });
 
         clearTimeout(timer);
 
-        if (res.ok) {
+        if (res.ok || res.status === 422 || res.status === 400 || res.status === 404) {
           deepFaceResponse = await res.json();
-          if (deepFaceResponse && (deepFaceResponse.success || deepFaceResponse.matched !== undefined)) {
+          if (deepFaceResponse) {
             break;
           }
         }
@@ -184,73 +178,76 @@ class DeepFaceService {
       }
     }
 
-    // If DeepFace backend responded successfully, parse response
-    if (deepFaceResponse && (deepFaceResponse.success !== false || deepFaceResponse.matched !== undefined)) {
+    // If DeepFace backend responded, parse authoritative response
+    if (deepFaceResponse) {
+      const isSuccess = deepFaceResponse.success !== false;
       const isMatched = Boolean(deepFaceResponse.matched || deepFaceResponse.verified);
-      const dist = typeof deepFaceResponse.distance === 'number' ? deepFaceResponse.distance : 0.25;
-      const thresh = typeof deepFaceResponse.threshold === 'number' ? deepFaceResponse.threshold : 0.4;
+      const dist = typeof deepFaceResponse.distance === 'number' ? deepFaceResponse.distance : (isMatched ? 0.25 : 0.85);
+      const thresh = typeof deepFaceResponse.threshold === 'number' ? deepFaceResponse.threshold : (deepFaceResponse.tolerance || 0.6);
       const conf =
         typeof deepFaceResponse.confidence === 'number'
           ? deepFaceResponse.confidence
           : isMatched
           ? Math.max(0.7, 1.0 - dist / (thresh * 2))
-          : 0.2;
+          : 0.1;
       const simPercent =
         typeof deepFaceResponse.similarity_percent === 'number'
           ? deepFaceResponse.similarity_percent
           : Math.round(conf * 100);
 
+      // If backend explicitly rejected (e.g., 422 No face detected, multiple faces, too dark, or mismatch)
+      if (!isSuccess || !isMatched) {
+        const errorMsg = deepFaceResponse.message || deepFaceResponse.error || 'Face verification failed.';
+        return {
+          success: isSuccess,
+          matched: false,
+          verified: false,
+          confidence: Number(conf.toFixed(4)),
+          similarity_percent: simPercent,
+          distance: Number(dist.toFixed(4)),
+          threshold: Number(thresh.toFixed(4)),
+          model: deepFaceResponse.model || 'VGG-Face',
+          detector_backend: deepFaceResponse.detector_backend || 'retinaface',
+          similarity_metric: deepFaceResponse.similarity_metric || 'cosine',
+          backend: 'deepface',
+          message: errorMsg,
+          error: errorMsg,
+        };
+      }
+
       return {
         success: true,
-        matched: isMatched,
-        verified: isMatched,
+        matched: true,
+        verified: true,
         confidence: Number(conf.toFixed(4)),
         similarity_percent: simPercent,
         distance: Number(dist.toFixed(4)),
         threshold: Number(thresh.toFixed(4)),
-        model: deepFaceResponse.model || model,
-        detector_backend: deepFaceResponse.detector_backend || detector,
-        similarity_metric: deepFaceResponse.similarity_metric || metric,
+        model: deepFaceResponse.model || 'VGG-Face',
+        detector_backend: deepFaceResponse.detector_backend || 'retinaface',
+        similarity_metric: deepFaceResponse.similarity_metric || 'cosine',
         backend: 'deepface',
-        message: isMatched
-          ? `DeepFace Verified (${model}): ${simPercent}% Match (Cosine Dist: ${dist.toFixed(2)} < ${thresh})`
-          : `DeepFace Mismatch: ${simPercent}% Similarity (Distance: ${dist.toFixed(2)} >= ${thresh})`,
+        message: `Biometric Verified: ${simPercent}% Match (Distance: ${dist.toFixed(2)} <= ${thresh})`,
       };
     }
 
-    // 3. Seamless On-Device Fallback (face-api.js neural bridge)
-    console.warn('[DeepFace] Backend unavailable, running on-device biometric neural verification...');
-    const localResult: BiometricMatchResult = await biometricService.verifyBiometrics(
-      registeredImageBase64,
-      capturedImageBase64,
-      0.62
-    );
-
-    const isLocalMatch = Boolean(localResult.matched);
-    const localDist = typeof localResult.distance === 'number' && isFinite(localResult.distance)
-      ? localResult.distance
-      : isLocalMatch
-      ? 0.35
-      : 0.85;
-    const localConf = localResult.confidence ? localResult.confidence / 100 : isLocalMatch ? 0.9 : 0.2;
-    const localPercent = localResult.confidence || Math.round(localConf * 100);
-
+    // 3. Fail-Closed: Do NOT silently fallback to on-device biometrics.
+    // If every backend URL fails or times out, attendance is blocked with a clear message.
+    console.warn('[DeepFace] Server unreachable. Blocking verification with fail-closed security.');
     return {
-      success: true,
-      matched: isLocalMatch,
-      verified: isLocalMatch,
-      confidence: Number(localConf.toFixed(4)),
-      similarity_percent: localPercent,
-      distance: Number(localDist.toFixed(4)),
-      threshold: 0.62,
-      model: `${model} (On-Device Neural Engine)`,
-      detector_backend: 'TinyFaceDetector',
-      similarity_metric: 'euclidean',
-      backend: 'on-device-fallback',
-      message: isLocalMatch
-        ? `Biometric Verified: ${localPercent}% Match (Neural Dist: ${localDist.toFixed(2)})`
-        : `Biometric Mismatch (Dist: ${localDist.toFixed(2)} > 0.62)`,
-      error: localResult.error,
+      success: false,
+      matched: false,
+      verified: false,
+      confidence: 0,
+      similarity_percent: 0,
+      distance: 1.0,
+      threshold: 0.60,
+      model: 'Server Biometrics',
+      detector_backend: 'retinaface',
+      similarity_metric: 'cosine',
+      backend: 'deepface',
+      message: "Can't verify right now, check your connection and try again.",
+      error: "Can't verify right now, check your connection and try again.",
     };
   }
 }

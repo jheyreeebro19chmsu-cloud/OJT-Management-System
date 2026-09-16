@@ -80,6 +80,7 @@ import FaceScanner from './components/FaceScanner';
 import BiometricBridge from './components/BiometricBridge';
 import GoogleAuthModal from './components/GoogleAuthModal';
 import { biometricService } from './services/biometricService';
+import { deepfaceService } from './services/deepfaceService';
 import AnnouncementsScreen from './screens/AnnouncementsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import EvaluationScreen from './screens/EvaluationScreen';
@@ -1006,11 +1007,11 @@ export default function App() {
         let matchDistance = 0.0;
 
         if (profile?.photo) {
-          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.62);
+          const bio = await deepfaceService.verifyFace(profile.photo, base64Image, { employeeId: profile.id });
           if (!bio.matched) {
             Alert.alert(
               'Biometric Verification Failed',
-              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.62).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
+              `The captured face could not be verified (${bio.similarity_percent || 0}% match, distance: ${bio.distance.toFixed(2)}).\n\n${bio.message || bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Retake Photo', onPress: () => setFaceModalMode('clock_in') },
@@ -1019,7 +1020,7 @@ export default function App() {
             return;
           }
           isFaceVerified = true;
-          matchConfidence = bio.confidence;
+          matchConfidence = bio.similarity_percent || Math.round(bio.confidence * 100) || 95;
           matchDistance = bio.distance;
         }
 
@@ -1068,11 +1069,11 @@ export default function App() {
         let matchDistance = 0.0;
 
         if (profile?.photo) {
-          const bio = await biometricService.verifyBiometrics(profile.photo, base64Image, 0.62);
+          const bio = await deepfaceService.verifyFace(profile.photo, base64Image, { employeeId: profile.id });
           if (!bio.matched) {
             Alert.alert(
               'Biometric Verification Failed',
-              `The captured face did not match your registered profile (Distance: ${bio.distance.toFixed(2)}, required ≤ 0.62).\n\n${bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
+              `The captured face could not be verified (${bio.similarity_percent || 0}% match, distance: ${bio.distance.toFixed(2)}).\n\n${bio.message || bio.error || 'Identity could not be verified. Attendance was not recorded.'}`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Retake Photo', onPress: () => setFaceModalMode('clock_out') },
@@ -1081,7 +1082,7 @@ export default function App() {
             return;
           }
           isFaceVerified = true;
-          matchConfidence = bio.confidence;
+          matchConfidence = bio.similarity_percent || Math.round(bio.confidence * 100) || 95;
           matchDistance = bio.distance;
         }
 
