@@ -665,7 +665,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
 
           const avgEAR = (rEAR + lEAR) / 2.0;
           result.ear = Number(avgEAR.toFixed(3));
-          result.eyesClosed = avgEAR < 0.20;
+          result.eyesClosed = avgEAR < 0.23;
         }
 
         result.faceObscured = Boolean(
@@ -698,13 +698,14 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
 
 /**
  * Strict Biometric Verification matching algorithm:
- * Uses 128-D embedding Euclidean distance with optimal 0.52 threshold for justadudewhohacks/face-api.js.
+ * Uses 128-D embedding Euclidean distance with optimal 0.58 threshold for justadudewhohacks/face-api.js.
  * Fails closed whenever face-api models are unavailable or biometrics cannot be verified.
  */
 export async function strictBiometricVerify(
   registeredDataUrl: string,
   liveDataUrl: string,
-  threshold = 0.52
+  threshold = 0.58,
+  skipQualityCheck = false
 ): Promise<{ matched: boolean; distance: number; confidence: number; error?: string }> {
   if (!registeredDataUrl || !liveDataUrl) {
     return {
@@ -719,47 +720,49 @@ export async function strictBiometricVerify(
 
   // Strict Obstruction & Background Light Defense in Depth:
   // Reject verification immediately if live face has glasses, hats, mask, or poor background lighting
-  const liveQuality = await inspectFaceQuality(liveDataUrl).catch(() => null);
-  if (liveQuality) {
-    if (liveQuality.glassesDetected) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Glasses detected. Please remove eyeglasses/sunglasses to scan (clear face only).',
-      };
-    }
-    if (liveQuality.capDetected) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Hat or cap detected. Please remove headwear to scan (clear face only).',
-      };
-    }
-    if (liveQuality.maskDetected) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Face mask detected. Please remove face mask to scan.',
-      };
-    }
-    if (liveQuality.poorBackgroundLighting || liveQuality.tooDark) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Dark background / poor lighting. Please move in front of a light, well-lit background.',
-      };
-    }
-    if (liveQuality.tooBright) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Harsh glare on face. Please adjust lighting.',
-      };
+  if (!skipQualityCheck) {
+    const liveQuality = await inspectFaceQuality(liveDataUrl).catch(() => null);
+    if (liveQuality) {
+      if (liveQuality.glassesDetected) {
+        return {
+          matched: false,
+          distance: Infinity,
+          confidence: 0,
+          error: 'Verification blocked: Glasses detected. Please remove eyeglasses/sunglasses to scan (clear face only).',
+        };
+      }
+      if (liveQuality.capDetected) {
+        return {
+          matched: false,
+          distance: Infinity,
+          confidence: 0,
+          error: 'Verification blocked: Hat or cap detected. Please remove headwear to scan (clear face only).',
+        };
+      }
+      if (liveQuality.maskDetected) {
+        return {
+          matched: false,
+          distance: Infinity,
+          confidence: 0,
+          error: 'Verification blocked: Face mask detected. Please remove face mask to scan.',
+        };
+      }
+      if (liveQuality.poorBackgroundLighting || liveQuality.tooDark) {
+        return {
+          matched: false,
+          distance: Infinity,
+          confidence: 0,
+          error: 'Verification blocked: Dark background / poor lighting. Please move in front of a light, well-lit background.',
+        };
+      }
+      if (liveQuality.tooBright) {
+        return {
+          matched: false,
+          distance: Infinity,
+          confidence: 0,
+          error: 'Verification blocked: Harsh glare on face. Please adjust lighting.',
+        };
+      }
     }
   }
 
@@ -835,7 +838,7 @@ export async function strictBiometricVerify(
 export async function compareFaces(
   registeredDataUrl: string,
   capturedDataUrl: string,
-  threshold = 0.52
+  threshold = 0.58
 ): Promise<{ matched: boolean; distance: number; confidence: number }> {
   const res = await strictBiometricVerify(registeredDataUrl, capturedDataUrl, threshold);
   return {

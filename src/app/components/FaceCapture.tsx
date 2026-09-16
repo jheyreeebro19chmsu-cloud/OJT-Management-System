@@ -73,9 +73,11 @@ export function FaceCapture({
 
   // Blink Liveness Anti-Spoof State
   const [livenessVerified, setLivenessVerified] = useState(false);
+  const [blinkStep, setBlinkStep] = useState<'looking' | 'eyes_closed' | 'verified'>('looking');
   const livenessVerifiedRef = useRef(false);
   const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
   const blinkFrameRef = useRef<string | null>(null);
+  const baselineOpenEarRef = useRef<number>(0);
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
@@ -424,6 +426,14 @@ export function FaceCapture({
     );
     setProgress(20);
 
+    // Reset blink state for fresh scan session
+    blinkStateRef.current = 'looking';
+    blinkFrameRef.current = null;
+    baselineOpenEarRef.current = 0;
+    livenessVerifiedRef.current = false;
+    setLivenessVerified(false);
+    setBlinkStep('looking');
+
     // Pre-load biometric recognition models in the background
     loadFaceModels().catch(() => {});
 
@@ -443,71 +453,93 @@ export function FaceCapture({
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('🚨 GLASSES DETECTED! Remove glasses to scan (clear face only).');
-                await new Promise((r) => setTimeout(r, 450));
+                await new Promise((r) => setTimeout(r, 400));
                 continue;
               }
               if (quality.capDetected) {
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('🚨 HAT / CAP DETECTED! Remove headwear to scan (clear face only).');
-                await new Promise((r) => setTimeout(r, 450));
+                await new Promise((r) => setTimeout(r, 400));
                 continue;
               }
               if (quality.maskDetected) {
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('🚨 FACE MASK DETECTED! Remove mask to scan.');
-                await new Promise((r) => setTimeout(r, 450));
+                await new Promise((r) => setTimeout(r, 400));
                 continue;
               }
               if (quality.poorBackgroundLighting) {
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('🚨 DARK BACKGROUND! Position in front of a light, well-lit background.');
-                await new Promise((r) => setTimeout(r, 450));
+                await new Promise((r) => setTimeout(r, 400));
                 continue;
               }
               if (quality.tooDark) {
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
-                await new Promise((r) => setTimeout(r, 400));
+                await new Promise((r) => setTimeout(r, 350));
                 continue;
               }
               if (quality.tooBright) {
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('⚠️ Too bright! Avoid direct glare.');
-                await new Promise((r) => setTimeout(r, 400));
+                await new Promise((r) => setTimeout(r, 350));
                 continue;
               }
+
               if (quality.faceDetected) {
+                const ear = quality.ear ?? 0.28;
+
+                // Adaptive baseline tracking for open eyes
+                if (ear >= 0.22 && ear > baselineOpenEarRef.current) {
+                  baselineOpenEarRef.current = ear;
+                }
+
                 // Real-time Blink Liveness Anti-Spoofing check
                 if (!livenessVerifiedRef.current) {
                   if (blinkStateRef.current === 'looking') {
-                    if (quality.eyesClosed) {
+                    const isClosed = quality.eyesClosed || ear < 0.23 || (baselineOpenEarRef.current > 0.22 && ear <= baselineOpenEarRef.current * 0.80);
+                    if (isClosed) {
                       blinkStateRef.current = 'eyes_closed';
                       blinkFrameRef.current = currentFrame;
+                      setBlinkStep('eyes_closed');
+                      setScanMessage('✓ Eyes closed detected! Now open your eyes...');
+                      setProgress(55);
+                      await new Promise((r) => setTimeout(r, 200));
+                      continue;
                     }
                   } else if (blinkStateRef.current === 'eyes_closed') {
-                    if (!quality.eyesClosed && (quality.ear ?? 0.3) >= 0.22) {
+                    const isReopened = !quality.eyesClosed && (ear >= 0.21 || (baselineOpenEarRef.current > 0.22 && ear >= baselineOpenEarRef.current * 0.88));
+                    if (isReopened) {
                       blinkStateRef.current = 'verified';
                       livenessVerifiedRef.current = true;
                       setLivenessVerified(true);
+                      setBlinkStep('verified');
+                      setScanMessage('✓ Liveness verified! Stabilizing biometric photo...');
+                      setProgress(75);
                     }
                   }
 
                   if (!livenessVerifiedRef.current) {
                     stableFrames = 0;
                     setProgress(30);
-                    setScanMessage('👁️ Blink your eyes to verify liveness (anti-spoof check)');
+                    setScanMessage(
+                      blinkStateRef.current === 'eyes_closed'
+                        ? '✓ Eyes closed detected! Now open your eyes...'
+                        : '👁️ Blink your eyes (close for 1 sec, then open) to verify liveness'
+                    );
                     await new Promise((r) => setTimeout(r, 250));
                     continue;
                   }
                 }
 
                 stableFrames++;
-                setProgress(Math.min(35 + stableFrames * 30, 95));
+                setProgress(Math.min(75 + stableFrames * 12, 95));
 
                 if (stableFrames < 2) {
                   setScanMessage('Analyzing face biometrics... Hold steady');
@@ -521,7 +553,7 @@ export function FaceCapture({
                     setScanMessage('✓ Face Recognized & Enrolled!');
                     setTimeout(() => {
                       onSuccessRef.current?.(currentFrame);
-                    }, 800);
+                    }, 600);
                     return;
                   } else {
                     stableFrames = 0;
@@ -534,12 +566,12 @@ export function FaceCapture({
               }
             }
           }
-          await new Promise((r) => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 250));
         }
         return;
       }
 
-      // VERIFICATION MODE: match live camera stream against registered student photo
+      // VERIFICATION MODE: continuous matching live camera stream against registered student photo
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
@@ -554,17 +586,18 @@ export function FaceCapture({
         return;
       }
 
-      for (let attempt = 1; attempt <= 45; attempt++) {
-        if (!streamRef.current || stateRef.current !== 'scanning') break;
+      let frameCounter = 0;
+      let matchAttempts = 0;
 
+      // Continuous loop: keeps running as long as user is on screen and camera is active
+      while (streamRef.current && (stateRef.current === 'scanning' || stateRef.current === 'verifying')) {
+        frameCounter++;
         const currentFrame = captureFrame();
         if (!currentFrame) {
-          await new Promise((r) => setTimeout(r, 350));
+          await new Promise((r) => setTimeout(r, 250));
           continue;
         }
         lastCaptured = currentFrame;
-
-        setProgress(Math.min(20 + attempt * 2, 85));
 
         const quality = await inspectFaceQuality(currentFrame).catch(() => null);
         if (quality) {
@@ -572,84 +605,118 @@ export function FaceCapture({
 
           if (quality.glassesDetected) {
             setScanMessage('🚨 GLASSES DETECTED! Remove glasses to scan (clear face only).');
-            await new Promise((r) => setTimeout(r, 450));
+            await new Promise((r) => setTimeout(r, 400));
             continue;
           }
           if (quality.capDetected) {
             setScanMessage('🚨 HAT / CAP DETECTED! Remove headwear to scan (clear face only).');
-            await new Promise((r) => setTimeout(r, 450));
+            await new Promise((r) => setTimeout(r, 400));
             continue;
           }
           if (quality.maskDetected) {
             setScanMessage('🚨 FACE MASK DETECTED! Remove mask to scan.');
-            await new Promise((r) => setTimeout(r, 450));
+            await new Promise((r) => setTimeout(r, 400));
             continue;
           }
           if (quality.poorBackgroundLighting) {
             setScanMessage('🚨 DARK BACKGROUND! Position in front of a light, well-lit background.');
-            await new Promise((r) => setTimeout(r, 450));
+            await new Promise((r) => setTimeout(r, 400));
             continue;
           }
           if (quality.tooDark) {
             setScanMessage('⚠️ Too dark! Move to a well-lit area.');
-            await new Promise((r) => setTimeout(r, 400));
+            await new Promise((r) => setTimeout(r, 350));
             continue;
           }
           if (quality.tooBright) {
             setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
-            await new Promise((r) => setTimeout(r, 400));
+            await new Promise((r) => setTimeout(r, 350));
             continue;
           }
           if (quality.faceObscured) {
             setScanMessage('⚠️ Clear face required. Remove obstructions.');
-            await new Promise((r) => setTimeout(r, 400));
+            await new Promise((r) => setTimeout(r, 350));
             continue;
           }
 
-          // Real-time Blink Liveness Anti-Spoofing check
-          if (!livenessVerifiedRef.current) {
-            if (blinkStateRef.current === 'looking') {
-              if (quality.eyesClosed) {
-                blinkStateRef.current = 'eyes_closed';
-                blinkFrameRef.current = currentFrame;
+          if (quality.faceDetected) {
+            const ear = quality.ear ?? 0.28;
+
+            // Adaptive baseline tracking for open eyes
+            if (ear >= 0.22 && ear > baselineOpenEarRef.current) {
+              baselineOpenEarRef.current = ear;
+            }
+
+            // Real-time Blink Liveness Anti-Spoofing check
+            if (!livenessVerifiedRef.current) {
+              if (blinkStateRef.current === 'looking') {
+                const isClosed = quality.eyesClosed || ear < 0.23 || (baselineOpenEarRef.current > 0.22 && ear <= baselineOpenEarRef.current * 0.80);
+                if (isClosed) {
+                  blinkStateRef.current = 'eyes_closed';
+                  blinkFrameRef.current = currentFrame;
+                  setBlinkStep('eyes_closed');
+                  setScanMessage('✓ Eyes closed detected! Now open your eyes...');
+                  setProgress(55);
+                  await new Promise((r) => setTimeout(r, 200));
+                  continue;
+                }
+              } else if (blinkStateRef.current === 'eyes_closed') {
+                const isReopened = !quality.eyesClosed && (ear >= 0.21 || (baselineOpenEarRef.current > 0.22 && ear >= baselineOpenEarRef.current * 0.88));
+                if (isReopened) {
+                  blinkStateRef.current = 'verified';
+                  livenessVerifiedRef.current = true;
+                  setLivenessVerified(true);
+                  setBlinkStep('verified');
+                  setScanMessage('✓ Liveness verified! Matching biometrics...');
+                  setProgress(75);
+                }
               }
-            } else if (blinkStateRef.current === 'eyes_closed') {
-              if (!quality.eyesClosed && (quality.ear ?? 0.3) >= 0.22) {
-                blinkStateRef.current = 'verified';
-                livenessVerifiedRef.current = true;
-                setLivenessVerified(true);
+
+              if (!livenessVerifiedRef.current) {
+                setProgress(Math.min(30 + ((frameCounter * 2) % 25), 50));
+                setScanMessage(
+                  blinkStateRef.current === 'eyes_closed'
+                    ? '✓ Eyes closed detected! Now open your eyes...'
+                    : '👁️ Blink your eyes (close for 1 sec, then open) to verify liveness'
+                );
+                await new Promise((r) => setTimeout(r, 250));
+                continue;
               }
             }
 
-            if (!livenessVerifiedRef.current) {
-              setScanMessage('👁️ Blink your eyes to verify liveness (anti-spoof check)');
-              await new Promise((r) => setTimeout(r, 250));
-              continue;
+            // Liveness is verified! Now match biometrics against enrolled photo
+            const enrolledImage = registeredImageRef.current;
+            if (!enrolledImage) {
+              setScanMessage('❌ Missing registered face biometrics.');
+              break;
             }
+
+            matchAttempts++;
+            setProgress(Math.min(75 + matchAttempts * 3, 95));
+            setScanMessage('Verifying facial biometrics with AI...');
+
+            // Notice: skipQualityCheck = true because inspectFaceQuality already verified above!
+            const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.58, true);
+            if (bio.matched) {
+              setMismatchError(null);
+              detectedSuccess = true;
+              break;
+            } else {
+              setScanMessage(
+                bio.distance < 0.68
+                  ? 'Hold still... Verifying face biometrics...'
+                  : matchAttempts > 6
+                    ? 'Hold still or tap "Scan & Verify Now"'
+                    : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
+              );
+            }
+          } else {
+            setProgress(20);
+            setScanMessage('Position face inside the oval guide...');
           }
         }
 
-        const enrolledImage = registeredImageRef.current;
-        if (!enrolledImage) {
-          setScanMessage('❌ Missing registered face biometrics.');
-          break;
-        }
-
-        setScanMessage('Verifying facial biometrics with AI...');
-        const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.52);
-        if (bio.matched) {
-          setMismatchError(null);
-          detectedSuccess = true;
-          break;
-        } else {
-          setScanMessage(
-            bio.distance < 0.65
-              ? 'Hold still... Verifying face biometrics...'
-              : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
-          );
-        }
-
-        await new Promise((r) => setTimeout(r, 350));
+        await new Promise((r) => setTimeout(r, 250));
       }
 
       if (detectedSuccess && lastCaptured) {
@@ -658,14 +725,9 @@ export function FaceCapture({
         setState('success');
         setScanMessage('✓ Identity Verified! Timestamp Saved.');
         stopCamera();
-        setTimeout(() => onSuccessRef.current?.(lastCaptured), 800);
+        setTimeout(() => onSuccessRef.current?.(lastCaptured), 600);
         return;
       }
-
-      // If loop completed without match, ready for manual verification
-      setProgress(90);
-      setState('scanning');
-      setScanMessage('Position face inside the oval and tap "Scan & Verify Now".');
     } catch (loopErr) {
       console.warn('Biometric scan loop error:', loopErr);
     }
@@ -689,12 +751,7 @@ export function FaceCapture({
    * Manual snapshot trigger
    */
   const handleManualSnap = useCallback(async (customImg?: string) => {
-    if (state === 'success') return;
-
-    if (!livenessVerifiedRef.current) {
-      setScanMessage('⚠️ Please blink to verify liveness before capturing.');
-      return;
-    }
+    if (stateRef.current === 'success' || stateRef.current === 'verifying') return;
 
     const img = customImg || captureFrame();
     if (!img) {
@@ -703,41 +760,67 @@ export function FaceCapture({
       return;
     }
 
+    const manualQuality = await inspectFaceQuality(img).catch(() => null);
+    if (manualQuality) {
+      setQualityReport(manualQuality);
+      if (manualQuality.glassesDetected) {
+        setMismatchError('Glasses detected! Please remove glasses to scan (clear face only).');
+        setScanMessage('❌ Glasses detected. Remove glasses to scan.');
+        return;
+      }
+      if (manualQuality.capDetected) {
+        setMismatchError('Hat or cap detected! Please remove headwear to scan (clear face only).');
+        setScanMessage('❌ Hat/cap detected. Remove headwear to scan.');
+        return;
+      }
+      if (manualQuality.maskDetected) {
+        setMismatchError('Face mask detected! Please remove mask to scan.');
+        setScanMessage('❌ Mask detected. Remove mask to scan.');
+        return;
+      }
+      if (manualQuality.poorBackgroundLighting || manualQuality.tooDark) {
+        setMismatchError('Dark background or dim lighting! Please move in front of a light, well-lit background.');
+        setScanMessage('❌ Dark background / dim lighting.');
+        return;
+      }
+      if (manualQuality.tooBright) {
+        setMismatchError('Harsh glare on face! Please adjust lighting.');
+        setScanMessage('❌ Harsh glare detected.');
+        return;
+      }
+      if (manualQuality.faceObscured) {
+        setMismatchError('Face obstruction detected. Clear face required.');
+        setScanMessage('❌ Face obstruction detected.');
+        return;
+      }
+      if (!manualQuality.faceDetected) {
+        setScanMessage('⚠️ No face detected. Please position your face inside the oval.');
+        return;
+      }
+    }
+
+    // Manual blink liveness check
+    if (!livenessVerifiedRef.current) {
+      if (manualQuality?.eyesClosed) {
+        blinkStateRef.current = 'eyes_closed';
+        blinkFrameRef.current = img;
+        setBlinkStep('eyes_closed');
+        setScanMessage('✓ Eyes closed captured! Now open your eyes and tap "Scan & Verify Now".');
+        return;
+      } else if (blinkStateRef.current === 'eyes_closed') {
+        blinkStateRef.current = 'verified';
+        livenessVerifiedRef.current = true;
+        setLivenessVerified(true);
+        setBlinkStep('verified');
+        setScanMessage('✓ Liveness verified! Verifying biometrics...');
+      } else {
+        setScanMessage('👁️ Blink your eyes (close for 1s, then open) to verify liveness.');
+        return;
+      }
+    }
+
     // When registering: enforce quality, lighting, and presence
     if (modeRef.current === 'register') {
-      const quality = await inspectFaceQuality(img).catch(() => null);
-      if (quality) {
-        setQualityReport(quality);
-        if (quality.glassesDetected) {
-          setScanMessage('❌ Glasses detected! Please remove glasses for a clear face scan.');
-          return;
-        }
-        if (quality.capDetected) {
-          setScanMessage('❌ Hat or cap detected! Please remove headwear for a clear face scan.');
-          return;
-        }
-        if (quality.maskDetected) {
-          setScanMessage('❌ Face mask detected! Please remove coverings for a clear face scan.');
-          return;
-        }
-        if (quality.poorBackgroundLighting) {
-          setScanMessage('❌ Dark background detected! Please move in front of a light, well-lit background.');
-          return;
-        }
-        if (quality.tooDark) {
-          setScanMessage('❌ Photo is too dark. Please ensure better lighting before saving.');
-          return;
-        }
-        if (quality.tooBright) {
-          setScanMessage('❌ Too much glare. Please adjust lighting.');
-          return;
-        }
-        if (quality.faceObscured) {
-          setScanMessage('❌ Face obstruction detected. Please ensure your face is fully clear.');
-          return;
-        }
-      }
-
       const hasAnyFace = await detectFaceInDataUrl(img).catch(() => true);
       if (!hasAnyFace) {
         setScanMessage('❌ No face detected. Please position your face inside the oval.');
@@ -751,14 +834,14 @@ export function FaceCapture({
       setScanMessage('✓ Face Biometrics Enrolled Successfully!');
       setTimeout(() => {
         onSuccessRef.current?.(img);
-      }, 800);
+      }, 600);
       return;
     }
 
     // In verify mode: strict Biometric Match using AI algorithms
     setState('verifying');
     setScanMessage('Verifying face biometrics with AI...');
-    setProgress(75);
+    setProgress(80);
 
     const enrolledImage = registeredImageRef.current;
     if (!enrolledImage) {
@@ -770,51 +853,12 @@ export function FaceCapture({
       return;
     }
 
-    const manualQuality = await inspectFaceQuality(img).catch(() => null);
-    if (manualQuality) {
-      if (manualQuality.glassesDetected) {
-        setState('failed');
-        setMismatchError('Glasses detected! Please remove glasses to scan (clear face only).');
-        setScanMessage('❌ Glasses detected. Remove glasses to scan.');
-        return;
-      }
-      if (manualQuality.capDetected) {
-        setState('failed');
-        setMismatchError('Hat or cap detected! Please remove headwear to scan (clear face only).');
-        setScanMessage('❌ Hat/cap detected. Remove headwear to scan.');
-        return;
-      }
-      if (manualQuality.maskDetected) {
-        setState('failed');
-        setMismatchError('Face mask detected! Please remove mask to scan.');
-        setScanMessage('❌ Mask detected. Remove mask to scan.');
-        return;
-      }
-      if (manualQuality.poorBackgroundLighting || manualQuality.tooDark) {
-        setState('failed');
-        setMismatchError('Dark background or dim lighting! Please move in front of a light, well-lit background.');
-        setScanMessage('❌ Dark background / dim lighting.');
-        return;
-      }
-      if (manualQuality.tooBright) {
-        setState('failed');
-        setMismatchError('Harsh glare on face! Please adjust lighting.');
-        setScanMessage('❌ Harsh glare detected.');
-        return;
-      }
-      if (manualQuality.faceObscured) {
-        setState('failed');
-        setMismatchError('Face mask or obstruction detected. Clear face required.');
-        setScanMessage('❌ Face obstruction detected.');
-        return;
-      }
-    }
-
-    const bio = await strictBiometricVerify(enrolledImage, img, 0.52);
+    // Notice: skipQualityCheck = true because manualQuality already inspected above
+    const bio = await strictBiometricVerify(enrolledImage, img, 0.58, true);
     if (!bio.matched) {
       setState('failed');
       setMismatchError(`Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`);
-      setScanMessage(`❌ Face mismatch (Distance: ${bio.distance.toFixed(2)} > 0.52)`);
+      setScanMessage(`❌ Face mismatch (Biometric distance: ${bio.distance.toFixed(2)} > 0.58)`);
       return;
     }
 
@@ -854,8 +898,8 @@ export function FaceCapture({
     setProgress(100);
     setState('success');
     setScanMessage('✓ Identity Verified! Attendance Time Recorded.');
-    setTimeout(() => onSuccessRef.current?.(img), 800);
-  }, [state, stopCamera, captureFrame]);
+    setTimeout(() => onSuccessRef.current?.(img), 600);
+  }, [stopCamera, captureFrame]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
@@ -910,6 +954,8 @@ export function FaceCapture({
     setLivenessVerified(false);
     blinkStateRef.current = 'looking';
     blinkFrameRef.current = null;
+    baselineOpenEarRef.current = 0;
+    setBlinkStep('looking');
     hasStartedRef.current = false;
     startScan();
   };
@@ -964,12 +1010,20 @@ export function FaceCapture({
             {/* Anti-Spoof Liveness Indicator Badge */}
             <div
               className={`absolute top-10 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full border text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20 flex items-center gap-1.5 transition-colors ${
-                livenessVerified
+                livenessVerified || blinkStep === 'verified'
                   ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
-                  : 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse'
+                  : blinkStep === 'eyes_closed'
+                    ? 'bg-sky-950/80 border-sky-500/60 text-sky-300 animate-bounce'
+                    : 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse'
               }`}
             >
-              <span>{livenessVerified ? '✓ Liveness Verified (Anti-Spoof)' : '👁️ Blink to Verify Liveness'}</span>
+              <span>
+                {livenessVerified || blinkStep === 'verified'
+                  ? '✓ Liveness Verified (Anti-Spoof)'
+                  : blinkStep === 'eyes_closed'
+                    ? '✓ Eyes Closed Detected — Open Eyes Now!'
+                    : '👁️ Blink to Verify Liveness'}
+              </span>
             </div>
 
             {/* Obstruction warning banner within viewport */}
@@ -1206,47 +1260,44 @@ export function FaceCapture({
             <button
               type="button"
               onClick={handleManualSnap}
-              disabled={Boolean(
-                !qualityReport?.faceDetected ||
-                qualityReport?.faceObscured ||
-                qualityReport?.glassesDetected ||
-                qualityReport?.capDetected ||
-                qualityReport?.maskDetected ||
-                qualityReport?.poorBackgroundLighting ||
-                qualityReport?.tooDark ||
-                qualityReport?.tooBright
-              )}
+              disabled={
+                state === 'verifying' ||
+                state === 'analyzing' ||
+                Boolean(
+                  qualityReport?.glassesDetected ||
+                  qualityReport?.capDetected ||
+                  qualityReport?.maskDetected
+                )
+              }
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
-                !qualityReport?.faceDetected ||
-                qualityReport?.faceObscured ||
-                qualityReport?.glassesDetected ||
-                qualityReport?.capDetected ||
-                qualityReport?.maskDetected ||
-                qualityReport?.poorBackgroundLighting ||
-                qualityReport?.tooDark ||
-                qualityReport?.tooBright
-                  ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
-                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20 cursor-pointer'
+                state === 'verifying' || state === 'analyzing'
+                  ? 'bg-blue-600 text-white cursor-wait animate-pulse'
+                  : qualityReport?.glassesDetected || qualityReport?.capDetected || qualityReport?.maskDetected
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300 cursor-not-allowed'
+                    : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white shadow-indigo-600/25 cursor-pointer'
               }`}
             >
-              <Camera size={15} />
-              {qualityReport?.glassesDetected
-                ? 'Glasses Detected (Remove Glasses)'
-                : qualityReport?.capDetected
-                  ? 'Hat/Cap Detected (Remove Headwear)'
-                  : qualityReport?.maskDetected
-                    ? 'Mask Detected (Remove Mask)'
-                    : qualityReport?.poorBackgroundLighting
-                      ? 'Dark Background (Move to Light Area)'
-                      : qualityReport?.tooDark
-                        ? 'Lighting Too Dim (Move to Light)'
-                        : qualityReport?.tooBright
-                          ? 'Glare Detected (Adjust Lighting)'
-                          : !qualityReport?.faceDetected
-                            ? 'Align Face Inside Oval'
-                            : mode === 'register'
-                              ? 'Scan Face Now'
-                              : 'Scan & Verify Now'}
+              {state === 'verifying' || state === 'analyzing' ? (
+                <>
+                  <RefreshCw size={15} className="animate-spin" />
+                  <span>Verifying Face Biometrics...</span>
+                </>
+              ) : (
+                <>
+                  <Camera size={15} />
+                  <span>
+                    {qualityReport?.glassesDetected
+                      ? 'Glasses Detected (Remove Glasses)'
+                      : qualityReport?.capDetected
+                        ? 'Hat/Cap Detected (Remove Headwear)'
+                        : qualityReport?.maskDetected
+                          ? 'Mask Detected (Remove Mask)'
+                          : mode === 'register'
+                            ? 'Scan Face Now'
+                            : 'Scan & Verify Now'}
+                  </span>
+                </>
+              )}
             </button>
             <button
               type="button"

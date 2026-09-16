@@ -1498,16 +1498,16 @@ export function AdminEmployees() {
             </div>
 
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 print:hidden">
-              <div>
-                <h3 className="font-bold text-gray-900">{previewInstructorDoc.title}</h3>
-                <p className="text-xs text-gray-500">{previewInstructorDoc.fileName || 'Attached Document'}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-gray-100 print:hidden">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate">{previewInstructorDoc.title}</h3>
+                <p className="text-xs text-gray-500 truncate font-mono">{previewInstructorDoc.fileName || 'Attached Document'}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm cursor-pointer"
                 >
                   <Printer size={13} /> Print
                 </button>
@@ -1515,14 +1515,14 @@ export function AdminEmployees() {
                   <a
                     href={previewInstructorDoc.fileUrl}
                     download={previewInstructorDoc.fileName || 'ojt-document'}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-all shadow-sm"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-all shadow-sm cursor-pointer"
                   >
                     <Download size={13} /> Save
                   </a>
                 )}
                 <button
                   onClick={() => setPreviewInstructorDoc(null)}
-                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -1530,14 +1530,29 @@ export function AdminEmployees() {
             </div>
 
             {/* Student info strip */}
-            <div className="px-6 py-3 bg-violet-50 border-b border-violet-100 print:bg-white">
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-700">
-                <span><strong>Student Name:</strong> {previewInstructorDoc.studentName}</span>
-                <span><strong>Student ID:</strong> {previewInstructorDoc.studentId}</span>
-                <span><strong>Document:</strong> {previewInstructorDoc.title}</span>
-                <span><strong>Date Submitted:</strong> {previewInstructorDoc.date}</span>
+            <div className="px-4 sm:px-6 py-3 bg-violet-50/90 border-b border-violet-100 print:bg-white">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs text-slate-700">
+                <div className="flex flex-wrap items-baseline gap-1.5">
+                  <span className="font-bold text-slate-900 shrink-0">Student Name:</span>
+                  <span className="font-semibold text-slate-800 break-words">{previewInstructorDoc.studentName}</span>
+                </div>
+                <div className="flex flex-wrap items-baseline gap-1.5">
+                  <span className="font-bold text-slate-900 shrink-0">Student ID:</span>
+                  <span className="font-mono text-slate-800">{previewInstructorDoc.studentId}</span>
+                </div>
+                <div className="flex flex-wrap items-baseline gap-1.5">
+                  <span className="font-bold text-slate-900 shrink-0">Document:</span>
+                  <span className="text-slate-800 break-words">{previewInstructorDoc.title}</span>
+                </div>
+                <div className="flex flex-wrap items-baseline gap-1.5">
+                  <span className="font-bold text-slate-900 shrink-0">Date Submitted:</span>
+                  <span className="text-slate-800">{previewInstructorDoc.date}</span>
+                </div>
                 {previewInstructorDoc.note && (
-                  <span className="col-span-2"><strong>Note:</strong> {previewInstructorDoc.note}</span>
+                  <div className="col-span-1 sm:col-span-2 flex flex-col sm:flex-row sm:items-baseline gap-1 bg-white/80 p-2.5 rounded-xl border border-violet-100 mt-1">
+                    <span className="font-bold text-slate-900 shrink-0">Note:</span>
+                    <span className="text-slate-700 break-all leading-relaxed text-[11px]">{previewInstructorDoc.note}</span>
+                  </div>
                 )}
               </div>
             </div>

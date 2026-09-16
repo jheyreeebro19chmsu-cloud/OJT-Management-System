@@ -1131,22 +1131,22 @@ export function Profile() {
       {previewDocModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
           <div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="font-bold text-gray-900 text-base">{previewDocModal.title}</h3>
-                <p className="text-xs text-gray-500">{previewDocModal.fileName || 'Attached Document'}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate">{previewDocModal.title}</h3>
+                <p className="text-xs text-gray-500 font-mono truncate">{previewDocModal.fileName || 'Attached Document'}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm cursor-pointer"
                 >
                   <Printer size={14} /> Print Document
                 </button>
                 <button
                   onClick={() => setPreviewDocModal(null)}
-                  className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -1155,18 +1155,29 @@ export function Profile() {
 
             <div className="flex-1 overflow-y-auto space-y-3 p-2 bg-slate-50 rounded-2xl border border-slate-100">
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
-                <div className="flex justify-between text-xs text-slate-600">
-                  <span><strong>Student Name:</strong> {employee.name}</span>
-                  <span><strong>Student ID:</strong> {employee.employeeId}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-600">
-                  <span><strong>Department:</strong> {employee.department}</span>
-                  <span><strong>Date Submitted:</strong> {previewDocModal.date}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs text-slate-600">
+                  <div className="flex flex-wrap items-baseline gap-1.5">
+                    <strong className="text-slate-800 shrink-0">Student Name:</strong>
+                    <span className="font-semibold text-slate-900 break-words">{employee.name}</span>
+                  </div>
+                  <div className="flex flex-wrap items-baseline gap-1.5">
+                    <strong className="text-slate-800 shrink-0">Student ID:</strong>
+                    <span className="font-mono text-slate-900">{employee.employeeId}</span>
+                  </div>
+                  <div className="flex flex-wrap items-baseline gap-1.5">
+                    <strong className="text-slate-800 shrink-0">Department:</strong>
+                    <span className="text-slate-900 break-words">{employee.department}</span>
+                  </div>
+                  <div className="flex flex-wrap items-baseline gap-1.5">
+                    <strong className="text-slate-800 shrink-0">Date Submitted:</strong>
+                    <span className="text-slate-900">{previewDocModal.date}</span>
+                  </div>
                 </div>
                 {previewDocModal.note && (
-                  <p className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                    <strong>Submission Note:</strong> {previewDocModal.note}
-                  </p>
+                  <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200 mt-2">
+                    <strong className="text-slate-800">Submission Note: </strong>
+                    <span className="break-all text-[11px] text-slate-600 leading-relaxed">{previewDocModal.note}</span>
+                  </div>
                 )}
               </div>
 

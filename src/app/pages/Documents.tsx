@@ -526,7 +526,7 @@ export function Documents() {
                       </span>
                     </div>
                     <h4 className="text-base font-bold text-slate-900 mb-1">{previewDoc.title}</h4>
-                    <p className="text-xs text-slate-500 font-mono mb-4">Recorded File: {previewDoc.fileName}</p>
+                    <p className="text-xs text-slate-500 font-mono mb-4 break-all">Recorded File: {previewDoc.fileName}</p>
 
                     <div className="bg-slate-50 rounded-2xl p-4 text-xs text-left space-y-2 border border-slate-100 mb-5 text-slate-600">
                       <div className="flex justify-between">

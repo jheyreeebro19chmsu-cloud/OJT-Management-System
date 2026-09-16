@@ -894,53 +894,53 @@ export function AdminReports() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500">Total Hours Rendered</span>
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                   <Clock size={16} />
                 </div>
               </div>
-              <div className="text-2xl font-bold text-gray-800">{totalHours.toFixed(1)}h</div>
+              <div className="text-xl sm:text-2xl font-bold text-gray-800">{totalHours.toFixed(1)}h</div>
               <p className="text-xs text-gray-400 mt-1">This month</p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500">Total Present Logs</span>
-                <div className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">
                   <Users size={16} />
                 </div>
               </div>
-              <div className="text-2xl font-bold text-gray-800">{presentCount}</div>
+              <div className="text-xl sm:text-2xl font-bold text-gray-800">{presentCount}</div>
               <p className="text-xs text-gray-400 mt-1">Attendance check-ins</p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500">Late Arrivals</span>
-                <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
                   <Clock size={16} />
                 </div>
               </div>
-              <div className="text-2xl font-bold text-gray-800">{lateCount}</div>
+              <div className="text-xl sm:text-2xl font-bold text-gray-800">{lateCount}</div>
               <p className="text-xs text-gray-400 mt-1">Check-ins after schedule</p>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <div className="bg-white p-3.5 sm:p-5 rounded-2xl shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500">DTR Approval Status</span>
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
                   <CheckCircle size={16} />
                 </div>
               </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-xl font-bold text-emerald-700">{approvedCount}</span>
-                <span className="text-xs text-gray-400">Approved</span>
+              <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                <span className="text-base sm:text-xl font-bold text-emerald-700">{approvedCount}</span>
+                <span className="text-[11px] sm:text-xs text-gray-400">Approved</span>
                 <span className="text-gray-300">/</span>
-                <span className="text-xl font-bold text-rose-600">{disapprovedCount}</span>
-                <span className="text-xs text-gray-400">Disapproved</span>
+                <span className="text-base sm:text-xl font-bold text-rose-600">{disapprovedCount}</span>
+                <span className="text-[11px] sm:text-xs text-gray-400">Disapproved</span>
               </div>
               <p className="text-xs text-amber-600 font-semibold mt-1">
                 {pendingApprovalCount} pending review
@@ -986,9 +986,9 @@ export function AdminReports() {
               <h3 className="font-bold text-gray-800">Trainee Rendering Progress</h3>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left">
+              <table className="w-full text-left min-w-[560px]">
                 <thead>
-                  <tr className="bg-gray-50 text-xs font-semibold text-gray-500 border-b border-gray-100">
+                  <tr className="bg-gray-50 text-xs font-semibold text-gray-500 border-b border-gray-100 whitespace-nowrap">
                     <th className="py-3 px-4">Trainee</th>
                     <th className="py-3 px-4">Rendered This Month</th>
                     <th className="py-3 px-4">Required Total</th>

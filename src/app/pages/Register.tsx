@@ -3154,7 +3154,7 @@ export function Register() {
                         setEmployeeIdTaken(null);
                       }}
                       onBlur={(e) => checkEmployeeIdExists(e.target.value)}
-                      placeholder="e.g. 2021-00123 (leave blank if not yet assigned)"
+                      placeholder="e.g. 2021-00123 (optional)"
                       className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 font-mono tracking-wide ${
                         employeeIdTaken === true
                           ? 'border-red-400 focus:ring-red-400'
@@ -3170,12 +3170,12 @@ export function Register() {
 
                   {/* Required OJT Documents Section */}
                   <div className="pt-3 border-t border-gray-100 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                        <ShieldCheck size={14} className="text-blue-600" />
-                        <span>Supporting OJT Documents ({REQUIRED_TRAINEE_DOCUMENTS.length} Requirements)</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                      <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5 min-w-0">
+                        <ShieldCheck size={14} className="text-blue-600 shrink-0" />
+                        <span className="truncate">Supporting OJT Documents ({REQUIRED_TRAINEE_DOCUMENTS.length} Requirements)</span>
                       </label>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="self-start sm:self-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
                         {REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(documents[k])).length} of {REQUIRED_TRAINEE_DOCUMENTS.length} Attached
                       </span>
                     </div>
