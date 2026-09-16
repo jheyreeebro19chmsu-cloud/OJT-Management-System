@@ -101,19 +101,37 @@ function RouteErrorFallback() {
       React.createElement('h2', { className: 'text-lg font-semibold text-slate-900' }, 'Unexpected Application Error'),
       React.createElement('p', { className: 'mt-2 text-sm text-slate-600' }, message),
       React.createElement(
-        'button',
-        {
-          type: 'button',
-          onClick: () => {
-            if (typeof window !== 'undefined') {
-              window.sessionStorage.clear();
-              window.location.reload();
-            }
+        'div',
+        { className: 'mt-4 flex flex-wrap items-center gap-3' },
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            onClick: () => {
+              if (typeof window !== 'undefined') {
+                window.location.href = '/app';
+              }
+            },
+            className:
+              'inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors',
           },
-          className:
-            'mt-4 inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700',
-        },
-        'Reload App'
+          'Return to Dashboard'
+        ),
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            onClick: () => {
+              if (typeof window !== 'undefined') {
+                window.sessionStorage.clear();
+                window.location.reload();
+              }
+            },
+            className:
+              'inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 transition-colors',
+          },
+          'Reload App'
+        )
       )
     )
   );
@@ -166,11 +184,16 @@ export const router = createBrowserRouter([
     errorElement: routeErrorElement,
   },
   {
+    path: '/dashboard',
+    element: React.createElement(Navigate, { to: '/app', replace: true }),
+  },
+  {
     path: '/app',
     element: withSuspense(EmployeeLayout),
     errorElement: routeErrorElement,
     children: [
       { index: true, element: withSuspense(Dashboard) },
+      { path: 'dashboard', element: withSuspense(Dashboard) },
       { path: 'time-record', element: withSuspense(TimeRecord) },
       { path: 'records', element: withSuspense(Records) },
       { path: 'documents', element: withSuspense(Documents) },
@@ -188,6 +211,7 @@ export const router = createBrowserRouter([
     errorElement: routeErrorElement,
     children: [
       { index: true, element: withSuspense(AdminDashboard) },
+      { path: 'dashboard', element: withSuspense(AdminDashboard) },
       { path: 'employees', element: withSuspense(AdminEmployees) },
       { path: 'geofence', element: withSuspense(AdminGeofence) },
       { path: 'reports', element: withSuspense(AdminReports) },
@@ -205,6 +229,7 @@ export const router = createBrowserRouter([
     errorElement: routeErrorElement,
     children: [
       { index: true, element: withSuspense(HTEDashboard) },
+      { path: 'dashboard', element: withSuspense(HTEDashboard) },
       { path: 'trainees', element: withSuspense(HTETrainees) },
       { path: 'records', element: withSuspense(HTERecords) },
       { path: 'evaluations', element: withSuspense(HTEEvaluations) },
@@ -215,5 +240,9 @@ export const router = createBrowserRouter([
       { path: 'settings', element: withSuspense(HTESettings) },
       { path: 'profile', element: withSuspense(() => React.createElement(AccountProfile, { role: 'hte' })) },
     ],
+  },
+  {
+    path: '*',
+    element: React.createElement(Navigate, { to: '/app', replace: true }),
   },
 ]);

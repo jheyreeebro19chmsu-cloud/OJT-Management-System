@@ -724,7 +724,7 @@ export function TimeRecord() {
             </div>
 
             <button
-              onClick={() => navigate('/app/dashboard')}
+              onClick={() => navigate('/app')}
               className="w-full py-3 bg-blue-700 text-white rounded-2xl font-semibold text-sm hover:bg-blue-800 transition-all flex items-center justify-center gap-2 shadow-sm"
             >
               <CheckCircle size={15} />

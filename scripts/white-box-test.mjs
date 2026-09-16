@@ -1244,6 +1244,74 @@ assert('Saving custom hours "300" stores exact numeric value 300', customResult.
 assert('Empty hours field defaults to standard 486 hours upon trainee save', clearedResult.savedHoursTrainee === 486);
 assert('Admin role strictly saves 0 required hours regardless of input', clearedResult.savedHoursAdmin === 0);
 
+// ============================================================================
+// 17. WHITE BOX TESTS: Dashboard Routing & Post Clock-In Navigation
+// ============================================================================
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  17. WHITE BOX TESTS: Dashboard Routing & Post Clock-In Navigation   ${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+// Route registry resolver simulation
+const registeredAppRoutes = [
+  '/',
+  '/login',
+  '/register',
+  '/dashboard', // redirects to /app
+  '/app', // index dashboard
+  '/app/dashboard', // alias to dashboard
+  '/app/time-record',
+  '/app/records',
+  '/app/documents',
+  '/app/announcements',
+  '/app/evaluation',
+  '/app/profile',
+  '/admin',
+  '/admin/dashboard',
+  '/hte',
+  '/hte/dashboard',
+];
+
+function resolveRoute(path) {
+  if (path === '/dashboard') return { status: 302, destination: '/app' };
+  if (registeredAppRoutes.includes(path)) {
+    if (path === '/app' || path === '/app/dashboard') {
+      return { status: 200, component: 'Dashboard' };
+    }
+    if (path === '/admin' || path === '/admin/dashboard') {
+      return { status: 200, component: 'AdminDashboard' };
+    }
+    if (path === '/hte' || path === '/hte/dashboard') {
+      return { status: 200, component: 'HTEDashboard' };
+    }
+    return { status: 200, component: path.replace(/^\//, '') };
+  }
+  // Wildcard fallback
+  return { status: 302, destination: '/app' };
+}
+
+// Test 17.1: /app/dashboard resolves to 200 OK Dashboard component
+const appDashResult = resolveRoute('/app/dashboard');
+assert('Route "/app/dashboard" successfully resolves with 200 OK', appDashResult.status === 200);
+assert('Route "/app/dashboard" mounts the Dashboard component', appDashResult.component === 'Dashboard');
+
+// Test 17.2: Top-level /dashboard safely redirects to /app
+const rootDashResult = resolveRoute('/dashboard');
+assert('Route "/dashboard" safely redirects without 404 (status 302)', rootDashResult.status === 302);
+assert('Route "/dashboard" destination is "/app"', rootDashResult.destination === '/app');
+
+// Test 17.3: /app default index route resolves to Dashboard
+const appIndexResult = resolveRoute('/app');
+assert('Route "/app" resolves with 200 OK Dashboard', appIndexResult.status === 200 && appIndexResult.component === 'Dashboard');
+
+// Test 17.4: Post clock-in navigation targets /app or /app/dashboard safely
+const timeRecordDoneTarget = '/app';
+const doneRouteResult = resolveRoute(timeRecordDoneTarget);
+assert('Post clock-in "Done (Return to Dashboard)" target resolves cleanly without 404', doneRouteResult.status === 200 && doneRouteResult.component === 'Dashboard');
+
+// Test 17.5: Unknown route falls back gracefully to dashboard instead of hard 404 crash
+const unknownRouteResult = resolveRoute('/some/invalid/path');
+assert('Unknown route gracefully redirects instead of hard 404 crash', unknownRouteResult.status === 302 && unknownRouteResult.destination === '/app');
+
 // ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
