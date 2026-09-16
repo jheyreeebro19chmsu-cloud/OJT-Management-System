@@ -71,6 +71,11 @@ export function FaceCapture({
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
 
+  // Blink Liveness Anti-Spoof State
+  const [livenessVerified, setLivenessVerified] = useState(false);
+  const livenessVerifiedRef = useRef(false);
+  const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
+
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
@@ -476,6 +481,29 @@ export function FaceCapture({
                 continue;
               }
               if (quality.faceDetected) {
+                // Real-time Blink Liveness Anti-Spoofing check
+                if (!livenessVerifiedRef.current) {
+                  if (blinkStateRef.current === 'looking') {
+                    if (quality.eyesClosed) {
+                      blinkStateRef.current = 'eyes_closed';
+                    }
+                  } else if (blinkStateRef.current === 'eyes_closed') {
+                    if (!quality.eyesClosed && (quality.ear ?? 0.3) >= 0.22) {
+                      blinkStateRef.current = 'verified';
+                      livenessVerifiedRef.current = true;
+                      setLivenessVerified(true);
+                    }
+                  }
+
+                  if (!livenessVerifiedRef.current) {
+                    stableFrames = 0;
+                    setProgress(30);
+                    setScanMessage('👁️ Blink your eyes to verify liveness (anti-spoof check)');
+                    await new Promise((r) => setTimeout(r, 250));
+                    continue;
+                  }
+                }
+
                 stableFrames++;
                 setProgress(Math.min(35 + stableFrames * 30, 95));
 
@@ -575,6 +603,27 @@ export function FaceCapture({
             await new Promise((r) => setTimeout(r, 400));
             continue;
           }
+
+          // Real-time Blink Liveness Anti-Spoofing check
+          if (!livenessVerifiedRef.current) {
+            if (blinkStateRef.current === 'looking') {
+              if (quality.eyesClosed) {
+                blinkStateRef.current = 'eyes_closed';
+              }
+            } else if (blinkStateRef.current === 'eyes_closed') {
+              if (!quality.eyesClosed && (quality.ear ?? 0.3) >= 0.22) {
+                blinkStateRef.current = 'verified';
+                livenessVerifiedRef.current = true;
+                setLivenessVerified(true);
+              }
+            }
+
+            if (!livenessVerifiedRef.current) {
+              setScanMessage('👁️ Blink your eyes to verify liveness (anti-spoof check)');
+              await new Promise((r) => setTimeout(r, 250));
+              continue;
+            }
+          }
         }
 
         const enrolledImage = registeredImageRef.current;
@@ -638,6 +687,11 @@ export function FaceCapture({
    */
   const handleManualSnap = useCallback(async (customImg?: string) => {
     if (state === 'success') return;
+
+    if (!livenessVerifiedRef.current) {
+      setScanMessage('⚠️ Please blink to verify liveness before capturing.');
+      return;
+    }
 
     const img = customImg || captureFrame();
     if (!img) {
@@ -841,6 +895,9 @@ export function FaceCapture({
     setProgress(0);
     setCapturedImage(null);
     setMismatchError(null);
+    livenessVerifiedRef.current = false;
+    setLivenessVerified(false);
+    blinkStateRef.current = 'looking';
     hasStartedRef.current = false;
     startScan();
   };
@@ -890,6 +947,17 @@ export function FaceCapture({
             {/* Center face guide banner */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
               👤 Center Face inside the Oval
+            </div>
+
+            {/* Anti-Spoof Liveness Indicator Badge */}
+            <div
+              className={`absolute top-10 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full border text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20 flex items-center gap-1.5 transition-colors ${
+                livenessVerified
+                  ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
+                  : 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse'
+              }`}
+            >
+              <span>{livenessVerified ? '✓ Liveness Verified (Anti-Spoof)' : '👁️ Blink to Verify Liveness'}</span>
             </div>
 
             {/* Obstruction warning banner within viewport */}

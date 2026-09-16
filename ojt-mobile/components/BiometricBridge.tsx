@@ -391,6 +391,17 @@ const BRIDGE_HTML = `
                 maskDetected = true;
               }
             }
+
+            // 5. EAR Liveness Anti-Spoof Detection
+            let ear = 0.30;
+            let eyesClosed = false;
+            if (landmarks && landmarks.length >= 68) {
+              const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+              const rEAR = (dist(landmarks[37], landmarks[41]) + dist(landmarks[38], landmarks[40])) / (2.0 * Math.max(1, dist(landmarks[36], landmarks[39])));
+              const lEAR = (dist(landmarks[43], landmarks[47]) + dist(landmarks[44], landmarks[46])) / (2.0 * Math.max(1, dist(landmarks[42], landmarks[45])));
+              ear = (rEAR + lEAR) / 2.0;
+              eyesClosed = ear < 0.20;
+            }
           }
         } else {
           hasFace = true;
@@ -409,7 +420,9 @@ const BRIDGE_HTML = `
           poorBackgroundLighting,
           tooDark: avgLum < 38 || poorBackgroundLighting,
           tooBright: avgLum > 240,
-          brightness: avgLum
+          brightness: avgLum,
+          ear: typeof ear !== 'undefined' ? parseFloat(ear.toFixed(3)) : 0.30,
+          eyesClosed: Boolean(eyesClosed)
         });
       } catch (err) {
         sendToNative({

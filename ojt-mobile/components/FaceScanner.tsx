@@ -66,6 +66,11 @@ export default function FaceScanner({
   const [deepFaceModel, setDeepFaceModel] = useState<DeepFaceModel>('VGG-Face');
   const [deepFaceResult, setDeepFaceResult] = useState<DeepFaceVerifyResult | null>(null);
 
+  // Blink Liveness Anti-Spoof Detection State
+  const [livenessVerified, setLivenessVerified] = useState(false);
+  const livenessVerifiedRef = useRef(false);
+  const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
+
   const cameraRef = useRef<CameraView | null>(null);
   const isScanningRef = useRef(false);
   const isMountedRef = useRef(true);
@@ -283,7 +288,31 @@ export default function FaceScanner({
           return;
         }
 
-        // 2. Mode-Specific Evaluation
+        // 2. Anti-Spoof Blink Liveness Detection (Prevents photo-of-a-photo / screen spoofing)
+        if (!livenessVerifiedRef.current) {
+          if (blinkStateRef.current === 'looking') {
+            if (quality.eyesClosed) {
+              blinkStateRef.current = 'eyes_closed';
+            }
+          } else if (blinkStateRef.current === 'eyes_closed') {
+            if (!quality.eyesClosed && (quality.ear ?? 0.30) >= 0.22) {
+              blinkStateRef.current = 'verified';
+              livenessVerifiedRef.current = true;
+              setLivenessVerified(true);
+            }
+          }
+
+          if (!livenessVerifiedRef.current) {
+            consecutiveStable = 0;
+            setStableCount(0);
+            setScanStatus('analyzing');
+            setStatusMessage('👁️ Blink to verify liveness (anti-spoof check)');
+            Animated.timing(progressAnim, { toValue: 0.35, duration: 200, useNativeDriver: false }).start();
+            return;
+          }
+        }
+
+        // 3. Mode-Specific Evaluation
         if (mode === 'enroll') {
           // Continuous Face Enrollment: Count 3 stable frames and auto-complete
           consecutiveStable++;
@@ -392,6 +421,14 @@ export default function FaceScanner({
 
       // Enforce fail-closed obstruction and background lighting checks
       const quality = await biometricService.inspectQuality(base64Data);
+      if (!livenessVerifiedRef.current) {
+        setScanStatus('failed');
+        setErrorMessage('⚠️ Liveness check required! Please blink your eyes in front of the camera before capturing.');
+        setStatusMessage('👁️ Blink to verify liveness');
+        setIsCapturing(false);
+        return;
+      }
+
       if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected || quality.poorBackgroundLighting || quality.tooDark) {
         setScanStatus('failed');
         try {
@@ -483,6 +520,9 @@ export default function FaceScanner({
 
   function handleResetScan() {
     hasFinishedRef.current = false;
+    livenessVerifiedRef.current = false;
+    setLivenessVerified(false);
+    blinkStateRef.current = 'looking';
     setScanStatus('aligning');
     setStatusMessage('Position face inside the oval');
     setErrorMessage(null);
@@ -617,6 +657,24 @@ export default function FaceScanner({
               numberOfLines={1}
             >
               {statusMessage}
+            </Text>
+          </View>
+
+          {/* Anti-Spoof Liveness Indicator Badge */}
+          <View
+            style={[
+              styles.livenessBadge,
+              livenessVerified ? styles.livenessBadgeVerified : styles.livenessBadgePending,
+            ]}
+          >
+            <Eye size={12} color={livenessVerified ? '#4ade80' : '#facc15'} />
+            <Text
+              style={[
+                styles.livenessBadgeText,
+                { color: livenessVerified ? '#4ade80' : '#facc15' },
+              ]}
+            >
+              {livenessVerified ? '✓ Liveness Verified (Anti-Spoof)' : '👁️ Blink to Verify Liveness'}
             </Text>
           </View>
 
@@ -817,6 +875,29 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 13,
     fontWeight: '700',
+  },
+  livenessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 10,
+    borderWidth: 1,
+  },
+  livenessBadgeVerified: {
+    backgroundColor: 'rgba(6, 78, 59, 0.85)',
+    borderColor: '#22c55e',
+  },
+  livenessBadgePending: {
+    backgroundColor: 'rgba(113, 63, 18, 0.85)',
+    borderColor: '#facc15',
+  },
+  livenessBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   guideOval: {
     width: FRAME_WIDTH,

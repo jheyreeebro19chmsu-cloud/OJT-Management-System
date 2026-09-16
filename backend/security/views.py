@@ -25,7 +25,7 @@ import urllib.parse
 import requests
 
 from .api_auth import require_security_api_key, require_jwt
-from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness
+from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness, validate_image_quality
 from .models import FaceRegistration, AttendancePhoto
 from .models import OTPVerification
 from .models import OTPAuditLog
@@ -416,6 +416,34 @@ def enroll_face(request: HttpRequest) -> JsonResponse:
         if not captured:
             return JsonResponse({'error': 'captured_image required'}, status=400)
 
+        # Image Quality Gating at Enrollment: Reject blurry, tiny, or degraded reference images
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.jpg')
+        try:
+            raw_bytes = base64.b64decode(captured.split(',')[1]) if ',' in captured else base64.b64decode(captured)
+            with open(temp_path, 'wb') as f:
+                f.write(raw_bytes)
+            quality_check = validate_image_quality(temp_path)
+            if not quality_check.get('valid', True):
+                return JsonResponse(
+                    {
+                        'success': False,
+                        'message': quality_check['message'],
+                        'status': quality_check['status'],
+                        'recommendations': quality_check.get('recommendations', [])
+                    },
+                    status=422
+                )
+        except Exception as q_err:
+            logger.warning(f"Enrollment quality validation bypassable error: {q_err}")
+        finally:
+            try:
+                os.close(temp_fd)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+
         # create or update FaceRegistration for this user
         # Use the canonical `emp_{id}` prefix used elsewhere (complete_trainee_registration)
         emp_id = f"emp_{user.id}"
@@ -573,15 +601,15 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 {"success": False, "message": "captured_image is required."},
                 status=400,
             )
-        unknown_image = face_recognition.load_image_file(decode_base64_image(captured_b64))
+        bio = decode_base64_image(captured_b64)
+        unknown_image = face_recognition.load_image_file(bio)
         import tempfile
         temp_fd, capture_image_path = tempfile.mkstemp(suffix='.jpg')
         try:
-            from PIL import Image as PILImage
-            pil_img = PILImage.fromarray(unknown_image)
-            pil_img.save(capture_image_path, 'JPEG')
+            with open(capture_image_path, 'wb') as f:
+                f.write(bio.getvalue())
         except Exception as e:
-            logger.warning(f"Could not save temporary image for brightness check: {e}")
+            logger.warning(f"Could not save temporary image for quality check: {e}")
             capture_image_path = None
         finally:
             try:
@@ -590,16 +618,17 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 pass
 
     if capture_image_path:
-        brightness_check = validate_image_brightness(capture_image_path)
-        if brightness_check['status'] == 'dark':
-            logger.warning(f"Captured image too dark for {employee_id}: brightness {brightness_check['brightness']:.1f}")
+        quality_check = validate_image_quality(capture_image_path)
+        if not quality_check.get('valid', True):
+            logger.warning(f"Captured image failed quality gate for {employee_id}: {quality_check['status']} - {quality_check['message']}")
             return JsonResponse(
                 {
                     "success": False,
-                    "message": "The image is too dark. Please capture in a brighter environment.",
-                    "status": brightness_check['status'],
-                    "brightness": brightness_check['brightness'],
-                    "recommendations": brightness_check['recommendations']
+                    "message": quality_check['message'],
+                    "status": quality_check['status'],
+                    "brightness": quality_check.get('brightness', 128.0),
+                    "blur_score": quality_check.get('blur_score', 0.0),
+                    "recommendations": quality_check.get('recommendations', [])
                 },
                 status=422
             )

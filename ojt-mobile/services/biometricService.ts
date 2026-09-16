@@ -23,6 +23,8 @@ export interface BiometricQualityResult {
   glassesDetected?: boolean;
   maskDetected?: boolean;
   faceObscured?: boolean;
+  ear?: number;
+  eyesClosed?: boolean;
   error?: string;
 }
 

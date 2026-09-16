@@ -318,6 +318,8 @@ export interface FaceQualityReport {
   faceCentered: boolean;
   brightness: number;
   sharpness: number;
+  ear: number;
+  eyesClosed: boolean;
 }
 
 /**
@@ -339,6 +341,8 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     faceCentered: true,
     brightness: 120,
     sharpness: 25,
+    ear: 0.30,
+    eyesClosed: false,
   };
 
   if (!dataUrl) {
@@ -634,6 +638,34 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
             result.maskDetected = true;
             result.issues.push('🚨 FACE MASK DETECTED! Please remove your face mask to scan.');
           }
+        }
+
+        // 5. Eye Aspect Ratio (EAR) for Blink Liveness Anti-Spoofing Detection
+        if (landmarks && landmarks.length >= 68) {
+          const dist = (p1: { x: number; y: number }, p2: { x: number; y: number }) =>
+            Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+          // Right eye: landmarks 36 to 41
+          const rP1 = landmarks[36];
+          const rP2 = landmarks[37];
+          const rP3 = landmarks[38];
+          const rP4 = landmarks[39];
+          const rP5 = landmarks[40];
+          const rP6 = landmarks[41];
+          const rEAR = (dist(rP2, rP6) + dist(rP3, rP5)) / (2.0 * Math.max(1, dist(rP1, rP4)));
+
+          // Left eye: landmarks 42 to 47
+          const lP1 = landmarks[42];
+          const lP2 = landmarks[43];
+          const lP3 = landmarks[44];
+          const lP4 = landmarks[45];
+          const lP5 = landmarks[46];
+          const lP6 = landmarks[47];
+          const lEAR = (dist(lP2, lP6) + dist(lP3, lP5)) / (2.0 * Math.max(1, dist(lP1, lP4)));
+
+          const avgEAR = (rEAR + lEAR) / 2.0;
+          result.ear = Number(avgEAR.toFixed(3));
+          result.eyesClosed = avgEAR < 0.20;
         }
 
         result.faceObscured = Boolean(

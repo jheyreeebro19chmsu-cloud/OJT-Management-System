@@ -54,20 +54,35 @@ def safe_float(value: object, default: float = 0.0) -> float:
         return default
 
 
-def validate_image_brightness(image_path: str, min_brightness: int = 15, max_brightness: int = 245) -> Dict[str, any]:
+def validate_image_quality(
+    image_path: str,
+    min_resolution: int = 160,
+    min_brightness: int = 30,
+    max_brightness: int = 235,
+    min_contrast: int = 16,
+    min_sharpness: float = 25.0,
+) -> Dict[str, any]:
     """
-    Validate that an image has acceptable brightness for face recognition.
-    
+    Validate comprehensive image quality for biometric face registration and verification.
+    Checks resolution, sharpness (blur detection via Laplacian variance), brightness, and contrast.
+
     Args:
-        image_path: Path to the image file
-        min_brightness: Minimum acceptable brightness (0-255), default 15
-        max_brightness: Maximum acceptable brightness (0-255), default 245
-    
+        image_path: Path to image file on disk
+        min_resolution: Minimum width and height in pixels (default 160)
+        min_brightness: Minimum average luminance (default 30)
+        max_brightness: Maximum average luminance (default 235)
+        min_contrast: Minimum standard deviation of grayscale pixels (default 16)
+        min_sharpness: Minimum variance of Laplacian (default 25.0, lower is blurrier)
+
     Returns:
         dict: {
             'valid': bool,
+            'status': 'good' | 'dark' | 'bright' | 'blurry' | 'low_resolution' | 'low_contrast',
             'brightness': float,
-            'status': 'dark' | 'good' | 'bright',
+            'blur_score': float,
+            'contrast': float,
+            'width': int,
+            'height': int,
             'message': str,
             'recommendations': list[str]
         }
@@ -75,72 +90,132 @@ def validate_image_brightness(image_path: str, min_brightness: int = 15, max_bri
     try:
         from PIL import Image
         import numpy as np
-        
-        # Open image
+
         img = Image.open(image_path)
-        
-        # Convert to RGB if needed
-        if img.mode not in ['RGB', 'L']:
-            img = img.convert('RGB')
-        
-        # Convert to numpy array
-        img_array = np.array(img)
-        
-        # Convert to grayscale if RGB
-        if len(img_array.shape) == 3:
-            # Standard luminosity formula
-            gray = 0.299 * img_array[:,:,0] + 0.587 * img_array[:,:,1] + 0.114 * img_array[:,:,2]
-        else:
-            gray = img_array
-        
-        # Calculate average brightness
+        width, height = img.size
+
+        # 1. Minimum Resolution Check
+        if width < min_resolution or height < min_resolution:
+            return {
+                'valid': False,
+                'status': 'low_resolution',
+                'brightness': 128.0,
+                'blur_score': 0.0,
+                'contrast': 0.0,
+                'width': width,
+                'height': height,
+                'message': f"Image resolution is too low ({width}x{height}, minimum {min_resolution}x{min_resolution}). Move closer to camera.",
+                'recommendations': ['Move closer to the camera', 'Use a higher resolution camera stream'],
+            }
+
+        # Convert to grayscale array for luminance, blur, and contrast analysis
+        gray = np.array(img.convert('L'), dtype=np.float32)
+
         avg_brightness = float(np.mean(gray))
-        
-        # Determine status
-        if avg_brightness < min_brightness:
-            status = 'dark'
-            valid = False
-            message = f"Image too dark (brightness: {avg_brightness:.1f}/{min_brightness})"
-            recommendations = [
-                "Turn on more lights",
-                "Move to a well-lit area",
-                "Move closer to a window",
-                "Increase device brightness"
-            ]
-        elif avg_brightness > max_brightness:
-            status = 'bright'
-            valid = False
-            message = f"Image too bright (brightness: {avg_brightness:.1f}/{max_brightness})"
-            recommendations = [
-                "Move away from direct light",
-                "Reduce screen brightness",
-                "Adjust position to reduce glare"
-            ]
+        std_contrast = float(np.std(gray))
+
+        # 2. Blur / Sharpness Calculation using Discrete Laplacian Operator
+        if gray.shape[0] >= 3 and gray.shape[1] >= 3:
+            laplacian = (
+                gray[:-2, 1:-1]
+                + gray[2:, 1:-1]
+                + gray[1:-1, :-2]
+                + gray[1:-1, 2:]
+                - 4.0 * gray[1:-1, 1:-1]
+            )
+            blur_score = float(np.var(laplacian))
         else:
-            status = 'good'
-            valid = True
-            message = f"Brightness acceptable ({avg_brightness:.1f})"
-            recommendations = []
-        
-        logger.info(f"Brightness validation - Image: {image_path}, Brightness: {avg_brightness:.1f}, Status: {status}")
-        
+            blur_score = 0.0
+
+        # 3. Brightness Evaluation
+        if avg_brightness < min_brightness:
+            return {
+                'valid': False,
+                'status': 'dark',
+                'brightness': avg_brightness,
+                'blur_score': blur_score,
+                'contrast': std_contrast,
+                'width': width,
+                'height': height,
+                'message': f"The image is too dark (brightness: {avg_brightness:.1f}/{min_brightness}). Please capture in a brighter environment.",
+                'recommendations': ['Turn on more lights', 'Move in front of a light, well-lit background', 'Move closer to light'],
+            }
+
+        if avg_brightness > max_brightness:
+            return {
+                'valid': False,
+                'status': 'bright',
+                'brightness': avg_brightness,
+                'blur_score': blur_score,
+                'contrast': std_contrast,
+                'width': width,
+                'height': height,
+                'message': f"The image is overexposed with too much glare (brightness: {avg_brightness:.1f}/{max_brightness}).",
+                'recommendations': ['Avoid direct blinding glare', 'Move away from intense backlight'],
+            }
+
+        # 4. Contrast Evaluation
+        if std_contrast < min_contrast:
+            return {
+                'valid': False,
+                'status': 'low_contrast',
+                'brightness': avg_brightness,
+                'blur_score': blur_score,
+                'contrast': std_contrast,
+                'width': width,
+                'height': height,
+                'message': f"The image has poor contrast ({std_contrast:.1f}/{min_contrast}). Please ensure clear front lighting.",
+                'recommendations': ['Adjust front lighting', 'Avoid washed-out background illumination'],
+            }
+
+        # 5. Sharpness / Blur Evaluation
+        if blur_score < min_sharpness:
+            return {
+                'valid': False,
+                'status': 'blurry',
+                'brightness': avg_brightness,
+                'blur_score': blur_score,
+                'contrast': std_contrast,
+                'width': width,
+                'height': height,
+                'message': f"The image is too blurry (sharpness: {blur_score:.1f}/{min_sharpness}). Hold camera steady.",
+                'recommendations': ['Hold the device steady', 'Clean the camera lens', 'Ensure face is in focus before capturing'],
+            }
+
         return {
-            'valid': valid,
+            'valid': True,
+            'status': 'good',
             'brightness': avg_brightness,
-            'status': status,
-            'message': message,
-            'recommendations': recommendations
+            'blur_score': blur_score,
+            'contrast': std_contrast,
+            'width': width,
+            'height': height,
+            'message': 'Image quality acceptable for biometric processing.',
+            'recommendations': [],
         }
-        
+
     except Exception as e:
-        logger.error(f"Brightness validation error for {image_path}: {e}")
+        logger.error(f"Image quality validation error for {image_path}: {e}")
         return {
             'valid': False,
-            'brightness': 128,
             'status': 'unknown',
-            'message': f'Failed to validate image brightness: {str(e)}',
-            'recommendations': ['Please try again with a different image']
+            'brightness': 128.0,
+            'blur_score': 0.0,
+            'contrast': 0.0,
+            'width': 0,
+            'height': 0,
+            'message': f'Failed to validate image quality: {str(e)}',
+            'recommendations': ['Please try again with a clear photo'],
         }
+
+
+def validate_image_brightness(image_path: str, min_brightness: int = 15, max_brightness: int = 245) -> Dict[str, any]:
+    """
+    Validate image quality and brightness for face recognition.
+    Delegates to validate_image_quality for comprehensive gating.
+    """
+    res = validate_image_quality(image_path, min_brightness=min_brightness, max_brightness=max_brightness)
+    return res
 
 
 def image_binary_to_base64(image_binary: bytes, image_format: str = 'jpeg') -> str:

@@ -49,11 +49,23 @@ class ApplicationStatusEnrollTests(TestCase):
         self.assertIsNotNone(app)
         self.assertEqual(app.get('status'), 'pending')
 
+    @staticmethod
+    def _create_valid_test_image_b64():
+        from PIL import Image, ImageDraw
+        import io, base64
+        img = Image.new('RGB', (200, 200), color=(180, 180, 180))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([40, 40, 160, 160], fill=(120, 120, 120))
+        draw.ellipse([60, 60, 90, 90], fill=(50, 50, 50))
+        draw.ellipse([110, 60, 140, 90], fill=(50, 50, 50))
+        draw.line([(70, 130), (130, 130)], fill=(30, 30, 30), width=4)
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG')
+        return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+
     def test_enroll_face(self):
         url = '/api/face/enroll/'
-        # use a minimal valid 1x1 PNG base64
-        png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
-        payload = 'data:image/png;base64,' + png_b64
+        payload = self._create_valid_test_image_b64()
         # Call view directly to avoid JWT decorator complexity in tests
         from django.test import RequestFactory
         from .. import views
@@ -80,12 +92,31 @@ class ApplicationStatusEnrollTests(TestCase):
         self.assertIsNotNone(fr)
         self.assertTrue(fr.image_data is not None or fr.image)
 
-    def test_enroll_and_verify_roundtrip(self):
-        """Enroll a small image and attempt to verify using the same image as captured."""
-        url_enroll = '/api/face/enroll/'
-        url_verify = '/api/face/verify/'
+    def test_enroll_face_rejects_tiny_low_resolution_image(self):
+        """Security quality gate must reject 1x1 or tiny image templates at enrollment with HTTP 422."""
+        url = '/api/face/enroll/'
         png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
         payload = 'data:image/png;base64,' + png_b64
+        from django.test import RequestFactory
+        from .. import views
+
+        factory = RequestFactory()
+        request = factory.post(url, data=json.dumps({'captured_image': payload}), content_type='application/json')
+        refresh = RefreshToken.for_user(self.user)
+        access = str(refresh.access_token)
+        request.META['HTTP_AUTHORIZATION'] = f'Bearer {access}'
+
+        resp = views.enroll_face(request)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertFalse(data.get('success'))
+        self.assertEqual(data.get('status'), 'low_resolution')
+
+    def test_enroll_and_verify_roundtrip(self):
+        """Enroll a valid image and attempt to verify using the same image as captured."""
+        url_enroll = '/api/face/enroll/'
+        url_verify = '/api/face/verify/'
+        payload = self._create_valid_test_image_b64()
 
         from django.test import RequestFactory
         from .. import views
@@ -122,3 +153,4 @@ class ApplicationStatusEnrollTests(TestCase):
                 data2 = json.loads(resp2.content.decode())
             # Either matched or not found/no face; ensure response has expected structure
             self.assertIn('success', data2)
+

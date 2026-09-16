@@ -10,6 +10,20 @@ class VerifyFaceSecurityTests(TestCase):
         self.factory = RequestFactory()
         self.api_key = getattr(settings, 'SECURITY_API_KEY', 'default-key')
 
+    @staticmethod
+    def _create_valid_test_image_b64():
+        from PIL import Image, ImageDraw
+        import io, base64
+        img = Image.new('RGB', (200, 200), color=(180, 180, 180))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([40, 40, 160, 160], fill=(120, 120, 120))
+        draw.ellipse([60, 60, 90, 90], fill=(50, 50, 50))
+        draw.ellipse([110, 60, 140, 90], fill=(50, 50, 50))
+        draw.line([(70, 130), (130, 130)], fill=(30, 30, 30), width=4)
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG')
+        return 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+
     def _post(self, payload):
         req = self.factory.post(
             '/api/security/face/verify/',
@@ -37,10 +51,10 @@ class VerifyFaceSecurityTests(TestCase):
         # Set distance to 0.75: would match under 999, but must FAIL under fixed 0.6
         mock_face_distance.return_value = [0.75]
 
-        png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        img_b64 = self._create_valid_test_image_b64()
         payload = {
-            'registered_image': f'data:image/png;base64,{png_b64}',
-            'captured_image': f'data:image/png;base64,{png_b64}',
+            'registered_image': img_b64,
+            'captured_image': img_b64,
             'tolerance': 999.0  # Attacker attempts to bypass threshold
         }
 
@@ -59,10 +73,10 @@ class VerifyFaceSecurityTests(TestCase):
         mock_load.return_value = MagicMock()
         mock_encode.return_value = [MagicMock()]
 
-        png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        img_b64 = self._create_valid_test_image_b64()
         payload = {
-            'registered_image': f'data:image/png;base64,{png_b64}',
-            'captured_image': f'data:image/png;base64,{png_b64}',
+            'registered_image': img_b64,
+            'captured_image': img_b64,
             # Attacker attempts to force a weak model and detector
             'model_name': 'WeakModel',
             'detector_backend': 'opencv',
@@ -98,10 +112,10 @@ class VerifyFaceSecurityTests(TestCase):
         mock_load.return_value = MagicMock()
         mock_encode.return_value = [MagicMock()]
 
-        png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        img_b64 = self._create_valid_test_image_b64()
         payload = {
-            'registered_image': f'data:image/png;base64,{png_b64}',
-            'captured_image': f'data:image/png;base64,{png_b64}',
+            'registered_image': img_b64,
+            'captured_image': img_b64,
         }
 
         mock_verify_pair = MagicMock(return_value={
@@ -126,10 +140,10 @@ class VerifyFaceSecurityTests(TestCase):
         # First call encodes registered image (1 face), second call encodes captured image (2 faces)
         mock_encode.side_effect = [[MagicMock()], [MagicMock(), MagicMock()]]
 
-        png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        img_b64 = self._create_valid_test_image_b64()
         payload = {
-            'registered_image': f'data:image/png;base64,{png_b64}',
-            'captured_image': f'data:image/png;base64,{png_b64}',
+            'registered_image': img_b64,
+            'captured_image': img_b64,
         }
 
         # Force dlib fallback path
@@ -140,3 +154,72 @@ class VerifyFaceSecurityTests(TestCase):
             data = json.loads(resp.content.decode())
             self.assertIn('Multiple faces detected', data.get('message', ''))
             self.assertEqual(data.get('faces_detected'), 2)
+
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_verify_face_rejects_low_resolution_image(self, mock_encode, mock_load):
+        """Low-resolution images (<160px) must be rejected with HTTP 422 and status 'low_resolution'."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        png_1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+        payload = {
+            'registered_image': self._create_valid_test_image_b64(),
+            'captured_image': f'data:image/png;base64,{png_1x1}',
+        }
+        req = self._post(payload)
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertEqual(data.get('status'), 'low_resolution')
+        self.assertFalse(data.get('success'))
+
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_verify_face_rejects_dark_image(self, mock_encode, mock_load):
+        """Dark images (<30 avg brightness) must be rejected with HTTP 422 and status 'dark'."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        from PIL import Image
+        import io, base64
+        # Completely dark image (all black 200x200)
+        img = Image.new('RGB', (200, 200), color=(5, 5, 5))
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG')
+        dark_b64 = 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+        payload = {
+            'registered_image': self._create_valid_test_image_b64(),
+            'captured_image': dark_b64,
+        }
+        req = self._post(payload)
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertEqual(data.get('status'), 'dark')
+        self.assertFalse(data.get('success'))
+
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_verify_face_rejects_low_contrast_image(self, mock_encode, mock_load):
+        """Low-contrast / flat images must be rejected with HTTP 422 and status 'low_contrast'."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        from PIL import Image
+        import io, base64
+        # Completely uniform gray image (std dev < 16)
+        img = Image.new('RGB', (200, 200), color=(128, 128, 128))
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG')
+        flat_b64 = 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+        payload = {
+            'registered_image': self._create_valid_test_image_b64(),
+            'captured_image': flat_b64,
+        }
+        req = self._post(payload)
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertEqual(data.get('status'), 'low_contrast')
+        self.assertFalse(data.get('success'))
+
