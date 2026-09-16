@@ -14,6 +14,7 @@ export interface DeepFaceVerifyOptions {
   distanceMetric?: 'cosine' | 'euclidean';
   employeeId?: string;
   timeoutMs?: number;
+  blinkImage?: string;
 }
 
 export interface DeepFaceVerifyResult {
@@ -28,6 +29,7 @@ export interface DeepFaceVerifyResult {
   detector_backend: string;    // Detector used: 'retinaface', etc.
   similarity_metric: string;   // 'cosine' | 'euclidean'
   backend: 'deepface' | 'on-device-fallback';
+  liveness_verified?: boolean;
   message: string;
   error?: string;
 }
@@ -126,6 +128,16 @@ class DeepFaceService {
           type: 'image/jpeg',
         } as any);
 
+        if (options.blinkImage) {
+          formData.append('blink_image', {
+            uri: options.blinkImage.startsWith('data:')
+              ? options.blinkImage
+              : `data:image/jpeg;base64,${options.blinkImage}`,
+            name: 'blink.jpg',
+            type: 'image/jpeg',
+          } as any);
+        }
+
         // Server is authoritative: model_name, detector_backend, and distance_metric
         // are hardcoded server-side and no longer sent by the client.
 
@@ -152,7 +164,7 @@ class DeepFaceService {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeout);
 
-        // Server is authoritative: only send images and employee_id.
+        // Server is authoritative: only send images, employee_id, and server-side liveness proof.
         // model_name, detector_backend, distance_metric, and tolerance are enforced server-side.
         const res = await fetch(`${baseUrl}/api/security/face/verify/`, {
           method: 'POST',
@@ -161,6 +173,8 @@ class DeepFaceService {
             registered_image: registeredImageBase64,
             captured_image: capturedImageBase64,
             employee_id: options.employeeId,
+            blink_image: options.blinkImage,
+            require_liveness: Boolean(options.blinkImage),
           }),
           signal: controller.signal,
         });

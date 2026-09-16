@@ -25,7 +25,14 @@ import urllib.parse
 import requests
 
 from .api_auth import require_security_api_key, require_jwt
-from .utils import decode_base64_image, find_nearest_zone, safe_float, validate_image_brightness, validate_image_quality
+from .utils import (
+    decode_base64_image,
+    find_nearest_zone,
+    safe_float,
+    validate_image_brightness,
+    validate_image_quality,
+    verify_server_liveness,
+)
 from .models import FaceRegistration, AttendancePhoto
 from .models import OTPVerification
 from .models import OTPAuditLog
@@ -633,6 +640,51 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=422
             )
 
+    # SERVER-SIDE LIVENESS PROOF VERIFICATION:
+    # If blink_image or liveness_proof is provided (or if require_liveness is enabled),
+    # the server independently validates 68-landmark eye-closure transitions.
+    blink_b64 = data.get("blink_image") or data.get("liveness_proof")
+    blink_file = request.FILES.get("blink_image") or request.FILES.get("liveness_proof")
+    require_liveness = bool(data.get("require_liveness", False) or getattr(settings, "ENFORCE_SERVER_LIVENESS", False))
+    liveness_verified = False
+
+    if blink_file or blink_b64:
+        try:
+            if blink_file:
+                blink_image = face_recognition.load_image_file(blink_file)
+            else:
+                blink_image = face_recognition.load_image_file(decode_base64_image(blink_b64))
+
+            liveness_res = verify_server_liveness(unknown_image, blink_image)
+            if not liveness_res.get("verified", False):
+                logger.warning(f"Server liveness verification rejected for {employee_id}: {liveness_res.get('message')}")
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "status": "liveness_failed",
+                        "message": liveness_res.get("message", "Server liveness check failed."),
+                        "details": liveness_res,
+                    },
+                    status=422,
+                )
+            liveness_verified = True
+        except Exception as live_err:
+            logger.warning(f"Server liveness verification exception: {live_err}")
+            if require_liveness:
+                return JsonResponse(
+                    {"success": False, "status": "liveness_error", "message": f"Server liveness verification error: {live_err}"},
+                    status=422,
+                )
+    elif require_liveness:
+        return JsonResponse(
+            {
+                "success": False,
+                "status": "liveness_required",
+                "message": "Server-side liveness proof (blink_image) is required for attendance verification.",
+            },
+            status=422,
+        )
+
     # Attempt primary DeepFace verification if available.
     # SECURITY: model_name/detector_backend/distance_metric are hardcoded —
     # never taken from the request. enforce_detection=True so occluded/
@@ -648,6 +700,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 enforce_detection=True,
             )
             if df_result.get("success"):
+                df_result["liveness_verified"] = liveness_verified
                 return JsonResponse(df_result)
 
             # If DeepFace explicitly couldn't detect a face (occlusion, bad
@@ -689,6 +742,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             "distance": float(distance),
             "tolerance": float(tolerance),
             "confidence": confidence,
+            "liveness_verified": liveness_verified,
             "message": "Face matched." if matched else "Face did not match.",
         }
     )

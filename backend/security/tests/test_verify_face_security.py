@@ -223,3 +223,80 @@ class VerifyFaceSecurityTests(TestCase):
         self.assertEqual(data.get('status'), 'low_contrast')
         self.assertFalse(data.get('success'))
 
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_verify_face_rejects_missing_liveness_when_required(self, mock_encode, mock_load):
+        """When server requires liveness, missing blink_image must return HTTP 422."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        img_b64 = self._create_valid_test_image_b64()
+
+        payload = {
+            'registered_image': img_b64,
+            'captured_image': img_b64,
+            'require_liveness': True,  # Server requires liveness proof
+        }
+        req = self._post(payload)
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertEqual(data.get('status'), 'liveness_required')
+        self.assertIn('Server-side liveness proof', data.get('message', ''))
+
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    @patch('security.views.verify_server_liveness')
+    def test_verify_face_rejects_invalid_liveness_proof(self, mock_liveness, mock_encode, mock_load):
+        """When blink proof does not show eye closure, server rejects with HTTP 422."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        mock_liveness.return_value = {
+            'verified': False,
+            'status': 'no_blink',
+            'message': 'Liveness check failed: No eye closure detected.'
+        }
+        img_b64 = self._create_valid_test_image_b64()
+
+        payload = {
+            'registered_image': img_b64,
+            'captured_image': img_b64,
+            'blink_image': img_b64,  # Static photo passed as fake blink proof
+        }
+        req = self._post(payload)
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertEqual(data.get('status'), 'liveness_failed')
+        self.assertIn('No eye closure detected', data.get('message', ''))
+
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    @patch('security.views.verify_server_liveness')
+    @patch('face_recognition.face_distance')
+    def test_verify_face_accepts_valid_server_liveness_proof(self, mock_face_distance, mock_liveness, mock_encode, mock_load):
+        """When genuine blink proof is provided and verified by server, response has liveness_verified=True."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        mock_face_distance.return_value = [0.25]
+        mock_liveness.return_value = {
+            'verified': True,
+            'status': 'verified',
+            'open_ear': 0.32,
+            'blink_ear': 0.14,
+            'message': 'Server liveness verified.'
+        }
+        img_b64 = self._create_valid_test_image_b64()
+
+        payload = {
+            'registered_image': img_b64,
+            'captured_image': img_b64,
+            'blink_image': img_b64,
+        }
+        req = self._post(payload)
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content.decode())
+        self.assertTrue(data.get('matched'))
+        self.assertTrue(data.get('liveness_verified'))
+
+

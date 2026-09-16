@@ -75,6 +75,7 @@ export function FaceCapture({
   const [livenessVerified, setLivenessVerified] = useState(false);
   const livenessVerifiedRef = useRef(false);
   const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
+  const blinkFrameRef = useRef<string | null>(null);
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
@@ -486,6 +487,7 @@ export function FaceCapture({
                   if (blinkStateRef.current === 'looking') {
                     if (quality.eyesClosed) {
                       blinkStateRef.current = 'eyes_closed';
+                      blinkFrameRef.current = currentFrame;
                     }
                   } else if (blinkStateRef.current === 'eyes_closed') {
                     if (!quality.eyesClosed && (quality.ear ?? 0.3) >= 0.22) {
@@ -609,6 +611,7 @@ export function FaceCapture({
             if (blinkStateRef.current === 'looking') {
               if (quality.eyesClosed) {
                 blinkStateRef.current = 'eyes_closed';
+                blinkFrameRef.current = currentFrame;
               }
             } else if (blinkStateRef.current === 'eyes_closed') {
               if (!quality.eyesClosed && (quality.ear ?? 0.3) >= 0.22) {
@@ -819,8 +822,16 @@ export function FaceCapture({
     const empId = employeeIdRef.current;
     if (isSecurityApiConfigured() && (empId || enrolledImage)) {
       try {
-        const payload: { employee_id?: string; registered_image?: string; captured_image: string } = {
+        const payload: {
+          employee_id?: string;
+          registered_image?: string;
+          captured_image: string;
+          blink_image?: string;
+          require_liveness?: boolean;
+        } = {
           captured_image: img,
+          blink_image: blinkFrameRef.current || undefined,
+          require_liveness: Boolean(blinkFrameRef.current),
         };
         if (empId) payload.employee_id = empId;
         else if (enrolledImage) payload.registered_image = enrolledImage;
@@ -898,6 +909,7 @@ export function FaceCapture({
     livenessVerifiedRef.current = false;
     setLivenessVerified(false);
     blinkStateRef.current = 'looking';
+    blinkFrameRef.current = null;
     hasStartedRef.current = false;
     startScan();
   };

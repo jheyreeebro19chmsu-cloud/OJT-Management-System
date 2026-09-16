@@ -20,6 +20,7 @@ export interface FaceVerifyResponse {
   threshold?: number;
   confidence?: number;
   similarity_percent?: number;
+  liveness_verified?: boolean;
   model?: string;
   detector_backend?: string;
   backend?: string;
@@ -129,6 +130,8 @@ export async function verifyFace(payload: {
   employee_id?: string;
   registered_image?: string;
   captured_image: string;
+  blink_image?: string;
+  require_liveness?: boolean;
   tolerance?: number;
 }): Promise<FaceVerifyResponse> {
   const body: Record<string, unknown> = { ...payload };

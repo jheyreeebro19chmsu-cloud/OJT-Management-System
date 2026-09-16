@@ -311,3 +311,96 @@ def delete_image_from_database(model_instance):
     
     except Exception as e:
         logger.error(f"Error deleting image from database: {e}")
+
+
+def calculate_eye_aspect_ratio(eye_landmarks: List[Tuple[int, int]]) -> float:
+    """
+    Calculate the Eye Aspect Ratio (EAR) given 6 (x, y) coordinates of an eye.
+    EAR = (|p2 - p6| + |p3 - p5|) / (2 * |p1 - p4|)
+    """
+    if not eye_landmarks or len(eye_landmarks) < 6:
+        return 0.30
+
+    def dist(p1, p2):
+        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+    p1, p2, p3, p4, p5, p6 = eye_landmarks[:6]
+    horizontal = dist(p1, p4)
+    if horizontal < 1e-6:
+        return 0.30
+    vertical1 = dist(p2, p6)
+    vertical2 = dist(p3, p5)
+    return float((vertical1 + vertical2) / (2.0 * horizontal))
+
+
+def verify_server_liveness(
+    open_image,
+    blink_image,
+    max_blink_ear: float = 0.20,
+    min_open_ear: float = 0.21,
+) -> Dict[str, any]:
+    """
+    Server-side anti-spoof liveness verification.
+    Validates that:
+    1. Both images contain a detectable face with 68 landmarks.
+    2. In blink_image, the eye aspect ratio indicates closed eyes (EAR < max_blink_ear).
+    3. In open_image, the eye aspect ratio indicates open eyes (EAR >= min_open_ear).
+    """
+    try:
+        import face_recognition
+        open_landmarks = face_recognition.face_landmarks(open_image)
+        blink_landmarks = face_recognition.face_landmarks(blink_image)
+
+        if not open_landmarks or not blink_landmarks:
+            return {
+                'verified': False,
+                'status': 'no_landmarks',
+                'message': 'Liveness check failed: Could not detect facial landmarks in one or both frames.'
+            }
+
+        ol = open_landmarks[0]
+        bl = blink_landmarks[0]
+
+        open_left = calculate_eye_aspect_ratio(ol.get('left_eye', []))
+        open_right = calculate_eye_aspect_ratio(ol.get('right_eye', []))
+        open_ear = (open_left + open_right) / 2.0
+
+        blink_left = calculate_eye_aspect_ratio(bl.get('left_eye', []))
+        blink_right = calculate_eye_aspect_ratio(bl.get('right_eye', []))
+        blink_ear = (blink_left + blink_right) / 2.0
+
+        # Verify eye closure in blink frame
+        if blink_ear >= max_blink_ear:
+            return {
+                'verified': False,
+                'status': 'no_blink',
+                'open_ear': float(open_ear),
+                'blink_ear': float(blink_ear),
+                'message': f"Liveness check failed: No eye closure detected (blink EAR {blink_ear:.2f} >= {max_blink_ear})."
+            }
+
+        # Verify eyes open in primary capture frame
+        if open_ear < min_open_ear:
+            return {
+                'verified': False,
+                'status': 'eyes_closed_in_capture',
+                'open_ear': float(open_ear),
+                'blink_ear': float(blink_ear),
+                'message': f"Liveness check failed: Eyes closed in primary capture frame (EAR {open_ear:.2f} < {min_open_ear})."
+            }
+
+        return {
+            'verified': True,
+            'status': 'verified',
+            'open_ear': float(open_ear),
+            'blink_ear': float(blink_ear),
+            'message': 'Server liveness verified.'
+        }
+    except Exception as e:
+        logger.warning(f"Server liveness verification error: {e}")
+        return {
+            'verified': False,
+            'status': 'error',
+            'message': f"Liveness verification encountered an error: {str(e)}"
+        }
+

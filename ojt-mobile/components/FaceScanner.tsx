@@ -70,6 +70,7 @@ export default function FaceScanner({
   const [livenessVerified, setLivenessVerified] = useState(false);
   const livenessVerifiedRef = useRef(false);
   const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
+  const blinkFrameRef = useRef<string | null>(null);
 
   const cameraRef = useRef<CameraView | null>(null);
   const isScanningRef = useRef(false);
@@ -293,6 +294,7 @@ export default function FaceScanner({
           if (blinkStateRef.current === 'looking') {
             if (quality.eyesClosed) {
               blinkStateRef.current = 'eyes_closed';
+              blinkFrameRef.current = dataUrl; // Capture proof of eye closure
             }
           } else if (blinkStateRef.current === 'eyes_closed') {
             if (!quality.eyesClosed && (quality.ear ?? 0.30) >= 0.22) {
@@ -355,7 +357,7 @@ export default function FaceScanner({
           const dfRes: DeepFaceVerifyResult = await deepfaceService.verifyFace(
             enrolledPhoto,
             dataUrl,
-            { modelName: deepFaceModel }
+            { modelName: deepFaceModel, blinkImage: blinkFrameRef.current || undefined }
           );
 
           if (!isMountedRef.current || hasFinishedRef.current) return;
@@ -468,7 +470,10 @@ export default function FaceScanner({
         }
 
         setStatusMessage('Verifying facial template...');
-        const dfRes = await deepfaceService.verifyFace(enrolledPhoto, base64Data, { modelName: deepFaceModel });
+        const dfRes = await deepfaceService.verifyFace(enrolledPhoto, base64Data, {
+          modelName: deepFaceModel,
+          blinkImage: blinkFrameRef.current || undefined,
+        });
         setDeepFaceResult(dfRes);
         if (dfRes.matched) {
           handleSuccess(base64Data, dfRes.similarity_percent, dfRes.distance);
@@ -523,6 +528,7 @@ export default function FaceScanner({
     livenessVerifiedRef.current = false;
     setLivenessVerified(false);
     blinkStateRef.current = 'looking';
+    blinkFrameRef.current = null;
     setScanStatus('aligning');
     setStatusMessage('Position face inside the oval');
     setErrorMessage(null);
