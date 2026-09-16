@@ -145,6 +145,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
   const [schoolLogo, setSchoolLogo] = useState<string | null>(null);
   const [view, setView] = useState<'login' | 'register'>('login');
   const [selectedRole, setSelectedRole] = useState<'trainee' | 'admin' | 'hte'>('trainee');
+  const [targetAuthRole, setTargetAuthRole] = useState<'trainee' | 'admin' | 'hte'>('trainee');
   const [showGoogleAuth, setShowGoogleAuth] = useState(false);
   const [pendingGoogleUser, setPendingGoogleUser] = useState<any | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -608,7 +609,11 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
   };
 
   // ─── GOOGLE OAUTH FLOW ───
-  async function handleGoogleAuthSuccess(googleSession: any, authUser: any) {
+  async function handleGoogleAuthSuccess(
+    googleSession: any,
+    authUser: any,
+    explicitRole?: 'trainee' | 'admin' | 'hte'
+  ) {
     setShowGoogleAuth(false);
     setLoading(true);
 
@@ -624,6 +629,8 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         authUser.user_metadata?.picture ||
         '';
 
+      const roleChoice = explicitRole || targetAuthRole || selectedRole || 'trainee';
+
       // 1. Check if user already exists in employees or host_supervisors table
       const { data: existingEmp } = await supabase
         .from('employees')
@@ -633,8 +640,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         .maybeSingle();
 
       if (existingEmp) {
-        // If user specifically tapped "Continue as Instructor" or "Continue as HTE", ensure their role is updated
-        if (selectedRole === 'admin') {
+        if (roleChoice === 'admin') {
           existingEmp.role = 'admin';
           existingEmp.position = 'OJT Instructor';
           existingEmp.application_status = 'approved';
@@ -646,7 +652,13 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
           } catch (syncErr) {
             console.warn('Notice syncing instructor role to DB:', syncErr);
           }
-        } else if (selectedRole === 'hte') {
+          const np = normalizeProfile(existingEmp);
+          await authStore.saveUser(np);
+          setSession(googleSession);
+          setProfile(np);
+          setLoading(false);
+          return;
+        } else if (roleChoice === 'hte') {
           existingEmp.role = 'hte';
           existingEmp.position = 'HTE Representative';
           existingEmp.application_status = 'approved';
@@ -658,14 +670,45 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
           } catch (syncErr) {
             console.warn('Notice syncing HTE role to DB:', syncErr);
           }
-        }
+          const np = normalizeProfile(existingEmp);
+          await authStore.saveUser(np);
+          setSession(googleSession);
+          setProfile(np);
+          setLoading(false);
+          return;
+        } else {
+          // roleChoice === 'trainee'
+          existingEmp.role = 'employee';
+          existingEmp.position = 'OJT Trainee';
+          try {
+            await supabase
+              .from('employees')
+              .update({ role: 'employee', position: 'OJT Trainee' })
+              .eq('id', existingEmp.id);
+          } catch (syncErr) {
+            console.warn('Notice syncing trainee role to DB:', syncErr);
+          }
 
-        const np = normalizeProfile(existingEmp);
-        await authStore.saveUser(np);
-        setSession(googleSession);
-        setProfile(np);
-        setLoading(false);
-        return;
+          if (existingEmp.face_registered) {
+            const np = normalizeProfile(existingEmp);
+            await authStore.saveUser(np);
+            setSession(googleSession);
+            setProfile(np);
+            setLoading(false);
+            return;
+          } else {
+            // New trainee or face not yet enrolled — complete registration
+            setPendingGoogleUser({
+              id: authId,
+              email: authEmail,
+              fullName,
+              photo: avatarUrl || existingEmp.photo,
+            });
+            setLoading(false);
+            setView('register');
+            return;
+          }
+        }
       }
 
       // Check host_supervisors if not in employees
@@ -677,29 +720,29 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         .maybeSingle();
 
       if (existingHost) {
-        const hostProfile = {
-          id: existingHost.id,
-          name: existingHost.name,
-          email: existingHost.email,
-          role: 'hte',
-          position: 'HTE Representative',
-          companyName: existingHost.company_name,
-          supervisorName: existingHost.name,
-          active: existingHost.active !== false,
-          application_status: 'approved',
-        };
-        const np = normalizeProfile(hostProfile);
-        await authStore.saveUser(np);
-        setSession(googleSession);
-        setProfile(np);
-        setLoading(false);
-        return;
+        if (roleChoice === 'hte' || roleChoice === 'admin') {
+          const hostProfile = {
+            id: existingHost.id,
+            name: existingHost.name,
+            email: existingHost.email,
+            role: roleChoice === 'admin' ? 'admin' : 'hte',
+            position: roleChoice === 'admin' ? 'OJT Instructor' : 'HTE Representative',
+            companyName: existingHost.company_name,
+            supervisorName: existingHost.name,
+            active: existingHost.active !== false,
+            application_status: 'approved',
+          };
+          const np = normalizeProfile(hostProfile);
+          await authStore.saveUser(np);
+          setSession(googleSession);
+          setProfile(np);
+          setLoading(false);
+          return;
+        }
       }
 
       // 2. First-time authentication based on selected role:
-      // "the Instructor and HTE are no longer to fill up the registration, only Trainee register after google authenticate"
-      if (selectedRole === 'admin') {
-        // Instructor: Auto-provision immediately with approved status
+      if (roleChoice === 'admin') {
         const instructorData: any = {
           id: authId,
           name: fullName,
@@ -727,8 +770,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         return;
       }
 
-      if (selectedRole === 'hte') {
-        // HTE Supervisor: Auto-provision immediately with approved status
+      if (roleChoice === 'hte') {
         const hteData: any = {
           id: authId,
           name: fullName,
@@ -1996,6 +2038,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                   ]}
                   onPress={() => {
                     setSelectedRole('trainee');
+                    setTargetAuthRole('trainee');
                     setShowGoogleAuth(true);
                   }}
                 >
@@ -2018,6 +2061,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                   ]}
                   onPress={() => {
                     setSelectedRole('admin');
+                    setTargetAuthRole('admin');
                     setShowGoogleAuth(true);
                   }}
                 >
@@ -2040,6 +2084,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                   ]}
                   onPress={() => {
                     setSelectedRole('hte');
+                    setTargetAuthRole('hte');
                     setShowGoogleAuth(true);
                   }}
                 >
@@ -2075,7 +2120,10 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                 {/* Primary Google Auth Button */}
                 <TouchableOpacity
                   style={styles.googleHeroBtn}
-                  onPress={() => setShowGoogleAuth(true)}
+                  onPress={() => {
+                    setTargetAuthRole(selectedRole);
+                    setShowGoogleAuth(true);
+                  }}
                   disabled={authLoading}
                 >
                   <View style={styles.googleIconBadge}>
@@ -2222,6 +2270,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
       {/* Google Authentication WebView Modal */}
       <GoogleAuthModal
         visible={showGoogleAuth}
+        targetRole={targetAuthRole}
         onClose={() => setShowGoogleAuth(false)}
         onSuccess={handleGoogleAuthSuccess}
         onError={(err) => Alert.alert('Google Sign-In', err)}

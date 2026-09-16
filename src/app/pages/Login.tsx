@@ -43,6 +43,10 @@ export function Login() {
         provider: 'google',
         options: {
           redirectTo: `${redirectOrigin}/oauth-callback`,
+          queryParams: {
+            prompt: 'select_account',
+            access_type: 'offline',
+          },
         },
       });
       if (oauthError) {

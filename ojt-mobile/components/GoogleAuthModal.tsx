@@ -15,8 +15,9 @@ import { supabase } from '../lib/supabase';
 
 interface GoogleAuthModalProps {
   visible: boolean;
+  targetRole?: 'trainee' | 'admin' | 'hte';
   onClose: () => void;
-  onSuccess: (session: any, user: any) => void;
+  onSuccess: (session: any, user: any, role?: 'trainee' | 'admin' | 'hte') => void;
   onError: (errorMessage: string) => void;
 }
 
@@ -24,6 +25,7 @@ const REDIRECT_URI = 'https://chmsuojtmis.site/oauth-callback';
 
 export default function GoogleAuthModal({
   visible,
+  targetRole,
   onClose,
   onSuccess,
   onError,
@@ -52,6 +54,10 @@ export default function GoogleAuthModal({
             provider: 'google',
             options: {
               redirectTo: `${origin}/oauth-callback`,
+              queryParams: {
+                prompt: 'select_account',
+                access_type: 'offline',
+              },
             },
           });
           return;
@@ -62,12 +68,20 @@ export default function GoogleAuthModal({
           options: {
             skipBrowserRedirect: true,
             redirectTo: REDIRECT_URI,
+            queryParams: {
+              prompt: 'select_account',
+              access_type: 'offline',
+            },
           },
         });
 
         if (error) throw error;
         if (data?.url && isMounted) {
-          setAuthUrl(data.url);
+          let targetUrl = data.url;
+          if (!targetUrl.includes('prompt=')) {
+            targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'prompt=select_account';
+          }
+          setAuthUrl(targetUrl);
         } else {
           throw new Error('No authorization URL returned from Supabase.');
         }
@@ -118,7 +132,7 @@ export default function GoogleAuthModal({
 
           if (sessionErr) throw sessionErr;
           if (sessionData?.session && sessionData?.user) {
-            onSuccess(sessionData.session, sessionData.user);
+            onSuccess(sessionData.session, sessionData.user, targetRole);
             onClose();
             return;
           }
@@ -130,7 +144,7 @@ export default function GoogleAuthModal({
           const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeErr) throw exchangeErr;
           if (exchangeData?.session && exchangeData?.user) {
-            onSuccess(exchangeData.session, exchangeData.user);
+            onSuccess(exchangeData.session, exchangeData.user, targetRole);
             onClose();
             return;
           }
@@ -139,7 +153,7 @@ export default function GoogleAuthModal({
         // Case 3: Read current session from supabase storage
         const { data: currentSession } = await supabase.auth.getSession();
         if (currentSession?.session?.user) {
-          onSuccess(currentSession.session, currentSession.session.user);
+          onSuccess(currentSession.session, currentSession.session.user, targetRole);
           onClose();
           return;
         }
@@ -148,7 +162,7 @@ export default function GoogleAuthModal({
         setTimeout(async () => {
           const { data: delayedSession } = await supabase.auth.getSession();
           if (delayedSession?.session?.user) {
-            onSuccess(delayedSession.session, delayedSession.session.user);
+            onSuccess(delayedSession.session, delayedSession.session.user, targetRole);
             onClose();
           } else {
             setHandlingCallback(false);
