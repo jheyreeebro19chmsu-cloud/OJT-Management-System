@@ -25,7 +25,15 @@ class EmpiricalOcclusionAuditTests(TestCase):
         cls.factory = RequestFactory()
         cls.api_key = getattr(settings, 'SECURITY_API_KEY', 'test-key')
 
+    def setUp(self):
+        super().setUp()
+        self.liveness_patcher = patch('security.views.verify_server_liveness', return_value={'verified': True, 'status': 'verified'})
+        self.mock_liveness = self.liveness_patcher.start()
+        self.addCleanup(self.liveness_patcher.stop)
+
     def _post_verify(self, payload):
+        if 'blink_image' not in payload and 'liveness_proof' not in payload:
+            payload['blink_image'] = payload.get('captured_image') or payload.get('registered_image')
         req = self.factory.post(
             '/api/security/face/verify/',
             data=json.dumps(payload),
@@ -239,3 +247,28 @@ class EmpiricalOcclusionAuditTests(TestCase):
             data = json.loads(resp.content.decode())
             self.assertIn('Multiple faces detected', data.get('message', ''))
             self.assertEqual(data.get('faces_detected'), 2)
+
+    # 8. Unconditional Liveness Proof Requirement
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_audit_missing_liveness_proof_unconditionally_rejected(self, mock_encode, mock_load):
+        """Omitting blink_image proof is unconditionally rejected with HTTP 422 liveness_required."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        bare_img = self._create_synthetic_face("bare")
+        req = self.factory.post(
+            '/api/security/face/verify/',
+            data=json.dumps({
+                'registered_image': bare_img,
+                'captured_image': bare_img,
+                # blink_image explicitly omitted, no require_liveness flag
+            }),
+            content_type='application/json'
+        )
+        req.META['HTTP_X_API_KEY'] = self.api_key
+        req.META['HTTP_AUTHORIZATION'] = f'Bearer {self.api_key}'
+        resp = views.verify_face(req)
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertEqual(data.get('status'), 'liveness_required')
+        self.assertIn('Server-side liveness proof', data.get('message', ''))

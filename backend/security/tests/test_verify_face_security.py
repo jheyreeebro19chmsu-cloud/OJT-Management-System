@@ -43,11 +43,13 @@ class VerifyFaceSecurityTests(TestCase):
 
     @patch('face_recognition.load_image_file')
     @patch('security.views._encode_face_with_fallback')
+    @patch('security.views.verify_server_liveness')
     @patch('face_recognition.face_distance')
-    def test_client_tolerance_bypass_is_ignored(self, mock_face_distance, mock_encode, mock_load):
+    def test_client_tolerance_bypass_is_ignored(self, mock_face_distance, mock_liveness, mock_encode, mock_load):
         """Sending tolerance=999 in request must NOT override server tolerance (0.6)."""
         mock_load.return_value = MagicMock()
         mock_encode.return_value = [MagicMock()]
+        mock_liveness.return_value = {'verified': True, 'status': 'verified'}
         # Set distance to 0.75: would match under 999, but must FAIL under fixed 0.6
         mock_face_distance.return_value = [0.75]
 
@@ -55,6 +57,7 @@ class VerifyFaceSecurityTests(TestCase):
         payload = {
             'registered_image': img_b64,
             'captured_image': img_b64,
+            'blink_image': img_b64,
             'tolerance': 999.0  # Attacker attempts to bypass threshold
         }
 
@@ -68,15 +71,18 @@ class VerifyFaceSecurityTests(TestCase):
 
     @patch('face_recognition.load_image_file')
     @patch('security.views._encode_face_with_fallback')
-    def test_deepface_invoked_with_secure_parameters_and_enforce_detection(self, mock_encode, mock_load):
+    @patch('security.views.verify_server_liveness')
+    def test_deepface_invoked_with_secure_parameters_and_enforce_detection(self, mock_liveness, mock_encode, mock_load):
         """DeepFace must be called with hardcoded retinaface, VGG-Face, cosine, and enforce_detection=True."""
         mock_load.return_value = MagicMock()
         mock_encode.return_value = [MagicMock()]
+        mock_liveness.return_value = {'verified': True, 'status': 'verified'}
 
         img_b64 = self._create_valid_test_image_b64()
         payload = {
             'registered_image': img_b64,
             'captured_image': img_b64,
+            'blink_image': img_b64,
             # Attacker attempts to force a weak model and detector
             'model_name': 'WeakModel',
             'detector_backend': 'opencv',
@@ -107,15 +113,18 @@ class VerifyFaceSecurityTests(TestCase):
 
     @patch('face_recognition.load_image_file')
     @patch('security.views._encode_face_with_fallback')
-    def test_deepface_no_face_detected_returns_422_cleanly(self, mock_encode, mock_load):
+    @patch('security.views.verify_server_liveness')
+    def test_deepface_no_face_detected_returns_422_cleanly(self, mock_liveness, mock_encode, mock_load):
         """When DeepFace returns 'No face detected', return 422 directly instead of silently falling to dlib."""
         mock_load.return_value = MagicMock()
         mock_encode.return_value = [MagicMock()]
+        mock_liveness.return_value = {'verified': True, 'status': 'verified'}
 
         img_b64 = self._create_valid_test_image_b64()
         payload = {
             'registered_image': img_b64,
             'captured_image': img_b64,
+            'blink_image': img_b64,
         }
 
         mock_verify_pair = MagicMock(return_value={
@@ -134,16 +143,19 @@ class VerifyFaceSecurityTests(TestCase):
 
     @patch('face_recognition.load_image_file')
     @patch('security.views._encode_face_with_fallback')
-    def test_multiple_faces_detected_returns_422(self, mock_encode, mock_load):
+    @patch('security.views.verify_server_liveness')
+    def test_multiple_faces_detected_returns_422(self, mock_liveness, mock_encode, mock_load):
         """Multiple faces in captured image strictly returns 422."""
         mock_load.return_value = MagicMock()
         # First call encodes registered image (1 face), second call encodes captured image (2 faces)
         mock_encode.side_effect = [[MagicMock()], [MagicMock(), MagicMock()]]
+        mock_liveness.return_value = {'verified': True, 'status': 'verified'}
 
         img_b64 = self._create_valid_test_image_b64()
         payload = {
             'registered_image': img_b64,
             'captured_image': img_b64,
+            'blink_image': img_b64,
         }
 
         # Force dlib fallback path
@@ -225,16 +237,16 @@ class VerifyFaceSecurityTests(TestCase):
 
     @patch('face_recognition.load_image_file')
     @patch('security.views._encode_face_with_fallback')
-    def test_verify_face_rejects_missing_liveness_when_required(self, mock_encode, mock_load):
-        """When server requires liveness, missing blink_image must return HTTP 422."""
+    def test_verify_face_rejects_missing_liveness_unconditionally(self, mock_encode, mock_load):
+        """Missing blink_image must return HTTP 422 unconditionally (no opt-in flag required)."""
         mock_load.return_value = MagicMock()
         mock_encode.return_value = [MagicMock()]
         img_b64 = self._create_valid_test_image_b64()
 
+        # Notice: require_liveness is completely omitted from payload
         payload = {
             'registered_image': img_b64,
             'captured_image': img_b64,
-            'require_liveness': True,  # Server requires liveness proof
         }
         req = self._post(payload)
         resp = views.verify_face(req)

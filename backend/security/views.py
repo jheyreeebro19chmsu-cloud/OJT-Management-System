@@ -640,48 +640,45 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=422
             )
 
-    # SERVER-SIDE LIVENESS PROOF VERIFICATION:
-    # If blink_image or liveness_proof is provided (or if require_liveness is enabled),
-    # the server independently validates 68-landmark eye-closure transitions.
+    # SECURITY: Server-side liveness proof (blink_image) is unconditionally MANDATORY.
+    # Eliminates bypass-by-omission where an attacker simply submits a single static photo.
     blink_b64 = data.get("blink_image") or data.get("liveness_proof")
     blink_file = request.FILES.get("blink_image") or request.FILES.get("liveness_proof")
-    require_liveness = bool(data.get("require_liveness", False) or getattr(settings, "ENFORCE_SERVER_LIVENESS", False))
-    liveness_verified = False
 
-    if blink_file or blink_b64:
-        try:
-            if blink_file:
-                blink_image = face_recognition.load_image_file(blink_file)
-            else:
-                blink_image = face_recognition.load_image_file(decode_base64_image(blink_b64))
-
-            liveness_res = verify_server_liveness(unknown_image, blink_image)
-            if not liveness_res.get("verified", False):
-                logger.warning(f"Server liveness verification rejected for {employee_id}: {liveness_res.get('message')}")
-                return JsonResponse(
-                    {
-                        "success": False,
-                        "status": "liveness_failed",
-                        "message": liveness_res.get("message", "Server liveness check failed."),
-                        "details": liveness_res,
-                    },
-                    status=422,
-                )
-            liveness_verified = True
-        except Exception as live_err:
-            logger.warning(f"Server liveness verification exception: {live_err}")
-            if require_liveness:
-                return JsonResponse(
-                    {"success": False, "status": "liveness_error", "message": f"Server liveness verification error: {live_err}"},
-                    status=422,
-                )
-    elif require_liveness:
+    if not blink_file and not blink_b64:
+        logger.warning(f"Verification rejected for {employee_id}: Missing mandatory blink_image liveness proof.")
         return JsonResponse(
             {
                 "success": False,
                 "status": "liveness_required",
-                "message": "Server-side liveness proof (blink_image) is required for attendance verification.",
+                "message": "Server-side liveness proof (blink_image) is strictly required for face verification.",
             },
+            status=422,
+        )
+
+    try:
+        if blink_file:
+            blink_image = face_recognition.load_image_file(blink_file)
+        else:
+            blink_image = face_recognition.load_image_file(decode_base64_image(blink_b64))
+
+        liveness_res = verify_server_liveness(unknown_image, blink_image)
+        if not liveness_res.get("verified", False):
+            logger.warning(f"Server liveness verification rejected for {employee_id}: {liveness_res.get('message')}")
+            return JsonResponse(
+                {
+                    "success": False,
+                    "status": "liveness_failed",
+                    "message": liveness_res.get("message", "Server liveness check failed."),
+                    "details": liveness_res,
+                },
+                status=422,
+            )
+        liveness_verified = True
+    except Exception as live_err:
+        logger.warning(f"Server liveness verification exception: {live_err}")
+        return JsonResponse(
+            {"success": False, "status": "liveness_error", "message": f"Server liveness verification error: {live_err}"},
             status=422,
         )
 

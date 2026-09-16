@@ -44,11 +44,15 @@ def file_to_data_url(file_path: str) -> str:
     return f"data:image/{mime};base64,{encoded}"
 
 
-def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: str):
+def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: str, blink_path: str = None):
     print("\n" + "=" * 80)
     print("  LIVE EMPIRICAL FACIAL RECOGNITION AUDIT (UNMOCKED)")
-    print(f"  Backend: {backend_url}")
-    print(f"  Reference Photo: {reference_path}")
+    print(f"  Backend:        {backend_url}")
+    print(f"  Reference Face: {reference_path}")
+    if blink_path:
+        print(f"  Liveness Proof: {blink_path} (Mandatory closed-eye frame)")
+    else:
+        print("  Liveness Proof: NONE (Warning: server strictly requires blink_image)")
     print("=" * 80 + "\n")
 
     if not os.path.exists(reference_path):
@@ -56,6 +60,13 @@ def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: 
         sys.exit(1)
 
     ref_data_url = file_to_data_url(reference_path)
+    blink_data_url = file_to_data_url(blink_path) if blink_path and os.path.exists(blink_path) else None
+
+    if not blink_data_url:
+        print("[!] NOTICE: No blink photo provided or detected.")
+        print("    The backend strictly enforces mandatory server-side liveness proof.")
+        print("    Requests omitting blink_image will be rejected with HTTP 422 'liveness_required'.\n")
+
     verify_url = f"{backend_url.rstrip('/')}/api/security/face/verify/"
     headers = {
         'Content-Type': 'application/json',
@@ -77,6 +88,8 @@ def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: 
             'registered_image': ref_data_url,
             'captured_image': test_data_url,
         }
+        if blink_data_url:
+            payload['blink_image'] = blink_data_url
 
         start_t = time.time()
         try:
@@ -92,14 +105,26 @@ def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: 
             matched = body.get('matched', False)
             distance = body.get('distance')
             tolerance = body.get('tolerance', 0.6)
-            status_msg = body.get('status') or body.get('message') or str(status_code)
             quality_status = body.get('status', 'n/a')
+            liveness_verified = body.get('liveness_verified', False)
+
+            if liveness_verified:
+                live_str = "PASS"
+            elif body.get('status') == 'liveness_required':
+                live_str = "MISSING"
+            elif body.get('status') == 'liveness_failed':
+                live_str = "FAIL"
+            elif body.get('status') == 'liveness_error':
+                live_str = "ERR"
+            else:
+                live_str = "—"
 
             results.append({
                 'label': label,
                 'file': Path(test_path).name,
                 'http_code': status_code,
                 'matched': matched,
+                'liveness': live_str,
                 'distance': f"{distance:.3f}" if isinstance(distance, (int, float)) else "—",
                 'tolerance': f"{tolerance:.2f}" if isinstance(tolerance, (int, float)) else "—",
                 'quality': quality_status,
@@ -115,6 +140,7 @@ def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: 
                 'file': Path(test_path).name,
                 'http_code': "ERR",
                 'matched': False,
+                'liveness': "ERR",
                 'distance': "—",
                 'tolerance': "—",
                 'quality': "network_error",
@@ -123,17 +149,17 @@ def run_audit(reference_path: str, test_files: list, backend_url: str, api_key: 
             })
 
     # Print Formatted Results Table
-    print("\n" + "=" * 105)
-    print(f"{'Condition / Label':<22} | {'HTTP':<5} | {'Match':<6} | {'Dist':<6} | {'Quality':<12} | {'Message'}")
-    print("-" * 105)
+    print("\n" + "=" * 115)
+    print(f"{'Condition / Label':<22} | {'HTTP':<5} | {'Live':<7} | {'Match':<6} | {'Dist':<6} | {'Quality':<14} | {'Message'}")
+    print("-" * 115)
 
     for r in results:
         match_str = "YES" if r['matched'] else "NO"
         http_str = str(r['http_code'])
-        msg_short = (r['message'][:45] + '...') if len(r['message']) > 45 else r['message']
-        print(f"{r['label']:<22} | {http_str:<5} | {match_str:<6} | {r['distance']:<6} | {r['quality']:<12} | {msg_short}")
+        msg_short = (r['message'][:40] + '...') if len(r['message']) > 40 else r['message']
+        print(f"{r['label']:<22} | {http_str:<5} | {r['liveness']:<7} | {match_str:<6} | {r['distance']:<6} | {r['quality']:<14} | {msg_short}")
 
-    print("=" * 105 + "\n")
+    print("=" * 115 + "\n")
     print("[✓] Audit run complete. Real unmocked evidence recorded above.\n")
 
 
@@ -143,6 +169,7 @@ def main():
     parser.add_argument("--api-key", default=os.getenv("SECURITY_API_KEY", "default-security-api-key"), help="Security API Key")
     parser.add_argument("--dir", help="Directory containing test photos")
     parser.add_argument("--reference", help="Path to clean reference photo")
+    parser.add_argument("--blink", help="Path to closed-eyes liveness photo (mandatory for server liveness)")
     parser.add_argument("--test", help="Path to single test photo")
     parser.add_argument("--label", default="Test Photo", help="Label for single test photo")
 
@@ -167,6 +194,15 @@ def main():
             print("[!] Could not auto-detect reference photo in directory. Specify with --reference <path>.")
             sys.exit(1)
 
+        # Detect blink photo for mandatory server liveness
+        blink = args.blink
+        if not blink:
+            for candidate in ("blink.jpg", "blink.png", "blink.jpeg", "closed_eyes.jpg", "closed_eyes.png"):
+                p = dir_path / candidate
+                if p.exists():
+                    blink = str(p)
+                    break
+
         known_patterns = [
             ("Bare Face (Clean)", ["bare.jpg", "bare.png", "clean.jpg"]),
             ("Eyeglasses", ["eyeglasses.jpg", "glasses.jpg", "reading_glasses.jpg"]),
@@ -186,42 +222,50 @@ def main():
                     test_files.append((label, str(f)))
                     break
 
-        # Also add any remaining image files not matched above
-        found_paths = {p for _, p in test_files}
-        if ref in found_paths:
-            pass
-        for f in dir_path.glob("*.*"):
-            if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp') and str(f) not in found_paths and str(f) != ref:
-                test_files.append((f.stem.replace('_', ' ').title(), str(f)))
+        # Also add any remaining image files not matched above (exclude ref and blink)
+        excluded_paths = {p for _, p in test_files}
+        if ref:
+            excluded_paths.add(str(Path(ref).resolve()))
+            excluded_paths.add(str(ref))
+        if blink:
+            excluded_paths.add(str(Path(blink).resolve()))
+            excluded_paths.add(str(blink))
 
-        run_audit(ref, test_files, args.backend_url, args.api_key)
+        for f in dir_path.glob("*.*"):
+            if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.webp'):
+                f_str = str(f)
+                f_resolved = str(f.resolve())
+                if f_str not in excluded_paths and f_resolved not in excluded_paths:
+                    test_files.append((f.stem.replace('_', ' ').title(), f_str))
+
+        run_audit(ref, test_files, args.backend_url, args.api_key, blink_path=blink)
 
     elif args.reference and args.test:
         test_files = [(args.label, args.test)]
-        run_audit(args.reference, test_files, args.backend_url, args.api_key)
+        run_audit(args.reference, test_files, args.backend_url, args.api_key, blink_path=args.blink)
     else:
         # Create default instructions if invoked without arguments
         default_dir = Path("audit_photos")
         default_dir.mkdir(exist_ok=True)
         readme = default_dir / "README.txt"
-        if not readme.exists():
-            with open(readme, "w") as f:
-                f.write(
-                    "Place your actual photos here for live testing:\n"
-                    "  - baseline.jpg    (Clean bare face for reference)\n"
-                    "  - bare.jpg        (Clean face shot 2 to verify genuine match)\n"
-                    "  - eyeglasses.jpg  (Wearing regular glasses)\n"
-                    "  - sunglasses.jpg  (Wearing dark sunglasses)\n"
-                    "  - cap.jpg         (Wearing cap/hat)\n"
-                    "  - mask.jpg        (Wearing face mask)\n"
-                    "  - low_light.jpg   (Shot in dim/dark room)\n"
-                    "  - off_angle.jpg   (Face turned at 45 degrees)\n\n"
-                    "Run audit command:\n"
-                    "  python scripts/audit_real_photos.py --dir audit_photos\n"
-                )
-        print("\n[i] Created 'audit_photos/' directory.")
+        with open(readme, "w") as f:
+            f.write(
+                "Place your actual photos here for live unmocked testing:\n"
+                "  - baseline.jpg    (Clean bare face for template reference)\n"
+                "  - blink.jpg       (Photo of your face with eyes closed — mandatory server liveness)\n"
+                "  - bare.jpg        (Clean face shot 2 to verify genuine match)\n"
+                "  - eyeglasses.jpg  (Wearing regular glasses)\n"
+                "  - sunglasses.jpg  (Wearing dark sunglasses)\n"
+                "  - cap.jpg         (Wearing cap/hat)\n"
+                "  - mask.jpg        (Wearing face mask)\n"
+                "  - low_light.jpg   (Shot in dim/dark room)\n"
+                "  - off_angle.jpg   (Face turned at 45 degrees)\n\n"
+                "Run audit command:\n"
+                "  python scripts/audit_real_photos.py --dir audit_photos\n"
+            )
+        print("\n[i] 'audit_photos/' directory initialized.")
         print("To run the unmocked audit against real photos:")
-        print("  1. Drop your photos into 'audit_photos/' (e.g. baseline.jpg, eyeglasses.jpg, cap.jpg, mask.jpg)")
+        print("  1. Drop your photos into 'audit_photos/' (e.g. baseline.jpg, blink.jpg, eyeglasses.jpg, cap.jpg, mask.jpg)")
         print("  2. Run: python scripts/audit_real_photos.py --dir audit_photos\n")
 
 
