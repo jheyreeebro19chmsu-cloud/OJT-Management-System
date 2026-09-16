@@ -131,7 +131,7 @@ const BRIDGE_HTML = `
     }
 
     async function handleVerify(req) {
-      const { id, registered, live, threshold = 0.62 } = req;
+      const { id, registered, live, threshold = 0.52 } = req;
       try {
         const [img1, img2] = await Promise.all([loadImage(registered), loadImage(live)]);
         let d1Desc = null;
@@ -161,9 +161,9 @@ const BRIDGE_HTML = `
         }
 
         const distance = calculateEuclideanDistance(d1Desc, d2Desc);
-        const effectiveThreshold = isPerceptual ? Math.max(threshold, 0.72) : threshold;
+        const effectiveThreshold = isPerceptual ? Math.min(threshold, 0.35) : threshold;
         const matched = distance <= effectiveThreshold;
-        const confidence = Math.max(0, Math.min(100, Math.round((1 - distance / 0.68) * 100)));
+        const confidence = Math.max(0, Math.min(100, Math.round((1 - distance / effectiveThreshold) * 100)));
 
         sendToNative({
           id,

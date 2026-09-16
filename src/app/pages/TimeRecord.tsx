@@ -21,7 +21,7 @@ type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
 export function TimeRecord() {
   const navigate = useNavigate();
-  const { currentUser, getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords } = useApp();
+  const { currentUser, getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords, employees } = useApp();
   const employee = getCurrentEmployee();
   const empLookupId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
   const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
@@ -38,6 +38,14 @@ export function TimeRecord() {
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const userActionOverrideRef = useRef<boolean>(false);
+
+  // Comprehensive fallback resolution for registered face template
+  const registeredPhotoSource =
+    employee?.photo ||
+    currentUser?.photo ||
+    (currentUser as any)?.avatar ||
+    employees?.find((e) => e.id === empLookupId || e.employeeId === empLookupId)?.photo;
+
   // CORS-safe data URL of the registered face image for biometric matching
   const [registeredImageDataUrl, setRegisteredImageDataUrl] = useState<string | undefined>(undefined);
 
@@ -124,7 +132,7 @@ export function TimeRecord() {
   // CORS-safe prefetch of registered face image into a local data URL
   // Prevents biometric matching failures caused by cross-origin Supabase storage URLs
   useEffect(() => {
-    const photo = employee?.photo;
+    const photo = registeredPhotoSource;
     if (!photo) {
       setRegisteredImageDataUrl(undefined);
       return;
@@ -156,7 +164,7 @@ export function TimeRecord() {
     return () => {
       cancelled = true;
     };
-  }, [employee?.photo]);
+  }, [registeredPhotoSource]);
 
   const handleGeofenceResult = React.useCallback(
     (passed: boolean, coords?: { lat: number; lng: number }, state?: GeoState, message?: string) => {
@@ -173,6 +181,12 @@ export function TimeRecord() {
     if (action === 'out' && !currentRecord?.timeIn) {
       toast.error('You must clock in first before you can clock out.');
       setAction('in');
+      return;
+    }
+    if (!registeredPhotoSource && !registeredImageDataUrl) {
+      toast.error(
+        'No registered face biometrics found on your account. Please enroll your face photo in Profile or Registration before recording attendance.'
+      );
       return;
     }
     setPageState('face-scan');
@@ -690,18 +704,18 @@ export function TimeRecord() {
               <p className="text-emerald-800">
                 Face Verification: <span className="font-semibold">Real-time Biometric AI Match</span>
               </p>
-              <p className={`${employee?.photo ? 'text-emerald-800' : 'text-blue-700'}`}>
-                Biometric Enrollment: <span className="font-semibold">{employee?.photo ? 'Enrolled & Verified in Database' : 'First-time Auto-Enrollment on Scan'}</span>
+              <p className={`${registeredPhotoSource ? 'text-emerald-800' : 'text-amber-700 font-semibold'}`}>
+                Biometric Enrollment: <span className="font-semibold">{registeredPhotoSource ? 'Enrolled & Verified in Database' : 'Required: Please enroll photo first'}</span>
               </p>
             </div>
 
             <div className="flex justify-center">
               <FaceCapture
-                key={`face-verify-${employee?.id}-${retryCount}`}
+                key={`face-verify-${empLookupId}-${retryCount}`}
                 mode="verify"
-                employeeName={employee?.name}
-                employeeId={employee?.id}
-                registeredImage={registeredImageDataUrl || employee?.photo}
+                employeeName={employee?.name || currentUser?.name}
+                employeeId={employee?.id || currentUser?.id}
+                registeredImage={registeredImageDataUrl || registeredPhotoSource}
                 onSuccess={handleFaceSuccess}
                 onCancel={() => setPageState('check-geofence')}
                 autoStart

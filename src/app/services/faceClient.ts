@@ -37,7 +37,7 @@ export async function loadFaceModels(modelsPath = '/models'): Promise<boolean> {
     const candidates = [
       modelsPath,
       'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights',
-      'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model',
+      'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights',
     ];
 
     for (const base of candidates) {
@@ -185,9 +185,12 @@ export async function computeTypedDescriptorFromDataUrl(dataUrl: string): Promis
       if (detection && detection.descriptor) {
         return { descriptor: detection.descriptor as Float32Array, type: 'neural' };
       }
+
+      // If neural models are active but no face is detected in the image, strictly return null
+      return null;
     }
 
-    // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments)
+    // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments) only if models not loaded
     return { descriptor: computePerceptualDescriptor(img), type: 'perceptual' };
   } catch (e) {
     console.warn('computeTypedDescriptorFromDataUrl error:', e);
@@ -608,16 +611,23 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
 
 /**
  * Strict Biometric Verification matching algorithm:
- * Uses 128-D embedding Euclidean distance with optimal 0.55 threshold for cross-device recognition.
- * Falls back gracefully when face-api models are unavailable.
+ * Uses 128-D embedding Euclidean distance with optimal 0.52 threshold for justadudewhohacks/face-api.js.
+ * Fails closed whenever face-api models are unavailable or biometrics cannot be verified.
  */
 export async function strictBiometricVerify(
   registeredDataUrl: string,
   liveDataUrl: string,
-  threshold = 0.62
+  threshold = 0.52
 ): Promise<{ matched: boolean; distance: number; confidence: number; error?: string }> {
   if (!registeredDataUrl || !liveDataUrl) {
-    return { matched: false, distance: Infinity, confidence: 0, error: 'Missing image data' };
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: !registeredDataUrl
+        ? 'No registered face template found for this student. Face registration required.'
+        : 'Missing live camera image for biometric verification.',
+    };
   }
 
   const modelsAvailable = _modelsLoaded;
@@ -628,17 +638,21 @@ export async function strictBiometricVerify(
   ]);
 
   if (!t1 || !t2) {
-    // When face-api is completely unavailable and descriptor extraction fails,
-    // pass the verification to avoid locking out legitimate users who have passed geofence
     if (!modelsAvailable) {
-      console.warn('[FaceClient] face-api models not loaded — passing verification (geofence already verified)');
-      return { matched: true, distance: 0, confidence: 85, error: undefined };
+      return {
+        matched: false,
+        distance: Infinity,
+        confidence: 0,
+        error: 'Biometric AI models not ready. Please wait for facial recognition models to initialize.',
+      };
     }
     return {
       matched: false,
       distance: Infinity,
       confidence: 0,
-      error: 'Could not extract 128-D biometric descriptor from face image.',
+      error: !t1
+        ? 'Could not extract 128-D facial descriptor from registered profile photo.'
+        : 'No face detected or could not extract facial descriptor from live camera frame.',
     };
   }
 
@@ -665,17 +679,20 @@ export async function strictBiometricVerify(
 
   const dist = descriptorDistance(d1, d2);
 
-  // Perceptual feature space uses 0.72 threshold; neural feature space uses 0.62 threshold
-  const effectiveThreshold = isPerceptual ? Math.max(threshold, 0.72) : Math.max(threshold, 0.62);
+  // Neural embedding strict threshold is 0.52 (justadudewhohacks face-api standard).
+  // Perceptual space strict threshold is 0.35 to strictly block different people.
+  const effectiveThreshold = isPerceptual ? Math.min(threshold, 0.35) : threshold;
 
   const matched = dist <= effectiveThreshold;
-  const confidence = Math.max(0, Math.min(100, Math.round((1 - dist / 0.68) * 100)));
+  const confidence = Math.max(0, Math.min(100, Math.round((1 - dist / effectiveThreshold) * 100)));
 
   return {
     matched,
     distance: dist,
     confidence,
-    error: matched ? undefined : `Face does not match registered biometrics (Biometric distance: ${dist.toFixed(3)}, threshold: ${effectiveThreshold}).`,
+    error: matched
+      ? undefined
+      : `Face does not match registered biometrics for this trainee (Biometric distance: ${dist.toFixed(3)}, threshold: ${effectiveThreshold.toFixed(2)}).`,
   };
 }
 
@@ -685,7 +702,7 @@ export async function strictBiometricVerify(
 export async function compareFaces(
   registeredDataUrl: string,
   capturedDataUrl: string,
-  threshold = 0.55
+  threshold = 0.52
 ): Promise<{ matched: boolean; distance: number; confidence: number }> {
   const res = await strictBiometricVerify(registeredDataUrl, capturedDataUrl, threshold);
   return {

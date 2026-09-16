@@ -476,6 +476,17 @@ export function FaceCapture({
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
+      // Fail-closed biometric guard: If verify mode has no template photo registered, fail immediately
+      const initialTemplate = registeredImageRef.current;
+      if (!initialTemplate) {
+        setState('failed');
+        setMismatchError(
+          `No registered face biometrics found on file for ${employeeNameRef.current || 'this trainee'}. Please register your face photo first in Profile or Registration.`
+        );
+        setScanMessage('❌ Missing registered face template. Attendance blocked.');
+        return;
+      }
+
       for (let attempt = 1; attempt <= 45; attempt++) {
         if (!streamRef.current || stateRef.current !== 'scanning') break;
 
@@ -502,25 +513,33 @@ export function FaceCapture({
             await new Promise((r) => setTimeout(r, 400));
             continue;
           }
+
+          // Strict obstruction check during verification
+          if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+            setScanMessage('⚠️ Remove face mask, sunglasses, or cap to verify.');
+            await new Promise((r) => setTimeout(r, 400));
+            continue;
+          }
         }
 
         const enrolledImage = registeredImageRef.current;
-        if (enrolledImage) {
-          setScanMessage('Verifying facial biometrics with AI...');
-          const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.65);
-          if (bio.matched) {
-            setMismatchError(null);
-            detectedSuccess = true;
-            break;
-          } else {
-            setScanMessage('Align face inside the oval guide...');
-          }
+        if (!enrolledImage) {
+          setScanMessage('❌ Missing registered face biometrics.');
+          break;
+        }
+
+        setScanMessage('Verifying facial biometrics with AI...');
+        const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.52);
+        if (bio.matched) {
+          setMismatchError(null);
+          detectedSuccess = true;
+          break;
         } else {
-          // If no template image yet, any verified clear face passes
-          if (quality?.faceDetected) {
-            detectedSuccess = true;
-            break;
-          }
+          setScanMessage(
+            bio.distance < 0.65
+              ? 'Hold still... Verifying face biometrics...'
+              : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
+          );
         }
 
         await new Promise((r) => setTimeout(r, 350));
@@ -562,10 +581,10 @@ export function FaceCapture({
   /**
    * Manual snapshot trigger
    */
-  const handleManualSnap = useCallback(async () => {
+  const handleManualSnap = useCallback(async (customImg?: string) => {
     if (state === 'success') return;
 
-    const img = captureFrame();
+    const img = customImg || captureFrame();
     if (!img) {
       setState('failed');
       setScanMessage('Failed to capture camera frame. Please ensure camera is active.');
@@ -622,14 +641,29 @@ export function FaceCapture({
     setProgress(75);
 
     const enrolledImage = registeredImageRef.current;
-    if (enrolledImage) {
-      const bio = await strictBiometricVerify(enrolledImage, img, 0.65);
-      if (!bio.matched) {
-        setState('failed');
-        setMismatchError(`Face does not match registered biometrics for ${employeeNameRef.current || 'this student'}.`);
-        setScanMessage(`❌ Face mismatch (Distance: ${bio.distance.toFixed(2)} > 0.65)`);
-        return;
-      }
+    if (!enrolledImage) {
+      setState('failed');
+      setMismatchError(
+        `No registered face biometric template on file for ${employeeNameRef.current || 'this trainee'}. Attendance scan blocked.`
+      );
+      setScanMessage('❌ Missing registered face biometrics.');
+      return;
+    }
+
+    const manualQuality = await inspectFaceQuality(img).catch(() => null);
+    if (manualQuality?.faceObscured || manualQuality?.maskDetected) {
+      setState('failed');
+      setMismatchError('Face mask or obstruction detected. Please remove coverings.');
+      setScanMessage('❌ Face obstruction detected.');
+      return;
+    }
+
+    const bio = await strictBiometricVerify(enrolledImage, img, 0.52);
+    if (!bio.matched) {
+      setState('failed');
+      setMismatchError(`Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`);
+      setScanMessage(`❌ Face mismatch (Distance: ${bio.distance.toFixed(2)} > 0.52)`);
+      return;
     }
 
     // Check backend security API if available
@@ -689,7 +723,7 @@ export function FaceCapture({
           }, 900);
         } else {
           setCapturedImage(img);
-          handleManualSnap();
+          handleManualSnap(img);
         }
       }
     };

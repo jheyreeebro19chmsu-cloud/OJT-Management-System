@@ -1459,6 +1459,191 @@ assert('Clock Out timestamp formatted to "05:11 PM"', formattedTimeOut === '05:1
 assert('Total hours properly recorded', completedRecord.totalHours === 2.5);
 
 // ----------------------------------------------------------------------------
+// MODULE 19: 1:1 FACIAL BIOMETRICS WITH JUSTADUDEWHOHACKS FACE-API & CROSS-PERSON REJECTION
+// ----------------------------------------------------------------------------
+printSectionHeader('19. WHITE BOX TESTS: 1:1 Face Biometrics & Cross-Person Rejection');
+
+function simulateBiometricVerify({
+  registeredDescriptor,
+  liveDescriptor,
+  modelsLoaded = true,
+  registeredPhotoExists = true,
+  threshold = 0.52
+}) {
+  if (!registeredPhotoExists || !registeredDescriptor) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'No registered face template found for this student. Face registration required.'
+    };
+  }
+  if (!liveDescriptor) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'No face detected or could not extract facial descriptor from live camera frame.'
+    };
+  }
+  if (!modelsLoaded) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'Biometric AI models not ready. Please wait for facial recognition models to initialize.'
+    };
+  }
+
+  let sum = 0;
+  for (let i = 0; i < 128; i++) {
+    const d = (registeredDescriptor[i] || 0) - (liveDescriptor[i] || 0);
+    sum += d * d;
+  }
+  const distance = Math.sqrt(sum);
+  const matched = distance <= threshold;
+  const confidence = Math.max(0, Math.min(100, Math.round((1 - distance / threshold) * 100)));
+
+  return {
+    matched,
+    distance,
+    confidence,
+    error: matched
+      ? undefined
+      : `Face does not match registered biometrics for this trainee (Biometric distance: ${distance.toFixed(3)}, threshold: ${threshold.toFixed(2)}).`
+  };
+}
+
+function generateTestDescriptor(seed = 1) {
+  const arr = new Float32Array(128);
+  let sumSq = 0;
+  for (let i = 0; i < 128; i++) {
+    arr[i] = Math.sin((i + 1) * seed);
+    sumSq += arr[i] * arr[i];
+  }
+  const norm = Math.sqrt(sumSq) || 1;
+  for (let i = 0; i < 128; i++) {
+    arr[i] /= norm;
+  }
+  return arr;
+}
+
+const traineeA_registered = generateTestDescriptor(1.0);
+const traineeA_liveSame = generateTestDescriptor(1.0);
+
+// Genuine trainee minor pose variance: slight lighting / angle difference (produces ~0.25 distance)
+const traineeA_liveAngle = new Float32Array(traineeA_registered);
+traineeA_liveAngle[0] += 0.20;
+traineeA_liveAngle[1] -= 0.15;
+let angleNorm = 0;
+for (let i = 0; i < 128; i++) angleNorm += traineeA_liveAngle[i] * traineeA_liveAngle[i];
+angleNorm = Math.sqrt(angleNorm) || 1;
+for (let i = 0; i < 128; i++) traineeA_liveAngle[i] /= angleNorm;
+
+const traineeB_liveDifferent = generateTestDescriptor(8.0);
+
+// Test 19.1: Identical live face to registered account biometrics
+const matchSame = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveSame,
+  threshold: 0.52
+});
+assert('Identical live face matches registered biometrics (distance 0.00 <= 0.52)', matchSame.matched === true && matchSame.distance === 0);
+assert('Identical face match produces 100% confidence', matchSame.confidence === 100);
+
+// Test 19.2: Genuine trainee slight head angle variance (within genuine distance margin)
+const matchAngle = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveAngle,
+  threshold: 0.52
+});
+assert('Genuine trainee with minor pose variance matches (distance <= 0.52)', matchAngle.matched === true && matchAngle.distance <= 0.52);
+
+// Test 19.3: Cross-person scan: Scanning another person when registered to trainee A
+const matchDifferentPerson = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeB_liveDifferent,
+  threshold: 0.52
+});
+assert('Cross-person face scan is strictly rejected (distance > 0.52)', matchDifferentPerson.matched === false);
+assert('Rejection provides clear mismatch error message', typeof matchDifferentPerson.error === 'string' && matchDifferentPerson.error.includes('Face does not match'));
+
+// Test 19.4: Boundary distance value analysis: exactly 0.51 (pass) vs 0.53 (fail)
+const boundaryPassDescriptor = new Float32Array(traineeA_registered);
+boundaryPassDescriptor[0] += 0.35; // creates distance ~0.35
+const boundaryPass = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: boundaryPassDescriptor,
+  threshold: 0.52
+});
+assert('Face distance 0.35 is verified (pass)', boundaryPass.matched === true);
+
+// Boundary distance > 0.52
+const boundaryFailDescriptor = new Float32Array(traineeA_registered);
+boundaryFailDescriptor[0] += 0.40;
+boundaryFailDescriptor[1] += 0.40; // creates distance ~0.56
+const boundaryFail = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: boundaryFailDescriptor,
+  threshold: 0.52
+});
+assert('Face distance > 0.52 is strictly rejected (fail-closed)', boundaryFail.matched === false);
+
+// Test 19.5: Fail-closed when registered template photo is missing
+const missingTemplate = simulateBiometricVerify({
+  registeredDescriptor: null,
+  liveDescriptor: traineeA_liveSame,
+  registeredPhotoExists: false,
+  threshold: 0.52
+});
+assert('Missing registered photo strictly rejects verification (no auto-pass bypass)', missingTemplate.matched === false);
+assert('Missing registered photo provides registration requirement error', missingTemplate.error.includes('Face registration required'));
+
+// Test 19.6: Fail-closed when live face detection or descriptor extraction fails
+const missingLive = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: null,
+  threshold: 0.52
+});
+assert('Missing live face strictly rejects verification', missingLive.matched === false);
+assert('Missing live face returns camera frame error', missingLive.error.includes('No face detected'));
+
+// Test 19.7: Fail-closed when neural models are unready (never pass-open)
+const modelUnready = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveSame,
+  modelsLoaded: false,
+  threshold: 0.52
+});
+assert('Unready biometric models strictly reject verification (fail-closed)', modelUnready.matched === false);
+assert('Unready biometric models return initialization message', modelUnready.error.includes('Biometric AI models not ready'));
+
+// Test 19.8: Attendance flow blocks proceeding to face scan if trainee has no enrolled biometrics
+function canProceedToFaceScan({ geofencePassed, hasRegisteredBiometrics, action, hasTimeIn }) {
+  if (!geofencePassed) return { allowed: false, reason: 'Geofence not passed' };
+  if (action === 'out' && !hasTimeIn) return { allowed: false, reason: 'Must clock in first' };
+  if (!hasRegisteredBiometrics) return { allowed: false, reason: 'No registered face biometrics on account' };
+  return { allowed: true };
+}
+
+const unEnrolledAttempt = canProceedToFaceScan({
+  geofencePassed: true,
+  hasRegisteredBiometrics: false,
+  action: 'in',
+  hasTimeIn: false
+});
+assert('proceedToFaceScan blocks scan when trainee has not enrolled face biometrics', unEnrolledAttempt.allowed === false);
+assert('proceedToFaceScan specifies missing biometric error', unEnrolledAttempt.reason.includes('No registered face biometrics'));
+
+const enrolledAttempt = canProceedToFaceScan({
+  geofencePassed: true,
+  hasRegisteredBiometrics: true,
+  action: 'in',
+  hasTimeIn: false
+});
+assert('proceedToFaceScan allows scan when trainee has enrolled face biometrics and passed geofence', enrolledAttempt.allowed === true);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);
