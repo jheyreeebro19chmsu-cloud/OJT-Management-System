@@ -197,7 +197,9 @@ export function FaceCapture({
         currentQuality?.faceObscured ||
         currentQuality?.maskDetected ||
         currentQuality?.glassesDetected ||
-        currentQuality?.capDetected
+        currentQuality?.capDetected ||
+        currentQuality?.poorBackgroundLighting ||
+        currentQuality?.tooDark
       );
 
       // 1. Dark Vignette Backdrop Outside Oval using evenodd cutout
@@ -430,15 +432,50 @@ export function FaceCapture({
             const quality = await inspectFaceQuality(currentFrame).catch(() => null);
             if (quality) {
               setQualityReport(quality);
+
+              if (quality.glassesDetected) {
+                stableFrames = 0;
+                setProgress(15);
+                setScanMessage('🚨 GLASSES DETECTED! Remove glasses to scan (clear face only).');
+                await new Promise((r) => setTimeout(r, 450));
+                continue;
+              }
+              if (quality.capDetected) {
+                stableFrames = 0;
+                setProgress(15);
+                setScanMessage('🚨 HAT / CAP DETECTED! Remove headwear to scan (clear face only).');
+                await new Promise((r) => setTimeout(r, 450));
+                continue;
+              }
+              if (quality.maskDetected) {
+                stableFrames = 0;
+                setProgress(15);
+                setScanMessage('🚨 FACE MASK DETECTED! Remove mask to scan.');
+                await new Promise((r) => setTimeout(r, 450));
+                continue;
+              }
+              if (quality.poorBackgroundLighting) {
+                stableFrames = 0;
+                setProgress(15);
+                setScanMessage('🚨 DARK BACKGROUND! Position in front of a light, well-lit background.');
+                await new Promise((r) => setTimeout(r, 450));
+                continue;
+              }
               if (quality.tooDark) {
                 stableFrames = 0;
-                setProgress(20);
+                setProgress(15);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
-              } else if (quality.tooBright) {
+                await new Promise((r) => setTimeout(r, 400));
+                continue;
+              }
+              if (quality.tooBright) {
                 stableFrames = 0;
-                setProgress(20);
+                setProgress(15);
                 setScanMessage('⚠️ Too bright! Avoid direct glare.');
-              } else if (quality.faceDetected) {
+                await new Promise((r) => setTimeout(r, 400));
+                continue;
+              }
+              if (quality.faceDetected) {
                 stableFrames++;
                 setProgress(Math.min(35 + stableFrames * 30, 95));
 
@@ -503,6 +540,26 @@ export function FaceCapture({
         if (quality) {
           setQualityReport(quality);
 
+          if (quality.glassesDetected) {
+            setScanMessage('🚨 GLASSES DETECTED! Remove glasses to scan (clear face only).');
+            await new Promise((r) => setTimeout(r, 450));
+            continue;
+          }
+          if (quality.capDetected) {
+            setScanMessage('🚨 HAT / CAP DETECTED! Remove headwear to scan (clear face only).');
+            await new Promise((r) => setTimeout(r, 450));
+            continue;
+          }
+          if (quality.maskDetected) {
+            setScanMessage('🚨 FACE MASK DETECTED! Remove mask to scan.');
+            await new Promise((r) => setTimeout(r, 450));
+            continue;
+          }
+          if (quality.poorBackgroundLighting) {
+            setScanMessage('🚨 DARK BACKGROUND! Position in front of a light, well-lit background.');
+            await new Promise((r) => setTimeout(r, 450));
+            continue;
+          }
           if (quality.tooDark) {
             setScanMessage('⚠️ Too dark! Move to a well-lit area.');
             await new Promise((r) => setTimeout(r, 400));
@@ -513,10 +570,8 @@ export function FaceCapture({
             await new Promise((r) => setTimeout(r, 400));
             continue;
           }
-
-          // Strict obstruction check during verification
-          if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
-            setScanMessage('⚠️ Remove face mask, sunglasses, or cap to verify.');
+          if (quality.faceObscured) {
+            setScanMessage('⚠️ Clear face required. Remove obstructions.');
             await new Promise((r) => setTimeout(r, 400));
             continue;
           }
@@ -596,8 +651,20 @@ export function FaceCapture({
       const quality = await inspectFaceQuality(img).catch(() => null);
       if (quality) {
         setQualityReport(quality);
-        if (quality.faceObscured || quality.maskDetected) {
-          setScanMessage('❌ Face mask or obstruction detected. Please remove coverings.');
+        if (quality.glassesDetected) {
+          setScanMessage('❌ Glasses detected! Please remove glasses for a clear face scan.');
+          return;
+        }
+        if (quality.capDetected) {
+          setScanMessage('❌ Hat or cap detected! Please remove headwear for a clear face scan.');
+          return;
+        }
+        if (quality.maskDetected) {
+          setScanMessage('❌ Face mask detected! Please remove coverings for a clear face scan.');
+          return;
+        }
+        if (quality.poorBackgroundLighting) {
+          setScanMessage('❌ Dark background detected! Please move in front of a light, well-lit background.');
           return;
         }
         if (quality.tooDark) {
@@ -608,12 +675,8 @@ export function FaceCapture({
           setScanMessage('❌ Too much glare. Please adjust lighting.');
           return;
         }
-        if (quality.capDetected) {
-          setScanMessage('❌ Cap or hat detected. Please remove headwear.');
-          return;
-        }
-        if (quality.glassesDetected) {
-          setScanMessage('❌ Dark sunglasses detected. Please remove sunglasses.');
+        if (quality.faceObscured) {
+          setScanMessage('❌ Face obstruction detected. Please ensure your face is fully clear.');
           return;
         }
       }
@@ -651,11 +714,43 @@ export function FaceCapture({
     }
 
     const manualQuality = await inspectFaceQuality(img).catch(() => null);
-    if (manualQuality?.faceObscured || manualQuality?.maskDetected) {
-      setState('failed');
-      setMismatchError('Face mask or obstruction detected. Please remove coverings.');
-      setScanMessage('❌ Face obstruction detected.');
-      return;
+    if (manualQuality) {
+      if (manualQuality.glassesDetected) {
+        setState('failed');
+        setMismatchError('Glasses detected! Please remove glasses to scan (clear face only).');
+        setScanMessage('❌ Glasses detected. Remove glasses to scan.');
+        return;
+      }
+      if (manualQuality.capDetected) {
+        setState('failed');
+        setMismatchError('Hat or cap detected! Please remove headwear to scan (clear face only).');
+        setScanMessage('❌ Hat/cap detected. Remove headwear to scan.');
+        return;
+      }
+      if (manualQuality.maskDetected) {
+        setState('failed');
+        setMismatchError('Face mask detected! Please remove mask to scan.');
+        setScanMessage('❌ Mask detected. Remove mask to scan.');
+        return;
+      }
+      if (manualQuality.poorBackgroundLighting || manualQuality.tooDark) {
+        setState('failed');
+        setMismatchError('Dark background or dim lighting! Please move in front of a light, well-lit background.');
+        setScanMessage('❌ Dark background / dim lighting.');
+        return;
+      }
+      if (manualQuality.tooBright) {
+        setState('failed');
+        setMismatchError('Harsh glare on face! Please adjust lighting.');
+        setScanMessage('❌ Harsh glare detected.');
+        return;
+      }
+      if (manualQuality.faceObscured) {
+        setState('failed');
+        setMismatchError('Face mask or obstruction detected. Clear face required.');
+        setScanMessage('❌ Face obstruction detected.');
+        return;
+      }
     }
 
     const bio = await strictBiometricVerify(enrolledImage, img, 0.52);
@@ -798,16 +893,26 @@ export function FaceCapture({
             </div>
 
             {/* Obstruction warning banner within viewport */}
-            {qualityReport?.faceObscured && (
+            {qualityReport && (qualityReport.faceObscured || qualityReport.glassesDetected || qualityReport.capDetected || qualityReport.maskDetected || qualityReport.poorBackgroundLighting || qualityReport.tooDark) && (
               <div className="absolute top-11 left-3 right-3 bg-red-950/90 border border-red-500/80 text-white rounded-xl p-2 text-center backdrop-blur-md z-30 shadow-lg animate-pulse">
                 <p className="text-[11px] font-bold text-red-300 flex items-center justify-center gap-1.5">
                   <AlertTriangle size={13} className="text-red-400 shrink-0" />
                   <span>
-                    Obstruction: Remove {qualityReport.maskDetected ? 'Mask' : qualityReport.glassesDetected ? 'Sunglasses' : 'Coverings'}
+                    {qualityReport.glassesDetected
+                      ? '🚨 GLASSES DETECTED: Remove Glasses'
+                      : qualityReport.capDetected
+                        ? '🚨 HAT / CAP DETECTED: Remove Headwear'
+                        : qualityReport.maskDetected
+                          ? '🚨 FACE MASK DETECTED: Remove Mask'
+                          : qualityReport.poorBackgroundLighting
+                            ? '🚨 DARK BACKGROUND: Move to Light Area'
+                            : qualityReport.tooDark
+                              ? '🚨 LIGHTING TOO DIM: Move to Bright Light'
+                              : '🚨 CLEAR FACE REQUIRED'}
                   </span>
                 </p>
                 <p className="text-[10px] text-red-200/90 mt-0.5">
-                  Verification requires an unobstructed, clear view of your face.
+                  Only an unobstructed clear face against a light, well-lit background is accepted.
                 </p>
               </div>
             )}
@@ -1022,26 +1127,46 @@ export function FaceCapture({
               type="button"
               onClick={handleManualSnap}
               disabled={Boolean(
+                !qualityReport?.faceDetected ||
                 qualityReport?.faceObscured ||
+                qualityReport?.glassesDetected ||
+                qualityReport?.capDetected ||
                 qualityReport?.maskDetected ||
-                qualityReport?.glassesDetected
+                qualityReport?.poorBackgroundLighting ||
+                qualityReport?.tooDark ||
+                qualityReport?.tooBright
               )}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
+                !qualityReport?.faceDetected ||
                 qualityReport?.faceObscured ||
+                qualityReport?.glassesDetected ||
+                qualityReport?.capDetected ||
                 qualityReport?.maskDetected ||
-                qualityReport?.glassesDetected
+                qualityReport?.poorBackgroundLighting ||
+                qualityReport?.tooDark ||
+                qualityReport?.tooBright
                   ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20 cursor-pointer'
               }`}
             >
               <Camera size={15} />
-              {qualityReport?.faceObscured ||
-              qualityReport?.maskDetected ||
-              qualityReport?.glassesDetected
-                ? 'Face Obscured (Remove Coverings)'
-                : mode === 'register'
-                  ? 'Scan Face Now'
-                  : 'Scan & Verify Now'}
+              {qualityReport?.glassesDetected
+                ? 'Glasses Detected (Remove Glasses)'
+                : qualityReport?.capDetected
+                  ? 'Hat/Cap Detected (Remove Headwear)'
+                  : qualityReport?.maskDetected
+                    ? 'Mask Detected (Remove Mask)'
+                    : qualityReport?.poorBackgroundLighting
+                      ? 'Dark Background (Move to Light Area)'
+                      : qualityReport?.tooDark
+                        ? 'Lighting Too Dim (Move to Light)'
+                        : qualityReport?.tooBright
+                          ? 'Glare Detected (Adjust Lighting)'
+                          : !qualityReport?.faceDetected
+                            ? 'Align Face Inside Oval'
+                            : mode === 'register'
+                              ? 'Scan Face Now'
+                              : 'Scan & Verify Now'}
             </button>
             <button
               type="button"

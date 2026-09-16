@@ -840,9 +840,13 @@ assert('User at residential home address -> punch strictly blocked', atHomeTest.
 // ----------------------------------------------------------------------------
 printSectionHeader('MODULE 11: BIOMETRIC FACE OBSTRUCTION & ACTIVE STREAM VERIFICATION');
 
-function evaluateFaceScanVerification({ obstruction, hasHardwareCamera = true, isSimulating = false }) {
-  const isObstructed = obstruction === 'mask' || obstruction === 'sunglasses' || obstruction === 'obscured';
-  
+function evaluateFaceScanVerification({ obstruction, backgroundLighting = 'light', avgLum = 120, hasHardwareCamera = true, isSimulating = false }) {
+  const isGlasses = obstruction === 'glasses' || obstruction === 'sunglasses' || obstruction === 'reading_glasses';
+  const isHeadwear = obstruction === 'hat' || obstruction === 'cap' || obstruction === 'beanie';
+  const isMask = obstruction === 'mask';
+  const isObscured = isGlasses || isHeadwear || isMask || obstruction === 'obscured';
+  const poorBackgroundLighting = backgroundLighting === 'dark' || avgLum < 45;
+
   // Camera availability: If hardware camera is false, system must automatically fallback to simulation stream
   const activeStream = hasHardwareCamera || isSimulating || true; // guaranteed active stream
   const noActiveCameraError = !activeStream;
@@ -851,20 +855,44 @@ function evaluateFaceScanVerification({ obstruction, hasHardwareCamera = true, i
   let statusPrompt = '';
   let hudLaserColor = '#22c55e'; // Green when clear
   let canVerify = true;
+  let snapButtonDisabled = false;
+  let snapButtonLabel = 'Take Photo';
 
-  if (isObstructed) {
+  if (isGlasses) {
     canVerify = false;
-    hudLaserColor = '#ef4444'; // Red alert on obstruction
-    if (obstruction === 'mask') {
-      statusPrompt = '⚠️ Face mask detected! System prevents successful verification and prompts for a clear face.';
-    } else if (obstruction === 'sunglasses') {
-      statusPrompt = '⚠️ Dark sunglasses detected! System prevents successful verification and prompts for a clear face.';
-    } else {
-      statusPrompt = '⚠️ Face obscured! System prevents successful verification and prompts for a clear face.';
-    }
+    hudLaserColor = '#ef4444'; // Red alert on glasses
+    snapButtonDisabled = true;
+    snapButtonLabel = 'Glasses Detected (Remove Glasses)';
+    statusPrompt = '🚨 GLASSES DETECTED: Remove eyeglasses / sunglasses to scan. Full clear face is required.';
+  } else if (isHeadwear) {
+    canVerify = false;
+    hudLaserColor = '#ef4444'; // Red alert on headwear
+    snapButtonDisabled = true;
+    snapButtonLabel = 'Hat/Cap Detected (Remove Headwear)';
+    statusPrompt = '🚨 HAT / CAP DETECTED: Remove headwear / cap to scan. Full clear face is required.';
+  } else if (isMask) {
+    canVerify = false;
+    hudLaserColor = '#ef4444'; // Red alert on mask
+    snapButtonDisabled = true;
+    snapButtonLabel = 'Mask Detected (Remove Mask)';
+    statusPrompt = '🚨 FACE MASK DETECTED: Remove face mask to scan. Full clear face is required.';
+  } else if (poorBackgroundLighting) {
+    canVerify = false;
+    hudLaserColor = '#ef4444'; // Red alert on dark background
+    snapButtonDisabled = true;
+    snapButtonLabel = 'Dark Background (Move to Light Area)';
+    statusPrompt = '🚨 DARK BACKGROUND: Move in front of a light, well-lit background.';
+  } else if (isObscured) {
+    canVerify = false;
+    hudLaserColor = '#ef4444';
+    snapButtonDisabled = true;
+    snapButtonLabel = 'Face Obscured';
+    statusPrompt = '🚨 FACE OBSTRUCTED: Ensure full face is visible to scan.';
   } else {
     statusPrompt = 'Position your face within the frame';
     hudLaserColor = '#22c55e';
+    snapButtonDisabled = false;
+    snapButtonLabel = 'Take Photo';
     canVerify = true;
   }
 
@@ -873,7 +901,9 @@ function evaluateFaceScanVerification({ obstruction, hasHardwareCamera = true, i
     noActiveCameraError,
     canVerify,
     hudLaserColor,
-    statusPrompt
+    statusPrompt,
+    snapButtonDisabled,
+    snapButtonLabel
   };
 }
 
@@ -881,21 +911,44 @@ function evaluateFaceScanVerification({ obstruction, hasHardwareCamera = true, i
 const maskScan = evaluateFaceScanVerification({ obstruction: 'mask', hasHardwareCamera: true });
 assert('Face with mask -> canVerify is strictly false (fail-closed)', maskScan.canVerify === false);
 assert('Face with mask -> laser HUD turns alert RED (#ef4444)', maskScan.hudLaserColor === '#ef4444');
-assert('Face with mask -> prompts user to remove obstruction for a clear face', maskScan.statusPrompt.includes('Face mask detected! System prevents successful verification and prompts for a clear face.'));
+assert('Face with mask -> snap button is disabled', maskScan.snapButtonDisabled === true);
+assert('Face with mask -> prompts user to remove mask', maskScan.statusPrompt.includes('FACE MASK DETECTED'));
 
-// Test 11.2: Sunglasses Obstruction
-const glassesScan = evaluateFaceScanVerification({ obstruction: 'sunglasses', hasHardwareCamera: true });
-assert('Face with sunglasses -> canVerify is strictly false (fail-closed)', glassesScan.canVerify === false);
-assert('Face with sunglasses -> laser HUD turns alert RED (#ef4444)', glassesScan.hudLaserColor === '#ef4444');
-assert('Face with sunglasses -> prompts user to remove sunglasses for a clear face', glassesScan.statusPrompt.includes('Dark sunglasses detected! System prevents successful verification and prompts for a clear face.'));
+// Test 11.2: Reading Glasses & Prescription Eyeglasses Obstruction
+const glassesScan = evaluateFaceScanVerification({ obstruction: 'glasses', hasHardwareCamera: true });
+assert('Face with reading/prescription glasses -> canVerify is strictly false (fail-closed)', glassesScan.canVerify === false);
+assert('Face with reading/prescription glasses -> laser HUD turns alert RED (#ef4444)', glassesScan.hudLaserColor === '#ef4444');
+assert('Face with glasses -> snap button is disabled with warning label', glassesScan.snapButtonDisabled === true && glassesScan.snapButtonLabel === 'Glasses Detected (Remove Glasses)');
+assert('Face with glasses -> prompts user to remove glasses for clear face', glassesScan.statusPrompt.includes('GLASSES DETECTED: Remove eyeglasses / sunglasses'));
 
-// Test 11.3: Clear Face Positioned
-const clearScan = evaluateFaceScanVerification({ obstruction: null, hasHardwareCamera: true });
-assert('Clear face positioned -> canVerify is true', clearScan.canVerify === true);
-assert('Clear face positioned -> laser HUD is active GREEN (#22c55e)', clearScan.hudLaserColor === '#22c55e');
+// Test 11.3: Sunglasses Obstruction
+const sunglassesScan = evaluateFaceScanVerification({ obstruction: 'sunglasses', hasHardwareCamera: true });
+assert('Face with sunglasses -> canVerify is strictly false', sunglassesScan.canVerify === false);
+assert('Face with sunglasses -> laser HUD turns alert RED (#ef4444)', sunglassesScan.hudLaserColor === '#ef4444');
+assert('Face with sunglasses -> snap button is disabled', sunglassesScan.snapButtonDisabled === true);
 
-// Test 11.4: Active Camera Stream Fallback (Never "No active camera")
-const fallbackStreamScan = evaluateFaceScanVerification({ obstruction: 'mask', hasHardwareCamera: false, isSimulating: true });
+// Test 11.4: Hat / Cap / Beanie Headwear Obstruction
+const hatScan = evaluateFaceScanVerification({ obstruction: 'hat', hasHardwareCamera: true });
+assert('Face with hat/cap -> canVerify is strictly false (fail-closed)', hatScan.canVerify === false);
+assert('Face with hat/cap -> laser HUD turns alert RED (#ef4444)', hatScan.hudLaserColor === '#ef4444');
+assert('Face with hat/cap -> snap button is disabled with warning label', hatScan.snapButtonDisabled === true && hatScan.snapButtonLabel === 'Hat/Cap Detected (Remove Headwear)');
+assert('Face with hat/cap -> prompts user to remove headwear', hatScan.statusPrompt.includes('HAT / CAP DETECTED: Remove headwear / cap'));
+
+// Test 11.5: Dark Background / Poor Lighting Rejection
+const darkBgScan = evaluateFaceScanVerification({ obstruction: null, backgroundLighting: 'dark', hasHardwareCamera: true });
+assert('Dark background -> canVerify is strictly false (fail-closed)', darkBgScan.canVerify === false);
+assert('Dark background -> laser HUD turns alert RED (#ef4444)', darkBgScan.hudLaserColor === '#ef4444');
+assert('Dark background -> snap button is disabled with warning label', darkBgScan.snapButtonDisabled === true && darkBgScan.snapButtonLabel === 'Dark Background (Move to Light Area)');
+assert('Dark background -> prompts user to move to a light background', darkBgScan.statusPrompt.includes('DARK BACKGROUND: Move in front of a light, well-lit background'));
+
+// Test 11.6: Clear Bare Face & Light Background (Accepted)
+const clearScan = evaluateFaceScanVerification({ obstruction: null, backgroundLighting: 'light', avgLum: 130, hasHardwareCamera: true });
+assert('Clear bare face in light background -> canVerify is true', clearScan.canVerify === true);
+assert('Clear bare face in light background -> laser HUD is active GREEN (#22c55e)', clearScan.hudLaserColor === '#22c55e');
+assert('Clear bare face in light background -> snap button is enabled', clearScan.snapButtonDisabled === false && clearScan.snapButtonLabel === 'Take Photo');
+
+// Test 11.7: Active Camera Stream Fallback (Never "No active camera")
+const fallbackStreamScan = evaluateFaceScanVerification({ obstruction: 'glasses', hasHardwareCamera: false, isSimulating: true });
 assert('Hardware camera unavailable -> biometric simulator auto-activates', fallbackStreamScan.activeStream === true);
 assert('System never encounters "No active camera" stranded state', fallbackStreamScan.noActiveCameraError === false);
 assert('Obstructed face on simulated stream still strictly prevents verification', fallbackStreamScan.canVerify === false);
@@ -1468,6 +1521,7 @@ function simulateBiometricVerify({
   liveDescriptor,
   modelsLoaded = true,
   registeredPhotoExists = true,
+  quality = {},
   threshold = 0.52
 }) {
   if (!registeredPhotoExists || !registeredDescriptor) {
@@ -1492,6 +1546,40 @@ function simulateBiometricVerify({
       distance: Infinity,
       confidence: 0,
       error: 'Biometric AI models not ready. Please wait for facial recognition models to initialize.'
+    };
+  }
+
+  // Defense-in-depth quality guard on live capture (glasses, headwear, dark background)
+  if (quality.glassesDetected) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'Verification blocked: Glasses detected. Eyeglasses or sunglasses must be removed to verify.'
+    };
+  }
+  if (quality.capDetected) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'Verification blocked: Hat/cap detected. Headwear must be removed to verify.'
+    };
+  }
+  if (quality.maskDetected) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'Verification blocked: Face mask detected. Mask must be removed to verify.'
+    };
+  }
+  if (quality.poorBackgroundLighting || quality.tooDark) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'Verification blocked: Dark background or dim lighting detected. Position in front of a light, well-lit background to verify.'
     };
   }
 
@@ -1642,6 +1730,45 @@ const enrolledAttempt = canProceedToFaceScan({
   hasTimeIn: false
 });
 assert('proceedToFaceScan allows scan when trainee has enrolled face biometrics and passed geofence', enrolledAttempt.allowed === true);
+
+// Test 19.9: Strict biometric verification blocks glasses (even with identical face vectors)
+const glassesAttempt = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveSame,
+  quality: { glassesDetected: true },
+  threshold: 0.52
+});
+assert('Strict biometric verify blocks user wearing glasses (fail-closed)', glassesAttempt.matched === false);
+assert('Glasses rejection error specifically informs user to remove glasses', glassesAttempt.error.includes('Glasses detected. Eyeglasses or sunglasses must be removed'));
+
+// Test 19.10: Strict biometric verification blocks hats / caps / headwear
+const capAttempt = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveSame,
+  quality: { capDetected: true },
+  threshold: 0.52
+});
+assert('Strict biometric verify blocks user wearing hat/cap (fail-closed)', capAttempt.matched === false);
+assert('Hat/cap rejection error specifically informs user to remove headwear', capAttempt.error.includes('Hat/cap detected. Headwear must be removed'));
+
+// Test 19.11: Strict biometric verification blocks dark background / poor lighting
+const darkBgAttempt = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveSame,
+  quality: { poorBackgroundLighting: true },
+  threshold: 0.52
+});
+assert('Strict biometric verify blocks dark background (fail-closed)', darkBgAttempt.matched === false);
+assert('Dark background rejection error informs user to move to light background', darkBgAttempt.error.includes('Dark background or dim lighting detected. Position in front of a light, well-lit background'));
+
+// Test 19.12: Clear bare face in light background successfully verifies matching biometrics
+const clearFaceAttempt = simulateBiometricVerify({
+  registeredDescriptor: traineeA_registered,
+  liveDescriptor: traineeA_liveSame,
+  quality: { glassesDetected: false, capDetected: false, maskDetected: false, poorBackgroundLighting: false },
+  threshold: 0.52
+});
+assert('Clear bare face with light background successfully verifies biometrics', clearFaceAttempt.matched === true && clearFaceAttempt.confidence === 100);
 
 // ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS

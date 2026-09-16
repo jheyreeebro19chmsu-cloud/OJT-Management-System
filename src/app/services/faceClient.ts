@@ -308,6 +308,7 @@ export interface FaceQualityReport {
   issues: string[];
   tooDark: boolean;
   tooBright: boolean;
+  poorBackgroundLighting: boolean;
   blurry: boolean;
   capDetected: boolean;
   glassesDetected: boolean;
@@ -328,6 +329,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     issues: [],
     tooDark: false,
     tooBright: false,
+    poorBackgroundLighting: false,
     blurry: false,
     capDetected: false,
     glassesDetected: false,
@@ -371,14 +373,38 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     const avgLum = totalLum / count;
     result.brightness = Math.round(avgLum);
 
-    if (avgLum < 32) {
+    // Background Lighting Analysis: Sample corners and upper margin outside the central oval
+    let bgLumSum = 0;
+    let bgSamples = 0;
+    const cornerW = Math.max(10, Math.floor(w * 0.22));
+    const cornerH = Math.max(10, Math.floor(h * 0.22));
+    for (let y = 0; y < cornerH; y += 4) {
+      for (let x = 0; x < cornerW; x += 4) {
+        const idxTL = (y * w + x) * 4;
+        const idxTR = (y * w + (w - 1 - x)) * 4;
+        bgLumSum += 0.299 * data[idxTL] + 0.587 * data[idxTL + 1] + 0.114 * data[idxTL + 2];
+        bgLumSum += 0.299 * data[idxTR] + 0.587 * data[idxTR + 1] + 0.114 * data[idxTR + 2];
+        bgSamples += 2;
+      }
+    }
+    for (let y = 0; y < Math.floor(h * 0.12); y += 4) {
+      for (let x = Math.floor(w * 0.35); x < Math.floor(w * 0.65); x += 4) {
+        const idx = (y * w + x) * 4;
+        bgLumSum += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        bgSamples++;
+      }
+    }
+    const bgLum = bgSamples > 0 ? Math.round(bgLumSum / bgSamples) : Math.round(avgLum);
+
+    if (bgLum < 45 || avgLum < 38) {
+      result.poorBackgroundLighting = true;
       result.tooDark = true;
       result.ok = false;
-      result.issues.push('Area is too dark. Please move to a brighter location.');
+      result.issues.push('🚨 DARK BACKGROUND / POOR LIGHTING! Please move in front of a light, well-lit background.');
     } else if (avgLum > 242) {
       result.tooBright = true;
       result.ok = false;
-      result.issues.push('Too much glare / overexposure. Please adjust lighting.');
+      result.issues.push('🚨 HARSH GLARE / OVEREXPOSURE! Please adjust lighting.');
     }
 
     // 2. Sharpness / Blurriness Analysis
@@ -497,8 +523,8 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
         const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
 
         // 2. HAT / CAP / HEADWEAR DETECTION
-        // A hat or low-slung cap covers the central forehead down to the eyebrows.
-        // If the central forehead between the eyebrows and hairline has bare skin matching the cheeks, it is NOT a cap.
+        // A hat, cap, or headwear covers or casts a shadow over the forehead down to the eyebrows.
+        // On a bare, clear head, the central forehead has clear bare skin matching the cheeks.
         if (landmarks && landmarks.length >= 68) {
           const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
           const noseBridgeX = landmarks[27].x;
@@ -512,21 +538,33 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
           const foreColorDiff2 = Math.abs(fore2.r - skinR) + Math.abs(fore2.g - skinG) + Math.abs(fore2.b - skinB);
           const foreColorDiff3 = Math.abs(fore3.r - skinR) + Math.abs(fore3.g - skinG) + Math.abs(fore3.b - skinB);
 
-          // Only flag if ALL 3 central forehead points right above the eyebrows are dark/fabric covering
-          const isForeheadFabric = (foreColorDiff1 > 70 || fore1.lum < 28) &&
-                                   (foreColorDiff2 > 70 || fore2.lum < 28) &&
-                                   (foreColorDiff3 > 70 || fore3.lum < 28);
+          const isForeheadFabric = (foreColorDiff1 > 48 || fore1.lum < 32 || fore1.lum > skinLum + 70) &&
+                                   (foreColorDiff2 > 48 || fore2.lum < 32 || fore2.lum > skinLum + 70);
+          const isCapBrimShadow = fore1.lum < skinLum * 0.48 && fore2.lum < skinLum * 0.48;
           const foreheadHeight = browMidY - box.y;
-          if (isForeheadFabric && foreheadHeight > 20) {
+          const foreheadTruncated = foreheadHeight < 16;
+
+          if ((isForeheadFabric || isCapBrimShadow) && foreheadHeight > 18 || foreheadTruncated) {
             result.capDetected = true;
-            result.issues.push('🚨 HAT / CAP DETECTED! Please remove headwear/cap to scan.');
+            result.issues.push('🚨 HAT / CAP DETECTED! Please remove headwear/cap to scan (clear face only).');
           }
         }
 
-        // 3. SUNGLASSES / OPAQUE EYEWEAR DETECTION
-        // Only detect dark sunglasses or mirrored opaque lenses that completely hide the eyes.
-        // On a normal unobstructed eye, the sclera (white of eye) has higher brightness than pupil/iris.
+        // 3. GLASSES DETECTION (Eyeglasses, Reading Glasses, and Sunglasses)
+        // A clear face has NO glasses on the nose bridge or in front of the eyes.
         if (landmarks && landmarks.length >= 68) {
+          // Landmark 27 is the nose bridge between both eyes
+          const bridgePoint = landmarks[27];
+          const bridgePatch = getPatchAvg(bridgePoint.x, bridgePoint.y, 2);
+          const bridgeColorDiff = Math.abs(bridgePatch.r - skinR) + Math.abs(bridgePatch.g - skinG) + Math.abs(bridgePatch.b - skinB);
+
+          // Horizontal frame bar contrast across the nose bridge (point 27 vs 4px above / below)
+          const bridgeTop = getPixel(bridgePoint.x, bridgePoint.y - 4);
+          const bridgeBottom = getPixel(bridgePoint.x, bridgePoint.y + 4);
+          const bridgeVerticalContrast = Math.abs(bridgeTop.lum - bridgePatch.lum) + Math.abs(bridgeBottom.lum - bridgePatch.lum);
+
+          const hasBridgeFrame = (bridgeColorDiff > 40 || bridgePatch.lum < skinLum * 0.55 || bridgeVerticalContrast > 36);
+
           // Right eye: landmarks 36 (outer) to 39 (inner)
           const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
           const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
@@ -541,24 +579,36 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
           const lOuterSclera = getPixel(landmarks[45].x - 4, lPupilY);
           const lCenter = getPixel(lPupilX, lPupilY);
 
-          // In dark sunglasses, the entire eye socket (pupil and sclera) is pitch dark:
-          const rAllDark = rCenter.lum < 30 && rOuterSclera.lum < 35 && rInnerSclera.lum < 35;
-          const lAllDark = lCenter.lum < 30 && lInnerSclera.lum < 35 && lOuterSclera.lum < 35;
+          // Dark Sunglasses check:
+          const rAllDark = rCenter.lum < 32 && rOuterSclera.lum < 38 && rInnerSclera.lum < 38;
+          const lAllDark = lCenter.lum < 32 && lInnerSclera.lum < 38 && lOuterSclera.lum < 38;
 
-          // Mirrored sunglasses check (high reflection and drastic color mismatch on both lenses):
+          // Mirrored Sunglasses check:
           const rEyeColorDiff = Math.abs(rCenter.r - skinR) + Math.abs(rCenter.g - skinG) + Math.abs(rCenter.b - skinB);
           const lEyeColorDiff = Math.abs(lCenter.r - skinR) + Math.abs(lCenter.g - skinG) + Math.abs(lCenter.b - skinB);
-          const mirroredSunglasses = (rEyeColorDiff > 85 && rCenter.lum > 225) && (lEyeColorDiff > 85 && lCenter.lum > 225);
+          const mirroredSunglasses = (rEyeColorDiff > 80 && rCenter.lum > 220) && (lEyeColorDiff > 80 && lCenter.lum > 220);
 
-          if ((rAllDark && lAllDark && skinLum > 55) || mirroredSunglasses) {
+          // Lower orbital eyeglass rim check (6px below lower eyelid landmarks 41 & 46):
+          const rLowerRim = getPixel(landmarks[41].x, landmarks[41].y + 6);
+          const lLowerRim = getPixel(landmarks[46].x, landmarks[46].y + 6);
+          const rRimDiff = Math.abs(rLowerRim.r - skinR) + Math.abs(rLowerRim.g - skinG) + Math.abs(rLowerRim.b - skinB);
+          const lRimDiff = Math.abs(lLowerRim.r - skinR) + Math.abs(lLowerRim.g - skinG) + Math.abs(lLowerRim.b - skinB);
+          const hasLowerRimFrame = (rRimDiff > 42 && lRimDiff > 42) || (rLowerRim.lum < skinLum * 0.50 && lLowerRim.lum < skinLum * 0.50);
+
+          // Lens Glare / Specular Glint on eyeglass lenses:
+          const hasLensReflection = (rCenter.lum > 230 && rEyeColorDiff > 55) || (lCenter.lum > 230 && lEyeColorDiff > 55);
+
+          const isGlasses = (rAllDark && lAllDark && skinLum > 48) ||
+                            mirroredSunglasses ||
+                            (hasBridgeFrame && (hasLowerRimFrame || hasLensReflection || bridgeColorDiff > 50));
+
+          if (isGlasses) {
             result.glassesDetected = true;
-            result.issues.push('🚨 SUNGLASSES DETECTED! Please remove sunglasses to scan.');
+            result.issues.push('🚨 GLASSES DETECTED! Please remove glasses to scan (clear face only).');
           }
         }
 
         // 4. MASK DETECTION (Surgical / Fabric Mask)
-        // A mask covers the philtrum (between nose tip and mouth), chin, and lower cheeks.
-        // If the philtrum and chin have visible bare skin matching the cheeks, it is NOT a mask!
         if (landmarks && landmarks.length >= 68) {
           // Philtrum: point between base of nose (33) and top of upper lip (51)
           const philtrumX = (landmarks[33].x + landmarks[51].x) / 2;
@@ -573,11 +623,9 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
           const philColorDiff = Math.abs(philtrumP.r - skinR) + Math.abs(philtrumP.g - skinG) + Math.abs(philtrumP.b - skinB);
           const chinColorDiff = Math.abs(chinP.r - skinR) + Math.abs(chinP.g - skinG) + Math.abs(chinP.b - skinB);
 
-          // Check if philtrum and chin match normal skin tone:
           const philtrumIsSkin = philColorDiff < 60 && philtrumP.lum > skinLum * 0.45;
           const chinIsSkin = chinColorDiff < 60 && chinP.lum > skinLum * 0.45;
 
-          // A mask is ONLY present if BOTH philtrum and chin are covered in non-skin mask material:
           const isSurgicalBlue = (philtrumP.b > philtrumP.r + 28 && philtrumP.b > 75) || (chinP.b > chinP.r + 28 && chinP.b > 75);
           const isBlackMask = (philtrumP.lum < 24 && chinP.lum < 24 && skinLum > 60);
           const isMaskFabric = (!philtrumIsSkin && !chinIsSkin && (philColorDiff > 70 && chinColorDiff > 70));
@@ -588,7 +636,14 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
           }
         }
 
-        result.faceObscured = Boolean(result.capDetected || result.glassesDetected || result.maskDetected);
+        result.faceObscured = Boolean(
+          result.capDetected ||
+          result.glassesDetected ||
+          result.maskDetected ||
+          result.tooDark ||
+          result.tooBright ||
+          result.poorBackgroundLighting
+        );
         if (result.faceObscured) {
           result.ok = false;
         } else {
@@ -628,6 +683,52 @@ export async function strictBiometricVerify(
         ? 'No registered face template found for this student. Face registration required.'
         : 'Missing live camera image for biometric verification.',
     };
+  }
+
+  // Strict Obstruction & Background Light Defense in Depth:
+  // Reject verification immediately if live face has glasses, hats, mask, or poor background lighting
+  const liveQuality = await inspectFaceQuality(liveDataUrl).catch(() => null);
+  if (liveQuality) {
+    if (liveQuality.glassesDetected) {
+      return {
+        matched: false,
+        distance: Infinity,
+        confidence: 0,
+        error: 'Verification blocked: Glasses detected. Please remove eyeglasses/sunglasses to scan (clear face only).',
+      };
+    }
+    if (liveQuality.capDetected) {
+      return {
+        matched: false,
+        distance: Infinity,
+        confidence: 0,
+        error: 'Verification blocked: Hat or cap detected. Please remove headwear to scan (clear face only).',
+      };
+    }
+    if (liveQuality.maskDetected) {
+      return {
+        matched: false,
+        distance: Infinity,
+        confidence: 0,
+        error: 'Verification blocked: Face mask detected. Please remove face mask to scan.',
+      };
+    }
+    if (liveQuality.poorBackgroundLighting || liveQuality.tooDark) {
+      return {
+        matched: false,
+        distance: Infinity,
+        confidence: 0,
+        error: 'Verification blocked: Dark background / poor lighting. Please move in front of a light, well-lit background.',
+      };
+    }
+    if (liveQuality.tooBright) {
+      return {
+        matched: false,
+        distance: Infinity,
+        confidence: 0,
+        error: 'Verification blocked: Harsh glare on face. Please adjust lighting.',
+      };
+    }
   }
 
   const modelsAvailable = _modelsLoaded;

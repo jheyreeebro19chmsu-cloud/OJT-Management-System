@@ -16,6 +16,7 @@ export interface BiometricQualityResult {
   hasFace: boolean;
   tooDark: boolean;
   tooBright: boolean;
+  poorBackgroundLighting?: boolean;
   brightness: number;
   faceCentered?: boolean;
   capDetected?: boolean;

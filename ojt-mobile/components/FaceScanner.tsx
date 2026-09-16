@@ -222,12 +222,17 @@ export default function FaceScanner({
 
         if (!isMountedRef.current || hasFinishedRef.current) return;
 
-        if (quality.tooDark) {
+        if (quality.tooDark || quality.poorBackgroundLighting) {
           consecutiveStable = 0;
           setStableCount(0);
-          setScanStatus('aligning');
-          setStatusMessage('⚠️ Too dark! Move to a brighter area');
-          Animated.timing(progressAnim, { toValue: 0.2, duration: 200, useNativeDriver: false }).start();
+          setScanStatus('failed');
+          triggerAlarmHaptic();
+          const darkMsg = quality.poorBackgroundLighting
+            ? '🚨 ALARM: DARK BACKGROUND! Move in front of a light, well-lit background'
+            : '🚨 ALARM: TOO DARK! Move to a brighter area with a light background';
+          setStatusMessage(darkMsg);
+          setErrorMessage(darkMsg);
+          Animated.timing(progressAnim, { toValue: 0.1, duration: 200, useNativeDriver: false }).start();
           return;
         }
 
@@ -246,7 +251,7 @@ export default function FaceScanner({
           setScanStatus('failed');
           triggerAlarmHaptic();
 
-          let prompt = '🚨 ALARM: FACE OBSTRUCTED! Ensure full face is visible to scan';
+          let prompt = '🚨 ALARM: FACE OBSTRUCTED! Clear face required (no glasses or hats)';
           if (quality.glassesDetected) {
             prompt = '🚨 ALARM: GLASSES DETECTED! Remove eyeglasses / sunglasses to scan';
           } else if (quality.capDetected) {
@@ -303,7 +308,16 @@ export default function FaceScanner({
               handleSuccess(dataUrl);
             }
           }
-        } else if ((mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') && enrolledPhoto) {
+        } else if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
+          if (!enrolledPhoto) {
+            consecutiveStable = 0;
+            setStableCount(0);
+            setScanStatus('failed');
+            setStatusMessage('❌ Face not registered. Please register face first.');
+            setErrorMessage('No registered biometric facial profile found on your account. Please complete face registration before recording attendance.');
+            return;
+          }
+
           // Continuous DTR Biometric Verification: Match live frame against enrolled template with DeepFace AI
           setScanStatus('verifying');
           setStatusMessage('Verifying biometric facial template...');
@@ -335,14 +349,6 @@ export default function FaceScanner({
             setStableCount(0);
             setScanStatus('failed');
             setStatusMessage(`⚠️ Biometric mismatch (${dfRes.similarity_percent}% sim, dist: ${dfRes.distance.toFixed(2)})`);
-          }
-        } else {
-          // If no enrolled photo yet on clock-in, auto-enroll student on first punch
-          consecutiveStable++;
-          setStableCount(consecutiveStable);
-          setScanStatus('analyzing');
-          if (consecutiveStable >= 2) {
-            handleSuccess(dataUrl);
           }
         }
       } catch (err: any) {
@@ -384,22 +390,25 @@ export default function FaceScanner({
 
       const base64Data = `data:image/jpeg;base64,${photo.base64}`;
 
-      // Enforce fail-closed obstruction checks
+      // Enforce fail-closed obstruction and background lighting checks
       const quality = await biometricService.inspectQuality(base64Data);
-      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected || quality.poorBackgroundLighting || quality.tooDark) {
         setScanStatus('failed');
         try {
           Vibration.vibrate([0, 400, 150, 400]);
         } catch {}
 
-        let reason = '🚨 ALARM: Verification Blocked! Full face visibility is required.';
-        let shortMsg = '🚨 ALARM: Face Obstructed';
+        let reason = '🚨 ALARM: Verification Blocked! Full clear face and light background required.';
+        let shortMsg = '🚨 ALARM: Clear Face Required';
         if (quality.glassesDetected) {
           reason = '🚨 ALARM: Glasses detected! Biometric verification strictly blocks scanning with eyeglasses or sunglasses. Please remove them and try again.';
           shortMsg = '🚨 ALARM: Glasses Detected';
         } else if (quality.capDetected) {
           reason = '🚨 ALARM: Hat or cap detected! Biometric verification strictly blocks headwear. Please remove your cap/hat and try again.';
           shortMsg = '🚨 ALARM: Hat/Cap Detected';
+        } else if (quality.poorBackgroundLighting || quality.tooDark) {
+          reason = '🚨 ALARM: Dark background or dim lighting detected! Biometric verification requires a light, well-lit background. Please move to a brighter area with a light background and try again.';
+          shortMsg = '🚨 ALARM: Dark Background';
         } else if (quality.maskDetected) {
           reason = '🚨 ALARM: Face mask detected! Biometric verification strictly blocks masks. Please remove your mask and try again.';
           shortMsg = '🚨 ALARM: Mask Detected';
@@ -412,7 +421,15 @@ export default function FaceScanner({
       }
 
       // If in DTR verification mode, check against enrolled photo with DeepFace AI
-      if ((mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') && enrolledPhoto) {
+      if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
+        if (!enrolledPhoto) {
+          setScanStatus('failed');
+          setErrorMessage('No registered biometric face profile found. You must complete face registration before clocking in.');
+          setStatusMessage('❌ Face not registered');
+          setIsCapturing(false);
+          return;
+        }
+
         setStatusMessage('Verifying facial template...');
         const dfRes = await deepfaceService.verifyFace(enrolledPhoto, base64Data, { modelName: deepFaceModel });
         setDeepFaceResult(dfRes);

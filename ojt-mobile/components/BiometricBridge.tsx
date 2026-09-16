@@ -263,6 +263,21 @@ const BRIDGE_HTML = `
               faceCentered = false;
             }
 
+            // Background Light Sampling (Corners & Top Margin)
+            let bgLumSum = 0;
+            let bgSamples = 0;
+            const cornerW = Math.max(8, Math.floor(canvas.width * 0.20));
+            const cornerH = Math.max(8, Math.floor(canvas.height * 0.20));
+            for (let y = 0; y < cornerH; y += 4) {
+              for (let x = 0; x < cornerW; x += 4) {
+                bgLumSum += getPixel(imgData, canvas.width, canvas.height, x, y).lum;
+                bgLumSum += getPixel(imgData, canvas.width, canvas.height, canvas.width - 1 - x, y).lum;
+                bgSamples += 2;
+              }
+            }
+            const bgLum = bgSamples > 0 ? Math.round(bgLumSum / bgSamples) : avgLum;
+            const poorBackgroundLighting = bgLum < 45 || avgLum < 38;
+
             // 1. Cheek Skin Tone Baseline Sampling
             let cx1, cy1, cx2, cy2;
             if (landmarks && landmarks.length >= 68) {
@@ -284,7 +299,6 @@ const BRIDGE_HTML = `
             const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
 
             // 2. HAT / CAP / HEADWEAR DETECTION
-            // A hat or low-slung cap covers the central forehead down to the eyebrows.
             if (landmarks && landmarks.length >= 68) {
               const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
               const noseBridgeX = landmarks[27].x;
@@ -295,20 +309,28 @@ const BRIDGE_HTML = `
 
               const foreColorDiff1 = Math.abs(fore1.r - skinR) + Math.abs(fore1.g - skinG) + Math.abs(fore1.b - skinB);
               const foreColorDiff2 = Math.abs(fore2.r - skinR) + Math.abs(fore2.g - skinG) + Math.abs(fore2.b - skinB);
-              const foreColorDiff3 = Math.abs(fore3.r - skinR) + Math.abs(fore3.g - skinG) + Math.abs(fore3.b - skinB);
 
-              const isForeheadFabric = (foreColorDiff1 > 70 || fore1.lum < 28) &&
-                                       (foreColorDiff2 > 70 || fore2.lum < 28) &&
-                                       (foreColorDiff3 > 70 || fore3.lum < 28);
+              const isForeheadFabric = (foreColorDiff1 > 48 || fore1.lum < 32 || fore1.lum > skinLum + 70) &&
+                                       (foreColorDiff2 > 48 || fore2.lum < 32 || fore2.lum > skinLum + 70);
+              const isCapBrimShadow = fore1.lum < skinLum * 0.48 && fore2.lum < skinLum * 0.48;
               const foreheadHeight = browMidY - box.y;
-              if (isForeheadFabric && foreheadHeight > 20) {
+              const foreheadTruncated = foreheadHeight < 16;
+
+              if ((isForeheadFabric || isCapBrimShadow) && foreheadHeight > 18 || foreheadTruncated) {
                 capDetected = true;
               }
             }
 
-            // 3. SUNGLASSES / OPAQUE EYEWEAR DETECTION
-            // Only detect dark sunglasses or mirrored opaque lenses that completely hide the eyes.
+            // 3. GLASSES DETECTION (Eyeglasses, Reading Glasses, Sunglasses)
             if (landmarks && landmarks.length >= 68) {
+              const bridgePoint = landmarks[27];
+              const bridgePatch = getPatchAvg(imgData, canvas.width, canvas.height, bridgePoint.x, bridgePoint.y, 2);
+              const bridgeColorDiff = Math.abs(bridgePatch.r - skinR) + Math.abs(bridgePatch.g - skinG) + Math.abs(bridgePatch.b - skinB);
+              const bridgeTop = getPixel(imgData, canvas.width, canvas.height, bridgePoint.x, bridgePoint.y - 4);
+              const bridgeBottom = getPixel(imgData, canvas.width, canvas.height, bridgePoint.x, bridgePoint.y + 4);
+              const bridgeVerticalContrast = Math.abs(bridgeTop.lum - bridgePatch.lum) + Math.abs(bridgeBottom.lum - bridgePatch.lum);
+              const hasBridgeFrame = (bridgeColorDiff > 40 || bridgePatch.lum < skinLum * 0.55 || bridgeVerticalContrast > 36);
+
               const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
               const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
               const rOuterSclera = getPixel(imgData, canvas.width, canvas.height, landmarks[36].x + 4, rPupilY);
@@ -321,20 +343,31 @@ const BRIDGE_HTML = `
               const lOuterSclera = getPixel(imgData, canvas.width, canvas.height, landmarks[45].x - 4, lPupilY);
               const lCenter = getPixel(imgData, canvas.width, canvas.height, lPupilX, lPupilY);
 
-              const rAllDark = rCenter.lum < 30 && rOuterSclera.lum < 35 && rInnerSclera.lum < 35;
-              const lAllDark = lCenter.lum < 30 && lInnerSclera.lum < 35 && lOuterSclera.lum < 35;
+              const rAllDark = rCenter.lum < 32 && rOuterSclera.lum < 38 && rInnerSclera.lum < 38;
+              const lAllDark = lCenter.lum < 32 && lInnerSclera.lum < 38 && lOuterSclera.lum < 38;
 
               const rEyeColorDiff = Math.abs(rCenter.r - skinR) + Math.abs(rCenter.g - skinG) + Math.abs(rCenter.b - skinB);
               const lEyeColorDiff = Math.abs(lCenter.r - skinR) + Math.abs(lCenter.g - skinG) + Math.abs(lCenter.b - skinB);
-              const mirroredSunglasses = (rEyeColorDiff > 85 && rCenter.lum > 225) && (lEyeColorDiff > 85 && lCenter.lum > 225);
+              const mirroredSunglasses = (rEyeColorDiff > 80 && rCenter.lum > 220) && (lEyeColorDiff > 80 && lCenter.lum > 220);
 
-              if ((rAllDark && lAllDark && skinLum > 55) || mirroredSunglasses) {
+              const rLowerRim = getPixel(imgData, canvas.width, canvas.height, landmarks[41].x, landmarks[41].y + 6);
+              const lLowerRim = getPixel(imgData, canvas.width, canvas.height, landmarks[46].x, landmarks[46].y + 6);
+              const rRimDiff = Math.abs(rLowerRim.r - skinR) + Math.abs(rLowerRim.g - skinG) + Math.abs(rLowerRim.b - skinB);
+              const lRimDiff = Math.abs(lLowerRim.r - skinR) + Math.abs(lLowerRim.g - skinG) + Math.abs(lLowerRim.b - skinB);
+              const hasLowerRimFrame = (rRimDiff > 42 && lRimDiff > 42) || (rLowerRim.lum < skinLum * 0.50 && lLowerRim.lum < skinLum * 0.50);
+
+              const hasLensReflection = (rCenter.lum > 230 && rEyeColorDiff > 55) || (lCenter.lum > 230 && lEyeColorDiff > 55);
+
+              const isGlasses = (rAllDark && lAllDark && skinLum > 48) ||
+                                mirroredSunglasses ||
+                                (hasBridgeFrame && (hasLowerRimFrame || hasLensReflection || bridgeColorDiff > 50));
+
+              if (isGlasses) {
                 glassesDetected = true;
               }
             }
 
             // 4. MASK DETECTION (Lower face nose-to-chin region)
-            // A mask covers the philtrum and chin. If both are bare skin matching cheeks, it is NOT a mask.
             if (landmarks && landmarks.length >= 68) {
               const philtrumX = (landmarks[33].x + landmarks[51].x) / 2;
               const philtrumY = (landmarks[33].y + landmarks[51].y) / 2;
@@ -363,7 +396,7 @@ const BRIDGE_HTML = `
           hasFace = true;
         }
 
-        const faceObscured = Boolean(capDetected || glassesDetected || maskDetected);
+        const faceObscured = Boolean(capDetected || glassesDetected || maskDetected || poorBackgroundLighting || avgLum < 38);
 
         sendToNative({
           id,
@@ -373,7 +406,8 @@ const BRIDGE_HTML = `
           glassesDetected,
           maskDetected,
           faceObscured,
-          tooDark: avgLum < 30,
+          poorBackgroundLighting,
+          tooDark: avgLum < 38 || poorBackgroundLighting,
           tooBright: avgLum > 240,
           brightness: avgLum
         });
@@ -386,6 +420,7 @@ const BRIDGE_HTML = `
           glassesDetected: false,
           maskDetected: false,
           faceObscured: false,
+          poorBackgroundLighting: false,
           tooDark: false,
           tooBright: false,
           brightness: 128
