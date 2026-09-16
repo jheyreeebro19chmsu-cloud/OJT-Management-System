@@ -86,18 +86,42 @@ import ProfileScreen from './screens/ProfileScreen';
 import EvaluationScreen from './screens/EvaluationScreen';
 import { getSchoolLogo } from './utils/schoolLogos';
 
-function normalizeRole(position?: string | null) {
-  const value = String(position || '').trim();
-  if (value === 'OJT Instructor' || value === 'Administrator' || value === 'admin' || value === 'instructor') return 'admin';
-  if (value === 'Training Supervisor' || value === 'HTE Representative' || value === 'hte' || value === 'host') return 'hte';
+function normalizeRole(position?: string | null, roleField?: string | null): 'admin' | 'hte' | 'employee' {
+  const r = String(roleField || '').trim().toLowerCase();
+  if (r === 'admin' || r === 'instructor') return 'admin';
+  if (r === 'hte' || r === 'host') return 'hte';
+
+  const val = String(position || '').trim().toLowerCase();
+  if (
+    val === 'admin' ||
+    val === 'instructor' ||
+    val.includes('instructor') ||
+    val.includes('administrator') ||
+    val.includes('faculty') ||
+    val.includes('coordinator') ||
+    val.includes('professor')
+  ) {
+    return 'admin';
+  }
+  if (
+    val === 'hte' ||
+    val === 'host' ||
+    val.includes('supervisor') ||
+    val.includes('hte') ||
+    val.includes('training supervisor') ||
+    val.includes('manager')
+  ) {
+    return 'hte';
+  }
   return 'employee';
 }
 
 function normalizeProfile(data: any) {
   if (!data) return null;
+  const role = normalizeRole(data.position, data.role);
   return {
     ...data,
-    role: normalizeRole(data.position || data.role),
+    role,
     instructor_id: data.instructor_id || data.instructorId || data.application_id || data.id,
     registration_location: data.registration_location || data.registrationLocation,
     schoolName: data.school_name || data.schoolName,
@@ -609,6 +633,33 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         .maybeSingle();
 
       if (existingEmp) {
+        // If user specifically tapped "Continue as Instructor" or "Continue as HTE", ensure their role is updated
+        if (selectedRole === 'admin') {
+          existingEmp.role = 'admin';
+          existingEmp.position = 'OJT Instructor';
+          existingEmp.application_status = 'approved';
+          try {
+            await supabase
+              .from('employees')
+              .update({ role: 'admin', position: 'OJT Instructor', application_status: 'approved' })
+              .eq('id', existingEmp.id);
+          } catch (syncErr) {
+            console.warn('Notice syncing instructor role to DB:', syncErr);
+          }
+        } else if (selectedRole === 'hte') {
+          existingEmp.role = 'hte';
+          existingEmp.position = 'HTE Representative';
+          existingEmp.application_status = 'approved';
+          try {
+            await supabase
+              .from('employees')
+              .update({ role: 'hte', position: 'HTE Representative', application_status: 'approved' })
+              .eq('id', existingEmp.id);
+          } catch (syncErr) {
+            console.warn('Notice syncing HTE role to DB:', syncErr);
+          }
+        }
+
         const np = normalizeProfile(existingEmp);
         await authStore.saveUser(np);
         setSession(googleSession);
@@ -1925,7 +1976,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                     resizeMode="contain"
                   />
                 </View>
-                <Text style={styles.loginAppTitle}>OJT Management System</Text>
+                <Text style={styles.loginAppTitle}>CHMSU OJT Management System</Text>
                 <Text style={styles.loginAppSubtitle}>Carlos Hilado Memorial State University</Text>
                 <View style={styles.loginAyChip}>
                   <Text style={styles.loginAyChipText}>ACADEMIC YEAR {activeAcademicYear}</Text>

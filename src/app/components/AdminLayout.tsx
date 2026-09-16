@@ -165,7 +165,7 @@ export function AdminLayout() {
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div>
-              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT System</div>
+              <div className="text-white font-bold text-sm leading-tight">CHMSU OJT Management System</div>
               <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
             </div>
           </div>
@@ -261,7 +261,7 @@ export function AdminLayout() {
                       <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
                     </div>
                     <div>
-                      <div className="text-white font-bold text-sm">CHMSU OJT System</div>
+                      <div className="text-white font-bold text-sm">CHMSU OJT Management System</div>
                       <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
                     </div>
                   </div>

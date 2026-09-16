@@ -1348,6 +1348,13 @@ export function transformSupabaseEmployee(data: any): Employee {
     name: data.name,
     employeeId: data.employee_id || '',
     email: data.email,
+    role: data.role || (
+      data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor'))
+        ? 'admin'
+        : data.position === 'HTE Representative' || data.position === 'Training Supervisor' || (data.position && String(data.position).toLowerCase().includes('hte'))
+          ? 'hte'
+          : 'employee'
+    ),
     department: data.department,
     position: data.position,
     companyName: data.company_name,

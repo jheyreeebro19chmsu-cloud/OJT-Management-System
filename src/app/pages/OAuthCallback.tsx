@@ -25,15 +25,22 @@ export default function OAuthCallback() {
           return;
         }
 
+        const pendingRole = localStorage.getItem('pending_oauth_role');
         const authUser = session.user;
         const matchedUser = await loginWithOAuthUser(authUser);
 
         if (matchedUser) {
           localStorage.removeItem('pending_oauth_role');
-          // Existing user: direct to role-specific dashboard
-          if (matchedUser.role === 'admin') {
+          const effectiveRole = pendingRole === 'admin' ? 'admin' : pendingRole === 'hte' ? 'hte' : matchedUser.role;
+
+          // Direct to role-specific dashboard
+          if (effectiveRole === 'admin') {
+            const adminUser = { ...matchedUser, role: 'admin' as const };
+            localStorage.setItem('ojt_user', JSON.stringify(adminUser));
             navigate('/admin');
-          } else if (matchedUser.role === 'hte' || matchedUser.role === 'host') {
+          } else if (effectiveRole === 'hte' || effectiveRole === 'host') {
+            const hteUser = { ...matchedUser, role: 'hte' as const };
+            localStorage.setItem('ojt_user', JSON.stringify(hteUser));
             navigate('/hte');
           } else {
             const employee = employees.find(
@@ -49,7 +56,19 @@ export default function OAuthCallback() {
             navigate('/app');
           }
         } else {
-          // Option B: First-time Google user — route to /register to complete required profile details
+          // If the user signed in as Instructor or HTE, never route to Trainee registration
+          if (pendingRole === 'admin') {
+            localStorage.removeItem('pending_oauth_role');
+            navigate('/admin');
+            return;
+          }
+          if (pendingRole === 'hte') {
+            localStorage.removeItem('pending_oauth_role');
+            navigate('/hte');
+            return;
+          }
+
+          // First-time Trainee Google user — route to /register to complete trainee profile
           const email = authUser.email || '';
           const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || '';
           const photoUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';

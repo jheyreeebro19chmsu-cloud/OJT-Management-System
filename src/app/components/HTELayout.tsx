@@ -95,7 +95,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div className="min-w-0">
-              <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT System</div>
+              <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT Management System</div>
               <div className="text-blue-300 text-xs font-semibold">HTE Panel</div>
             </div>
           </div>
@@ -236,7 +236,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                 <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
               </div>
               <div>
-                <div className="text-xs text-blue-200 leading-tight">CHMSU OJT System</div>
+                <div className="text-xs text-blue-200 leading-tight">CHMSU OJT Management System</div>
                 <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{companyName}</div>
               </div>
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-700/60 border border-blue-400/40 text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">

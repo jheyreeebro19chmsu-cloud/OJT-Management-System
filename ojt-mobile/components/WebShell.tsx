@@ -168,7 +168,7 @@ export function WebShell({ onSwitchToNative }: WebShellProps) {
           renderLoading={() => (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#2563eb" />
-              <Text style={styles.loadingText}>Connecting to CHMSU OJT System...</Text>
+              <Text style={styles.loadingText}>Connecting to CHMSU OJT Management System...</Text>
             </View>
           )}
         />

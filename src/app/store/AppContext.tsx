@@ -1319,6 +1319,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    const pendingRole = typeof window !== 'undefined' ? localStorage.getItem('pending_oauth_role') : null;
+
     if (matchedEmp) {
       if (useSupabase && authId && matchedEmp.userId !== authId) {
         try {
@@ -1330,14 +1332,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const isInstructor =
+        pendingRole === 'admin' ||
+        matchedEmp.role === 'admin' ||
         matchedEmp.position === 'OJT Instructor' ||
         matchedEmp.position === 'Administrator' ||
-        (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
+        (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor')) ||
+        (matchedEmp.position && matchedEmp.position.toLowerCase().includes('admin'));
       const isHTE =
+        pendingRole === 'hte' ||
+        matchedEmp.role === 'hte' ||
+        matchedEmp.role === 'host' ||
         matchedEmp.position === 'HTE Representative' ||
         matchedEmp.position === 'Training Supervisor' ||
         (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
       const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
+
+      // If user specifically signed in as Instructor, ensure their employee record has role admin
+      if (pendingRole === 'admin' && (matchedEmp.role !== 'admin' || matchedEmp.position !== 'OJT Instructor')) {
+        matchedEmp.role = 'admin';
+        matchedEmp.position = 'OJT Instructor';
+        if (useSupabase) {
+          try {
+            await supabase.from('employees').update({
+              role: 'admin',
+              position: 'OJT Instructor',
+              application_status: 'approved',
+            }).eq('id', matchedEmp.id);
+          } catch (syncErr) {
+            console.warn('Failed syncing instructor role to DB:', syncErr);
+          }
+        }
+      }
 
       const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
       const user: User = {
@@ -1368,7 +1393,146 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return user;
     }
 
-    // Option B: Returning null when no profile exists so user can complete registration
+    // Auto-provision instructor if signing in via Google with Instructor role tab selected
+    if (pendingRole === 'admin') {
+      const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authEmail.split('@')[0];
+      const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
+      const autoInstructor: Employee = {
+        id: authId || `ADM-${Date.now()}`,
+        name: fullName,
+        email: authEmail,
+        employeeId: authId || `ADM-${Date.now()}`,
+        role: 'admin',
+        position: 'OJT Instructor',
+        department: 'College of Computer Studies',
+        companyName: 'N/A',
+        supervisorName: 'N/A',
+        schoolName: 'Carlos Hilado Memorial State University',
+        campus: 'Talisay Campus',
+        course: 'Information Systems',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        requiredHours: 0,
+        faceRegistered: false,
+        active: true,
+        academicYear: settings.activeAcademicYear,
+        approvalStatus: 'approved',
+        applicationStatus: 'approved',
+        documentsPassed: true,
+        documentsStatus: 'passed',
+        createdAt: new Date().toISOString().split('T')[0],
+        photo: avatarUrl || undefined,
+        userId: authId,
+      };
+
+      if (useSupabase) {
+        try {
+          const dbData: any = {
+            id: authId,
+            name: fullName,
+            email: authEmail,
+            position: 'OJT Instructor',
+            role: 'admin',
+            academic_year: settings.activeAcademicYear,
+            department: 'College of Computer Studies',
+            campus: 'Talisay Campus',
+            school_name: 'Carlos Hilado Memorial State University',
+            photo: avatarUrl || null,
+            active: true,
+            application_status: 'approved',
+            documents_passed: true,
+            documents_status: 'passed',
+            face_registered: false,
+            required_hours: 0,
+          };
+          await supabase.from('employees').upsert(dbData, { onConflict: 'email' });
+        } catch (provErr) {
+          console.warn('Auto-provisioning instructor notice in AppContext:', provErr);
+        }
+      }
+
+      setEmployees((prev) => [autoInstructor, ...prev.filter((e) => e.email !== authEmail)]);
+      const user: User = {
+        id: autoInstructor.id,
+        name: autoInstructor.name,
+        role: 'admin',
+        employeeId: autoInstructor.employeeId,
+        email: authEmail,
+        photo: avatarUrl,
+        faceRegistered: false,
+      };
+      setCurrentUser(user);
+      return user;
+    }
+
+    // Auto-provision HTE supervisor if signing in via Google with HTE role tab selected
+    if (pendingRole === 'hte') {
+      const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authEmail.split('@')[0];
+      const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
+      const autoHte: Employee = {
+        id: authId || `HTE-${Date.now()}`,
+        name: fullName,
+        email: authEmail,
+        employeeId: authId || `HTE-${Date.now()}`,
+        role: 'hte',
+        position: 'HTE Representative',
+        department: 'Host Establishment',
+        companyName: 'Host Training Establishment',
+        supervisorName: fullName,
+        schoolName: 'Carlos Hilado Memorial State University',
+        campus: 'Talisay Campus',
+        course: 'Information Systems',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        requiredHours: 0,
+        faceRegistered: false,
+        active: true,
+        academicYear: settings.activeAcademicYear,
+        approvalStatus: 'approved',
+        applicationStatus: 'approved',
+        documentsPassed: true,
+        documentsStatus: 'passed',
+        createdAt: new Date().toISOString().split('T')[0],
+        photo: avatarUrl || undefined,
+        userId: authId,
+      };
+
+      if (useSupabase) {
+        try {
+          const dbData: any = {
+            id: authId,
+            name: fullName,
+            email: authEmail,
+            position: 'HTE Representative',
+            role: 'hte',
+            academic_year: settings.activeAcademicYear,
+            company_name: 'Host Training Establishment',
+            supervisor_name: fullName,
+            photo: avatarUrl || null,
+            active: true,
+            application_status: 'approved',
+          };
+          await supabase.from('employees').upsert(dbData, { onConflict: 'email' });
+        } catch (provErr) {
+          console.warn('Auto-provisioning HTE notice in AppContext:', provErr);
+        }
+      }
+
+      setEmployees((prev) => [autoHte, ...prev.filter((e) => e.email !== authEmail)]);
+      const user: User = {
+        id: autoHte.id,
+        name: autoHte.name,
+        role: 'hte',
+        employeeId: autoHte.employeeId,
+        email: authEmail,
+        photo: avatarUrl,
+        faceRegistered: false,
+      };
+      setCurrentUser(user);
+      return user;
+    }
+
+    // Returning null for trainee first-time Google sign in so user can complete registration
     return null;
   };
 
