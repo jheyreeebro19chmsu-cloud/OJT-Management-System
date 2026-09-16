@@ -385,38 +385,55 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
 export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<TimeRecord | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const supabaseRecord = {
+  const cleanDate = record.date ? String(record.date).split('T')[0] : new Date().toISOString().split('T')[0];
+
+  const baseRecord: any = {
     employee_id: record.employeeId,
-    date: record.date,
-    time_in: record.timeIn,
-    time_out: record.timeOut,
-    time_in_lat: record.timeInLocation?.lat,
-    time_in_lng: record.timeInLocation?.lng,
-    time_out_lat: record.timeOutLocation?.lat,
-    time_out_lng: record.timeOutLocation?.lng,
-    time_in_geofenced: record.timeInGeofenced,
-    time_out_geofenced: record.timeOutGeofenced,
-    time_in_face_verified: record.timeInFaceVerified,
-    time_out_face_verified: record.timeOutFaceVerified,
-    time_in_photo: record.timeInPhoto,
-    time_out_photo: record.timeOutPhoto,
-    total_hours: record.totalHours,
-    status: record.status,
-    notes: record.notes,
+    date: cleanDate,
+    time_in: record.timeIn || null,
+    time_out: record.timeOut || null,
+    total_hours: record.totalHours ?? 0,
+    status: record.status || 'present',
+    time_in_geofenced: Boolean(record.timeInGeofenced),
+    time_out_geofenced: Boolean(record.timeOutGeofenced),
+    time_in_face_verified: Boolean(record.timeInFaceVerified),
+    time_out_face_verified: Boolean(record.timeOutFaceVerified),
+  };
+
+  if (record.timeInPhoto && record.timeInPhoto.startsWith('http')) {
+    baseRecord.time_in_photo = record.timeInPhoto;
+  }
+  if (record.timeOutPhoto && record.timeOutPhoto.startsWith('http')) {
+    baseRecord.time_out_photo = record.timeOutPhoto;
+  }
+
+  const extendedRecord: any = {
+    ...baseRecord,
+    time_in_lat: record.timeInLocation?.lat != null ? Number(record.timeInLocation.lat) : null,
+    time_in_lng: record.timeInLocation?.lng != null ? Number(record.timeInLocation.lng) : null,
+    time_out_lat: record.timeOutLocation?.lat != null ? Number(record.timeOutLocation.lat) : null,
+    time_out_lng: record.timeOutLocation?.lng != null ? Number(record.timeOutLocation.lng) : null,
+    notes: record.notes || null,
+    academic_year: record.academicYear || null,
     approval_status: record.approvalStatus || 'pending',
     approved_by: record.approvedBy || null,
     approved_at: record.approvedAt || null,
     approval_note: record.approvalNote || null,
   };
 
-  const { data, error } = await supabase.from('time_records').insert([supabaseRecord]).select().single();
+  let insertResult = await supabase.from('time_records').insert([extendedRecord]).select().single();
 
-  if (error) {
-    console.error('Error creating time record in Supabase:', error);
-    throw new Error(error.message || JSON.stringify(error));
+  if (insertResult.error) {
+    console.warn('[Supabase] Extended time_record insert notice, retrying with core columns:', insertResult.error.message);
+    insertResult = await supabase.from('time_records').insert([baseRecord]).select().single();
   }
 
-  return transformSupabaseTimeRecord({ ...data, academic_year: record.academicYear });
+  if (insertResult.error) {
+    console.error('Error creating time record in Supabase:', insertResult.error);
+    throw new Error(insertResult.error.message || JSON.stringify(insertResult.error));
+  }
+
+  return transformSupabaseTimeRecord({ ...insertResult.data, academic_year: record.academicYear });
 }
 
 export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>): Promise<boolean> {
@@ -437,8 +454,12 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (updates.timeOutGeofenced !== undefined) supabaseUpdates.time_out_geofenced = updates.timeOutGeofenced;
   if (updates.timeInFaceVerified !== undefined) supabaseUpdates.time_in_face_verified = updates.timeInFaceVerified;
   if (updates.timeOutFaceVerified !== undefined) supabaseUpdates.time_out_face_verified = updates.timeOutFaceVerified;
-  if (updates.timeInPhoto !== undefined) supabaseUpdates.time_in_photo = updates.timeInPhoto;
-  if (updates.timeOutPhoto !== undefined) supabaseUpdates.time_out_photo = updates.timeOutPhoto;
+  if (updates.timeInPhoto !== undefined && (typeof updates.timeInPhoto !== 'string' || updates.timeInPhoto.startsWith('http'))) {
+    supabaseUpdates.time_in_photo = updates.timeInPhoto;
+  }
+  if (updates.timeOutPhoto !== undefined && (typeof updates.timeOutPhoto !== 'string' || updates.timeOutPhoto.startsWith('http'))) {
+    supabaseUpdates.time_out_photo = updates.timeOutPhoto;
+  }
   if (updates.totalHours !== undefined) supabaseUpdates.total_hours = updates.totalHours;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
   if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
@@ -454,30 +475,47 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   if (isUuid) {
-    const { error, data } = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
-    if (error) {
-      console.error('Error updating time record by UUID:', error);
-      throw new Error(error.message || 'Failed to update time record');
+    let res = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
+    if (res.error) {
+      const fallbackUpdates = { ...supabaseUpdates };
+      delete fallbackUpdates.approval_status;
+      delete fallbackUpdates.approved_by;
+      delete fallbackUpdates.approved_at;
+      delete fallbackUpdates.approval_note;
+      res = await supabase.from('time_records').update(fallbackUpdates).eq('id', id).select();
     }
-    if (data && data.length > 0) {
+    if (res.error) {
+      console.error('Error updating time record by UUID:', res.error);
+    } else if (res.data && res.data.length > 0) {
       return true;
     }
   }
 
   // Fallback: match by employee_id and date (critical for temporary local IDs like rec-...)
   if (updates.employeeId) {
-    const targetDate = updates.date || new Date().toISOString().split('T')[0];
-    const { error: err2, data: data2 } = await supabase
+    const targetDate = updates.date ? String(updates.date).split('T')[0] : new Date().toISOString().split('T')[0];
+    let res2 = await supabase
       .from('time_records')
       .update(supabaseUpdates)
       .eq('employee_id', updates.employeeId)
       .eq('date', targetDate)
       .select();
-    if (err2) {
-      console.error('Error updating time record by employee_id and date:', err2);
-      throw new Error(err2.message || 'Failed to update time record');
+    if (res2.error) {
+      const fallbackUpdates = { ...supabaseUpdates };
+      delete fallbackUpdates.approval_status;
+      delete fallbackUpdates.approved_by;
+      delete fallbackUpdates.approved_at;
+      delete fallbackUpdates.approval_note;
+      res2 = await supabase
+        .from('time_records')
+        .update(fallbackUpdates)
+        .eq('employee_id', updates.employeeId)
+        .eq('date', targetDate)
+        .select();
     }
-    if (data2 && data2.length > 0) {
+    if (res2.error) {
+      console.error('Error updating time record by employee_id and date:', res2.error);
+    } else if (res2.data && res2.data.length > 0) {
       return true;
     }
   }
@@ -1366,7 +1404,7 @@ function transformSupabaseTimeRecord(data: any): TimeRecord {
   return {
     id: data.id,
     employeeId: data.employee_id,
-    date: data.date,
+    date: data.date ? String(data.date).split('T')[0] : data.date,
     timeIn: data.time_in,
     timeOut: data.time_out,
     timeInLocation: data.time_in_lat && data.time_in_lng ? { lat: data.time_in_lat, lng: data.time_in_lng } : undefined,

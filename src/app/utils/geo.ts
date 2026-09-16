@@ -188,12 +188,14 @@ export function isGeolocationPositionError(err: unknown): err is any {
  */
 export function getDTRSessionDate(date = new Date()): string {
   const currentHour = date.getHours();
+  const targetDate = new Date(date);
   if (currentHour < 6) {
-    const yesterday = new Date(date);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return yesterday.toISOString().split('T')[0];
+    targetDate.setDate(targetDate.getDate() - 1);
   }
-  return date.toISOString().split('T')[0];
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function formatTime(time: string): string {

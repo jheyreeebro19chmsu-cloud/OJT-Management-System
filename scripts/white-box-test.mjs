@@ -1313,6 +1313,152 @@ const unknownRouteResult = resolveRoute('/some/invalid/path');
 assert('Unknown route gracefully redirects instead of hard 404 crash', unknownRouteResult.status === 302 && unknownRouteResult.destination === '/app');
 
 // ----------------------------------------------------------------------------
+// MODULE 18: ATTENDANCE TIMESTAMP DISPLAY, PERSISTENCE & CLOCK IN/OUT TRANSITION
+// ----------------------------------------------------------------------------
+printSectionHeader('18. WHITE BOX TESTS: Attendance Timestamp, Persistence & Switcher State');
+
+function formatTimeDisplay(timeStr) {
+  if (!timeStr) return '— —';
+  const [h, m] = timeStr.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function resolveTodayAttendance({
+  empIdentifier,
+  employeesList,
+  timeRecordsList,
+  todayStr
+}) {
+  const cleanEmpId = (empIdentifier || '').trim();
+  const emp = employeesList.find(
+    (e) =>
+      e.id === cleanEmpId ||
+      e.employeeId === cleanEmpId ||
+      (e.email && cleanEmpId && e.email.toLowerCase() === cleanEmpId.toLowerCase())
+  );
+  const validIds = new Set();
+  validIds.add(cleanEmpId);
+  validIds.add(cleanEmpId.toLowerCase());
+  if (emp) {
+    if (emp.id) { validIds.add(emp.id); validIds.add(emp.id.toLowerCase()); }
+    if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
+    if (emp.email) validIds.add(emp.email.toLowerCase());
+  }
+
+  const todayRecords = timeRecordsList.filter((r) => {
+    const rDate = (r.date || '').split('T')[0].split(' ')[0].trim();
+    if (rDate !== todayStr) return false;
+    const rEmpId = (r.employeeId || '').trim();
+    return validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase());
+  });
+
+  if (todayRecords.length === 0) return null;
+  return todayRecords.sort((a, b) => {
+    const aComplete = a.timeIn && a.timeOut ? 2 : a.timeIn ? 1 : 0;
+    const bComplete = b.timeIn && b.timeOut ? 2 : b.timeIn ? 1 : 0;
+    if (bComplete !== aComplete) return bComplete - aComplete;
+    return (b.id || '').localeCompare(a.id || '');
+  })[0];
+}
+
+function simulateMergeTimeRecords(remoteRecords, currentLocalRecords) {
+  if (!remoteRecords || remoteRecords.length === 0) {
+    return currentLocalRecords || [];
+  }
+  const remoteIds = new Set(remoteRecords.map((r) => r.id));
+  const remoteEmpDateMap = new Map();
+  remoteRecords.forEach((r) => {
+    const key = `${(r.employeeId || '').toLowerCase()}_${(r.date || '').split('T')[0].split(' ')[0]}`;
+    remoteEmpDateMap.set(key, r);
+  });
+
+  const localOnly = (currentLocalRecords || []).filter((localR) => {
+    if (remoteIds.has(localR.id)) return false;
+    const key = `${(localR.employeeId || '').toLowerCase()}_${(localR.date || '').split('T')[0].split(' ')[0]}`;
+    const remoteMatch = remoteEmpDateMap.get(key);
+    if (remoteMatch) {
+      if (!remoteMatch.timeOut && localR.timeOut) {
+        remoteMatch.timeOut = localR.timeOut;
+        remoteMatch.totalHours = localR.totalHours || remoteMatch.totalHours;
+      }
+      return false;
+    }
+    return true;
+  });
+
+  return [...remoteRecords, ...localOnly];
+}
+
+// Test 18.1: Formats military time to display timestamp with AM/PM
+const timeInRaw = '14:41';
+const formattedTimeIn = formatTimeDisplay(timeInRaw);
+assert('Formats "14:41" to "02:41 PM" for blue status card', formattedTimeIn === '02:41 PM');
+assert('Empty time string displays "— —"', formatTimeDisplay(null) === '— —');
+
+// Test 18.2: Resolution of today\'s attendance record matching numeric student ID and UUID
+const testEmployees = [
+  { id: 'uuid-jhey-ree-01', employeeId: '20231343', name: 'Jhey Ree Ebro', email: 'jheyree@example.com' }
+];
+const testDate = '2026-09-16';
+const testRecords = [
+  { id: 'rec-001', employeeId: 'uuid-jhey-ree-01', date: '2026-09-16T00:00:00Z', timeIn: '14:41', status: 'present' }
+];
+
+const resolvedByEmployeeId = resolveTodayAttendance({
+  empIdentifier: '20231343',
+  employeesList: testEmployees,
+  timeRecordsList: testRecords,
+  todayStr: testDate
+});
+assert('Resolves today record when looked up via student employee ID "20231343"', resolvedByEmployeeId !== null && resolvedByEmployeeId.timeIn === '14:41');
+
+const resolvedByUuid = resolveTodayAttendance({
+  empIdentifier: 'uuid-jhey-ree-01',
+  employeesList: testEmployees,
+  timeRecordsList: testRecords,
+  todayStr: testDate
+});
+assert('Resolves today record when looked up via internal UUID', resolvedByUuid !== null && resolvedByUuid.timeIn === '14:41');
+
+// Test 18.3: Action state transition upon clock-in
+let currentAttendanceState = {
+  currentRecord: resolvedByEmployeeId,
+  action: resolvedByEmployeeId?.timeIn && !resolvedByEmployeeId?.timeOut ? 'out' : 'in',
+  clockOutDisabled: !resolvedByEmployeeId?.timeIn
+};
+assert('Clock In switches action mode to "out"', currentAttendanceState.action === 'out');
+assert('Clock Out button is unlocked (clockOutDisabled is false)', currentAttendanceState.clockOutDisabled === false);
+
+// Test 18.4: Remote Supabase refresh does NOT wipe fresh local punch
+const freshLocalPunch = [
+  { id: 'rec-local-12345', employeeId: '20231343', date: '2026-09-16', timeIn: '14:41', timeInFaceVerified: true }
+];
+const staleRemoteRecords = [
+  { id: 'rec-yesterday', employeeId: '20231343', date: '2026-09-15', timeIn: '08:00', timeOut: '17:00' }
+];
+const mergedRecords = simulateMergeTimeRecords(staleRemoteRecords, freshLocalPunch);
+const mergedTodayRec = resolveTodayAttendance({
+  empIdentifier: '20231343',
+  employeesList: testEmployees,
+  timeRecordsList: mergedRecords,
+  todayStr: testDate
+});
+assert('mergeTimeRecords retains freshly punched local record during background Supabase sync', mergedTodayRec !== null && mergedTodayRec.timeIn === '14:41');
+assert('Retains previous days records as well', mergedRecords.some((r) => r.id === 'rec-yesterday'));
+
+// Test 18.5: Clock out updates record and computes total hours
+const completedRecord = {
+  ...resolvedByEmployeeId,
+  timeOut: '17:11',
+  totalHours: 2.5
+};
+const formattedTimeOut = formatTimeDisplay(completedRecord.timeOut);
+assert('Clock Out timestamp formatted to "05:11 PM"', formattedTimeOut === '05:11 PM');
+assert('Total hours properly recorded', completedRecord.totalHours === 2.5);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

@@ -482,6 +482,45 @@ function saveToStorage<T>(key: string, value: T): void {
   }
 }
 
+function mergeTimeRecords(remoteRecords: TimeRecord[], currentLocalRecords: TimeRecord[]): TimeRecord[] {
+  if (!remoteRecords || remoteRecords.length === 0) {
+    return currentLocalRecords || [];
+  }
+  const remoteIds = new Set(remoteRecords.map((r) => r.id));
+  const remoteEmpDateMap = new Map<string, TimeRecord>();
+  remoteRecords.forEach((r) => {
+    const key = `${(r.employeeId || '').toLowerCase()}_${(r.date || '').split('T')[0].split(' ')[0]}`;
+    remoteEmpDateMap.set(key, r);
+  });
+
+  // Keep any local records that aren't yet in remoteRecords (e.g. pending sync, rec- timestamp IDs)
+  const localOnly = (currentLocalRecords || []).filter((localR) => {
+    if (remoteIds.has(localR.id)) return false;
+    const key = `${(localR.employeeId || '').toLowerCase()}_${(localR.date || '').split('T')[0].split(' ')[0]}`;
+    const remoteMatch = remoteEmpDateMap.get(key);
+    if (remoteMatch) {
+      // If remote has this employee+date, merge any more recent punch data from local into remote
+      if (!remoteMatch.timeOut && localR.timeOut) {
+        remoteMatch.timeOut = localR.timeOut;
+        remoteMatch.timeOutPhoto = localR.timeOutPhoto || remoteMatch.timeOutPhoto;
+        remoteMatch.timeOutFaceVerified = localR.timeOutFaceVerified ?? remoteMatch.timeOutFaceVerified;
+        remoteMatch.totalHours = localR.totalHours || remoteMatch.totalHours;
+        remoteMatch.timeOutGeofenced = localR.timeOutGeofenced ?? remoteMatch.timeOutGeofenced;
+      }
+      if (!remoteMatch.timeIn && localR.timeIn) {
+        remoteMatch.timeIn = localR.timeIn;
+        remoteMatch.timeInPhoto = localR.timeInPhoto || remoteMatch.timeInPhoto;
+        remoteMatch.timeInFaceVerified = localR.timeInFaceVerified ?? remoteMatch.timeInFaceVerified;
+        remoteMatch.timeInGeofenced = localR.timeInGeofenced ?? remoteMatch.timeInGeofenced;
+      }
+      return false;
+    }
+    return true;
+  });
+
+  return [...remoteRecords, ...localOnly];
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   cleanupStorageQuota();
   migrateGeofenceStorageOnce();
@@ -661,7 +700,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!isMounted) return;
 
           setEmployees(supabaseEmployees);
-          setTimeRecords(supabaseRecords);
+          setTimeRecords((prev) => {
+            const merged = mergeTimeRecords(supabaseRecords, prev);
+            saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+            return merged;
+          });
           const sanitizedSupabaseZones = sanitizeGeofenceZones(supabaseZones);
           if (sanitizedSupabaseZones.length > 0) setGeofenceZones(sanitizedSupabaseZones);
           if (supabaseSettings) setSettings(supabaseSettings);
@@ -721,7 +764,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ]);
 
           setEmployees(supabaseEmployees);
-          if (supabaseRecords.length > 0) setTimeRecords(supabaseRecords);
+          if (supabaseRecords.length > 0) {
+            setTimeRecords((prev) => {
+              const merged = mergeTimeRecords(supabaseRecords, prev);
+              saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+              return merged;
+            });
+          }
           const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
           if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
           if (supabaseSettings) setSettings(supabaseSettings);
@@ -794,7 +843,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
 
       if (supabaseEmployees && supabaseEmployees.length > 0) setEmployees(supabaseEmployees);
-      if (supabaseRecords && supabaseRecords.length > 0) setTimeRecords(supabaseRecords);
+      if (supabaseRecords && supabaseRecords.length > 0) {
+        setTimeRecords((prev) => {
+          const merged = mergeTimeRecords(supabaseRecords, prev);
+          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+          return merged;
+        });
+      }
       const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
       if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
       if (supabaseSettings) setSettings(supabaseSettings);
@@ -835,10 +890,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [employees, useSupabase]);
 
   useEffect(() => {
-    if (!useSupabase && timeRecords.length > 0) {
+    if (timeRecords.length > 0) {
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, timeRecords);
     }
-  }, [timeRecords, useSupabase]);
+  }, [timeRecords]);
 
   useEffect(() => {
     if (!useSupabase && geofenceZones.length > 0) {
@@ -1964,9 +2019,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addTimeRecord = (record: Omit<TimeRecord, 'id'>): TimeRecord => {
     const recordWithAY = { ...record, academicYear: record.academicYear || settings.activeAcademicYear };
+    const cleanRecordDate = (recordWithAY.date || getDTRSessionDate(new Date())).split('T')[0].split(' ')[0].trim();
+    recordWithAY.date = cleanRecordDate;
     
     // Check if an existing record for this employee and date already exists to preserve permanent timestamps
-    const empIdentifier = recordWithAY.employeeId;
+    const empIdentifier = (recordWithAY.employeeId || '').trim();
     const emp = employees.find(
       (e) =>
         e.id === empIdentifier ||
@@ -1974,20 +2031,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (e.email && empIdentifier && normalizeEmail(e.email) === normalizeEmail(empIdentifier))
     );
     const validIds = new Set<string>();
-    validIds.add(empIdentifier);
+    if (empIdentifier) {
+      validIds.add(empIdentifier);
+      validIds.add(empIdentifier.toLowerCase());
+    }
     if (emp) {
-      if (emp.id) validIds.add(emp.id);
-      if (emp.employeeId) validIds.add(emp.employeeId);
+      if (emp.id) { validIds.add(emp.id); validIds.add(emp.id.toLowerCase()); }
+      if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
     if (currentUser) {
-      if (currentUser.id) validIds.add(currentUser.id);
-      if (currentUser.employeeId) validIds.add(currentUser.employeeId);
+      if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
+      if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
     }
 
     const existing = timeRecords.find(
-      (r) => r.date === recordWithAY.date && (validIds.has(r.employeeId) || (r.employeeId && validIds.has(r.employeeId.toLowerCase())))
+      (r) => {
+        const rDate = (r.date || '').split('T')[0].split(' ')[0].trim();
+        if (rDate !== cleanRecordDate) return false;
+        const rEmpId = (r.employeeId || '').trim();
+        return validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase());
+      }
     );
 
     if (existing) {
@@ -2006,8 +2071,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const newRecord: TimeRecord = { ...recordWithAY, id: `rec-${Date.now()}` };
 
-    // Synchronously place newRecord into local state so UI and subsequent calls have it immediately
-    setTimeRecords((prev) => [newRecord, ...prev.filter((r) => r.id !== newRecord.id)]);
+    // Synchronously place newRecord into local state and storage so UI and subsequent calls have it immediately
+    setTimeRecords((prev) => {
+      const updated = [newRecord, ...prev.filter((r) => r.id !== newRecord.id)];
+      saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService
@@ -2015,7 +2084,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .then((created) => {
           if (created) {
             // Replace temporary local record with database UUID record
-            setTimeRecords((prev) => [created, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)]);
+            setTimeRecords((prev) => {
+              const updated = [created, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)];
+              saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+              return updated;
+            });
           }
         })
         .catch((err) => {
@@ -2034,7 +2107,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...data,
     };
 
-    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...enrichedData } : r)));
+    setTimeRecords((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, ...enrichedData } : r));
+      saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       const targetId = existing?.id || id;
@@ -2088,33 +2165,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getTodayRecord = (empIdentifier: string): TimeRecord | null => {
     if (!empIdentifier) return null;
-    const today = getDTRSessionDate(new Date());
+    const rawToday = getDTRSessionDate(new Date());
+    const today = rawToday.split('T')[0].split(' ')[0].trim();
+    const cleanEmpId = (empIdentifier || '').trim();
 
     // Find associated employee to resolve all possible IDs
     const emp = employees.find(
       (e) =>
-        e.id === empIdentifier ||
-        e.employeeId === empIdentifier ||
-        (e.email && empIdentifier && normalizeEmail(e.email) === normalizeEmail(empIdentifier))
+        e.id === cleanEmpId ||
+        e.employeeId === cleanEmpId ||
+        (e.email && cleanEmpId && normalizeEmail(e.email) === normalizeEmail(cleanEmpId))
     );
 
     const validIds = new Set<string>();
-    validIds.add(empIdentifier);
+    validIds.add(cleanEmpId);
+    validIds.add(cleanEmpId.toLowerCase());
     if (emp) {
-      if (emp.id) validIds.add(emp.id);
-      if (emp.employeeId) validIds.add(emp.employeeId);
+      if (emp.id) { validIds.add(emp.id); validIds.add(emp.id.toLowerCase()); }
+      if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
     if (currentUser) {
-      if (currentUser.id) validIds.add(currentUser.id);
-      if (currentUser.employeeId) validIds.add(currentUser.employeeId);
+      if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
+      if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
     }
 
     const todayRecords = timeRecords.filter((r) => {
-      if (r.date !== today) return false;
-      if (validIds.has(r.employeeId)) return true;
-      if (r.employeeId && validIds.has(r.employeeId.toLowerCase())) return true;
+      const rDate = (r.date || '').split('T')[0].split(' ')[0].trim();
+      if (rDate !== today) return false;
+      const rEmpId = (r.employeeId || '').trim();
+      if (validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase())) return true;
       return false;
     });
 
@@ -2131,29 +2212,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getEmployeeRecords = (empIdentifier: string): TimeRecord[] => {
     if (!empIdentifier) return [];
+    const cleanEmpId = (empIdentifier || '').trim();
     const emp = employees.find(
       (e) =>
-        e.id === empIdentifier ||
-        e.employeeId === empIdentifier ||
-        (e.email && empIdentifier && normalizeEmail(e.email) === normalizeEmail(empIdentifier))
+        e.id === cleanEmpId ||
+        e.employeeId === cleanEmpId ||
+        (e.email && cleanEmpId && normalizeEmail(e.email) === normalizeEmail(cleanEmpId))
     );
 
     const validIds = new Set<string>();
-    validIds.add(empIdentifier);
+    validIds.add(cleanEmpId);
+    validIds.add(cleanEmpId.toLowerCase());
     if (emp) {
-      if (emp.id) validIds.add(emp.id);
-      if (emp.employeeId) validIds.add(emp.employeeId);
+      if (emp.id) { validIds.add(emp.id); validIds.add(emp.id.toLowerCase()); }
+      if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
     if (currentUser) {
-      if (currentUser.id) validIds.add(currentUser.id);
-      if (currentUser.employeeId) validIds.add(currentUser.employeeId);
+      if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
+      if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
     }
 
     return timeRecords
-      .filter((r) => validIds.has(r.employeeId) || (r.employeeId && validIds.has(r.employeeId.toLowerCase())))
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .filter((r) => {
+        const rEmpId = (r.employeeId || '').trim();
+        return validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase());
+      })
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   };
 
   const updateGeofenceZones = (zones: GeofenceZone[]) => {

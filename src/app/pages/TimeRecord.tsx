@@ -21,9 +21,9 @@ type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
 export function TimeRecord() {
   const navigate = useNavigate();
-  const { getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords } = useApp();
+  const { currentUser, getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords } = useApp();
   const employee = getCurrentEmployee();
-  const empLookupId = employee?.id || employee?.employeeId || '';
+  const empLookupId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
   const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
   const [pageState, setPageState] = useState<PageState>('check-geofence');
   const [geofencePassed, setGeofencePassed] = useState(false);
@@ -73,12 +73,16 @@ export function TimeRecord() {
   }, []);
 
   useEffect(() => {
-    if (empLookupId) {
-      const rec = getTodayRecord(empLookupId);
-      setCurrentRecord(rec);
+    const lookupId = empLookupId || employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    if (lookupId) {
+      const rec = getTodayRecord(lookupId);
+      if (rec) {
+        setCurrentRecord(rec);
+      }
       // Guard: do not flip the action state while viewing the completed confirmation
       if (pageState !== 'completed') {
-        if (rec?.timeIn && !rec?.timeOut) {
+        const effectiveRec = rec || currentRecord;
+        if (effectiveRec?.timeIn && !effectiveRec?.timeOut) {
           if (!userActionOverrideRef.current) {
             setAction('out');
           }
@@ -89,7 +93,7 @@ export function TimeRecord() {
         }
       }
     }
-  }, [employee, empLookupId, timeRecords, pageState]);
+  }, [employee, empLookupId, currentUser, timeRecords, pageState]);
 
   // Strict guard: Guarantee action cannot remain 'out' if there is no prior clock-in today
   useEffect(() => {
@@ -175,7 +179,16 @@ export function TimeRecord() {
   };
 
   const handleFaceSuccess = async (imageData?: string) => {
-    if (!employee) return;
+    const currentEmp = employee || (currentUser ? {
+      id: currentUser.id,
+      employeeId: currentUser.employeeId || currentUser.id,
+      name: currentUser.name,
+      department: 'College of Computer Studies',
+      position: 'OJT Trainee',
+    } as any : null);
+    if (!currentEmp) return;
+    const targetEmpId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '';
+
     const currentAction = action;
     if (currentAction === 'out' && !currentRecord?.timeIn) {
       toast.error('Cannot record Clock Out: No prior Clock In found for today.');
@@ -192,7 +205,7 @@ export function TimeRecord() {
     if (imageData) {
       try {
         const uploadedUrl = await uploadFacePhoto(
-          employee.id,
+          targetEmpId,
           imageData,
           currentAction === 'in' ? 'time_in' : 'time_out'
         );
@@ -205,9 +218,9 @@ export function TimeRecord() {
     }
 
     // Auto-enroll face biometrics into database if trainee was not enrolled before
-    if (imageData && (!employee.photo || !employee.faceRegistered)) {
+    if (imageData && (!currentEmp.photo || !currentEmp.faceRegistered)) {
       try {
-        updateEmployee(employee.id, {
+        updateEmployee(currentEmp.id, {
           photo: storedImage || imageData,
           faceRegistered: true,
         });
@@ -219,7 +232,7 @@ export function TimeRecord() {
     if (currentAction === 'in') {
       const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
       const newRecord = addTimeRecord({
-        employeeId: employee.id,
+        employeeId: targetEmpId,
         date: getDTRSessionDate(now),
         timeIn: timeStr,
         timeInGeofenced: geofencePassed,
@@ -227,18 +240,20 @@ export function TimeRecord() {
         timeInFaceVerified: true,
         timeOutFaceVerified: false,
         status,
-        timeInLocation: geofenceCoords || (employee as any).registrationLocation,
+        timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
         timeInPhoto: storedImage,
       });
       setCurrentRecord(newRecord);
+      setAction('out');
+      userActionOverrideRef.current = false;
       setCompletedMessage(
         `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
       );
       // Attempt server-side time-in with GPS if backend is configured
       if (isSecurityApiConfigured()) {
-        const possibleUserId = (employee as any).user_id || (employee as any).userId || (employee as any).id;
+        const possibleUserId = (currentEmp as any).user_id || (currentEmp as any).userId || (currentEmp as any).id;
         const userIdNum = Number(possibleUserId);
-        const possibleAppId = (employee as any).applicationId || (employee as any).application_id || (settings as any).activeApplicationId;
+        const possibleAppId = (currentEmp as any).applicationId || (currentEmp as any).application_id || (settings as any).activeApplicationId;
         const appIdNum = possibleAppId !== undefined ? Number(possibleAppId) : undefined;
 
         if (!Number.isNaN(userIdNum) && appIdNum && !Number.isNaN(appIdNum)) {
@@ -271,23 +286,25 @@ export function TimeRecord() {
       }
     } else if (currentRecord) {
       const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
-      updateTimeRecord(currentRecord.id, {
-        employeeId: employee.id,
+      const updatedFields: Partial<TimeRecord> = {
+        employeeId: targetEmpId,
         date: currentRecord.date || getDTRSessionDate(now),
         timeOut: timeStr,
         timeOutGeofenced: geofencePassed,
         timeOutFaceVerified: true,
         totalHours,
-        timeOutLocation: geofenceCoords || (employee as any).registrationLocation,
+        timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
         timeOutPhoto: storedImage,
         status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
-      });
+      };
+      updateTimeRecord(currentRecord.id, updatedFields);
+      setCurrentRecord({ ...currentRecord, ...updatedFields });
       setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)} • Total: ${totalHours.toFixed(2)} hours`);
       // Attempt server-side time-out with GPS if backend is configured
       if (isSecurityApiConfigured()) {
-        const possibleUserId = (employee as any).user_id || (employee as any).userId || (employee as any).id;
+        const possibleUserId = (currentEmp as any).user_id || (currentEmp as any).userId || (currentEmp as any).id;
         const userIdNum = Number(possibleUserId);
-        const possibleAppId = (employee as any).applicationId || (employee as any).application_id || (settings as any).activeApplicationId;
+        const possibleAppId = (currentEmp as any).applicationId || (currentEmp as any).application_id || (settings as any).activeApplicationId;
         const appIdNum = possibleAppId !== undefined ? Number(possibleAppId) : undefined;
 
         if (!Number.isNaN(userIdNum) && appIdNum && !Number.isNaN(appIdNum)) {
@@ -321,7 +338,7 @@ export function TimeRecord() {
     } else {
       // Safe fallback: If user clocked out without a prior clock-in today, persist a record
       const fallbackRecord = addTimeRecord({
-        employeeId: employee.id,
+        employeeId: targetEmpId,
         date: getDTRSessionDate(now),
         timeIn: timeStr,
         timeOut: timeStr,
@@ -331,7 +348,7 @@ export function TimeRecord() {
         timeInFaceVerified: true,
         timeOutFaceVerified: true,
         status: 'present',
-        timeOutLocation: geofenceCoords || (employee as any).registrationLocation,
+        timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
         timeOutPhoto: storedImage,
       });
       setCurrentRecord(fallbackRecord);
@@ -346,10 +363,13 @@ export function TimeRecord() {
     setGeofencePassed(false);
     setGeofenceCoords(undefined);
     setRetryCount((p) => p + 1);
-    if (employee) {
-      const rec = getTodayRecord(employee.id);
-      setCurrentRecord(rec);
-      setAction(rec?.timeIn && !rec?.timeOut ? 'out' : 'in');
+    const lookupId = empLookupId || employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    if (lookupId) {
+      const rec = getTodayRecord(lookupId);
+      if (rec) {
+        setCurrentRecord(rec);
+        setAction(rec?.timeIn && !rec?.timeOut ? 'out' : 'in');
+      }
     }
   };
 
