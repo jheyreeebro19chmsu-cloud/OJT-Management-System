@@ -421,40 +421,59 @@ export default function FaceScanner({
 
       const base64Data = `data:image/jpeg;base64,${photo.base64}`;
 
-      // Enforce fail-closed obstruction and background lighting checks
+      // Enforce fail-closed bare-face obstruction and lighting checks FIRST
       const quality = await biometricService.inspectQuality(base64Data);
-      if (!livenessVerifiedRef.current) {
-        setScanStatus('failed');
-        setErrorMessage('⚠️ Liveness check required! Please blink your eyes in front of the camera before capturing.');
-        setStatusMessage('👁️ Blink to verify liveness');
-        setIsCapturing(false);
-        return;
-      }
 
-      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected || quality.poorBackgroundLighting || quality.tooDark) {
+      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected || quality.poorBackgroundLighting || quality.tooDark || quality.tooBright) {
         setScanStatus('failed');
         try {
           Vibration.vibrate([0, 400, 150, 400]);
         } catch {}
 
-        let reason = '🚨 ALARM: Verification Blocked! Full clear face and light background required.';
+        let reason = '🚨 ALARM: Blocked! 100% bare face and light background required.';
         let shortMsg = '🚨 ALARM: Clear Face Required';
         if (quality.glassesDetected) {
-          reason = '🚨 ALARM: Glasses detected! Biometric verification strictly blocks scanning with eyeglasses or sunglasses. Please remove them and try again.';
+          reason = '🚨 ALARM: Glasses detected! Institutional policy strictly requires a 100% bare face. Eyeglasses and sunglasses are strictly prohibited. Please remove your glasses and try again.';
           shortMsg = '🚨 ALARM: Glasses Detected';
         } else if (quality.capDetected) {
-          reason = '🚨 ALARM: Hat or cap detected! Biometric verification strictly blocks headwear. Please remove your cap/hat and try again.';
+          reason = '🚨 ALARM: Hat or cap detected! Institutional policy strictly requires a 100% bare face. Headwear is strictly prohibited. Please remove your cap/hat and try again.';
           shortMsg = '🚨 ALARM: Hat/Cap Detected';
+        } else if (quality.maskDetected) {
+          reason = '🚨 ALARM: Face mask detected! Institutional policy strictly requires a bare face. Please remove your mask and try again.';
+          shortMsg = '🚨 ALARM: Mask Detected';
         } else if (quality.poorBackgroundLighting || quality.tooDark) {
           reason = '🚨 ALARM: Dark background or dim lighting detected! Biometric verification requires a light, well-lit background. Please move to a brighter area with a light background and try again.';
           shortMsg = '🚨 ALARM: Dark Background';
-        } else if (quality.maskDetected) {
-          reason = '🚨 ALARM: Face mask detected! Biometric verification strictly blocks masks. Please remove your mask and try again.';
-          shortMsg = '🚨 ALARM: Mask Detected';
+        } else if (quality.tooBright) {
+          reason = '🚨 ALARM: Harsh glare on face! Please adjust lighting.';
+          shortMsg = '🚨 ALARM: Harsh Glare';
         }
 
         setErrorMessage(reason);
         setStatusMessage(shortMsg);
+        setIsCapturing(false);
+        return;
+      }
+
+      if (!quality.hasFace) {
+        setScanStatus('failed');
+        setErrorMessage('No face detected in capture. Please position face clearly inside the oval.');
+        setStatusMessage('⚠️ No face detected');
+        setIsCapturing(false);
+        return;
+      }
+
+      // If in enrollment mode, successful clear bare face capture
+      if (mode === 'enroll') {
+        handleSuccess(base64Data);
+        return;
+      }
+
+      // In verification mode, require liveness verification
+      if (!livenessVerifiedRef.current) {
+        setScanStatus('failed');
+        setErrorMessage('⚠️ Liveness check required! Please blink your eyes in front of the camera before capturing.');
+        setStatusMessage('👁️ Blink to verify liveness');
         setIsCapturing(false);
         return;
       }
@@ -487,27 +506,6 @@ export default function FaceScanner({
           setIsCapturing(false);
           return;
         }
-      }
-
-      // If in enrollment mode, inspect quality
-      if (mode === 'enroll') {
-        const quality = await biometricService.inspectQuality(base64Data);
-        if (quality.tooDark) {
-          setScanStatus('failed');
-          setErrorMessage('Photo is too dark. Move to a well-lit area.');
-          setStatusMessage('⚠️ Photo too dark');
-          setIsCapturing(false);
-          return;
-        }
-        if (quality.tooBright) {
-          setScanStatus('failed');
-          setErrorMessage('Photo has too much glare. Adjust lighting.');
-          setStatusMessage('⚠️ Too much glare');
-          setIsCapturing(false);
-          return;
-        }
-        handleSuccess(base64Data);
-        return;
       }
 
       handleSuccess(base64Data);

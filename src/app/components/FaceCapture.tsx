@@ -764,32 +764,38 @@ export function FaceCapture({
     if (manualQuality) {
       setQualityReport(manualQuality);
       if (manualQuality.glassesDetected) {
-        setMismatchError('Glasses detected! Please remove glasses to scan (clear face only).');
-        setScanMessage('❌ Glasses detected. Remove glasses to scan.');
+        setState('failed');
+        setMismatchError('🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.');
+        setScanMessage('❌ Glasses detected. Bare face required.');
         return;
       }
       if (manualQuality.capDetected) {
-        setMismatchError('Hat or cap detected! Please remove headwear to scan (clear face only).');
-        setScanMessage('❌ Hat/cap detected. Remove headwear to scan.');
+        setState('failed');
+        setMismatchError('🚨 HAT / CAP DETECTED! Institutional policy strictly requires a 100% bare face. Please remove headwear to scan.');
+        setScanMessage('❌ Hat/cap detected. Bare face required.');
         return;
       }
       if (manualQuality.maskDetected) {
-        setMismatchError('Face mask detected! Please remove mask to scan.');
-        setScanMessage('❌ Mask detected. Remove mask to scan.');
+        setState('failed');
+        setMismatchError('🚨 FACE MASK DETECTED! Please remove face mask to scan.');
+        setScanMessage('❌ Mask detected. Bare face required.');
         return;
       }
       if (manualQuality.poorBackgroundLighting || manualQuality.tooDark) {
+        setState('failed');
         setMismatchError('Dark background or dim lighting! Please move in front of a light, well-lit background.');
         setScanMessage('❌ Dark background / dim lighting.');
         return;
       }
       if (manualQuality.tooBright) {
+        setState('failed');
         setMismatchError('Harsh glare on face! Please adjust lighting.');
         setScanMessage('❌ Harsh glare detected.');
         return;
       }
       if (manualQuality.faceObscured) {
-        setMismatchError('Face obstruction detected. Clear face required.');
+        setState('failed');
+        setMismatchError('Face obstruction detected. Bare face required.');
         setScanMessage('❌ Face obstruction detected.');
         return;
       }
@@ -914,10 +920,46 @@ export function FaceCapture({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const img = evt.target?.result as string;
       if (img) {
         stopCamera();
+        // Strict bare-face obstruction inspection on uploaded photo
+        const quality = await inspectFaceQuality(img).catch(() => null);
+        if (quality) {
+          setQualityReport(quality);
+          if (quality.glassesDetected) {
+            setState('failed');
+            setMismatchError('Upload rejected: Glasses detected! Institutional policy strictly requires a bare face. Please remove eyeglasses/sunglasses.');
+            setScanMessage('❌ Glasses detected. Bare face required.');
+            return;
+          }
+          if (quality.capDetected) {
+            setState('failed');
+            setMismatchError('Upload rejected: Hat or cap detected! Institutional policy strictly requires a bare face. Please remove headwear.');
+            setScanMessage('❌ Hat/cap detected. Bare face required.');
+            return;
+          }
+          if (quality.maskDetected) {
+            setState('failed');
+            setMismatchError('Upload rejected: Face mask detected! Institutional policy strictly requires a bare face.');
+            setScanMessage('❌ Mask detected. Bare face required.');
+            return;
+          }
+          if (quality.poorBackgroundLighting || quality.tooDark) {
+            setState('failed');
+            setMismatchError('Upload rejected: Dark background or poor lighting. Please upload a well-lit photo with a light background.');
+            setScanMessage('❌ Dark background / poor lighting.');
+            return;
+          }
+          if (!quality.faceDetected) {
+            setState('failed');
+            setMismatchError('Upload rejected: No clear face detected in uploaded photo.');
+            setScanMessage('❌ No face detected.');
+            return;
+          }
+        }
+
         setCapturedImage(img);
         if (mode === 'register') {
           setState('success');

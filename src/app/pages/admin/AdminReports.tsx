@@ -1291,7 +1291,7 @@ export function AdminReports() {
                                       type="button"
                                       onClick={() => approveTimeRecord(record.id, 'Instructor')}
                                       title="Change status to Approved"
-                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all"
+                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all cursor-pointer"
                                     >
                                       Approve
                                     </button>
@@ -1302,17 +1302,17 @@ export function AdminReports() {
                                       type="button"
                                       onClick={() => approveTimeRecord(record.id, 'Instructor')}
                                       title="Approve DTR"
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-xs transition-colors"
+                                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-[#16a34a] hover:bg-[#15803d] text-white rounded-full shadow-xs transition-colors cursor-pointer"
                                     >
                                       <CheckCircle size={12} /> Approve
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => disapproveTimeRecord(record.id)}
-                                      title="Disapprove DTR"
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-colors"
+                                      title="Reject DTR"
+                                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-[#dc2626] hover:bg-[#b91c1c] text-white rounded-full shadow-xs transition-colors cursor-pointer"
                                     >
-                                      <XCircle size={12} /> Disapprove
+                                      <XCircle size={12} /> Reject
                                     </button>
                                   </div>
                                 )}

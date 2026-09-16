@@ -179,6 +179,18 @@ def validate_image_quality(
                 'recommendations': ['Hold the device steady', 'Clean the camera lens', 'Ensure face is in focus before capturing'],
             }
 
+        # 6. Zero-Tolerance Bare-Face Obstruction Evaluation (Glasses, Hats, Caps, Masks)
+        obstruction_check = validate_face_obstruction(image_path)
+        if not obstruction_check.get('valid', True):
+            obstruction_check.update({
+                'brightness': avg_brightness,
+                'blur_score': blur_score,
+                'contrast': std_contrast,
+                'width': width,
+                'height': height,
+            })
+            return obstruction_check
+
         return {
             'valid': True,
             'status': 'good',
@@ -204,6 +216,203 @@ def validate_image_quality(
             'message': f'Failed to validate image quality: {str(e)}',
             'recommendations': ['Please try again with a clear photo'],
         }
+
+
+def validate_face_obstruction(image_path: str) -> Dict[str, any]:
+    """
+    Zero-tolerance bare-face obstruction inspection.
+    Detects eyeglasses, sunglasses, hats, caps, and face masks using facial landmark analysis.
+    Institutional policy strictly requires a 100% bare face.
+    """
+    try:
+        from PIL import Image, ImageOps
+        import numpy as np
+
+        img = Image.open(image_path)
+        try:
+            img = ImageOps.exif_transpose(img) or img
+        except Exception:
+            pass
+
+        img_rgb = np.array(img.convert('RGB'))
+        h, w, _ = img_rgb.shape
+
+        # Extract landmarks using face_recognition
+        try:
+            import face_recognition
+            landmarks_list = face_recognition.face_landmarks(img_rgb)
+        except Exception:
+            landmarks_list = []
+
+        if not landmarks_list:
+            return {'valid': True, 'status': 'no_landmarks'}
+
+        def get_pixel(x, y):
+            cx = max(0, min(w - 1, int(round(x))))
+            cy = max(0, min(h - 1, int(round(y))))
+            r, g, b = img_rgb[cy, cx][:3]
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            return {'r': int(r), 'g': int(g), 'b': int(b), 'lum': float(lum)}
+
+        def get_patch_avg(cx, cy, radius=2):
+            r_sum, g_sum, b_sum, lum_sum, count = 0, 0, 0, 0.0, 0
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    p = get_pixel(cx + dx, cy + dy)
+                    r_sum += p['r']
+                    g_sum += p['g']
+                    b_sum += p['b']
+                    lum_sum += p['lum']
+                    count += 1
+            return {
+                'r': r_sum // count,
+                'g': g_sum // count,
+                'b': b_sum // count,
+                'lum': lum_sum / count,
+            }
+
+        for lm in landmarks_list:
+            nb = lm.get('nose_bridge', [])
+            le = lm.get('left_eye', [])
+            re = lm.get('right_eye', [])
+            leb = lm.get('left_eyebrow', [])
+            reb = lm.get('right_eyebrow', [])
+            chin = lm.get('chin', [])
+            tip = lm.get('nose_tip', [])
+
+            if len(nb) < 4 or len(le) < 6 or len(re) < 6 or len(chin) < 14:
+                continue
+
+            # 1. Skin tone baseline from cheeks
+            cx1 = (tip[0][0] + chin[3][0]) / 2.0
+            cy1 = (tip[0][1] + chin[3][1]) / 2.0
+            cx2 = (tip[-1][0] + chin[13][0]) / 2.0
+            cy2 = (tip[-1][1] + chin[13][1]) / 2.0
+
+            c1 = get_patch_avg(cx1, cy1, 3)
+            c2 = get_patch_avg(cx2, cy2, 3)
+            skin_r = (c1['r'] + c2['r']) // 2
+            skin_g = (c1['g'] + c2['g']) // 2
+            skin_b = (c1['b'] + c2['b']) // 2
+            skin_lum = max(35.0, (c1['lum'] + c2['lum']) / 2.0)
+
+            # 2. Hat / Cap Detection
+            if leb and reb:
+                brow_y = (leb[-1][1] + reb[0][1]) / 2.0
+                brow_x = nb[0][0]
+                fore1 = get_patch_avg(brow_x, brow_y - 14, 2)
+                fore2 = get_patch_avg(brow_x, brow_y - 26, 2)
+                fore3 = get_patch_avg(brow_x, brow_y - 38, 2)
+
+                fore_diff1 = abs(fore1['r'] - skin_r) + abs(fore1['g'] - skin_g) + abs(fore1['b'] - skin_b)
+                fore_diff2 = abs(fore2['r'] - skin_r) + abs(fore2['g'] - skin_g) + abs(fore2['b'] - skin_b)
+                fore_diff3 = abs(fore3['r'] - skin_r) + abs(fore3['g'] - skin_g) + abs(fore3['b'] - skin_b)
+
+                is_fabric = (fore_diff1 > 28 or fore_diff2 > 28 or fore_diff3 > 28)
+                is_brim_shadow = (fore1['lum'] < skin_lum * 0.58 and fore2['lum'] < skin_lum * 0.58)
+
+                if is_fabric or is_brim_shadow:
+                    return {
+                        'valid': False,
+                        'status': 'cap_detected',
+                        'message': '🚨 HAT / CAP DETECTED! Institutional policy strictly requires a 100% bare face. Please remove headwear to scan.',
+                        'recommendations': ['Remove hats, caps, and headwear', 'Ensure face and forehead are completely bare'],
+                    }
+
+            # 3. Glasses Detection
+            bridge_x, bridge_y = nb[0][0], nb[0][1]
+            bridge_patch = get_patch_avg(bridge_x, bridge_y, 2)
+            bridge_diff = abs(bridge_patch['r'] - skin_r) + abs(bridge_patch['g'] - skin_g) + abs(bridge_patch['b'] - skin_b)
+
+            bridge_top = get_pixel(bridge_x, bridge_y - 4)
+            bridge_bot = get_pixel(bridge_x, bridge_y + 4)
+            bridge_v_contrast = abs(bridge_top['lum'] - bridge_patch['lum']) + abs(bridge_bot['lum'] - bridge_patch['lum'])
+
+            inner_l = le[3]  # left eye inner corner
+            inner_r = re[0]  # right eye inner corner
+            span_lums = []
+            span_diffs = []
+            for step in range(1, 5):
+                sx = inner_r[0] + (inner_l[0] - inner_r[0]) * (step / 5.0)
+                sy = inner_r[1] + (inner_l[1] - inner_r[1]) * (step / 5.0)
+                sp = get_pixel(sx, sy)
+                span_lums.append(sp['lum'])
+                span_diffs.append(abs(sp['r'] - skin_r) + abs(sp['g'] - skin_g) + abs(sp['b'] - skin_b))
+
+            span_var = (max(span_lums) - min(span_lums)) if span_lums else 0
+            avg_span_diff = (sum(span_diffs) / len(span_diffs)) if span_diffs else 0
+
+            has_bridge_frame = (
+                bridge_diff > 14
+                or avg_span_diff > 15
+                or span_var > 14
+                or bridge_v_contrast > 12
+                or bridge_patch['lum'] < skin_lum * 0.74
+                or bridge_patch['lum'] > skin_lum * 1.35
+            )
+
+            # Lower orbital rims below eyes
+            r_lower = get_pixel(re[4][0], re[4][1] + 5)
+            l_lower = get_pixel(le[4][0], le[4][1] + 5)
+            r_rim_diff = abs(r_lower['r'] - skin_r) + abs(r_lower['g'] - skin_g) + abs(r_lower['b'] - skin_b)
+            l_rim_diff = abs(l_lower['r'] - skin_r) + abs(l_lower['g'] - skin_g) + abs(l_lower['b'] - skin_b)
+            has_lower_rim = (r_rim_diff > 18 or l_rim_diff > 18 or r_lower['lum'] < skin_lum * 0.68 or l_lower['lum'] < skin_lum * 0.68)
+
+            # Eye centers: dark sunglasses or specular lens glint
+            re_cx = sum(p[0] for p in re) / len(re)
+            re_cy = sum(p[1] for p in re) / len(re)
+            le_cx = sum(p[0] for p in le) / len(le)
+            le_cy = sum(p[1] for p in le) / len(le)
+            re_center = get_pixel(re_cx, re_cy)
+            le_center = get_pixel(le_cx, le_cy)
+
+            is_dark = (re_center['lum'] < 45 and le_center['lum'] < 45 and skin_lum > 48)
+            re_color_diff = abs(re_center['r'] - skin_r) + abs(re_center['g'] - skin_g) + abs(re_center['b'] - skin_b)
+            le_color_diff = abs(le_center['r'] - skin_r) + abs(le_center['g'] - skin_g) + abs(le_center['b'] - skin_b)
+            is_glare = (
+                re_center['lum'] > 200 or le_center['lum'] > 200
+                or re_center['lum'] > skin_lum + 50 or le_center['lum'] > skin_lum + 50
+                or re_color_diff > 45 or le_color_diff > 45
+            )
+
+            if has_bridge_frame or has_lower_rim or is_dark or is_glare:
+                return {
+                    'valid': False,
+                    'status': 'glasses_detected',
+                    'message': '🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.',
+                    'recommendations': ['Remove eyeglasses or sunglasses', 'Hold face clearly and unobstructed'],
+                }
+
+            # 4. Face Mask Detection
+            top_lip = lm.get('top_lip', [])
+            if tip and top_lip and chin:
+                phil_x = (tip[2][0] + top_lip[3][0]) / 2.0
+                phil_y = (tip[2][1] + top_lip[3][1]) / 2.0
+                chin_x = chin[8][0]
+                chin_y = (chin[8][1] + top_lip[-1][1]) / 2.0
+
+                phil_p = get_patch_avg(phil_x, phil_y, 2)
+                chin_p = get_patch_avg(chin_x, chin_y, 2)
+
+                phil_diff = abs(phil_p['r'] - skin_r) + abs(phil_p['g'] - skin_g) + abs(phil_p['b'] - skin_b)
+                chin_diff = abs(chin_p['r'] - skin_r) + abs(chin_p['g'] - skin_g) + abs(chin_p['b'] - skin_b)
+
+                is_blue = (phil_p['b'] > phil_p['r'] + 25 and phil_p['b'] > 70) or (chin_p['b'] > chin_p['r'] + 25 and chin_p['b'] > 70)
+                is_black = (phil_p['lum'] < 26 and chin_p['lum'] < 26 and skin_lum > 55)
+                is_mask_fabric = (phil_diff > 55 and chin_diff > 55)
+
+                if is_blue or is_black or is_mask_fabric:
+                    return {
+                        'valid': False,
+                        'status': 'mask_detected',
+                        'message': '🚨 FACE MASK DETECTED! Please remove face mask to scan.',
+                        'recommendations': ['Remove face mask', 'Ensure nose, mouth, and chin are completely visible'],
+                    }
+
+        return {'valid': True, 'status': 'clear'}
+    except Exception as e:
+        logger.warning(f"validate_face_obstruction error: {e}")
+        return {'valid': True, 'status': 'fallback'}
 
 
 def validate_image_brightness(image_path: str, min_brightness: int = 15, max_brightness: int = 245) -> Dict[str, any]:

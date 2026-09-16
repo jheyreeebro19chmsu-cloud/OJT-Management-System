@@ -1426,7 +1426,11 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                 onBack={() => setShowInstructorTrainees(false)}
               />
             ) : showInstructorDTR ? (
-              <InstructorDTRScreen onBack={() => setShowInstructorDTR(false)} activeAcademicYear={activeAcademicYear} />
+              <InstructorDTRScreen
+                profile={profile}
+                onBack={() => setShowInstructorDTR(false)}
+                activeAcademicYear={activeAcademicYear}
+              />
             ) : showInstructorQR ? (
               <InstructorQRScreen
                 instructorId={profile?.id || profile?.employeeId || ''}

@@ -272,3 +272,84 @@ class EmpiricalOcclusionAuditTests(TestCase):
         data = json.loads(resp.content.decode())
         self.assertEqual(data.get('status'), 'liveness_required')
         self.assertIn('Server-side liveness proof', data.get('message', ''))
+
+    # 9. Strict Bare Face Policy: Glasses Rejected
+    @patch('security.utils.validate_face_obstruction')
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_audit_glasses_detected_rejected(self, mock_encode, mock_load, mock_obstruction):
+        """Image with glasses is strictly rejected with HTTP 422 status 'glasses_detected'."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        mock_obstruction.return_value = {
+            'valid': False,
+            'status': 'glasses_detected',
+            'message': '🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.',
+            'recommendations': ['Remove eyeglasses or sunglasses']
+        }
+        bare_img = self._create_synthetic_face("bare")
+        glasses_img = self._create_synthetic_face("eyeglasses")
+
+        resp = self._post_verify({
+            'registered_image': bare_img,
+            'captured_image': glasses_img,
+        })
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertFalse(data.get('success'))
+        self.assertEqual(data.get('status'), 'glasses_detected')
+        self.assertIn('glasses detected', data.get('message', '').lower())
+
+    # 10. Strict Bare Face Policy: Hat / Cap Rejected
+    @patch('security.utils.validate_face_obstruction')
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_audit_cap_detected_rejected(self, mock_encode, mock_load, mock_obstruction):
+        """Image with hat or cap is strictly rejected with HTTP 422 status 'cap_detected'."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        mock_obstruction.return_value = {
+            'valid': False,
+            'status': 'cap_detected',
+            'message': '🚨 HAT / CAP DETECTED! Institutional policy strictly requires a 100% bare face. Please remove headwear to scan.',
+            'recommendations': ['Remove headwear']
+        }
+        bare_img = self._create_synthetic_face("bare")
+        cap_img = self._create_synthetic_face("hat_cap")
+
+        resp = self._post_verify({
+            'registered_image': bare_img,
+            'captured_image': cap_img,
+        })
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertFalse(data.get('success'))
+        self.assertEqual(data.get('status'), 'cap_detected')
+        self.assertIn('hat / cap detected', data.get('message', '').lower())
+
+    # 11. Strict Bare Face Policy: Mask Rejected
+    @patch('security.utils.validate_face_obstruction')
+    @patch('face_recognition.load_image_file')
+    @patch('security.views._encode_face_with_fallback')
+    def test_audit_mask_detected_rejected(self, mock_encode, mock_load, mock_obstruction):
+        """Image with face mask is strictly rejected with HTTP 422 status 'mask_detected'."""
+        mock_load.return_value = MagicMock()
+        mock_encode.return_value = [MagicMock()]
+        mock_obstruction.return_value = {
+            'valid': False,
+            'status': 'mask_detected',
+            'message': '🚨 FACE MASK DETECTED! Please remove face mask to scan.',
+            'recommendations': ['Remove face mask']
+        }
+        bare_img = self._create_synthetic_face("bare")
+        mask_img = self._create_synthetic_face("face_mask")
+
+        resp = self._post_verify({
+            'registered_image': bare_img,
+            'captured_image': mask_img,
+        })
+        self.assertEqual(resp.status_code, 422)
+        data = json.loads(resp.content.decode())
+        self.assertFalse(data.get('success'))
+        self.assertEqual(data.get('status'), 'mask_detected')
+        self.assertIn('face mask detected', data.get('message', '').lower())
