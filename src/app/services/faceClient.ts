@@ -403,6 +403,37 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       result.issues.push('Camera/face is blurry. Please hold steady and look directly into the camera.');
     }
 
+    const getPixel = (x: number, y: number) => {
+      const cx = Math.max(0, Math.min(w - 1, Math.round(x)));
+      const cy = Math.max(0, Math.min(h - 1, Math.round(y)));
+      const idx = (cy * w + cx) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      return { r, g, b, lum };
+    };
+
+    const getPatchAvg = (cx: number, cy: number, radius = 2) => {
+      let rSum = 0, gSum = 0, bSum = 0, lumSum = 0, count = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const p = getPixel(cx + dx, cy + dy);
+          rSum += p.r;
+          gSum += p.g;
+          bSum += p.b;
+          lumSum += p.lum;
+          count++;
+        }
+      }
+      return {
+        r: Math.round(rSum / count),
+        g: Math.round(gSum / count),
+        b: Math.round(bSum / count),
+        lum: Math.round(lumSum / count),
+      };
+    };
+
     // 3. Face & Landmarks Detection with Obstruction checks
     const ok = await loadFaceModels().catch(() => false);
     if (ok && (window as any).faceapi) {
@@ -426,6 +457,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       if (detection) {
         result.faceDetected = true;
         const box = detection.detection.box;
+        const landmarks = (detection as any).landmarks ? (detection as any).landmarks.positions : null;
 
         // Centering check: generous tolerance (within 35% of center) so human users pass naturally
         const targetCx = w * 0.50;
@@ -441,12 +473,175 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
           result.faceCentered = true;
         }
 
-        // Real human face recognized by neural network models
-        result.capDetected = false;
-        result.glassesDetected = false;
-        result.maskDetected = false;
-        result.faceObscured = false;
-        result.ok = true;
+        // 1. Cheek Skin Tone Baseline Sampling
+        let cx1: number, cy1: number, cx2: number, cy2: number;
+        if (landmarks && landmarks.length >= 68) {
+          cx1 = (landmarks[30].x + landmarks[3].x) / 2;
+          cy1 = (landmarks[30].y + landmarks[3].y) / 2;
+          cx2 = (landmarks[30].x + landmarks[13].x) / 2;
+          cy2 = (landmarks[30].y + landmarks[13].y) / 2;
+        } else {
+          cx1 = box.x + box.width * 0.26;
+          cy1 = box.y + box.height * 0.58;
+          cx2 = box.x + box.width * 0.74;
+          cy2 = box.y + box.height * 0.58;
+        }
+        const cheek1 = getPatchAvg(cx1, cy1, 3);
+        const cheek2 = getPatchAvg(cx2, cy2, 3);
+        const skinR = Math.round((cheek1.r + cheek2.r) / 2);
+        const skinG = Math.round((cheek1.g + cheek2.g) / 2);
+        const skinB = Math.round((cheek1.b + cheek2.b) / 2);
+        const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
+
+        // 2. HAT / CAP / HEADWEAR DETECTION
+        let eyebrowMinY = box.y + box.height * 0.28;
+        if (landmarks && landmarks.length >= 68) {
+          eyebrowMinY = Math.min(...[17, 18, 19, 20, 21, 22, 23, 24, 25, 26].map((i) => landmarks[i].y));
+        }
+
+        const foreheadHeight = eyebrowMinY - box.y;
+        if (foreheadHeight < box.height * 0.12 && foreheadHeight >= 0) {
+          result.capDetected = true;
+        }
+
+        let fabricCoverCount = 0;
+        const foreheadCols = [0.25, 0.38, 0.50, 0.62, 0.75];
+        const foreheadRowFracs = [0.25, 0.55, 0.85];
+
+        foreheadRowFracs.forEach((rf) => {
+          const fy = eyebrowMinY - (eyebrowMinY - box.y) * rf;
+          foreheadCols.forEach((cf) => {
+            const fx = box.x + box.width * cf;
+            const p = getPatchAvg(fx, fy, 2);
+            const colorDiff = Math.abs(p.r - skinR) + Math.abs(p.g - skinG) + Math.abs(p.b - skinB);
+            const isFabricDark = p.lum < 42 && skinLum > 60;
+            const isFabricColor = colorDiff > 60;
+            const isSeverelyUnderLum = p.lum < skinLum * 0.45;
+            if (isFabricDark || isFabricColor || isSeverelyUnderLum) {
+              fabricCoverCount++;
+            }
+          });
+        });
+
+        let browDarkCount = 0;
+        const browY = eyebrowMinY + 4;
+        [0.30, 0.40, 0.50, 0.60, 0.70].forEach((cf) => {
+          const bx = box.x + box.width * cf;
+          const bp = getPixel(bx, browY);
+          if (bp.lum < skinLum * 0.46 && skinLum > 60) {
+            browDarkCount++;
+          }
+        });
+
+        if (fabricCoverCount >= 4 || browDarkCount >= 3 || (foreheadHeight < box.height * 0.15 && fabricCoverCount >= 2)) {
+          result.capDetected = true;
+          result.issues.push('🚨 HAT / CAP DETECTED! Please remove headwear/cap to scan.');
+        }
+
+        // 3. GLASSES DETECTION (SUNGLASSES & CLEAR/PRESCRIPTION FRAMES)
+        let rEyeX: number, rEyeY: number, lEyeX: number, lEyeY: number, bridgeX: number, bridgeY: number;
+        if (landmarks && landmarks.length >= 68) {
+          rEyeX = (landmarks[36].x + landmarks[39].x) / 2;
+          rEyeY = (landmarks[37].y + landmarks[40].y) / 2;
+          lEyeX = (landmarks[42].x + landmarks[45].x) / 2;
+          lEyeY = (landmarks[43].y + landmarks[46].y) / 2;
+          bridgeX = landmarks[27].x;
+          bridgeY = landmarks[27].y;
+        } else {
+          rEyeX = box.x + box.width * 0.33;
+          rEyeY = box.y + box.height * 0.35;
+          lEyeX = box.x + box.width * 0.67;
+          lEyeY = box.y + box.height * 0.35;
+          bridgeX = box.x + box.width * 0.50;
+          bridgeY = box.y + box.height * 0.35;
+        }
+
+        let darkEyeSamples = 0;
+        const eyeOffsets = [
+          { dx: 0, dy: 0 },
+          { dx: -6, dy: 0 },
+          { dx: 6, dy: 0 },
+          { dx: 0, dy: -4 },
+          { dx: 0, dy: 4 },
+        ];
+        let rEyeLumSum = 0;
+        let lEyeLumSum = 0;
+
+        eyeOffsets.forEach((o) => {
+          const rp = getPixel(rEyeX + o.dx, rEyeY + o.dy);
+          const lp = getPixel(lEyeX + o.dx, lEyeY + o.dy);
+          rEyeLumSum += rp.lum;
+          lEyeLumSum += lp.lum;
+          if (rp.lum < 42) darkEyeSamples++;
+          if (lp.lum < 42) darkEyeSamples++;
+        });
+
+        const rEyeAvgLum = rEyeLumSum / eyeOffsets.length;
+        const lEyeAvgLum = lEyeLumSum / eyeOffsets.length;
+        const isDarkSunglasses = (darkEyeSamples >= 4 && skinLum > 60) || (rEyeAvgLum < skinLum * 0.52 && lEyeAvgLum < skinLum * 0.52 && skinLum > 65);
+
+        const bridgeP = getPixel(bridgeX, bridgeY);
+        const bridgeTopP = getPixel(bridgeX, bridgeY - 5);
+        const bridgeBotP = getPixel(bridgeX, bridgeY + 5);
+        const bridgeGrad = Math.abs(bridgeTopP.lum - bridgeP.lum) + Math.abs(bridgeBotP.lum - bridgeP.lum);
+        const bridgeColorDiff = Math.abs(bridgeP.r - skinR) + Math.abs(bridgeP.g - skinG) + Math.abs(bridgeP.b - skinB);
+        const bridgeIsFrame = bridgeGrad > 24 || bridgeColorDiff > 45 || (bridgeP.lum < skinLum * 0.58 && skinLum > 65);
+
+        let frameEdgeCount = 0;
+        const rimDist = landmarks ? 11 : box.height * 0.08;
+        [-14, -7, 0, 7, 14].forEach((dx) => {
+          const pRTop = getPixel(rEyeX + dx, rEyeY + rimDist - 3);
+          const pRBot = getPixel(rEyeX + dx, rEyeY + rimDist + 3);
+          if (Math.abs(pRTop.lum - pRBot.lum) > 24) frameEdgeCount++;
+
+          const pLTop = getPixel(lEyeX + dx, lEyeY + rimDist - 3);
+          const pLBot = getPixel(lEyeX + dx, lEyeY + rimDist + 3);
+          if (Math.abs(pLTop.lum - pLBot.lum) > 24) frameEdgeCount++;
+        });
+
+        let rGlare = false;
+        let lGlare = false;
+        [-5, 0, 5].forEach((dx) => {
+          [-4, 0, 4].forEach((dy) => {
+            const rp = getPixel(rEyeX + dx, rEyeY + dy);
+            const lp = getPixel(lEyeX + dx, lEyeY + dy);
+            if (rp.lum > 225) rGlare = true;
+            if (lp.lum > 225) lGlare = true;
+          });
+        });
+        const glareInBothEyes = rGlare && lGlare;
+
+        if (isDarkSunglasses || (bridgeIsFrame && frameEdgeCount >= 2) || frameEdgeCount >= 4 || (glareInBothEyes && (bridgeIsFrame || frameEdgeCount >= 1))) {
+          result.glassesDetected = true;
+          result.issues.push('🚨 GLASSES DETECTED! Please remove all eyeglasses/sunglasses to scan.');
+        }
+
+        // 4. MASK DETECTION
+        let maskColorMatch = 0;
+        const mouthCenterY = landmarks && landmarks.length >= 68 ? landmarks[57].y : box.y + box.height * 0.74;
+        const mouthCenterX = landmarks && landmarks.length >= 68 ? landmarks[57].x : box.x + box.width * 0.50;
+
+        [-18, -9, 0, 9, 18].forEach((dx) => {
+          [-6, 0, 6].forEach((dy) => {
+            const mp = getPixel(mouthCenterX + dx, mouthCenterY + dy);
+            const mDiff = Math.abs(mp.r - skinR) + Math.abs(mp.g - skinG) + Math.abs(mp.b - skinB);
+            if (mDiff > 50 || (mp.b > mp.r + 20 && mp.b > 65) || (mp.lum < 38 && skinLum > 65)) {
+              maskColorMatch++;
+            }
+          });
+        });
+
+        if (maskColorMatch >= 6) {
+          result.maskDetected = true;
+          result.issues.push('🚨 FACE MASK DETECTED! Please remove your face mask to scan.');
+        }
+
+        result.faceObscured = Boolean(result.capDetected || result.glassesDetected || result.maskDetected);
+        if (result.faceObscured) {
+          result.ok = false;
+        } else {
+          result.ok = result.faceDetected && result.faceCentered;
+        }
       } else {
         result.faceDetected = false;
         result.faceCentered = false;

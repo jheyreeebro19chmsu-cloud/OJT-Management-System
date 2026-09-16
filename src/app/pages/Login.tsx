@@ -99,7 +99,7 @@ export function Login() {
 
   // ── Forgot Password (Email OTP Recovery) State ─────────────────────────────
   const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotStep, setForgotStep] = useState<'email' | 'otp'>('email');
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp' | 'reset'>('email');
   const [forgotOtp, setForgotOtp] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState<number>(0);
@@ -159,6 +159,9 @@ export function Login() {
       }
 
       setForgotStep('otp');
+      setForgotOtp('');
+      setForgotNewPassword('');
+      setForgotConfirmPassword('');
       setForgotMessage(`A 6-digit confirmation code has been sent to ${cleanEmail}`);
       toast.success('Reset code sent to your email!');
     } catch (err: any) {
@@ -169,8 +172,7 @@ export function Login() {
     }
   };
 
-  const handleVerifyAndResetPassword = async () => {
-    const cleanEmail = forgotEmail.trim().toLowerCase();
+  const handleVerifyOtpCode = () => {
     setForgotError('');
 
     if (!forgotOtp.trim()) {
@@ -196,8 +198,19 @@ export function Login() {
       return;
     }
 
-    if (!forgotNewPassword || forgotNewPassword.length < 6) {
-      setForgotError('New password must be at least 6 characters long.');
+    // Code verified! Blank the new passwords, then advance to reset step
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotError('');
+    setForgotStep('reset');
+  };
+
+  const handleResetPasswordSubmit = async () => {
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    setForgotError('');
+
+    if (!forgotNewPassword || forgotNewPassword.length < 8) {
+      setForgotError('New password must be at least 8 characters long.');
       return;
     }
 
@@ -476,7 +489,11 @@ export function Login() {
                 <div className="flex items-center justify-between mb-2.5">
                   <h3 className="font-bold text-blue-950 flex items-center gap-2">
                     <KeyRound size={17} className="text-blue-600" />
-                    {forgotStep === 'email' ? 'Forgot Password' : 'Reset Password'}
+                    {forgotStep === 'email'
+                      ? 'Forgot Password'
+                      : forgotStep === 'otp'
+                      ? 'Enter Confirmation Code'
+                      : 'Set New Password'}
                   </h3>
                   <button
                     type="button"
@@ -544,7 +561,8 @@ export function Login() {
                       )}
                     </button>
                   </div>
-                ) : (
+                ) : forgotStep === 'otp' ? (
+                  // Step 2: Enter 6-Digit Confirmation Code ONLY
                   <div className="space-y-3 bg-white rounded-xl p-3.5 border border-blue-100 shadow-sm">
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                       <div className="text-xs">
@@ -577,8 +595,53 @@ export function Login() {
                           setForgotError('');
                         }}
                         placeholder="• • • • • •"
-                        className="w-full text-center text-base tracking-[8px] font-mono font-bold py-2 bg-slate-50 text-blue-900 rounded-xl border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-300"
+                        className="w-full text-center text-base tracking-[8px] font-mono font-bold py-2.5 bg-slate-50 text-blue-900 rounded-xl border border-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-300"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleVerifyOtpCode();
+                          }
+                        }}
                       />
+                    </div>
+
+                    {forgotError && (
+                      <div className="p-2.5 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-medium flex items-center gap-2">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>{forgotError}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleVerifyOtpCode}
+                      disabled={forgotLoading || forgotOtp.trim().length < 6}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ShieldCheck size={14} />
+                      <span>Verify Code</span>
+                    </button>
+
+                    <div className="text-center pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSendResetCode}
+                        disabled={forgotLoading}
+                        className="text-[11px] text-gray-500 hover:text-blue-600 font-medium cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <RefreshCw size={11} />
+                        Resend verification code
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // Step 3: Enter New Password (ONLY after code is verified!)
+                  <div className="space-y-3 bg-white rounded-xl p-3.5 border border-green-100 shadow-sm">
+                    <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                      <CheckCircle2 size={14} className="text-green-600 shrink-0" />
+                      <div className="text-xs text-green-800 font-medium truncate">
+                        Code verified for <span className="font-bold">{forgotEmail}</span>
+                      </div>
                     </div>
 
                     <div>
@@ -589,13 +652,14 @@ export function Login() {
                         <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                           type={showForgotNewPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
                           value={forgotNewPassword}
                           onChange={(e) => {
                             setForgotNewPassword(e.target.value);
                             setForgotError('');
                           }}
-                          placeholder="Minimum 6 characters"
-                          className="w-full pl-8 pr-8 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          placeholder="Minimum 8 characters"
+                          className="w-full pl-8 pr-8 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all"
                         />
                         <button
                           type="button"
@@ -615,17 +679,18 @@ export function Login() {
                         <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                           type={showForgotConfirmPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
                           value={forgotConfirmPassword}
                           onChange={(e) => {
                             setForgotConfirmPassword(e.target.value);
                             setForgotError('');
                           }}
                           placeholder="Re-type new password"
-                          className="w-full pl-8 pr-8 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                          className="w-full pl-8 pr-8 py-2 bg-white text-gray-900 placeholder:text-gray-400 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
-                              handleVerifyAndResetPassword();
+                              handleResetPasswordSubmit();
                             }
                           }}
                         />
@@ -639,6 +704,25 @@ export function Login() {
                       </div>
                     </div>
 
+                    <div className="flex items-center justify-between text-[11px] px-1 text-gray-500">
+                      <span className={forgotNewPassword.length >= 8 ? 'text-green-600 font-bold' : ''}>
+                        {forgotNewPassword.length >= 8 ? '✓' : '○'} At least 8 characters
+                      </span>
+                      {forgotConfirmPassword && (
+                        <span
+                          className={
+                            forgotNewPassword === forgotConfirmPassword
+                              ? 'text-green-600 font-bold'
+                              : 'text-red-500 font-bold'
+                          }
+                        >
+                          {forgotNewPassword === forgotConfirmPassword
+                            ? '✓ Passwords match'
+                            : '✕ Passwords mismatch'}
+                        </span>
+                      )}
+                    </div>
+
                     {forgotError && (
                       <div className="p-2.5 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-medium flex items-center gap-2">
                         <AlertCircle size={14} className="shrink-0" />
@@ -648,7 +732,7 @@ export function Login() {
 
                     <button
                       type="button"
-                      onClick={handleVerifyAndResetPassword}
+                      onClick={handleResetPasswordSubmit}
                       disabled={forgotLoading}
                       className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                     >
@@ -664,18 +748,6 @@ export function Login() {
                         </>
                       )}
                     </button>
-
-                    <div className="text-center pt-1">
-                      <button
-                        type="button"
-                        onClick={handleSendResetCode}
-                        disabled={forgotLoading}
-                        className="text-[11px] text-gray-500 hover:text-blue-600 font-medium cursor-pointer inline-flex items-center gap-1"
-                      >
-                        <RefreshCw size={11} />
-                        Resend verification code
-                      </button>
-                    </div>
                   </div>
                 )}
               </motion.div>

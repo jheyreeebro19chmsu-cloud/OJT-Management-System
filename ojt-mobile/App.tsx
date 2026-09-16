@@ -51,6 +51,8 @@ import {
   Zap,
   GraduationCap,
   Briefcase,
+  Compass,
+  X,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -60,6 +62,7 @@ import { mobileDb, TimeRecord } from './lib/supabaseService';
 import authStore from './lib/auth';
 import RegisterScreen from './screens/RegisterScreen';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
+import LeafletGeofenceMap from './components/LeafletGeofenceMap';
 import ApplicationScreen from './screens/ApplicationScreen';
 import TasksScreen from './screens/TasksScreen';
 import DTRScreen from './screens/DTRScreen';
@@ -161,6 +164,12 @@ export default function App() {
   const [distanceToSite, setDistanceToSite] = useState<number | null>(null);
   const [assignedWorkplaceName, setAssignedWorkplaceName] = useState<string>('Carlos Hilado Memorial State University');
   const [locLoading, setLocLoading] = useState<boolean>(false);
+  const [showGeofenceMapModal, setShowGeofenceMapModal] = useState(false);
+  const [geofenceCenter, setGeofenceCenter] = useState<{ lat: number; lng: number; radius: number }>({
+    lat: 10.7412,
+    lng: 122.9691,
+    radius: 300,
+  });
 
   // Biometric Attendance modal mode ('enroll' | 'clock_in' | 'clock_out' | 'verify_test' | null)
   const [faceModalMode, setFaceModalMode] = useState<'enroll' | 'clock_in' | 'clock_out' | 'verify_test' | null>(null);
@@ -276,6 +285,13 @@ export default function App() {
     setDistanceToSite(minDistance !== Infinity ? minDistance : null);
     setIsWithinGeofence(isInside);
     setAssignedWorkplaceName(closestName);
+    if (targetCoordsList.length > 0) {
+      setGeofenceCenter({
+        lat: targetCoordsList[0].lat,
+        lng: targetCoordsList[0].lng,
+        radius: targetCoordsList[0].radius || 300,
+      });
+    }
   }
 
   async function checkLiveGeofence(userProfile: any = profile) {
@@ -1725,6 +1741,15 @@ export default function App() {
                       </Text>
                       <Text style={styles.geoRadiusNote}>Radius: 300m</Text>
                     </View>
+
+                    {/* View Interactive Leaflet Map Button */}
+                    <TouchableOpacity
+                      style={styles.geoMapToggleBtn}
+                      onPress={() => setShowGeofenceMapModal(true)}
+                    >
+                      <Compass size={14} color="#0284c7" />
+                      <Text style={styles.geoMapToggleBtnText}>View Interactive Leaflet Map</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* Facial Recognition Biometrics Card */}
@@ -2157,6 +2182,59 @@ export default function App() {
           setShowForgotPassword(false);
         }}
       />
+
+      {/* Trainee Interactive Geofence Map Modal */}
+      <Modal
+        visible={showGeofenceMapModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowGeofenceMapModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '90%', padding: 0, overflow: 'hidden' }]}>
+            <View style={styles.mapModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <View style={styles.mapModalIconBadge}>
+                  <Compass size={18} color="#0284c7" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.mapModalTitle}>Workplace Geofence Map</Text>
+                  <Text style={styles.mapModalSub} numberOfLines={1}>
+                    {assignedWorkplaceName}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowGeofenceMapModal(false)}
+                style={styles.modalCloseCircle}
+              >
+                <X size={18} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ padding: 14 }}>
+              <LeafletGeofenceMap
+                centerLat={geofenceCenter.lat}
+                centerLng={geofenceCenter.lng}
+                radius={geofenceCenter.radius}
+                userLat={currentLocation?.coords.latitude}
+                userLng={currentLocation?.coords.longitude}
+                userAccuracy={currentLocation?.coords.accuracy}
+                zoneName={assignedWorkplaceName}
+                interactive={false}
+                height={340}
+              />
+
+              <TouchableOpacity
+                style={styles.modalDoneBtn}
+                onPress={() => setShowGeofenceMapModal(false)}
+              >
+                <Text style={styles.modalDoneBtnText}>Close Map</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -2164,6 +2242,72 @@ export default function App() {
 
 const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  geoMapToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 10,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  geoMapToggleBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0284c7',
+  },
+  mapModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  mapModalIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#e0f2fe',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapModalTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  mapModalSub: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  modalCloseCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalDoneBtn: {
+    backgroundColor: '#0284c7',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  modalDoneBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   dashboardContainer: { flex: 1, backgroundColor: '#f8fafc' },
   dashHeader: {
     flexDirection: 'row',

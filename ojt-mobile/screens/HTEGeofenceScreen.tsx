@@ -24,6 +24,7 @@ import {
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { mobileDb } from '../lib/supabaseService';
+import LeafletGeofenceMap from '../components/LeafletGeofenceMap';
 
 interface HTEGeofenceScreenProps {
   onBack: () => void;
@@ -212,6 +213,32 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
         )}
       </TouchableOpacity>
 
+      {/* Interactive Leaflet OpenStreetMap Geofence Manager */}
+      <View style={styles.mapContainer}>
+        <View style={styles.mapSectionHeader}>
+          <Compass size={16} color="#059669" />
+          <Text style={styles.mapSectionTitle}>Interactive Workplace Perimeter Map (Leaflet)</Text>
+        </View>
+        <LeafletGeofenceMap
+          centerLat={parseFloat(latitude) || 10.7412}
+          centerLng={parseFloat(longitude) || 122.9691}
+          radius={radius}
+          userLat={currentGps?.coords.latitude}
+          userLng={currentGps?.coords.longitude}
+          userAccuracy={currentGps?.coords.accuracy}
+          zoneName={companyName || 'Company Workplace'}
+          interactive={true}
+          height={320}
+          onLocationChange={({ lat, lng, address: revAddress }) => {
+            setLatitude(String(lat));
+            setLongitude(String(lng));
+            if (revAddress) {
+              setAddress(revAddress);
+            }
+          }}
+        />
+      </View>
+
       {/* Form Card */}
       <View style={styles.formCard}>
         <Text style={styles.fieldLabel}>Company / Office Name</Text>
@@ -350,6 +377,21 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   detectGpsBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
+  mapContainer: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  mapSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  mapSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
   formCard: {
     backgroundColor: '#ffffff',
     borderRadius: 20,

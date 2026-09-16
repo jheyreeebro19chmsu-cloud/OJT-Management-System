@@ -10,6 +10,7 @@ import {
   Dimensions,
   Image,
   Platform,
+  Vibration,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
@@ -28,6 +29,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { biometricService, BiometricMatchResult, BiometricQualityResult } from '../services/biometricService';
+import { deepfaceService, DeepFaceVerifyResult, DeepFaceModel } from '../services/deepfaceService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Vertical biometric oval aperture matching web proportions (~1.36:1 aspect ratio)
@@ -61,6 +63,8 @@ export default function FaceScanner({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [stableCount, setStableCount] = useState(0);
+  const [deepFaceModel, setDeepFaceModel] = useState<DeepFaceModel>('VGG-Face');
+  const [deepFaceResult, setDeepFaceResult] = useState<DeepFaceVerifyResult | null>(null);
 
   const cameraRef = useRef<CameraView | null>(null);
   const isScanningRef = useRef(false);
@@ -73,6 +77,20 @@ export default function FaceScanner({
   const progressAnim = useRef(new Animated.Value(0.15)).current;
   // Pulsing border glow
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Haptic alarm throttling (prevents buzzer flooding)
+  const lastVibrationRef = useRef(0);
+  const triggerAlarmHaptic = useCallback(() => {
+    const now = Date.now();
+    if (now - lastVibrationRef.current > 1400) {
+      lastVibrationRef.current = now;
+      try {
+        Vibration.vibrate([0, 300, 120, 300]);
+      } catch (e) {
+        // Non-fatal if platform vibration unsupported
+      }
+    }
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -222,20 +240,23 @@ export default function FaceScanner({
           return;
         }
 
-        if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
+        if (quality.faceObscured || quality.glassesDetected || quality.capDetected || quality.maskDetected) {
           consecutiveStable = 0;
           setStableCount(0);
           setScanStatus('failed');
-          const prompt = quality.maskDetected
-            ? '⚠️ Face mask detected! Please remove mask for biometric scan.'
-            : quality.glassesDetected
-              ? '⚠️ Dark sunglasses detected! Please remove sunglasses.'
-              : quality.capDetected
-                ? '⚠️ Cap detected! Please remove headwear.'
-                : '⚠️ Face obscured! Please ensure your full face is visible.';
+          triggerAlarmHaptic();
+
+          let prompt = '🚨 ALARM: FACE OBSTRUCTED! Ensure full face is visible to scan';
+          if (quality.glassesDetected) {
+            prompt = '🚨 ALARM: GLASSES DETECTED! Remove eyeglasses / sunglasses to scan';
+          } else if (quality.capDetected) {
+            prompt = '🚨 ALARM: HAT / CAP DETECTED! Remove headwear / cap to scan';
+          } else if (quality.maskDetected) {
+            prompt = '🚨 ALARM: FACE MASK DETECTED! Remove face mask to scan';
+          }
           setStatusMessage(prompt);
           setErrorMessage(prompt);
-          Animated.timing(progressAnim, { toValue: 0.2, duration: 200, useNativeDriver: false }).start();
+          Animated.timing(progressAnim, { toValue: 0.1, duration: 200, useNativeDriver: false }).start();
           return;
         }
 
@@ -283,32 +304,37 @@ export default function FaceScanner({
             }
           }
         } else if ((mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') && enrolledPhoto) {
-          // Continuous DTR Biometric Verification: Match live frame against enrolled template
+          // Continuous DTR Biometric Verification: Match live frame against enrolled template with DeepFace AI
           setScanStatus('verifying');
-          setStatusMessage('Verifying identity against profile...');
+          setStatusMessage('Verifying biometric facial template...');
           Animated.timing(progressAnim, { toValue: 0.65, duration: 200, useNativeDriver: false }).start();
 
-          const bio: BiometricMatchResult = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.62);
+          const dfRes: DeepFaceVerifyResult = await deepfaceService.verifyFace(
+            enrolledPhoto,
+            dataUrl,
+            { modelName: deepFaceModel }
+          );
 
           if (!isMountedRef.current || hasFinishedRef.current) return;
+          setDeepFaceResult(dfRes);
 
-          if (bio.matched) {
+          if (dfRes.matched) {
             // Take high-quality snapshot for verified time record
             try {
               const finalPhoto = await cameraRef.current.takePictureAsync({
-                quality: 0.85,
+                quality: 0.88,
                 base64: true,
               });
               const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
-              handleSuccess(finalDataUrl, bio.confidence, bio.distance);
+              handleSuccess(finalDataUrl, dfRes.similarity_percent, dfRes.distance);
             } catch {
-              handleSuccess(dataUrl, bio.confidence, bio.distance);
+              handleSuccess(dataUrl, dfRes.similarity_percent, dfRes.distance);
             }
           } else {
             consecutiveStable = 0;
             setStableCount(0);
             setScanStatus('failed');
-            setStatusMessage(`⚠️ Biometric mismatch (Distance: ${bio.distance.toFixed(2)} > 0.62)`);
+            setStatusMessage(`⚠️ Biometric mismatch (${dfRes.similarity_percent}% sim, dist: ${dfRes.distance.toFixed(2)})`);
           }
         } else {
           // If no enrolled photo yet on clock-in, auto-enroll student on first punch
@@ -362,30 +388,41 @@ export default function FaceScanner({
       const quality = await biometricService.inspectQuality(base64Data);
       if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected) {
         setScanStatus('failed');
-        const reason = quality.maskDetected
-          ? 'Face mask detected! System prevents verification. Please remove mask for a clear face.'
-          : quality.glassesDetected
-            ? 'Dark sunglasses detected! System prevents verification. Please remove sunglasses.'
-            : quality.capDetected
-              ? 'Cap or headwear detected! Please remove headwear.'
-              : 'Face obscured! System prevents successful verification and prompts for a clear face.';
+        try {
+          Vibration.vibrate([0, 400, 150, 400]);
+        } catch {}
+
+        let reason = '🚨 ALARM: Verification Blocked! Full face visibility is required.';
+        let shortMsg = '🚨 ALARM: Face Obstructed';
+        if (quality.glassesDetected) {
+          reason = '🚨 ALARM: Glasses detected! Biometric verification strictly blocks scanning with eyeglasses or sunglasses. Please remove them and try again.';
+          shortMsg = '🚨 ALARM: Glasses Detected';
+        } else if (quality.capDetected) {
+          reason = '🚨 ALARM: Hat or cap detected! Biometric verification strictly blocks headwear. Please remove your cap/hat and try again.';
+          shortMsg = '🚨 ALARM: Hat/Cap Detected';
+        } else if (quality.maskDetected) {
+          reason = '🚨 ALARM: Face mask detected! Biometric verification strictly blocks masks. Please remove your mask and try again.';
+          shortMsg = '🚨 ALARM: Mask Detected';
+        }
+
         setErrorMessage(reason);
-        setStatusMessage('⚠️ Face Obstructed');
+        setStatusMessage(shortMsg);
         setIsCapturing(false);
         return;
       }
 
-      // If in DTR verification mode, check against enrolled photo
-      if ((mode === 'clock_in' || mode === 'clock_out') && enrolledPhoto) {
-        setStatusMessage('Verifying biometric match...');
-        const bio = await biometricService.verifyBiometrics(enrolledPhoto, base64Data, 0.62);
-        if (bio.matched) {
-          handleSuccess(base64Data, bio.confidence, bio.distance);
+      // If in DTR verification mode, check against enrolled photo with DeepFace AI
+      if ((mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') && enrolledPhoto) {
+        setStatusMessage('Verifying facial template...');
+        const dfRes = await deepfaceService.verifyFace(enrolledPhoto, base64Data, { modelName: deepFaceModel });
+        setDeepFaceResult(dfRes);
+        if (dfRes.matched) {
+          handleSuccess(base64Data, dfRes.similarity_percent, dfRes.distance);
           return;
         } else {
           setScanStatus('failed');
           setErrorMessage(
-            `Face Mismatch: Does not match enrolled template for ${employeeName || 'this student'} (Distance: ${bio.distance.toFixed(2)}, threshold: 0.62). Center your face and avoid glare.`
+            `Facial Mismatch: Does not match enrolled template for ${employeeName || 'this student'} (${dfRes.similarity_percent}% similarity, distance ${dfRes.distance.toFixed(2)} >= ${dfRes.threshold}). Please center face and ensure bright lighting.`
           );
           setStatusMessage('⚠️ Verification failed. Please retake.');
           setIsCapturing(false);
@@ -532,6 +569,16 @@ export default function FaceScanner({
             <FlipHorizontal color="#ffffff" size={20} />
           </TouchableOpacity>
         </View>
+
+        {/* Active Obstruction Alarm Banner (Only visible during an alarm or failure) */}
+        {scanStatus === 'failed' && (
+          <View style={styles.alarmBanner}>
+            <AlertTriangle size={18} color="#ffffff" />
+            <Text style={styles.alarmBannerText} numberOfLines={2}>
+              {statusMessage}
+            </Text>
+          </View>
+        )}
 
         {/* Center Biometric Vertical Oval Frame */}
         <View style={styles.frameContainer} pointerEvents="box-none">
@@ -935,5 +982,30 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontWeight: '700',
     fontSize: 14,
+  },
+  alarmBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(220, 38, 38, 0.95)',
+    borderWidth: 1.5,
+    borderColor: '#fca5a5',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  alarmBannerText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });
