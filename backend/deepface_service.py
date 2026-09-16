@@ -30,7 +30,7 @@ def verify_face_pair(
     img1: Union[str, Any],
     img2: Union[str, Any],
     model_name: str = "VGG-Face",
-    detector_backend: str = "opencv",
+    detector_backend: str = "retinaface",
     distance_metric: str = "cosine",
     enforce_detection: bool = False,
     align: bool = True,

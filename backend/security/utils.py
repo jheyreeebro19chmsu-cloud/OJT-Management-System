@@ -57,41 +57,38 @@ def safe_float(value: object, default: float = 0.0) -> float:
 def validate_image_quality(
     image_path: str,
     min_resolution: int = 160,
-    min_brightness: int = 30,
-    max_brightness: int = 235,
-    min_contrast: int = 16,
-    min_sharpness: float = 25.0,
+    min_brightness: int = 25,
+    max_brightness: int = 240,
+    min_contrast: int = 14,
+    min_sharpness: float = 12.0,
 ) -> Dict[str, any]:
     """
     Validate comprehensive image quality for biometric face registration and verification.
     Checks resolution, sharpness (blur detection via Laplacian variance), brightness, and contrast.
+    Automatically applies EXIF transpose to handle mobile/Expo camera orientation.
 
     Args:
         image_path: Path to image file on disk
         min_resolution: Minimum width and height in pixels (default 160)
-        min_brightness: Minimum average luminance (default 30)
-        max_brightness: Maximum average luminance (default 235)
-        min_contrast: Minimum standard deviation of grayscale pixels (default 16)
-        min_sharpness: Minimum variance of Laplacian (default 25.0, lower is blurrier)
+        min_brightness: Minimum average luminance (default 25)
+        max_brightness: Maximum average luminance (default 240)
+        min_contrast: Minimum standard deviation of grayscale pixels (default 14)
+        min_sharpness: Minimum variance of Laplacian (default 12.0, lower is blurrier)
 
     Returns:
-        dict: {
-            'valid': bool,
-            'status': 'good' | 'dark' | 'bright' | 'blurry' | 'low_resolution' | 'low_contrast',
-            'brightness': float,
-            'blur_score': float,
-            'contrast': float,
-            'width': int,
-            'height': int,
-            'message': str,
-            'recommendations': list[str]
-        }
+        dict with valid status, metrics, message, and recommendations
     """
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
         import numpy as np
 
         img = Image.open(image_path)
+        # Auto-rotate according to EXIF tag so mobile photos taken in portrait are not analyzed sideways
+        try:
+            img = ImageOps.exif_transpose(img) or img
+        except Exception:
+            pass
+
         width, height = img.size
 
         # 1. Minimum Resolution Check

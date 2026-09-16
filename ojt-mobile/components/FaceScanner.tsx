@@ -211,9 +211,9 @@ export default function FaceScanner({
           return;
         }
 
-        // Fast, lightweight snapshot for real-time analysis
+        // High-clarity snapshot for real-time biometric and liveness analysis
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.65,
+          quality: 0.82,
           base64: true,
         });
 
