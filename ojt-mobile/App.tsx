@@ -59,6 +59,7 @@ import { setAuthToken, getApiBaseUrl, faceApi, post } from './lib/api';
 import { mobileDb, TimeRecord } from './lib/supabaseService';
 import authStore from './lib/auth';
 import RegisterScreen from './screens/RegisterScreen';
+import ForgotPasswordModal from './components/ForgotPasswordModal';
 import ApplicationScreen from './screens/ApplicationScreen';
 import TasksScreen from './screens/TasksScreen';
 import DTRScreen from './screens/DTRScreen';
@@ -118,6 +119,7 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<'trainee' | 'admin' | 'hte'>('trainee');
   const [showGoogleAuth, setShowGoogleAuth] = useState(false);
   const [pendingGoogleUser, setPendingGoogleUser] = useState<any | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   // Trainee modals & sub-screens
   const [scanning, setScanning] = useState(false);
@@ -2052,6 +2054,15 @@ export default function App() {
                   />
                 </View>
 
+                <TouchableOpacity
+                  style={{ alignSelf: 'flex-end', marginTop: 4, marginBottom: 12 }}
+                  onPress={() => setShowForgotPassword(true)}
+                >
+                  <Text style={{ fontSize: 12, color: '#2563eb', fontWeight: '800' }}>
+                    Forgot Password?
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={authLoading}>
                   {authLoading ? (
                     <ActivityIndicator color="#ffffff" />
@@ -2133,6 +2144,18 @@ export default function App() {
         onClose={() => setShowGoogleAuth(false)}
         onSuccess={handleGoogleAuthSuccess}
         onError={(err) => Alert.alert('Google Sign-In', err)}
+      />
+
+      {/* Forgot Password Recovery Modal */}
+      <ForgotPasswordModal
+        visible={showForgotPassword}
+        initialEmail={email}
+        onClose={() => setShowForgotPassword(false)}
+        onSuccess={(resetEmail, newPassword) => {
+          setEmail(resetEmail);
+          setPassword(newPassword);
+          setShowForgotPassword(false);
+        }}
       />
       </SafeAreaView>
     </SafeAreaProvider>

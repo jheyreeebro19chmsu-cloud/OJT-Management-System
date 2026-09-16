@@ -705,4 +705,30 @@ export const mobileDb = {
       activeAcademicYear: data.active_academic_year || '2025-2026',
     };
   },
+
+  async resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+    const cleanEmail = email.trim().toLowerCase();
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-password-admin', {
+        body: {
+          email: cleanEmail,
+          newPassword,
+        },
+      });
+
+      if (error) {
+        console.warn('[mobileDb.resetPasswordDirect] Edge Function error:', error);
+        return { success: false, message: error.message || 'Failed to update password.' };
+      }
+
+      if (data && data.success === false) {
+        return { success: false, message: data.error || 'Failed to update password.' };
+      }
+
+      return { success: true, message: data?.message || 'Password updated successfully.' };
+    } catch (err: any) {
+      console.error('[mobileDb.resetPasswordDirect] Unexpected error:', err);
+      return { success: false, message: err?.message || 'Unexpected error updating password.' };
+    }
+  },
 };

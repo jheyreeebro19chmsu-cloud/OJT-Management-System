@@ -37,6 +37,7 @@ import {
   Eye,
   EyeOff,
   FileCheck,
+  KeyRound,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import * as Location from 'expo-location';
@@ -47,6 +48,7 @@ import { mobileDb, uploadFacePhoto } from '../lib/supabaseService';
 import { sendWelcomeEmailMobile, sendOtpEmailMobile } from '../lib/email';
 import FaceScanner from '../components/FaceScanner';
 import DropdownPicker from '../components/DropdownPicker';
+import ForgotPasswordModal from '../components/ForgotPasswordModal';
 import {
   campusOptions,
   departmentOptions,
@@ -80,6 +82,7 @@ export default function RegisterScreen({
   const [showScanner, setShowScanner] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
 
   // Instructors and HTE list fetched from Supabase
   const [availableInstructors, setAvailableInstructors] = useState<{ label: string; value: string }[]>([]);
@@ -1057,7 +1060,18 @@ export default function RegisterScreen({
               {emailChecking ? (
                 <Text style={styles.helperText}>Checking email availability...</Text>
               ) : emailTaken ? (
-                <Text style={styles.errorText}>{emailMsg}</Text>
+                <View style={{ marginTop: 4 }}>
+                  <Text style={styles.errorText}>{emailMsg}</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowForgotModal(true)}
+                    style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center' }}
+                  >
+                    <KeyRound size={13} color="#2563eb" style={{ marginRight: 4 }} />
+                    <Text style={{ fontSize: 12, color: '#2563eb', fontWeight: '800' }}>
+                      Forgot your password? Reset it here →
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               ) : emailTaken === false ? (
                 <Text style={styles.successHelperText}>Email is available!</Text>
               ) : null}
@@ -1634,6 +1648,17 @@ export default function RegisterScreen({
           </View>
         </View>
       </ScrollView>
+
+      {/* Forgot Password Recovery Modal */}
+      <ForgotPasswordModal
+        visible={showForgotModal}
+        initialEmail={form.email}
+        onClose={() => setShowForgotModal(false)}
+        onSuccess={(resetEmail, newPassword) => {
+          setShowForgotModal(false);
+          onCancel(); // return to login screen so they can sign in with new password
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
