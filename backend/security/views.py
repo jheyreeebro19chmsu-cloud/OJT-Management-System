@@ -33,6 +33,12 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# Security-hardened biometrics configuration
+SECURE_MODEL_NAME = "VGG-Face"
+SECURE_DETECTOR_BACKEND = "retinaface"   # was "opencv" — upgraded for occlusion/angle robustness
+SECURE_DISTANCE_METRIC = "cosine"
+SECURE_DLIB_TOLERANCE = 0.6              # fixed server-side, never client-supplied
+
 
 def _face_backend_available() -> bool:
     try:
@@ -498,10 +504,12 @@ def verify_face(request: HttpRequest) -> JsonResponse:
 
     registered_file = request.FILES.get("registered_image")
     captured_file = request.FILES.get("captured_image")
-    default_tol = float(getattr(settings, "FACE_RECOGNITION_TOLERANCE", 0.6))
-    tolerance = default_tol
+
+    # SECURITY: tolerance is fixed server-side. The client cannot override it.
+    tolerance = SECURE_DLIB_TOLERANCE
 
     known_encoding = None
+    known_image = None
     if employee_id:
         registration = FaceRegistration.objects.filter(employee_id=employee_id).first()
         if not registration or not registration.image:
@@ -509,23 +517,32 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 {"success": False, "message": "No registered face found for this employee."},
                 status=404,
             )
-        
-        # Use stored encoding if available (Much faster!)
+
+        try:
+            known_image = face_recognition.load_image_file(registration.image.path)
+        except Exception:
+            known_image = None
+
         if registration.face_encoding:
-            import numpy as np # type: ignore
+            import numpy as np  # type: ignore
             known_encoding = np.array(registration.face_encoding)
         else:
-            known_image = face_recognition.load_image_file(registration.image.path)
-            known_encodings = _encode_face_with_fallback(known_image)
-            if known_encodings:
-                known_encoding = known_encodings[0]
-                # Cache it for next time
-                registration.face_encoding = list(known_encoding)
-                registration.save()
+            if known_image is None and hasattr(registration.image, 'path'):
+                try:
+                    known_image = face_recognition.load_image_file(registration.image.path)
+                except Exception:
+                    known_image = None
+            if known_image is not None:
+                known_encodings = _encode_face_with_fallback(known_image)
+                if known_encodings:
+                    known_encoding = known_encodings[0]
+                    registration.face_encoding = list(known_encoding)
+                    registration.save()
     elif registered_file:
         known_image = face_recognition.load_image_file(registered_file)
         known_encodings = _encode_face_with_fallback(known_image)
-        if known_encodings: known_encoding = known_encodings[0]
+        if known_encodings:
+            known_encoding = known_encodings[0]
     else:
         registered_b64 = data.get("registered_image")
         if not registered_b64:
@@ -535,7 +552,8 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             )
         known_image = face_recognition.load_image_file(decode_base64_image(registered_b64))
         known_encodings = _encode_face_with_fallback(known_image)
-        if known_encodings: known_encoding = known_encodings[0]
+        if known_encodings:
+            known_encoding = known_encodings[0]
 
     if known_encoding is None:
         return JsonResponse(
@@ -545,20 +563,17 @@ def verify_face(request: HttpRequest) -> JsonResponse:
 
     if captured_file:
         unknown_image = face_recognition.load_image_file(captured_file)
-        tol_raw = request.POST.get("tolerance")
-        if tol_raw is not None:
-            tolerance = safe_float(tol_raw, tolerance)
+        # SECURITY: client-supplied tolerance is intentionally IGNORED now.
         capture_image_path = captured_file.temporary_file_path()
     else:
         captured_b64 = data.get("captured_image")
-        tolerance = safe_float(data.get("tolerance", tolerance), tolerance)
+        # SECURITY: client-supplied tolerance is intentionally IGNORED now.
         if not captured_b64:
             return JsonResponse(
                 {"success": False, "message": "captured_image is required."},
                 status=400,
             )
         unknown_image = face_recognition.load_image_file(decode_base64_image(captured_b64))
-        # For base64 images, we need to save temporarily to check brightness
         import tempfile
         temp_fd, capture_image_path = tempfile.mkstemp(suffix='.jpg')
         try:
@@ -574,7 +589,6 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             except:
                 pass
 
-    # NEW: Check brightness of captured image
     if capture_image_path:
         brightness_check = validate_image_brightness(capture_image_path)
         if brightness_check['status'] == 'dark':
@@ -590,18 +604,29 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=422
             )
 
-    # Attempt primary DeepFace verification if available
-    if has_deepface and verify_face_pair:
+    # Attempt primary DeepFace verification if available.
+    # SECURITY: model_name/detector_backend/distance_metric are hardcoded —
+    # never taken from the request. enforce_detection=True so occluded/
+    # undetectable faces are cleanly rejected instead of silently guessed.
+    if has_deepface and verify_face_pair and known_image is not None:
         try:
             df_result = verify_face_pair(
                 known_image,
                 unknown_image,
-                model_name=data.get("model_name", "VGG-Face"),
-                detector_backend=data.get("detector_backend", "opencv"),
-                distance_metric=data.get("distance_metric", "cosine"),
+                model_name=SECURE_MODEL_NAME,
+                detector_backend=SECURE_DETECTOR_BACKEND,
+                distance_metric=SECURE_DISTANCE_METRIC,
+                enforce_detection=True,
             )
             if df_result.get("success"):
                 return JsonResponse(df_result)
+
+            # If DeepFace explicitly couldn't detect a face (occlusion, bad
+            # angle, etc.), don't silently fall through to dlib — the same
+            # image will likely be just as unreliable there. Tell the user.
+            if "No face detected" in df_result.get("message", ""):
+                return JsonResponse(df_result, status=422)
+
         except Exception as df_err:
             logger.warning(f"DeepFace verification error, falling back to dlib: {df_err}")
 
@@ -610,6 +635,17 @@ def verify_face(request: HttpRequest) -> JsonResponse:
     if not unknown_encodings:
         return JsonResponse(
             {"success": False, "message": "No face found in captured image."},
+            status=422,
+        )
+
+    # SECURITY: reject if more than one face is found in the captured frame.
+    if len(unknown_encodings) > 1:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Multiple faces detected. Please capture only your own face.",
+                "faces_detected": len(unknown_encodings),
+            },
             status=422,
         )
 
