@@ -321,55 +321,125 @@ const BRIDGE_HTML = `
               }
             }
 
-            // 3. GLASSES DETECTION (Eyeglasses, Reading Glasses, Wireframes, and Sunglasses)
+            // 3. ULTRA-SENSITIVE GLASSES DETECTION (Zero Tolerance: Clear, Wireframe, Reading, Plastic, Sunglasses)
             if (landmarks && landmarks.length >= 68) {
-              // A. Nose Bridge & Inner Eye Span
               const p39 = landmarks[39];
               const p42 = landmarks[42];
-              const bridgeMidX = (p39.x + p42.x) / 2;
-              const bridgeMidY = (p39.y + p42.y) / 2;
-              const bridgePatch = getPatchAvg(imgData, canvas.width, canvas.height, bridgeMidX, bridgeMidY, 2);
-              const bridgeColorDiff = Math.abs(bridgePatch.r - skinR) + Math.abs(bridgePatch.g - skinG) + Math.abs(bridgePatch.b - skinB);
+              const n27 = landmarks[27];
+              const n28 = landmarks[28];
+              const n29 = landmarks[29];
+              const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
+              const noseBridgeX = n27.x;
 
-              let bridgeLumMin = 255;
-              let bridgeLumMax = 0;
-              let bridgeColorDiscontinuity = 0;
-              for (let step = 1; step <= 4; step++) {
-                const sx = p39.x + (p42.x - p39.x) * (step / 5);
-                const sy = p39.y + (p42.y - p39.y) * (step / 5);
-                const sp = getPixel(imgData, canvas.width, canvas.height, sx, sy);
-                if (sp.lum < bridgeLumMin) bridgeLumMin = sp.lum;
-                if (sp.lum > bridgeLumMax) bridgeLumMax = sp.lum;
-                bridgeColorDiscontinuity += Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
+              // A. Multi-Point Vertical Nasal Ridge Corridor Scan
+              let maxBridgeColorDiff = 0;
+              let maxBridgeGrad = 0;
+              let prevBridgeLum = getPixel(imgData, canvas.width, canvas.height, noseBridgeX, browMidY - 4).lum;
+
+              for (let y = Math.round(browMidY - 6); y <= Math.round(n29.y); y += 2) {
+                const sp = getPixel(imgData, canvas.width, canvas.height, noseBridgeX, y);
+                const diff = Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
+                if (diff > maxBridgeColorDiff) maxBridgeColorDiff = diff;
+                const grad = Math.abs(sp.lum - prevBridgeLum);
+                if (grad > maxBridgeGrad) maxBridgeGrad = grad;
+                prevBridgeLum = sp.lum;
               }
-              const bridgeSpanVariation = bridgeLumMax - bridgeLumMin;
-              const avgBridgeColorDiff = bridgeColorDiscontinuity / 4;
 
-              const bridgeTop = getPixel(imgData, canvas.width, canvas.height, bridgeMidX, bridgeMidY - 4);
-              const bridgeBottom = getPixel(imgData, canvas.width, canvas.height, bridgeMidX, bridgeMidY + 4);
-              const bridgeVerticalContrast = Math.abs(bridgeTop.lum - bridgePatch.lum) + Math.abs(bridgeBottom.lum - bridgePatch.lum);
+              // B. Multi-Level Horizontal Bridge Sweeps
+              let maxSpanVariation = 0;
+              let maxSweepColorDiff = 0;
+              const sweepYLevels = [
+                browMidY,
+                n27.y - 5,
+                n27.y,
+                n27.y + 5,
+                (p39.y + p42.y) / 2,
+                n28.y,
+                n28.y + 4,
+              ];
+
+              for (let i = 0; i < sweepYLevels.length; i++) {
+                const sy = sweepYLevels[i];
+                let sLumMin = 255;
+                let sLumMax = 0;
+                let sColorDiffSum = 0;
+                for (let step = 1; step <= 5; step++) {
+                  const sx = p39.x + (p42.x - p39.x) * (step / 6);
+                  const sp = getPixel(imgData, canvas.width, canvas.height, sx, sy);
+                  if (sp.lum < sLumMin) sLumMin = sp.lum;
+                  if (sp.lum > sLumMax) sLumMax = sp.lum;
+                  sColorDiffSum += Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
+                }
+                const spanVar = sLumMax - sLumMin;
+                if (spanVar > maxSpanVariation) maxSpanVariation = spanVar;
+                const avgDiff = sColorDiffSum / 5;
+                if (avgDiff > maxSweepColorDiff) maxSweepColorDiff = avgDiff;
+              }
 
               const hasBridgeFrame = (
-                bridgeColorDiff > 14 ||
-                avgBridgeColorDiff > 15 ||
-                bridgeSpanVariation > 14 ||
-                bridgeVerticalContrast > 12 ||
-                bridgePatch.lum < skinLum * 0.74 ||
-                bridgePatch.lum > skinLum * 1.35
+                maxBridgeColorDiff > 10 ||
+                maxBridgeGrad > 9 ||
+                maxSpanVariation > 10 ||
+                maxSweepColorDiff > 11
               );
 
-              // B. Temporal Eyeglass Arms
-              const rOuterX = landmarks[36].x - Math.max(5, box.width * 0.05);
-              const rOuterY = landmarks[36].y;
-              const lOuterX = landmarks[45].x + Math.max(5, box.width * 0.05);
-              const lOuterY = landmarks[45].y;
-              const rTemple = getPixel(imgData, canvas.width, canvas.height, rOuterX, rOuterY);
-              const lTemple = getPixel(imgData, canvas.width, canvas.height, lOuterX, lOuterY);
-              const rTempleDiff = Math.abs(rTemple.r - skinR) + Math.abs(rTemple.g - skinG) + Math.abs(rTemple.b - skinB);
-              const lTempleDiff = Math.abs(lTemple.r - skinR) + Math.abs(lTemple.g - skinG) + Math.abs(lTemple.b - skinB);
-              const hasTempleArms = (rTempleDiff > 18 || lTempleDiff > 18) || (rTemple.lum < skinLum * 0.68 || lTemple.lum < skinLum * 0.68);
+              // C. Nose Pad Detection
+              const rPadX = (p39.x + n27.x) / 2;
+              const rPadY = (p39.y + n28.y) / 2;
+              const lPadX = (p42.x + n27.x) / 2;
+              const lPadY = (p42.y + n28.y) / 2;
+              const rPad = getPixel(imgData, canvas.width, canvas.height, rPadX, rPadY);
+              const lPad = getPixel(imgData, canvas.width, canvas.height, lPadX, lPadY);
+              const rPadDiff = Math.abs(rPad.r - skinR) + Math.abs(rPad.g - skinG) + Math.abs(rPad.b - skinB);
+              const lPadDiff = Math.abs(lPad.r - skinR) + Math.abs(lPad.g - skinG) + Math.abs(lPad.b - skinB);
+              const hasNosePads = (
+                (rPadDiff > 9 || lPadDiff > 9) ||
+                (rPad.lum < skinLum * 0.72 || lPad.lum < skinLum * 0.72) ||
+                (rPad.lum > skinLum * 1.35 || lPad.lum > skinLum * 1.35)
+              );
 
-              // C. Eye Centers & Lens Glare / Tint
+              // D. Multi-Depth Under-Eye Cheek Corridor (Lower Rims)
+              let maxCheekRimDiff = 0;
+              let maxCheekGrad = 0;
+              const maxCheekDepth = Math.min(36, Math.round(box.height * 0.28));
+              let prevRLum = getPixel(imgData, canvas.width, canvas.height, landmarks[41].x, landmarks[41].y + 2).lum;
+              let prevLLum = getPixel(imgData, canvas.width, canvas.height, landmarks[46].x, landmarks[46].y + 2).lum;
+
+              for (let dy = 4; dy <= maxCheekDepth; dy += 2) {
+                const rP = getPixel(imgData, canvas.width, canvas.height, landmarks[41].x, landmarks[41].y + dy);
+                const lP = getPixel(imgData, canvas.width, canvas.height, landmarks[46].x, landmarks[46].y + dy);
+                const rDiff = Math.abs(rP.r - skinR) + Math.abs(rP.g - skinG) + Math.abs(rP.b - skinB);
+                const lDiff = Math.abs(lP.r - skinR) + Math.abs(lP.g - skinG) + Math.abs(lP.b - skinB);
+                if (rDiff > maxCheekRimDiff) maxCheekRimDiff = rDiff;
+                if (lDiff > maxCheekRimDiff) maxCheekRimDiff = lDiff;
+
+                const rGrad = Math.abs(rP.lum - prevRLum);
+                const lGrad = Math.abs(lP.lum - prevLLum);
+                if (rGrad > maxCheekGrad) maxCheekGrad = rGrad;
+                if (lGrad > maxCheekGrad) maxCheekGrad = lGrad;
+                prevRLum = rP.lum;
+                prevLLum = lP.lum;
+              }
+              const hasLowerRimFrame = (maxCheekRimDiff > 10 || maxCheekGrad > 9);
+
+              // E. Temporal Eyeglass Arms
+              let maxTempleDiff = 0;
+              let minTempleLum = 255;
+              for (let dx = 4; dx <= 16; dx += 3) {
+                for (let dy = -4; dy <= 4; dy += 4) {
+                  const rT = getPixel(imgData, canvas.width, canvas.height, landmarks[36].x - dx, landmarks[36].y + dy);
+                  const lT = getPixel(imgData, canvas.width, canvas.height, landmarks[45].x + dx, landmarks[45].y + dy);
+                  const rD = Math.abs(rT.r - skinR) + Math.abs(rT.g - skinG) + Math.abs(rT.b - skinB);
+                  const lD = Math.abs(lT.r - skinR) + Math.abs(lT.g - skinG) + Math.abs(lT.b - skinB);
+                  if (rD > maxTempleDiff) maxTempleDiff = rD;
+                  if (lD > maxTempleDiff) maxTempleDiff = lD;
+                  if (rT.lum < minTempleLum) minTempleLum = rT.lum;
+                  if (lT.lum < minTempleLum) minTempleLum = lT.lum;
+                }
+              }
+              const hasTempleArms = (maxTempleDiff > 11 || minTempleLum < skinLum * 0.65);
+
+              // F. Eye Centers: Dark Sunglasses & Specular Lens Glints
               const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
               const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
               const lPupilX = (landmarks[42].x + landmarks[45].x) / 2;
@@ -377,35 +447,32 @@ const BRIDGE_HTML = `
               const rCenter = getPixel(imgData, canvas.width, canvas.height, rPupilX, rPupilY);
               const lCenter = getPixel(imgData, canvas.width, canvas.height, lPupilX, lPupilY);
 
-              const isDarkGlasses = (rCenter.lum < 45 && lCenter.lum < 45 && skinLum > 48);
-
+              const isDarkGlasses = (rCenter.lum < 48 && lCenter.lum < 48 && skinLum > 45);
               const rEyeColorDiff = Math.abs(rCenter.r - skinR) + Math.abs(rCenter.g - skinG) + Math.abs(rCenter.b - skinB);
               const lEyeColorDiff = Math.abs(lCenter.r - skinR) + Math.abs(lCenter.g - skinG) + Math.abs(lCenter.b - skinB);
-              const isReflectiveGlasses = (rCenter.lum > 200 || lCenter.lum > 200) || (rCenter.lum > skinLum + 50 || lCenter.lum > skinLum + 50) || (rEyeColorDiff > 45 || lEyeColorDiff > 45);
+              const isReflectiveGlasses = (
+                rCenter.lum > 175 || lCenter.lum > 175 ||
+                rCenter.lum > skinLum + 35 || lCenter.lum > skinLum + 35 ||
+                rEyeColorDiff > 38 || lEyeColorDiff > 38
+              );
 
-              // D. Lower Orbital Rims
-              const rLowerRim = getPixel(imgData, canvas.width, canvas.height, landmarks[41].x, landmarks[41].y + 5);
-              const lLowerRim = getPixel(imgData, canvas.width, canvas.height, landmarks[46].x, landmarks[46].y + 5);
-              const rRimDiff = Math.abs(rLowerRim.r - skinR) + Math.abs(rLowerRim.g - skinG) + Math.abs(rLowerRim.b - skinB);
-              const lRimDiff = Math.abs(lLowerRim.r - skinR) + Math.abs(lLowerRim.g - skinG) + Math.abs(lLowerRim.b - skinB);
-              const hasLowerRimFrame = (rRimDiff > 18 || lRimDiff > 18) || (rLowerRim.lum < skinLum * 0.68 || lLowerRim.lum < skinLum * 0.68);
-
-              // E. Upper Browline Rims
+              // G. Upper Browline Rims
               const rUpperY = (landmarks[19].y + landmarks[37].y) / 2;
               const lUpperY = (landmarks[24].y + landmarks[44].y) / 2;
               const rUpper = getPixel(imgData, canvas.width, canvas.height, rPupilX, rUpperY);
               const lUpper = getPixel(imgData, canvas.width, canvas.height, lPupilX, lUpperY);
               const rUpperDiff = Math.abs(rUpper.r - skinR) + Math.abs(rUpper.g - skinG) + Math.abs(rUpper.b - skinB);
               const lUpperDiff = Math.abs(lUpper.r - skinR) + Math.abs(lUpper.g - skinG) + Math.abs(lUpper.b - skinB);
-              const hasUpperRimFrame = (rUpperDiff > 18 || lUpperDiff > 18) || (rUpper.lum < skinLum * 0.65 || lUpper.lum < skinLum * 0.65);
+              const hasUpperRimFrame = (rUpperDiff > 11 || lUpperDiff > 11 || rUpper.lum < skinLum * 0.65 || lUpper.lum < skinLum * 0.65);
 
               const isGlasses = Boolean(
                 isDarkGlasses ||
                 isReflectiveGlasses ||
                 hasBridgeFrame ||
+                hasNosePads ||
                 hasLowerRimFrame ||
-                (hasTempleArms && (hasUpperRimFrame || bridgeColorDiff > 10)) ||
-                (hasUpperRimFrame && bridgeColorDiff > 10)
+                hasTempleArms ||
+                hasUpperRimFrame
               );
 
               if (isGlasses) {
@@ -415,9 +482,13 @@ const BRIDGE_HTML = `
               // Box fallback check if landmarks fail
               const bBridgeX = box.x + box.width * 0.50;
               const bBridgeY = box.y + box.height * 0.38;
-              const bBridge = getPatchAvg(imgData, canvas.width, canvas.height, bBridgeX, bBridgeY, 2);
-              const bColorDiff = Math.abs(bBridge.r - skinR) + Math.abs(bBridge.g - skinG) + Math.abs(bBridge.b - skinB);
-              if (bColorDiff > 18 || bBridge.lum < skinLum * 0.68) {
+              let maxBoxDiff = 0;
+              for (let dy = -8; dy <= 8; dy += 4) {
+                const p = getPixel(imgData, canvas.width, canvas.height, bBridgeX, bBridgeY + dy);
+                const diff = Math.abs(p.r - skinR) + Math.abs(p.g - skinG) + Math.abs(p.b - skinB);
+                if (diff > maxBoxDiff) maxBoxDiff = diff;
+              }
+              if (maxBoxDiff > 11) {
                 glassesDetected = true;
               }
             }

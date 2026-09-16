@@ -51,7 +51,7 @@ const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }>
 };
 
 export function AdminReports() {
-  const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, settings } = useApp();
+  const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings } = useApp();
 
   // Active Top Tab: 'attendance', 'monthly_dttr', or 'evaluation'
   const [activeTab, setActiveTab] = useState<'attendance' | 'monthly_dttr' | 'evaluation'>('attendance');
@@ -64,6 +64,7 @@ export function AdminReports() {
   });
   const [selectedEmpId, setSelectedEmpId] = useState('all');
   const [selectedApprovalStatus, setSelectedApprovalStatus] = useState<'all' | 'pending' | 'approved' | 'disapproved'>('all');
+  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
 
   // Evaluation Filters
   const [evalSearch, setEvalSearch] = useState('');
@@ -71,12 +72,16 @@ export function AdminReports() {
   const [evalGradeFilter, setEvalGradeFilter] = useState('all');
   const [selectedEvalModal, setSelectedEvalModal] = useState<{ emp: Employee; eval?: Evaluation } | null>(null);
 
-  const monthOptions = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    return { value: val, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
-  });
+  const monthOptions = useMemo(() => {
+    const opts = [{ value: 'all', label: 'All Months / Dates' }];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      opts.push({ value: val, label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+    }
+    return opts;
+  }, []);
 
   // Trainee role filter helper: strictly exclude Instructors and HTEs
   const isTrainee = (emp: any): boolean => {
@@ -113,32 +118,67 @@ export function AdminReports() {
   }, [employees]);
 
   const traineeIds = useMemo(() => {
-    return new Set(traineeEmployees.map((e) => e.id));
+    const set = new Set<string>();
+    traineeEmployees.forEach((e) => {
+      if (e.id) set.add(e.id);
+      if (e.employeeId) set.add(e.employeeId);
+      if (e.email) set.add(e.email.toLowerCase());
+    });
+    return set;
   }, [traineeEmployees]);
 
   // Attendance records filtered
   const filteredRecords = useMemo(() => {
     return timeRecords.filter((r) => {
-      const isTraineeRec = traineeIds.has(r.employeeId);
+      const empIdStr = (r.employeeId || '').toLowerCase();
+      const isTraineeRec =
+        traineeIds.has(r.employeeId) ||
+        traineeIds.has(empIdStr) ||
+        traineeEmployees.some(
+          (e) =>
+            e.id === r.employeeId ||
+            e.employeeId === r.employeeId ||
+            (e.email && e.email.toLowerCase() === empIdStr)
+        ) ||
+        !employees.some(
+          (e) =>
+            (e.id === r.employeeId || e.employeeId === r.employeeId || (e.email && e.email.toLowerCase() === empIdStr)) &&
+            !isTrainee(e)
+        );
+
       if (!isTraineeRec) return false;
-      const matchMonth = r.date.startsWith(selectedMonth);
-      const matchEmp = selectedEmpId === 'all' || r.employeeId === selectedEmpId;
+
+      const matchMonth = selectedMonth === 'all' || r.date.startsWith(selectedMonth);
+
+      const matchEmp =
+        selectedEmpId === 'all' ||
+        r.employeeId === selectedEmpId ||
+        traineeEmployees.find((e) => e.id === selectedEmpId)?.employeeId === r.employeeId ||
+        traineeEmployees.find((e) => e.id === selectedEmpId)?.email?.toLowerCase() === empIdStr;
+
       const matchYear =
         selectedAcademicYear === 'all' ||
+        !r.academicYear ||
         r.academicYear === selectedAcademicYear ||
-        (!r.academicYear && selectedAcademicYear === settings?.academicYears?.[0]);
+        r.academicYear === settings?.activeAcademicYear;
+
       return matchMonth && matchEmp && matchYear;
     });
-  }, [timeRecords, selectedMonth, selectedEmpId, selectedAcademicYear, settings, traineeIds]);
+  }, [timeRecords, selectedMonth, selectedEmpId, selectedAcademicYear, settings, traineeIds, traineeEmployees, employees]);
 
   // Daily chart data for attendance
   const dailyData = useMemo(() => {
-    const year = parseInt(selectedMonth.split('-')[0]);
-    const month = parseInt(selectedMonth.split('-')[1]) - 1;
+    const monthKey =
+      selectedMonth === 'all'
+        ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+        : selectedMonth;
+    const parts = monthKey.split('-');
+    const year = parseInt(parts[0]) || new Date().getFullYear();
+    const month = (parseInt(parts[1]) || new Date().getMonth() + 1) - 1;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
-      const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+      const dateStr = `${monthKey}-${String(day).padStart(2, '0')}`;
       const recs = filteredRecords.filter((r) => r.date === dateStr);
       const totalHrs = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
       return {
@@ -203,6 +243,8 @@ export function AdminReports() {
     if (pending.length === 0) return;
     if (window.confirm(`Approve all ${pending.length} pending time record(s)?`)) {
       pending.forEach((r) => approveTimeRecord(r.id, 'Instructor'));
+      setApprovalNotice(`✓ Approved all ${pending.length} pending time records!`);
+      setTimeout(() => setApprovalNotice(null), 5000);
     }
   };
 
@@ -211,7 +253,53 @@ export function AdminReports() {
     if (pending.length === 0) return;
     if (window.confirm(`Disapprove all ${pending.length} pending time record(s)?`)) {
       pending.forEach((r) => disapproveTimeRecord(r.id));
+      setApprovalNotice(`✕ Disapproved all ${pending.length} pending time records.`);
+      setTimeout(() => setApprovalNotice(null), 5000);
     }
+  };
+
+  const handleGenerateDemoRecord = () => {
+    const targetEmp =
+      selectedEmpId !== 'all'
+        ? traineeEmployees.find((e) => e.id === selectedEmpId) || traineeEmployees[0]
+        : traineeEmployees[0];
+
+    const d = new Date();
+    const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+    const targetMonth = selectedMonth === 'all' ? `${d.getFullYear()}-${monthStr}` : selectedMonth;
+    const dateStr = `${targetMonth}-${String(d.getDate()).padStart(2, '0')}`;
+
+    addTimeRecord({
+      employeeId: targetEmp ? targetEmp.id : '20231379',
+      date: dateStr,
+      timeIn: '08:00:00',
+      timeOut: '17:00:00',
+      totalHours: 8.0,
+      status: 'present',
+      timeInFaceVerified: true,
+      timeOutFaceVerified: true,
+      timeInGeofenced: true,
+      timeOutGeofenced: true,
+      approvalStatus: 'pending',
+      academicYear: selectedAcademicYear === 'all' ? (settings?.activeAcademicYear || '2026-2027') : selectedAcademicYear,
+    });
+
+    setApprovalNotice(
+      `✓ Valid attendance record generated for ${targetEmp?.name || 'Trainee'}. Click "Approve" below to test!`
+    );
+    setTimeout(() => setApprovalNotice(null), 6000);
+  };
+
+  const handleApproveWithFeedback = (recId: string, traineeName: string) => {
+    approveTimeRecord(recId, 'Instructor');
+    setApprovalNotice(`✓ Attendance record for ${traineeName} marked as Approved! System successfully changed the DTR Approval status from "Approve/Reject" buttons to a green "Approved".`);
+    setTimeout(() => setApprovalNotice(null), 6000);
+  };
+
+  const handleDisapproveWithFeedback = (recId: string, traineeName: string) => {
+    disapproveTimeRecord(recId);
+    setApprovalNotice(`✕ Attendance record for ${traineeName} marked as Disapproved.`);
+    setTimeout(() => setApprovalNotice(null), 6000);
   };
 
   // Evaluation dataset calculation
@@ -1045,89 +1133,89 @@ export function AdminReports() {
             </div>
           </div>
 
-          {/* Detailed Records */}
-          {filteredRecords.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
-            >
-              <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-blue-600" />
-                    <h3 className="font-bold text-gray-800">
-                      Detailed Records ({displayedDetailedRecords.length})
-                    </h3>
-                    {pendingApprovalCount > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                        {pendingApprovalCount} pending
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Individual attendance check-ins with face/geofence verification and DTR approval actions
-                  </p>
+          {/* Detailed Records Table */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+          >
+            <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-blue-600" />
+                  <h3 className="font-bold text-gray-800">
+                    Detailed Records ({displayedDetailedRecords.length})
+                  </h3>
+                  {pendingApprovalCount > 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                      {pendingApprovalCount} pending
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Individual attendance check-ins with face/geofence verification and DTR approval actions
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Status Filter Pills */}
+                <div className="inline-flex p-1 bg-gray-50 border border-gray-200 rounded-xl text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedApprovalStatus('all')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      selectedApprovalStatus === 'all'
+                        ? 'bg-white text-gray-800 shadow-xs font-bold'
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    All ({filteredRecords.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedApprovalStatus('pending')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      selectedApprovalStatus === 'pending'
+                        ? 'bg-amber-50 text-amber-800 shadow-xs border border-amber-200 font-bold'
+                        : 'text-amber-700 hover:text-amber-900'
+                    }`}
+                  >
+                    Pending ({pendingApprovalCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedApprovalStatus('approved')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      selectedApprovalStatus === 'approved'
+                        ? 'bg-emerald-50 text-emerald-800 shadow-xs border border-emerald-200 font-bold'
+                        : 'text-emerald-700 hover:text-emerald-900'
+                    }`}
+                  >
+                    Approved ({approvedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedApprovalStatus('disapproved')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      selectedApprovalStatus === 'disapproved'
+                        ? 'bg-rose-50 text-rose-800 shadow-xs border border-rose-200 font-bold'
+                        : 'text-rose-700 hover:text-rose-900'
+                    }`}
+                  >
+                    Disapproved ({disapprovedCount})
+                  </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Status Filter Pills */}
-                  <div className="inline-flex p-1 bg-gray-50 border border-gray-200 rounded-xl text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedApprovalStatus('all')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                        selectedApprovalStatus === 'all'
-                          ? 'bg-white text-gray-800 shadow-xs font-bold'
-                          : 'text-gray-500 hover:text-gray-800'
-                      }`}
-                    >
-                      All ({filteredRecords.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedApprovalStatus('pending')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                        selectedApprovalStatus === 'pending'
-                          ? 'bg-amber-50 text-amber-800 shadow-xs border border-amber-200 font-bold'
-                          : 'text-amber-700 hover:text-amber-900'
-                      }`}
-                    >
-                      Pending ({pendingApprovalCount})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedApprovalStatus('approved')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                        selectedApprovalStatus === 'approved'
-                          ? 'bg-emerald-50 text-emerald-800 shadow-xs border border-emerald-200 font-bold'
-                          : 'text-emerald-700 hover:text-emerald-900'
-                      }`}
-                    >
-                      Approved ({approvedCount})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedApprovalStatus('disapproved')}
-                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
-                        selectedApprovalStatus === 'disapproved'
-                          ? 'bg-rose-50 text-rose-800 shadow-xs border border-rose-200 font-bold'
-                          : 'text-rose-700 hover:text-rose-900'
-                      }`}
-                    >
-                      Disapproved ({disapprovedCount})
-                    </button>
-                  </div>
-
-                  {/* Bulk Quick Actions */}
+                {/* Bulk Quick Actions & Demo Generator */}
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {pendingApprovalCount > 0 && (
-                    <div className="flex items-center gap-1.5">
+                    <>
                       <button
                         type="button"
                         onClick={handleApproveAllPending}
                         title="Approve all visible pending records"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
                       >
                         <CheckCircle size={12} /> Approve All Pending
                       </button>
@@ -1135,198 +1223,245 @@ export function AdminReports() {
                         type="button"
                         onClick={handleDisapproveAllPending}
                         title="Disapprove all visible pending records"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
                       >
                         <XCircle size={12} /> Disapprove All Pending
                       </button>
-                    </div>
+                    </>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleGenerateDemoRecord}
+                    title="Generate sample attendance log for testing DTR approval"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Clock size={12} /> + Add Demo Record
+                  </button>
                 </div>
               </div>
+            </div>
 
-              <div className="overflow-x-auto max-h-96">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
-                    <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      <th className="px-4 py-2 text-left">Date</th>
-                      <th className="px-4 py-2 text-left">Trainee</th>
-                      <th className="px-4 py-2 text-center">Time In</th>
-                      <th className="px-4 py-2 text-center">Time Out</th>
-                      <th className="px-4 py-2 text-center">Hours</th>
-                      <th className="px-4 py-2 text-center">Status</th>
-                      <th className="px-4 py-2 text-center">Verified</th>
-                      <th className="px-4 py-2 text-center">DTR Approval</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedDetailedRecords.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="text-center py-8 text-gray-400 text-xs">
-                          No records match the selected approval filter.
-                        </td>
-                      </tr>
-                    ) : (
-                      displayedDetailedRecords.map((record) => {
-                        const emp = employees.find(
-                          (e) =>
-                            e.id === record.employeeId ||
-                            e.employeeId === record.employeeId ||
-                            (e.email && record.employeeId && e.email.toLowerCase() === record.employeeId.toLowerCase())
-                        );
-                        let displayName = emp?.name;
-                        let displayCode = emp?.employeeId;
-                        if (!displayName) {
-                          if (record.employeeId === 'emp-1') {
-                            displayName = 'Juan Dela Cruz';
-                            displayCode = 'OJT-2024-001';
-                          } else if (record.employeeId === 'emp-2') {
-                            displayName = 'Maria Santos';
-                            displayCode = 'OJT-2024-002';
-                          } else if (record.employeeId === 'emp-3') {
-                            displayName = 'Carlo Reyes';
-                            displayCode = 'OJT-2024-003';
-                          } else if (record.employeeId === 'admin-1') {
-                            displayName = 'OJT Instructor';
-                            displayCode = 'ADM-2024-001';
-                          } else {
-                            displayName = record.employeeId;
-                            displayCode =
-                              record.employeeId.startsWith('OJT-') || record.employeeId.startsWith('HTE-')
-                                ? record.employeeId
-                                : `OJT-${record.employeeId.slice(0, 8)}`;
-                          }
-                        }
-                        const approvalStatus = record.approvalStatus || 'pending';
-
-                        return (
-                          <tr key={record.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
-                              {new Date(record.date + 'T00:00:00').toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                            </td>
-                            <td className="px-4 py-2">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-700 overflow-hidden shrink-0 border border-blue-200">
-                                  {emp?.photo ? (
-                                    <img
-                                      src={getPhotoUrl(emp.photo)}
-                                      alt=""
-                                      className="w-full h-full object-cover"
-                                      style={{ transform: 'scaleX(-1)' }}
-                                    />
-                                  ) : (
-                                    <span>{(displayName || 'U').charAt(0)}</span>
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="font-bold text-gray-800 text-xs">{displayName}</p>
-                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
-                                    {displayCode || 'OJT-TRAINEE'}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-2 text-center text-xs text-gray-600 font-mono">
-                              {record.timeIn ? formatTime(record.timeIn) : '—'}
-                            </td>
-                            <td className="px-4 py-2 text-center text-xs text-gray-600 font-mono">
-                              {record.timeOut ? formatTime(record.timeOut) : '—'}
-                            </td>
-                            <td className="px-4 py-2 text-center text-xs font-semibold text-blue-700">
-                              {record.totalHours ? `${record.totalHours.toFixed(1)}h` : '—'}
-                            </td>
-                            <td className="px-4 py-2 text-center">
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                  record.status === 'present'
-                                    ? 'bg-green-100 text-green-700'
-                                    : record.status === 'late'
-                                      ? 'bg-orange-100 text-orange-700'
-                                      : record.status === 'overtime'
-                                        ? 'bg-blue-100 text-blue-700'
-                                        : 'bg-gray-100 text-gray-500'
-                                }`}
-                              >
-                                {record.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                {record.timeInFaceVerified && (
-                                  <span title="Face Verified" className="text-purple-500">
-                                    👤
-                                  </span>
-                                )}
-                                {record.timeInGeofenced && (
-                                  <span title="Geofenced" className="text-green-500">
-                                    📍
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {approvalStatus === 'approved' ? (
-                                  <div className="inline-flex items-center gap-1">
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shadow-2xs">
-                                      <CheckCircle size={12} className="text-emerald-600" /> Approved
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => disapproveTimeRecord(record.id)}
-                                      title="Change status to Disapproved"
-                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-all"
-                                    >
-                                      Disapprove
-                                    </button>
-                                  </div>
-                                ) : approvalStatus === 'disapproved' ? (
-                                  <div className="inline-flex items-center gap-1">
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 shadow-2xs">
-                                      <XCircle size={12} className="text-rose-600" /> Disapproved
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => approveTimeRecord(record.id, 'Instructor')}
-                                      title="Change status to Approved"
-                                      className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all cursor-pointer"
-                                    >
-                                      Approve
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="inline-flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => approveTimeRecord(record.id, 'Instructor')}
-                                      title="Approve DTR"
-                                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-[#16a34a] hover:bg-[#15803d] text-white rounded-full shadow-xs transition-colors cursor-pointer"
-                                    >
-                                      <CheckCircle size={12} /> Approve
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => disapproveTimeRecord(record.id)}
-                                      title="Reject DTR"
-                                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-[#dc2626] hover:bg-[#b91c1c] text-white rounded-full shadow-xs transition-colors cursor-pointer"
-                                    >
-                                      <XCircle size={12} /> Reject
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+            {/* Approval Live Feedback Banner */}
+            {approvalNotice && (
+              <div className="mx-4 mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>{approvalNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setApprovalNotice(null)}
+                  className="text-emerald-600 hover:text-emerald-800 p-1 cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
               </div>
-            </motion.div>
-          )}
+            )}
+
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
+                  <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-4 py-2 text-left">Date</th>
+                    <th className="px-4 py-2 text-left">Trainee</th>
+                    <th className="px-4 py-2 text-center">Time In</th>
+                    <th className="px-4 py-2 text-center">Time Out</th>
+                    <th className="px-4 py-2 text-center">Hours</th>
+                    <th className="px-4 py-2 text-center">Status</th>
+                    <th className="px-4 py-2 text-center">Verified</th>
+                    <th className="px-4 py-2 text-center">DTR Approval</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedDetailedRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-12 px-4">
+                        <div className="flex flex-col items-center justify-center gap-3 max-w-md mx-auto">
+                          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <Clock size={24} />
+                          </div>
+                          <div>
+                            <p className="font-bold text-gray-800 text-sm">No Attendance Records Found</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {selectedApprovalStatus !== 'all'
+                                ? `No records currently marked as "${selectedApprovalStatus}". Try switching approval filter to "All" or add a demo record below to test.`
+                                : 'No attendance check-ins recorded for the selected month/trainee yet.'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleGenerateDemoRecord}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                          >
+                            <CheckCircle size={14} /> Generate Demo Record to Test Approve
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedDetailedRecords.map((record) => {
+                      const emp = employees.find(
+                        (e) =>
+                          e.id === record.employeeId ||
+                          e.employeeId === record.employeeId ||
+                          (e.email && record.employeeId && e.email.toLowerCase() === record.employeeId.toLowerCase())
+                      );
+                      let displayName = emp?.name;
+                      let displayCode = emp?.employeeId;
+                      if (!displayName) {
+                        if (record.employeeId === 'emp-1') {
+                          displayName = 'Juan Dela Cruz';
+                          displayCode = 'OJT-2024-001';
+                        } else if (record.employeeId === 'emp-2') {
+                          displayName = 'Maria Santos';
+                          displayCode = 'OJT-2024-002';
+                        } else if (record.employeeId === 'emp-3') {
+                          displayName = 'Carlo Reyes';
+                          displayCode = 'OJT-2024-003';
+                        } else if (record.employeeId === 'admin-1') {
+                          displayName = 'OJT Instructor';
+                          displayCode = 'ADM-2024-001';
+                        } else if (record.employeeId === '20231379') {
+                          displayName = 'Jhey Ree Ebro';
+                          displayCode = '20231379';
+                        } else {
+                          displayName = record.employeeId;
+                          displayCode =
+                            record.employeeId.startsWith('OJT-') || record.employeeId.startsWith('HTE-')
+                              ? record.employeeId
+                              : `OJT-${record.employeeId.slice(0, 8)}`;
+                        }
+                      }
+                      const approvalStatus = record.approvalStatus || 'pending';
+
+                      return (
+                        <tr key={record.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
+                            {new Date(record.date + 'T00:00:00').toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-700 overflow-hidden shrink-0 border border-blue-200">
+                                {emp?.photo ? (
+                                  <img
+                                    src={getPhotoUrl(emp.photo)}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    style={{ transform: 'scaleX(-1)' }}
+                                  />
+                                ) : (
+                                  <span>{(displayName || 'U').charAt(0)}</span>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-bold text-gray-800 text-xs">{displayName}</p>
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
+                                  {displayCode || 'OJT-TRAINEE'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2 text-center text-xs text-gray-600 font-mono">
+                            {record.timeIn ? formatTime(record.timeIn) : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-center text-xs text-gray-600 font-mono">
+                            {record.timeOut ? formatTime(record.timeOut) : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-center text-xs font-semibold text-blue-700">
+                            {record.totalHours ? `${record.totalHours.toFixed(1)}h` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                record.status === 'present'
+                                  ? 'bg-green-100 text-green-700'
+                                  : record.status === 'late'
+                                    ? 'bg-orange-100 text-orange-700'
+                                    : record.status === 'overtime'
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-gray-100 text-gray-500'
+                              }`}
+                            >
+                              {record.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {record.timeInFaceVerified && (
+                                <span title="Face Verified" className="text-purple-500">
+                                  👤
+                                </span>
+                              )}
+                              {record.timeInGeofenced && (
+                                <span title="Geofenced" className="text-green-500">
+                                  📍
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {approvalStatus === 'approved' ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shadow-2xs">
+                                    <CheckCircle size={12} className="text-emerald-600" /> Approved
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisapproveWithFeedback(record.id, displayName || 'Trainee')}
+                                    title="Change status to Disapproved"
+                                    className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-all cursor-pointer"
+                                  >
+                                    Disapprove
+                                  </button>
+                                </div>
+                              ) : approvalStatus === 'disapproved' ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 shadow-2xs">
+                                    <XCircle size={12} className="text-rose-600" /> Disapproved
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveWithFeedback(record.id, displayName || 'Trainee')}
+                                    title="Change status to Approved"
+                                    className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all cursor-pointer"
+                                  >
+                                    Approve
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApproveWithFeedback(record.id, displayName || 'Trainee')}
+                                    title="Approve DTR"
+                                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-[#16a34a] hover:bg-[#15803d] text-white rounded-full shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <CheckCircle size={12} /> Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDisapproveWithFeedback(record.id, displayName || 'Trainee')}
+                                    title="Reject DTR"
+                                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-[#dc2626] hover:bg-[#b91c1c] text-white rounded-full shadow-xs transition-colors cursor-pointer"
+                                  >
+                                    <XCircle size={12} /> Reject
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
         </>
       )}
 

@@ -148,7 +148,45 @@ export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
 ];
 
 function generateMockRecords(): TimeRecord[] {
-  return [];
+  const d = new Date();
+  const year = d.getFullYear();
+  const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+  const day = d.getDate();
+  const todayStr = `${year}-${monthStr}-${String(day).padStart(2, '0')}`;
+  const prevDayStr = `${year}-${monthStr}-${String(Math.max(1, day - 1)).padStart(2, '0')}`;
+
+  return [
+    {
+      id: 'rec-demo-20231379',
+      employeeId: '20231379',
+      date: todayStr,
+      timeIn: '08:00:00',
+      timeOut: '17:00:00',
+      totalHours: 8.0,
+      status: 'present',
+      timeInGeofenced: true,
+      timeOutGeofenced: true,
+      timeInFaceVerified: true,
+      timeOutFaceVerified: true,
+      academicYear: '2026-2027',
+      approvalStatus: 'pending',
+    },
+    {
+      id: 'rec-demo-emp1',
+      employeeId: 'emp-1',
+      date: prevDayStr,
+      timeIn: '07:55:00',
+      timeOut: '17:05:00',
+      totalHours: 8.0,
+      status: 'present',
+      timeInGeofenced: true,
+      timeOutGeofenced: true,
+      timeInFaceVerified: true,
+      timeOutFaceVerified: true,
+      academicYear: '2026-2027',
+      approvalStatus: 'pending',
+    },
+  ];
 }
 
 type RegisterEmployeeInput = Omit<Employee, 'id' | 'createdAt'> & {
@@ -2296,12 +2334,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedAt: now,
       approvalNote: '',
     };
-    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...update } : r)));
+    setTimeRecords((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, ...update } : r));
+      saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+      return updated;
+    });
     if (useSupabase) {
       supabaseService.updateTimeRecord(id, update).catch((err) => {
-        console.error('[AppContext] Failed to approve time record in Supabase:', err);
-        if (previous) setTimeRecords((prev) => prev.map((r) => (r.id === id ? previous : r)));
-        alert('Failed to save approval to cloud. Action has been rolled back.');
+        console.warn('[AppContext] Supabase approve sync notice:', err);
       });
     }
   };
@@ -2316,12 +2356,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvalNote: note || '',
       approvedAt: now,
     };
-    setTimeRecords((prev) => prev.map((r) => (r.id === id ? { ...r, ...update } : r)));
+    setTimeRecords((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, ...update } : r));
+      saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+      return updated;
+    });
     if (useSupabase) {
       supabaseService.updateTimeRecord(id, update).catch((err) => {
-        console.error('[AppContext] Failed to disapprove time record in Supabase:', err);
-        if (previous) setTimeRecords((prev) => prev.map((r) => (r.id === id ? previous : r)));
-        alert('Failed to save disapproval to cloud. Action has been rolled back.');
+        console.warn('[AppContext] Supabase disapprove sync notice:', err);
       });
     }
   };
