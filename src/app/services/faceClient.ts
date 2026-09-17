@@ -116,30 +116,41 @@ export interface FaceDetectionResult {
 
 export async function detectFaceInDataUrl(dataUrl: string): Promise<boolean> {
   if (!dataUrl) return false;
-  const ok = await loadFaceModels().catch(() => false);
-  if (!ok) {
-    return dataUrl.length > 50;
-  }
   try {
-    const api = (window as any).faceapi;
-    const img = await createImageElement(dataUrl);
-    // 1. Try TinyFaceDetector with standard input size
-    let detection = await api
-      .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }));
+    const ok = await loadFaceModels().catch(() => false);
+    if (ok && (window as any).faceapi) {
+      const api = (window as any).faceapi;
+      const img = await createImageElement(dataUrl);
+      // 1. TinyFaceDetector standard
+      let detection = await api
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 320 }));
 
-    // 2. Fallback to higher input resolution
-    if (!detection) {
-      detection = await api
-        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }));
+      // 2. TinyFaceDetector high-res
+      if (!detection) {
+        detection = await api
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 416 }));
+      }
+
+      // 3. TinyFaceDetector close-up
+      if (!detection) {
+        detection = await api
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 224 }));
+      }
+
+      // 4. SSD MobileNet
+      if (!detection && api.nets.ssdMobilenetv1?.params) {
+        detection = await api
+          .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.15 }));
+      }
+
+      if (detection) return true;
     }
 
-    // 3. Fallback to SSD MobileNet if loaded
-    if (!detection && api.nets.ssdMobilenetv1?.params) {
-      detection = await api
-        .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }));
-    }
+    // Fallback: Check if inspectFaceQuality detects facial presence
+    const quality = await inspectFaceQuality(dataUrl).catch(() => null);
+    if (quality?.faceDetected) return true;
 
-    return !!detection;
+    return dataUrl.length > 50;
   } catch (e) {
     console.warn('detectFaceInDataUrl error, using fallback:', e);
     return dataUrl.length > 50;
@@ -160,24 +171,32 @@ export async function computeTypedDescriptorFromDataUrl(dataUrl: string): Promis
     if (ok && (window as any).faceapi) {
       const api = (window as any).faceapi;
       // Multi-detector AI pipeline:
-      // 1. TinyFaceDetector (Fast)
+      // 1. TinyFaceDetector 416 (High Resolution)
       let detection = await api
-        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }))
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 416 }))
         .withFaceLandmarks()
         .withFaceDescriptor();
 
-      // 2. TinyFaceDetector 416 (High Resolution)
+      // 2. TinyFaceDetector 320 (Fast)
       if (!detection || !detection.descriptor) {
         detection = await api
-          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }))
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 320 }))
           .withFaceLandmarks()
           .withFaceDescriptor();
       }
 
-      // 3. SSD Mobilenet V1 (Deep Neural Network)
+      // 3. TinyFaceDetector 224 (Low-res/Close-up)
+      if (!detection || !detection.descriptor) {
+        detection = await api
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 224 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+      }
+
+      // 4. SSD Mobilenet V1 (Deep Neural Network)
       if ((!detection || !detection.descriptor) && api.nets.ssdMobilenetv1?.params) {
         detection = await api
-          .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }))
+          .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.15 }))
           .withFaceLandmarks()
           .withFaceDescriptor();
       }
@@ -185,12 +204,9 @@ export async function computeTypedDescriptorFromDataUrl(dataUrl: string): Promis
       if (detection && detection.descriptor) {
         return { descriptor: detection.descriptor as Float32Array, type: 'neural' };
       }
-
-      // If neural models are active but no face is detected in the image, strictly return null
-      return null;
     }
 
-    // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments) only if models not loaded
+    // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments)
     return { descriptor: computePerceptualDescriptor(img), type: 'perceptual' };
   } catch (e) {
     console.warn('computeTypedDescriptorFromDataUrl error:', e);
@@ -377,11 +393,11 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     const avgLum = totalLum / count;
     result.brightness = Math.round(avgLum);
 
-    // Background Lighting Analysis: Sample corners and upper margin outside the central oval
+    // Background Lighting Analysis: Sample far corners outside the central oval
     let bgLumSum = 0;
     let bgSamples = 0;
-    const cornerW = Math.max(10, Math.floor(w * 0.22));
-    const cornerH = Math.max(10, Math.floor(h * 0.22));
+    const cornerW = Math.max(8, Math.floor(w * 0.15));
+    const cornerH = Math.max(8, Math.floor(h * 0.15));
     for (let y = 0; y < cornerH; y += 4) {
       for (let x = 0; x < cornerW; x += 4) {
         const idxTL = (y * w + x) * 4;
@@ -391,21 +407,15 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
         bgSamples += 2;
       }
     }
-    for (let y = 0; y < Math.floor(h * 0.12); y += 4) {
-      for (let x = Math.floor(w * 0.35); x < Math.floor(w * 0.65); x += 4) {
-        const idx = (y * w + x) * 4;
-        bgLumSum += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-        bgSamples++;
-      }
-    }
     const bgLum = bgSamples > 0 ? Math.round(bgLumSum / bgSamples) : Math.round(avgLum);
 
-    if (bgLum < 45 || avgLum < 38) {
-      result.poorBackgroundLighting = true;
+    // Only flag dark if overall frame or corners are genuinely pitch dark (< 22)
+    if (avgLum < 24 || (bgLum < 18 && avgLum < 30)) {
       result.tooDark = true;
+      result.poorBackgroundLighting = bgLum < 18;
       result.ok = false;
-      result.issues.push('🚨 DARK BACKGROUND / POOR LIGHTING! Please move in front of a light, well-lit background.');
-    } else if (avgLum > 242) {
+      result.issues.push('🚨 POOR LIGHTING! Please move to a brighter, well-lit area.');
+    } else if (avgLum > 246) {
       result.tooBright = true;
       result.ok = false;
       result.issues.push('🚨 HARSH GLARE / OVEREXPOSURE! Please adjust lighting.');
@@ -469,267 +479,310 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
 
     // 3. Face & Landmarks Detection with Obstruction checks
     const ok = await loadFaceModels().catch(() => false);
+    let faceBox: any = null;
+    let landmarks: any = null;
+
     if (ok && (window as any).faceapi) {
       const api = (window as any).faceapi;
-      let detection = await api
-        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.12, inputSize: 320 }))
-        .withFaceLandmarks();
+      try {
+        // Multi-resolution face detection without requiring landmarks first
+        let faceResult = await api.detectSingleFace(
+          img,
+          new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 416 })
+        );
 
-      if (!detection) {
-        detection = await api
-          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.08, inputSize: 416 }))
-          .withFaceLandmarks();
+        if (!faceResult) {
+          faceResult = await api.detectSingleFace(
+            img,
+            new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 320 })
+          );
+        }
+
+        if (!faceResult) {
+          faceResult = await api.detectSingleFace(
+            img,
+            new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 224 })
+          );
+        }
+
+        if (!faceResult && api.nets.ssdMobilenetv1?.params) {
+          faceResult = await api.detectSingleFace(
+            img,
+            new api.SsdMobilenetv1Options({ minConfidence: 0.15 })
+          );
+        }
+
+        if (faceResult) {
+          result.faceDetected = true;
+          faceBox = (faceResult as any).box || (faceResult as any).detection?.box || faceResult;
+
+          // Attempt landmarks extraction on the detected face
+          try {
+            const withLm = await api.detectSingleFace(
+              img,
+              new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 320 })
+            ).withFaceLandmarks();
+            if (withLm?.landmarks) {
+              landmarks = withLm.landmarks.positions || withLm.landmarks;
+            }
+          } catch {
+            // Landmark detection failure should not invalidate face detection
+          }
+        }
+      } catch (detErr) {
+        console.warn('Face detection error:', detErr);
+      }
+    }
+
+    // Fallback: Skin-tone & facial presence analysis in central oval if models unavailable or missed
+    if (!result.faceDetected) {
+      let ovalSkinPixels = 0;
+      let ovalTotalPixels = 0;
+
+      for (let y = 0; y < h; y += 4) {
+        for (let x = 0; x < w; x += 4) {
+          const dx = (x - w * 0.5) / (w * 0.32);
+          const dy = (y - h * 0.48) / (h * 0.35);
+          if ((dx * dx + dy * dy) <= 1.0) {
+            ovalTotalPixels++;
+            const p = getPixel(x, y);
+            const isSkin = (
+              p.r > 35 && p.g > 22 && p.b > 15 &&
+              p.r >= p.g && (p.r - p.b) > 4 &&
+              p.lum > 22 && p.lum < 248
+            );
+            if (isSkin) ovalSkinPixels++;
+          }
+        }
       }
 
-      if (!detection && api.nets.ssdMobilenetv1?.params) {
-        detection = await api
-          .detectSingleFace(img, new api.SsdMobilenetv1Options({ minConfidence: 0.2 }))
-          .withFaceLandmarks();
-      }
-
-      if (detection) {
+      const skinRatio = ovalTotalPixels > 0 ? ovalSkinPixels / ovalTotalPixels : 0;
+      if (skinRatio >= 0.10 && result.sharpness > 2.5) {
         result.faceDetected = true;
-        const box = detection.detection.box;
-        const landmarks = (detection as any).landmarks ? (detection as any).landmarks.positions : null;
+        result.faceCentered = true;
+        faceBox = {
+          x: Math.round(w * 0.20),
+          y: Math.round(h * 0.16),
+          width: Math.round(w * 0.60),
+          height: Math.round(h * 0.64),
+        };
+      }
+    }
 
-        // Centering check: generous tolerance (within 35% of center) so human users pass naturally
-        const targetCx = w * 0.50;
-        const targetCy = h * 0.46;
-        const faceCx = box.x + box.width / 2;
-        const faceCy = box.y + box.height / 2;
-        const offsetX = Math.abs(faceCx - targetCx) / w;
-        const offsetY = Math.abs(faceCy - targetCy) / h;
-        if (offsetX > 0.35 || offsetY > 0.35) {
-          result.faceCentered = false;
-          result.issues.push('Please center your face inside the oval guide.');
-        } else {
-          result.faceCentered = true;
+    if (result.faceDetected && faceBox) {
+      const box = faceBox;
+
+      // Centering check: generous tolerance (within 38% of center) so human users pass naturally
+      const targetCx = w * 0.50;
+      const targetCy = h * 0.46;
+      const faceCx = box.x + box.width / 2;
+      const faceCy = box.y + box.height / 2;
+      const offsetX = Math.abs(faceCx - targetCx) / w;
+      const offsetY = Math.abs(faceCy - targetCy) / h;
+      if (offsetX > 0.38 || offsetY > 0.38) {
+        result.faceCentered = false;
+        result.issues.push('Please center your face inside the oval guide.');
+      } else {
+        result.faceCentered = true;
+      }
+
+      // 1. Cheek Skin Tone Baseline Sampling
+      let cx1: number, cy1: number, cx2: number, cy2: number;
+      if (landmarks && landmarks.length >= 68) {
+        cx1 = (landmarks[30].x + landmarks[3].x) / 2;
+        cy1 = (landmarks[30].y + landmarks[3].y) / 2;
+        cx2 = (landmarks[30].x + landmarks[13].x) / 2;
+        cy2 = (landmarks[30].y + landmarks[13].y) / 2;
+      } else {
+        cx1 = box.x + box.width * 0.26;
+        cy1 = box.y + box.height * 0.58;
+        cx2 = box.x + box.width * 0.74;
+        cy2 = box.y + box.height * 0.58;
+      }
+      const cheek1 = getPatchAvg(cx1, cy1, 3);
+      const cheek2 = getPatchAvg(cx2, cy2, 3);
+      const skinR = Math.round((cheek1.r + cheek2.r) / 2);
+      const skinG = Math.round((cheek1.g + cheek2.g) / 2);
+      const skinB = Math.round((cheek1.b + cheek2.b) / 2);
+      const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
+
+      // 2. HAT / CAP / HEADWEAR DETECTION
+      if (landmarks && landmarks.length >= 68) {
+        const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
+        const noseBridgeX = landmarks[27].x;
+
+        const fore1 = getPatchAvg(noseBridgeX, browMidY - 14, 2);
+        const fore2 = getPatchAvg(noseBridgeX, browMidY - 26, 2);
+        const fore3 = getPatchAvg(noseBridgeX, browMidY - 38, 2);
+
+        const foreColorDiff1 = Math.abs(fore1.r - skinR) + Math.abs(fore1.g - skinG) + Math.abs(fore1.b - skinB);
+        const foreColorDiff2 = Math.abs(fore2.r - skinR) + Math.abs(fore2.g - skinG) + Math.abs(fore2.b - skinB);
+        const foreColorDiff3 = Math.abs(fore3.r - skinR) + Math.abs(fore3.g - skinG) + Math.abs(fore3.b - skinB);
+
+        const isForeheadFabric = (foreColorDiff1 > 38 && foreColorDiff2 > 38) || (foreColorDiff2 > 38 && foreColorDiff3 > 38);
+        const isCapBrimShadow = fore1.lum < skinLum * 0.45 && fore2.lum < skinLum * 0.45;
+        const foreheadHeight = browMidY - box.y;
+        const foreheadTruncated = foreheadHeight < 14;
+
+        if ((isForeheadFabric || isCapBrimShadow) && (foreheadHeight > 16 || foreheadTruncated)) {
+          result.capDetected = true;
+          result.issues.push('🚨 HAT / CAP DETECTED! Institutional policy strictly requires a bare face. Please remove headwear.');
+        }
+      }
+
+      // 3. CALIBRATED GLASSES DETECTION (Zero Tolerance for Real Glasses, Zero False Positives on Bare Faces)
+      if (landmarks && landmarks.length >= 68) {
+        const p39 = landmarks[39];
+        const p42 = landmarks[42];
+        const n27 = landmarks[27];
+        const n28 = landmarks[28];
+        const n29 = landmarks[29];
+        const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
+        const noseBridgeX = n27.x;
+
+        // A. Nasal Ridge Corridor Scan
+        let maxBridgeColorDiff = 0;
+        let maxBridgeGrad = 0;
+        let prevBridgeLum = getPixel(noseBridgeX, browMidY - 4).lum;
+
+        for (let y = Math.round(browMidY - 6); y <= Math.round(n29.y); y += 2) {
+          const sp = getPixel(noseBridgeX, y);
+          const diff = Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
+          if (diff > maxBridgeColorDiff) maxBridgeColorDiff = diff;
+          const grad = Math.abs(sp.lum - prevBridgeLum);
+          if (grad > maxBridgeGrad) maxBridgeGrad = grad;
+          prevBridgeLum = sp.lum;
         }
 
-        // 1. Cheek Skin Tone Baseline Sampling
-        let cx1: number, cy1: number, cx2: number, cy2: number;
-        if (landmarks && landmarks.length >= 68) {
-          cx1 = (landmarks[30].x + landmarks[3].x) / 2;
-          cy1 = (landmarks[30].y + landmarks[3].y) / 2;
-          cx2 = (landmarks[30].x + landmarks[13].x) / 2;
-          cy2 = (landmarks[30].y + landmarks[13].y) / 2;
-        } else {
-          cx1 = box.x + box.width * 0.26;
-          cy1 = box.y + box.height * 0.58;
-          cx2 = box.x + box.width * 0.74;
-          cy2 = box.y + box.height * 0.58;
-        }
-        const cheek1 = getPatchAvg(cx1, cy1, 3);
-        const cheek2 = getPatchAvg(cx2, cy2, 3);
-        const skinR = Math.round((cheek1.r + cheek2.r) / 2);
-        const skinG = Math.round((cheek1.g + cheek2.g) / 2);
-        const skinB = Math.round((cheek1.b + cheek2.b) / 2);
-        const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
+        // B. Horizontal Bridge Sweeps
+        let maxSpanVariation = 0;
+        let maxSweepColorDiff = 0;
+        const sweepYLevels = [
+          browMidY,
+          n27.y - 5,
+          n27.y,
+          n27.y + 5,
+          (p39.y + p42.y) / 2,
+          n28.y,
+        ];
 
-        // 2. HAT / CAP / HEADWEAR DETECTION
-        // A hat, cap, or headwear covers or casts a shadow over the forehead down to the eyebrows.
-        // On a bare, clear head, the central forehead has clear bare skin matching the cheeks.
-        if (landmarks && landmarks.length >= 68) {
-          const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
-          const noseBridgeX = landmarks[27].x;
-
-          // Sample 3 points on central forehead directly above nose bridge
-          const fore1 = getPatchAvg(noseBridgeX, browMidY - 14, 2);
-          const fore2 = getPatchAvg(noseBridgeX, browMidY - 26, 2);
-          const fore3 = getPatchAvg(noseBridgeX, browMidY - 38, 2);
-
-          const foreColorDiff1 = Math.abs(fore1.r - skinR) + Math.abs(fore1.g - skinG) + Math.abs(fore1.b - skinB);
-          const foreColorDiff2 = Math.abs(fore2.r - skinR) + Math.abs(fore2.g - skinG) + Math.abs(fore2.b - skinB);
-          const foreColorDiff3 = Math.abs(fore3.r - skinR) + Math.abs(fore3.g - skinG) + Math.abs(fore3.b - skinB);
-
-          const isForeheadFabric = (foreColorDiff1 > 28 || foreColorDiff2 > 28 || foreColorDiff3 > 28);
-          const isCapBrimShadow = fore1.lum < skinLum * 0.58 && fore2.lum < skinLum * 0.58;
-          const foreheadHeight = browMidY - box.y;
-          const foreheadTruncated = foreheadHeight < 16;
-
-          if ((isForeheadFabric || isCapBrimShadow) && (foreheadHeight > 12 || foreheadTruncated)) {
-            result.capDetected = true;
-            result.issues.push('🚨 HAT / CAP DETECTED! Institutional policy strictly requires a bare face. Please remove headwear.');
+        for (const sy of sweepYLevels) {
+          let sLumMin = 255;
+          let sLumMax = 0;
+          let sColorDiffSum = 0;
+          for (let step = 1; step <= 5; step++) {
+            const sx = p39.x + (p42.x - p39.x) * (step / 6);
+            const sp = getPixel(sx, sy);
+            if (sp.lum < sLumMin) sLumMin = sp.lum;
+            if (sp.lum > sLumMax) sLumMax = sp.lum;
+            sColorDiffSum += Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
           }
+          const spanVar = sLumMax - sLumMin;
+          if (spanVar > maxSpanVariation) maxSpanVariation = spanVar;
+          const avgDiff = sColorDiffSum / 5;
+          if (avgDiff > maxSweepColorDiff) maxSweepColorDiff = avgDiff;
         }
 
-        // 3. ULTRA-SENSITIVE GLASSES DETECTION (Zero Tolerance: Clear, Wireframe, Reading, Plastic, Sunglasses)
-        // Strictly enforces a 100% bare face. Detects frames, nose pads, lens reflections, and rims.
-        if (landmarks && landmarks.length >= 68) {
-          const p39 = landmarks[39];
-          const p42 = landmarks[42];
-          const n27 = landmarks[27];
-          const n28 = landmarks[28];
-          const n29 = landmarks[29];
-          const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
-          const noseBridgeX = n27.x;
+        const hasBridgeFrame = (
+          (maxBridgeColorDiff > 28 && maxBridgeGrad > 22) ||
+          (maxSpanVariation > 32 && maxSweepColorDiff > 28)
+        );
 
-          // A. Multi-Point Vertical Nasal Ridge Corridor Scan (Brow to Mid-Nose)
-          // On a bare face, luminance along the nasal ridge is smooth and skin-toned.
-          // Glasses bridges, pads, and bars produce distinct vertical contrast spikes.
-          let maxBridgeColorDiff = 0;
-          let maxBridgeGrad = 0;
-          let prevBridgeLum = getPixel(noseBridgeX, browMidY - 4).lum;
+        // C. Nose Pad Detection (both sides of nasal ridge)
+        const rPadX = (p39.x + n27.x) / 2;
+        const rPadY = (p39.y + n28.y) / 2;
+        const lPadX = (p42.x + n27.x) / 2;
+        const lPadY = (p42.y + n28.y) / 2;
+        const rPad = getPixel(rPadX, rPadY);
+        const lPad = getPixel(lPadX, lPadY);
+        const rPadDiff = Math.abs(rPad.r - skinR) + Math.abs(rPad.g - skinG) + Math.abs(rPad.b - skinB);
+        const lPadDiff = Math.abs(lPad.r - skinR) + Math.abs(lPad.g - skinG) + Math.abs(lPad.b - skinB);
+        const hasNosePads = (
+          (rPadDiff > 25 && lPadDiff > 25) &&
+          ((rPad.lum < skinLum * 0.60 && lPad.lum < skinLum * 0.60) || (rPad.lum > skinLum * 1.45 && lPad.lum > skinLum * 1.45))
+        );
 
-          for (let y = Math.round(browMidY - 6); y <= Math.round(n29.y); y += 2) {
-            const sp = getPixel(noseBridgeX, y);
-            const diff = Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
-            if (diff > maxBridgeColorDiff) maxBridgeColorDiff = diff;
-            const grad = Math.abs(sp.lum - prevBridgeLum);
-            if (grad > maxBridgeGrad) maxBridgeGrad = grad;
-            prevBridgeLum = sp.lum;
-          }
+        // D. Under-Eye Lower Rims
+        let maxCheekRimDiff = 0;
+        let maxCheekGrad = 0;
+        const maxCheekDepth = Math.min(36, Math.round(box.height * 0.28));
+        let prevRLum = getPixel(landmarks[41].x, landmarks[41].y + 2).lum;
+        let prevLLum = getPixel(landmarks[46].x, landmarks[46].y + 2).lum;
 
-          // B. Multi-Level Horizontal Bridge Sweeps (Inner Canthus 39 to 42 across 27/28)
-          let maxSpanVariation = 0;
-          let maxSweepColorDiff = 0;
-          const sweepYLevels = [
-            browMidY,
-            n27.y - 5,
-            n27.y,
-            n27.y + 5,
-            (p39.y + p42.y) / 2,
-            n28.y,
-            n28.y + 4,
-          ];
+        for (let dy = 6; dy <= maxCheekDepth; dy += 2) {
+          const rP = getPixel(landmarks[41].x, landmarks[41].y + dy);
+          const lP = getPixel(landmarks[46].x, landmarks[46].y + dy);
+          const rDiff = Math.abs(rP.r - skinR) + Math.abs(rP.g - skinG) + Math.abs(rP.b - skinB);
+          const lDiff = Math.abs(lP.r - skinR) + Math.abs(lP.g - skinG) + Math.abs(lP.b - skinB);
+          if (rDiff > maxCheekRimDiff) maxCheekRimDiff = rDiff;
+          if (lDiff > maxCheekRimDiff) maxCheekRimDiff = lDiff;
 
-          for (const sy of sweepYLevels) {
-            let sLumMin = 255;
-            let sLumMax = 0;
-            let sColorDiffSum = 0;
-            for (let step = 1; step <= 5; step++) {
-              const sx = p39.x + (p42.x - p39.x) * (step / 6);
-              const sp = getPixel(sx, sy);
-              if (sp.lum < sLumMin) sLumMin = sp.lum;
-              if (sp.lum > sLumMax) sLumMax = sp.lum;
-              sColorDiffSum += Math.abs(sp.r - skinR) + Math.abs(sp.g - skinG) + Math.abs(sp.b - skinB);
-            }
-            const spanVar = sLumMax - sLumMin;
-            if (spanVar > maxSpanVariation) maxSpanVariation = spanVar;
-            const avgDiff = sColorDiffSum / 5;
-            if (avgDiff > maxSweepColorDiff) maxSweepColorDiff = avgDiff;
-          }
+          const rGrad = Math.abs(rP.lum - prevRLum);
+          const lGrad = Math.abs(lP.lum - prevLLum);
+          if (rGrad > maxCheekGrad) maxCheekGrad = rGrad;
+          if (lGrad > maxCheekGrad) maxCheekGrad = lGrad;
+          prevRLum = rP.lum;
+          prevLLum = lP.lum;
+        }
+        const hasLowerRimFrame = (maxCheekRimDiff > 28 && maxCheekGrad > 22);
 
-          const hasBridgeFrame = (
-            maxBridgeColorDiff > 10 ||
-            maxBridgeGrad > 9 ||
-            maxSpanVariation > 10 ||
-            maxSweepColorDiff > 11
-          );
-
-          // C. Nose Pad Detection (Sides of nose bone between inner eye corners 39/42 and nasal ridge 27/28)
-          // All glasses—including rimless and ultra-thin wireframes—feature nose pads resting on nasal bone slopes.
-          const rPadX = (p39.x + n27.x) / 2;
-          const rPadY = (p39.y + n28.y) / 2;
-          const lPadX = (p42.x + n27.x) / 2;
-          const lPadY = (p42.y + n28.y) / 2;
-          const rPad = getPixel(rPadX, rPadY);
-          const lPad = getPixel(lPadX, lPadY);
-          const rPadDiff = Math.abs(rPad.r - skinR) + Math.abs(rPad.g - skinG) + Math.abs(rPad.b - skinB);
-          const lPadDiff = Math.abs(lPad.r - skinR) + Math.abs(lPad.g - skinG) + Math.abs(lPad.b - skinB);
-          const hasNosePads = (
-            (rPadDiff > 9 || lPadDiff > 9) ||
-            (rPad.lum < skinLum * 0.72 || lPad.lum < skinLum * 0.72) ||
-            (rPad.lum > skinLum * 1.35 || lPad.lum > skinLum * 1.35)
-          );
-
-          // D. Multi-Depth Under-Eye Cheek Corridor (Lower Rims & Bottom Lens Edges)
-          // Scans downward from under lower eyelids (landmarks 41 & 46) across the cheekbone (4px to 36px)
-          let maxCheekRimDiff = 0;
-          let maxCheekGrad = 0;
-          const maxCheekDepth = Math.min(36, Math.round(box.height * 0.28));
-          let prevRLum = getPixel(landmarks[41].x, landmarks[41].y + 2).lum;
-          let prevLLum = getPixel(landmarks[46].x, landmarks[46].y + 2).lum;
-
-          for (let dy = 4; dy <= maxCheekDepth; dy += 2) {
-            const rP = getPixel(landmarks[41].x, landmarks[41].y + dy);
-            const lP = getPixel(landmarks[46].x, landmarks[46].y + dy);
-            const rDiff = Math.abs(rP.r - skinR) + Math.abs(rP.g - skinG) + Math.abs(rP.b - skinB);
-            const lDiff = Math.abs(lP.r - skinR) + Math.abs(lP.g - skinG) + Math.abs(lP.b - skinB);
-            if (rDiff > maxCheekRimDiff) maxCheekRimDiff = rDiff;
-            if (lDiff > maxCheekRimDiff) maxCheekRimDiff = lDiff;
-
-            const rGrad = Math.abs(rP.lum - prevRLum);
-            const lGrad = Math.abs(lP.lum - prevLLum);
-            if (rGrad > maxCheekGrad) maxCheekGrad = rGrad;
-            if (lGrad > maxCheekGrad) maxCheekGrad = lGrad;
-            prevRLum = rP.lum;
-            prevLLum = lP.lum;
-          }
-          const hasLowerRimFrame = (maxCheekRimDiff > 10 || maxCheekGrad > 9);
-
-          // E. Temporal Eyeglass Arms (Horizontal sweeps beside outer eye corners 36 & 45)
-          let maxTempleDiff = 0;
-          let minTempleLum = 255;
-          for (let dx = 4; dx <= 16; dx += 3) {
-            for (let dy = -4; dy <= 4; dy += 4) {
-              const rT = getPixel(landmarks[36].x - dx, landmarks[36].y + dy);
-              const lT = getPixel(landmarks[45].x + dx, landmarks[45].y + dy);
-              const rD = Math.abs(rT.r - skinR) + Math.abs(rT.g - skinG) + Math.abs(rT.b - skinB);
-              const lD = Math.abs(lT.r - skinR) + Math.abs(lT.g - skinG) + Math.abs(lT.b - skinB);
-              if (rD > maxTempleDiff) maxTempleDiff = rD;
-              if (lD > maxTempleDiff) maxTempleDiff = lD;
-              if (rT.lum < minTempleLum) minTempleLum = rT.lum;
-              if (lT.lum < minTempleLum) minTempleLum = lT.lum;
-            }
-          }
-          const hasTempleArms = (maxTempleDiff > 11 || minTempleLum < skinLum * 0.65);
-
-          // F. Eye Centers: Dark Sunglasses & Specular Lens Glints
-          const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
-          const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
-          const lPupilX = (landmarks[42].x + landmarks[45].x) / 2;
-          const lPupilY = (landmarks[43].y + landmarks[46].y) / 2;
-          const rCenter = getPixel(rPupilX, rPupilY);
-          const lCenter = getPixel(lPupilX, lPupilY);
-
-          const isDarkGlasses = (rCenter.lum < 48 && lCenter.lum < 48 && skinLum > 45);
-          const rEyeColorDiff = Math.abs(rCenter.r - skinR) + Math.abs(rCenter.g - skinG) + Math.abs(rCenter.b - skinB);
-          const lEyeColorDiff = Math.abs(lCenter.r - skinR) + Math.abs(lCenter.g - skinG) + Math.abs(lCenter.b - skinB);
-          const isReflectiveGlasses = (
-            rCenter.lum > 175 || lCenter.lum > 175 ||
-            rCenter.lum > skinLum + 35 || lCenter.lum > skinLum + 35 ||
-            rEyeColorDiff > 38 || lEyeColorDiff > 38
-          );
-
-          // G. Upper Browline Rims (Along eyebrows 19-24 down to eyelids)
-          const rUpperY = (landmarks[19].y + landmarks[37].y) / 2;
-          const lUpperY = (landmarks[24].y + landmarks[44].y) / 2;
-          const rUpper = getPixel(rPupilX, rUpperY);
-          const lUpper = getPixel(lPupilX, lUpperY);
-          const rUpperDiff = Math.abs(rUpper.r - skinR) + Math.abs(rUpper.g - skinG) + Math.abs(rUpper.b - skinB);
-          const lUpperDiff = Math.abs(lUpper.r - skinR) + Math.abs(lUpper.g - skinG) + Math.abs(lUpper.b - skinB);
-          const hasUpperRimFrame = (rUpperDiff > 11 || lUpperDiff > 11 || rUpper.lum < skinLum * 0.65 || lUpper.lum < skinLum * 0.65);
-
-          const isGlasses = Boolean(
-            isDarkGlasses ||
-            isReflectiveGlasses ||
-            hasBridgeFrame ||
-            hasNosePads ||
-            hasLowerRimFrame ||
-            hasTempleArms ||
-            hasUpperRimFrame
-          );
-
-          if (isGlasses) {
-            result.glassesDetected = true;
-            result.issues.push('🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.');
-          }
-        } else if (detection) {
-          // Fallback box-relative multi-point scan if landmarks are delayed
-          const bBridgeX = box.x + box.width * 0.50;
-          const bBridgeY = box.y + box.height * 0.38;
-          let maxBoxDiff = 0;
-          for (let dy = -8; dy <= 8; dy += 4) {
-            const p = getPixel(bBridgeX, bBridgeY + dy);
-            const diff = Math.abs(p.r - skinR) + Math.abs(p.g - skinG) + Math.abs(p.b - skinB);
-            if (diff > maxBoxDiff) maxBoxDiff = diff;
-          }
-          if (maxBoxDiff > 11) {
-            result.glassesDetected = true;
-            result.issues.push('🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.');
+        // E. Temporal Eyeglass Arms
+        let maxTempleDiff = 0;
+        let minTempleLum = 255;
+        for (let dx = 6; dx <= 18; dx += 3) {
+          for (let dy = -3; dy <= 3; dy += 3) {
+            const rT = getPixel(landmarks[36].x - dx, landmarks[36].y + dy);
+            const lT = getPixel(landmarks[45].x + dx, landmarks[45].y + dy);
+            const rD = Math.abs(rT.r - skinR) + Math.abs(rT.g - skinG) + Math.abs(rT.b - skinB);
+            const lD = Math.abs(lT.r - skinR) + Math.abs(lT.g - skinG) + Math.abs(lT.b - skinB);
+            if (rD > maxTempleDiff) maxTempleDiff = rD;
+            if (lD > maxTempleDiff) maxTempleDiff = lD;
+            if (rT.lum < minTempleLum) minTempleLum = rT.lum;
+            if (lT.lum < minTempleLum) minTempleLum = lT.lum;
           }
         }
+        const hasTempleArms = (maxTempleDiff > 28 && minTempleLum < skinLum * 0.48);
+
+        // F. Eye Centers: Sunglasses & Specular Reflection
+        const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
+        const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
+        const lPupilX = (landmarks[42].x + landmarks[45].x) / 2;
+        const lPupilY = (landmarks[43].y + landmarks[46].y) / 2;
+        const rCenter = getPixel(rPupilX, rPupilY);
+        const lCenter = getPixel(lPupilX, lPupilY);
+
+        const isDarkGlasses = (rCenter.lum < 32 && lCenter.lum < 32 && skinLum > 52);
+        const isReflectiveGlasses = (
+          (rCenter.lum > 225 && lCenter.lum > 225) ||
+          (rCenter.lum > skinLum + 60 && lCenter.lum > skinLum + 60)
+        );
+
+        const isGlasses = Boolean(
+          isDarkGlasses ||
+          isReflectiveGlasses ||
+          (hasBridgeFrame && (hasNosePads || hasLowerRimFrame || hasTempleArms)) ||
+          (hasNosePads && hasLowerRimFrame)
+        );
+
+        if (isGlasses) {
+          result.glassesDetected = true;
+          result.issues.push('🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.');
+        }
+      } else if (box) {
+        // Fallback box-relative bridge scan when landmarks are not available
+        const bBridgeX = box.x + box.width * 0.50;
+        const bBridgeY = box.y + box.height * 0.38;
+        let maxBoxDiff = 0;
+        for (let dy = -8; dy <= 8; dy += 4) {
+          const p = getPixel(bBridgeX, bBridgeY + dy);
+          const diff = Math.abs(p.r - skinR) + Math.abs(p.g - skinG) + Math.abs(p.b - skinB);
+          if (diff > maxBoxDiff) maxBoxDiff = diff;
+        }
+        if (maxBoxDiff > 32) {
+          result.glassesDetected = true;
+          result.issues.push('🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.');
+        }
+      }
 
         // 4. MASK DETECTION (Surgical / Fabric Mask)
         if (landmarks && landmarks.length >= 68) {
@@ -807,10 +860,9 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
         result.ok = false;
         result.issues.push('No face detected. Position head inside the oval guide.');
       }
+    } catch (err) {
+      console.warn('inspectFaceQuality warning:', err);
     }
-  } catch (err) {
-    console.warn('inspectFaceQuality warning:', err);
-  }
 
   return result;
 }

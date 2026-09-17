@@ -15,6 +15,9 @@ import {
   Navigation,
   Loader2,
   RefreshCw,
+  Edit3,
+  Save,
+  X,
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
@@ -23,6 +26,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { getCurrentLocation, reverseGeocode } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
+import { campusOptions, departmentOptions } from '../data/academicOptions';
 
 export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
   const { currentUser, getCurrentEmployee, employees, updateEmployee, updateHostSupervisor, addGeofenceZone, settings } = useApp();
@@ -193,19 +197,109 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     }
   };
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    phone: '',
+    department: '',
+    campus: '',
+    companyName: '',
+    companyAddress: '',
+  });
+
+  const handleOpenEdit = () => {
+    setEditForm({
+      name,
+      phone: phone !== '+63 (034) 712-0000' ? phone : '',
+      department,
+      campus,
+      companyName: isHte ? company : '',
+      companyAddress: isHte ? (employee?.companyAddress || employee?.registrationAddress || '') : '',
+    });
+    setIsEditing(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetId = employee?.id || currentUser?.id;
+    if (!targetId) {
+      toast.error('Could not identify user to save profile.');
+      return;
+    }
+    setSaving(true);
+    try {
+      if (isHte) {
+        updateHostSupervisor(targetId, {
+          name: editForm.name.trim(),
+          phone: editForm.phone.trim(),
+          contactPerson: editForm.name.trim(),
+          companyName: editForm.companyName.trim(),
+          companyAddress: editForm.companyAddress.trim(),
+        });
+        localStorage.setItem('ojt_hte_company', editForm.companyName.trim());
+      }
+      updateEmployee(targetId, {
+        name: editForm.name.trim(),
+        contactPhone: editForm.phone.trim(),
+        department: isHte ? undefined : editForm.department,
+        campus: isHte ? undefined : editForm.campus,
+        companyName: isHte ? editForm.companyName.trim() : undefined,
+        companyAddress: isHte ? editForm.companyAddress.trim() : undefined,
+      });
+
+      // Synchronize in storage for instant UI update
+      try {
+        const storedUser = localStorage.getItem('ojt_user');
+        if (storedUser) {
+          const parsed = JSON.parse(storedUser);
+          parsed.name = editForm.name.trim();
+          localStorage.setItem('ojt_user', JSON.stringify(parsed));
+          localStorage.setItem('ojt_current_user', JSON.stringify(parsed));
+        }
+        if (isHte) {
+          const storedHte = localStorage.getItem('ojt_hte_user');
+          if (storedHte) {
+            const parsed = JSON.parse(storedHte);
+            parsed.name = editForm.name.trim();
+            parsed.companyName = editForm.companyName.trim();
+            localStorage.setItem('ojt_hte_user', JSON.stringify(parsed));
+          }
+        }
+      } catch {}
+
+      toast.success('Profile updated successfully!');
+      setIsEditing(false);
+    } catch {
+      toast.error('Failed to update profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 font-sans">
-      {/* Header */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-          <User className="text-blue-600" size={26} />
-          <span>{isHte ? 'HTE Establishment Profile' : 'Instructor Profile'}</span>
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          {isHte
-            ? 'Account information, partner establishment details, and authorized coordinator profile'
-            : 'Academic credentials, faculty information, and department assignment'}
-        </p>
+      {/* Header with Edit Button */}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <User className="text-blue-600" size={26} />
+            <span>{isHte ? 'HTE Establishment Profile' : 'Instructor Profile'}</span>
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {isHte
+              ? 'Account information, partner establishment details, and authorized coordinator profile'
+              : 'Academic credentials, faculty information, and department assignment'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenEdit}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-2xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
+        >
+          <Edit3 size={15} />
+          <span>Edit Profile</span>
+        </button>
       </div>
 
       {/* Main Profile Card */}
@@ -389,6 +483,144 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
           </div>
         </div>
       </div>
+
+      {/* Edit Profile Modal */}
+      {isEditing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full p-6 space-y-5 overflow-hidden">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Edit3 size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 leading-tight">
+                    Edit {isHte ? 'Establishment' : 'Instructor'} Profile
+                  </h3>
+                  <p className="text-xs text-slate-500">Update your official information in the system</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Full Name / Contact Person
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Contact Phone Number
+                </label>
+                <input
+                  type="tel"
+                  placeholder="+63 912 345 6789"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+
+              {isHte ? (
+                <>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Company / Establishment Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.companyName}
+                      onChange={(e) => setEditForm({ ...editForm, companyName: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Establishment / Office Address
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editForm.companyAddress}
+                      onChange={(e) => setEditForm({ ...editForm, companyAddress: e.target.value })}
+                      placeholder="Street, Barangay, City, Province"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Academic Department / College
+                    </label>
+                    <select
+                      value={editForm.department}
+                      onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    >
+                      {departmentOptions.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Assigned Campus
+                    </label>
+                    <select
+                      value={editForm.campus}
+                      onChange={(e) => setEditForm({ ...editForm, campus: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    >
+                      {campusOptions.map((camp) => (
+                        <option key={camp} value={camp}>
+                          {camp}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  <span>{saving ? 'Saving...' : 'Save Profile'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -67,10 +67,19 @@ export function HTESettings() {
 
       {/* Establishment Profile Overview */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
-        <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-          <Building className="text-blue-600" size={20} />
-          <span>Establishment Profile</span>
-        </h2>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+            <Building className="text-blue-600" size={20} />
+            <span>Establishment Profile</span>
+          </h2>
+          <button
+            type="button"
+            onClick={() => navigate('/hte/profile')}
+            className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+          >
+            Edit Profile →
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">

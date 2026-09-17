@@ -25,9 +25,10 @@ export default function OAuthCallback() {
           return;
         }
 
-        const pendingRole = localStorage.getItem('pending_oauth_role');
+        const pendingRole = (localStorage.getItem('pending_oauth_role') || '').trim().toLowerCase();
+        const explicitRole = pendingRole === 'admin' ? 'admin' : pendingRole === 'hte' ? 'hte' : pendingRole === 'trainee' ? 'trainee' : null;
         const authUser = session.user;
-        const matchedUser = await loginWithOAuthUser(authUser);
+        const matchedUser = await loginWithOAuthUser(authUser, explicitRole);
 
         if (matchedUser) {
           localStorage.removeItem('pending_oauth_role');
@@ -37,11 +38,16 @@ export default function OAuthCallback() {
           if (effectiveRole === 'admin') {
             const adminUser = { ...matchedUser, role: 'admin' as const };
             localStorage.setItem('ojt_user', JSON.stringify(adminUser));
+            localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
             navigate('/admin');
+            return;
           } else if (effectiveRole === 'hte' || effectiveRole === 'host') {
             const hteUser = { ...matchedUser, role: 'hte' as const };
             localStorage.setItem('ojt_user', JSON.stringify(hteUser));
+            localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
+            localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
             navigate('/hte');
+            return;
           } else {
             const employee = employees.find(
               (e) => e.id === matchedUser.employeeId || e.id === matchedUser.id
@@ -53,17 +59,46 @@ export default function OAuthCallback() {
               employeeId: employee?.employeeId || matchedUser.employeeId || employee?.id || matchedUser.id,
             };
             localStorage.setItem('ojt_user', JSON.stringify(enrichedUser));
+            localStorage.setItem('ojt_current_user', JSON.stringify(enrichedUser));
             navigate('/app');
+            return;
           }
         } else {
           // If the user signed in as Instructor or HTE, never route to Trainee registration
           if (pendingRole === 'admin') {
             localStorage.removeItem('pending_oauth_role');
+            const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'OJT Instructor';
+            const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
+            const fallbackAdmin = {
+              id: authUser.id,
+              name: fullName,
+              email: authUser.email || '',
+              role: 'admin' as const,
+              employeeId: `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+              photo: avatarUrl,
+              faceRegistered: false,
+            };
+            localStorage.setItem('ojt_user', JSON.stringify(fallbackAdmin));
+            localStorage.setItem('ojt_current_user', JSON.stringify(fallbackAdmin));
             navigate('/admin');
             return;
           }
           if (pendingRole === 'hte') {
             localStorage.removeItem('pending_oauth_role');
+            const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'HTE Representative';
+            const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
+            const fallbackHte = {
+              id: authUser.id,
+              name: fullName,
+              email: authUser.email || '',
+              role: 'hte' as const,
+              employeeId: `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+              photo: avatarUrl,
+              faceRegistered: false,
+            };
+            localStorage.setItem('ojt_user', JSON.stringify(fallbackHte));
+            localStorage.setItem('ojt_hte_user', JSON.stringify(fallbackHte));
+            localStorage.setItem('ojt_current_user', JSON.stringify(fallbackHte));
             navigate('/hte');
             return;
           }

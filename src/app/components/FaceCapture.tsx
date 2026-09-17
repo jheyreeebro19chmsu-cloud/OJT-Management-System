@@ -313,21 +313,58 @@ export function FaceCapture({
   }, []);
 
   /**
-   * Capture a pristine JPEG snapshot from the live physical camera video
+   * Capture a pristine JPEG snapshot from the live physical camera video,
+   * accurately cropped to match the exact 3:4 aspect-ratio viewport visible to the user.
    */
   const captureFrame = useCallback((): string | undefined => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
       return undefined;
     }
-    const maxWidth = 640;
-    const ratio = Math.min(maxWidth / video.videoWidth, 1);
+
+    // Determine target container aspect ratio (standard 3/4 from UI aspect-[3/4])
+    let containerAspect = 3 / 4;
+    const container = video.parentElement;
+    if (container && container.clientWidth && container.clientHeight) {
+      containerAspect = container.clientWidth / container.clientHeight;
+    }
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const videoAspect = vw / vh;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = vw;
+    let sh = vh;
+
+    // Calculate source crop rectangle matching CSS object-cover
+    if (videoAspect > containerAspect) {
+      // Video is wider than viewport (e.g. 16:9 mobile camera): crop horizontal sides
+      sw = vh * containerAspect;
+      sh = vh;
+      sx = (vw - sw) / 2;
+      sy = 0;
+    } else {
+      // Video is taller than viewport: crop vertical sides
+      sw = vw;
+      sh = vw / containerAspect;
+      sx = 0;
+      sy = (vh - sh) / 2;
+    }
+
+    // Target dimensions (480x640 portrait)
+    const targetW = 480;
+    const targetH = Math.round(targetW / containerAspect);
+
     const cap = document.createElement('canvas');
-    cap.width = Math.round(video.videoWidth * ratio);
-    cap.height = Math.round(video.videoHeight * ratio);
+    cap.width = targetW;
+    cap.height = targetH;
     const ctx = cap.getContext('2d');
     if (!ctx) return undefined;
-    ctx.drawImage(video, 0, 0, cap.width, cap.height);
+
+    // Draw the cropped viewport from the live camera stream
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
     return cap.toDataURL('image/jpeg', 0.92);
   }, []);
 
@@ -470,14 +507,7 @@ export function FaceCapture({
                 await new Promise((r) => setTimeout(r, 400));
                 continue;
               }
-              if (quality.poorBackgroundLighting) {
-                stableFrames = 0;
-                setProgress(15);
-                setScanMessage('🚨 DARK BACKGROUND! Position in front of a light, well-lit background.');
-                await new Promise((r) => setTimeout(r, 400));
-                continue;
-              }
-              if (quality.tooDark) {
+              if (quality.tooDark && (quality.brightness ?? 100) < 22) {
                 stableFrames = 0;
                 setProgress(15);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
@@ -618,12 +648,7 @@ export function FaceCapture({
             await new Promise((r) => setTimeout(r, 400));
             continue;
           }
-          if (quality.poorBackgroundLighting) {
-            setScanMessage('🚨 DARK BACKGROUND! Position in front of a light, well-lit background.');
-            await new Promise((r) => setTimeout(r, 400));
-            continue;
-          }
-          if (quality.tooDark) {
+          if (quality.tooDark && (quality.brightness ?? 100) < 22) {
             setScanMessage('⚠️ Too dark! Move to a well-lit area.');
             await new Promise((r) => setTimeout(r, 350));
             continue;
@@ -781,10 +806,10 @@ export function FaceCapture({
         setScanMessage('❌ Mask detected. Bare face required.');
         return;
       }
-      if (manualQuality.poorBackgroundLighting || manualQuality.tooDark) {
+      if (manualQuality.tooDark && (manualQuality.brightness ?? 100) < 22) {
         setState('failed');
-        setMismatchError('Dark background or dim lighting! Please move in front of a light, well-lit background.');
-        setScanMessage('❌ Dark background / dim lighting.');
+        setMismatchError('Dim lighting! Please move to a brighter, well-lit area.');
+        setScanMessage('❌ Lighting too dark.');
         return;
       }
       if (manualQuality.tooBright) {
@@ -800,8 +825,11 @@ export function FaceCapture({
         return;
       }
       if (!manualQuality.faceDetected) {
-        setScanMessage('⚠️ No face detected. Please position your face inside the oval.');
-        return;
+        const doubleCheck = await detectFaceInDataUrl(img).catch(() => false);
+        if (!doubleCheck) {
+          setScanMessage('⚠️ No face detected. Please position your face inside the oval.');
+          return;
+        }
       }
     }
 
@@ -1301,7 +1329,7 @@ export function FaceCapture({
           <div className="flex gap-2 w-full">
             <button
               type="button"
-              onClick={handleManualSnap}
+              onClick={() => handleManualSnap()}
               disabled={
                 state === 'verifying' ||
                 state === 'analyzing' ||

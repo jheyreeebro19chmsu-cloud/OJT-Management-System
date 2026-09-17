@@ -208,7 +208,7 @@ interface AppContextType {
   hostFeedback: HostFeedback[];
   hostSupervisors: HostSupervisor[];
   login: (email: string, password: string) => Promise<User | null>;
-  loginWithOAuthUser: (authUser: any) => Promise<User | null>;
+  loginWithOAuthUser: (authUser: any, explicitRole?: 'admin' | 'hte' | 'trainee' | null) => Promise<User | null>;
   logout: () => void;
   refreshData: () => Promise<void>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
@@ -1277,7 +1277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  const loginWithOAuthUser = async (authUser: any): Promise<User | null> => {
+  const loginWithOAuthUser = async (authUser: any, explicitRole?: 'admin' | 'hte' | 'trainee' | null): Promise<User | null> => {
     if (!authUser) return null;
     const authEmail = (authUser.email || '').trim().toLowerCase();
     const authId = authUser.id || '';
@@ -1357,7 +1357,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const pendingRole = typeof window !== 'undefined' ? localStorage.getItem('pending_oauth_role') : null;
+    const pendingRole =
+      explicitRole ||
+      (typeof window !== 'undefined' ? (localStorage.getItem('pending_oauth_role') as any) : null) ||
+      authUser.user_metadata?.role;
 
     if (matchedEmp) {
       if (useSupabase && authId && matchedEmp.userId !== authId) {
@@ -1402,6 +1405,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // If user specifically signed in as HTE, ensure their employee record has role hte
+      if (pendingRole === 'hte' && matchedEmp.role !== 'hte') {
+        matchedEmp.role = 'hte';
+        matchedEmp.position = 'HTE Representative';
+        if (useSupabase) {
+          try {
+            await supabase.from('employees').update({
+              role: 'hte',
+              position: 'HTE Representative',
+              application_status: 'approved',
+            }).eq('id', matchedEmp.id);
+          } catch (syncErr) {
+            console.warn('Failed syncing HTE role to DB:', syncErr);
+          }
+        }
+      }
+
       const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
       const user: User = {
         id: matchedEmp.id,
@@ -1413,6 +1433,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         faceRegistered: matchedEmp.faceRegistered,
       };
       setCurrentUser(user);
+      saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+      try {
+        localStorage.setItem('ojt_user', JSON.stringify(user));
+        if (role === 'hte') {
+          localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+        }
+      } catch {}
       return user;
     }
 
@@ -1428,18 +1455,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         faceRegistered: false,
       };
       setCurrentUser(user);
+      saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+      try {
+        localStorage.setItem('ojt_user', JSON.stringify(user));
+        localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+      } catch {}
       return user;
     }
 
-    // Auto-provision instructor if signing in via Google with Instructor role tab selected
+    // Auto-provision instructor if signing in via Google with Instructor role
     if (pendingRole === 'admin') {
       const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authEmail.split('@')[0];
       const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
+      const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
       const autoInstructor: Employee = {
         id: authId || `ADM-${Date.now()}`,
         name: fullName,
         email: authEmail,
-        employeeId: authId || `ADM-${Date.now()}`,
+        employeeId,
         role: 'admin',
         position: 'OJT Instructor',
         department: 'College of Computer Studies',
@@ -1467,6 +1500,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           const dbData: any = {
             id: authId,
+            employee_id: employeeId,
             name: fullName,
             email: authEmail,
             position: 'OJT Instructor',
@@ -1483,7 +1517,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             face_registered: false,
             required_hours: 0,
           };
-          await supabase.from('employees').upsert(dbData, { onConflict: 'email' });
+          const { error: upErr } = await supabase.from('employees').upsert(dbData, { onConflict: 'email' });
+          if (upErr) {
+            await supabase.from('employees').upsert(dbData, { onConflict: 'id' });
+          }
         } catch (provErr) {
           console.warn('Auto-provisioning instructor notice in AppContext:', provErr);
         }
@@ -1500,18 +1537,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         faceRegistered: false,
       };
       setCurrentUser(user);
+      saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+      try {
+        localStorage.setItem('ojt_user', JSON.stringify(user));
+      } catch {}
       return user;
     }
 
-    // Auto-provision HTE supervisor if signing in via Google with HTE role tab selected
+    // Auto-provision HTE supervisor if signing in via Google with HTE role
     if (pendingRole === 'hte') {
       const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authEmail.split('@')[0];
       const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
+      const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
       const autoHte: Employee = {
         id: authId || `HTE-${Date.now()}`,
         name: fullName,
         email: authEmail,
-        employeeId: authId || `HTE-${Date.now()}`,
+        employeeId,
         role: 'hte',
         position: 'HTE Representative',
         department: 'Host Establishment',
@@ -1539,6 +1581,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           const dbData: any = {
             id: authId,
+            employee_id: employeeId,
             name: fullName,
             email: authEmail,
             position: 'HTE Representative',
@@ -1549,8 +1592,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
             photo: avatarUrl || null,
             active: true,
             application_status: 'approved',
+            documents_passed: true,
+            documents_status: 'passed',
+            face_registered: false,
+            required_hours: 0,
           };
-          await supabase.from('employees').upsert(dbData, { onConflict: 'email' });
+          const { error: upErr } = await supabase.from('employees').upsert(dbData, { onConflict: 'email' });
+          if (upErr) {
+            await supabase.from('employees').upsert(dbData, { onConflict: 'id' });
+          }
+          await supabase.from('host_supervisors').upsert({
+            id: authId,
+            employee_id: employeeId,
+            name: fullName,
+            email: authEmail,
+            company_name: 'Host Training Establishment',
+            contact_person: fullName,
+            is_approved: true,
+            active: true,
+          }, { onConflict: 'email' });
         } catch (provErr) {
           console.warn('Auto-provisioning HTE notice in AppContext:', provErr);
         }
@@ -1567,6 +1627,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         faceRegistered: false,
       };
       setCurrentUser(user);
+      saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+      try {
+        localStorage.setItem('ojt_user', JSON.stringify(user));
+        localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+      } catch {}
       return user;
     }
 

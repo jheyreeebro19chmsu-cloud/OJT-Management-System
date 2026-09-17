@@ -249,6 +249,60 @@ export function Register() {
   // registration flow continues below
 
   const selectRole = (nextRole: UserRole) => {
+    if (oauthPending && (nextRole === 'admin' || nextRole === 'hte')) {
+      const oauthEmail = localStorage.getItem('oauth_email') || form.email;
+      const oauthName = localStorage.getItem('oauth_name') || form.name || [form.firstName, form.lastName].filter(Boolean).join(' ') || (nextRole === 'admin' ? 'OJT Instructor' : 'HTE Representative');
+      const oauthPhoto = localStorage.getItem('oauth_photo') || googleAvatar || photo || '';
+      const oauthUserId = localStorage.getItem('oauth_user_id') || `user-${Date.now()}`;
+
+      if (nextRole === 'admin') {
+        const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+        const adminUser = {
+          id: oauthUserId,
+          name: oauthName,
+          email: oauthEmail,
+          role: 'admin' as const,
+          employeeId,
+          photo: oauthPhoto,
+          faceRegistered: false,
+        };
+        localStorage.setItem('ojt_user', JSON.stringify(adminUser));
+        localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
+        localStorage.removeItem('pending_oauth_role');
+        localStorage.removeItem('oauth_email');
+        localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_photo');
+        localStorage.removeItem('oauth_user_id');
+        toast.success(`Welcome, Instructor ${oauthName}! Direct access granted.`);
+        navigate('/admin');
+        return;
+      }
+
+      if (nextRole === 'hte') {
+        const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+        const hteUser = {
+          id: oauthUserId,
+          name: oauthName,
+          email: oauthEmail,
+          role: 'hte' as const,
+          employeeId,
+          photo: oauthPhoto,
+          faceRegistered: false,
+        };
+        localStorage.setItem('ojt_user', JSON.stringify(hteUser));
+        localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
+        localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
+        localStorage.removeItem('pending_oauth_role');
+        localStorage.removeItem('oauth_email');
+        localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_photo');
+        localStorage.removeItem('oauth_user_id');
+        toast.success(`Welcome, ${oauthName}! Direct access granted to HTE portal.`);
+        navigate('/hte');
+        return;
+      }
+    }
+
     setRole(nextRole);
     setStep(0);
     // store pending oauth role for Google sign-in flow
@@ -302,6 +356,59 @@ export function Register() {
       const oauthName = localStorage.getItem('oauth_name');
       const oauthPhoto = localStorage.getItem('oauth_photo');
 
+      if (h === 'admin' || pending === 'admin') {
+        const authEmail = oauthEmail || '';
+        const fullName = oauthName || 'OJT Instructor';
+        const avatarUrl = oauthPhoto || '';
+        const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+        const adminUser = {
+          id: localStorage.getItem('oauth_user_id') || `adm-${Date.now()}`,
+          name: fullName,
+          email: authEmail,
+          role: 'admin' as const,
+          employeeId,
+          photo: avatarUrl,
+          faceRegistered: false,
+        };
+        localStorage.setItem('ojt_user', JSON.stringify(adminUser));
+        localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
+        localStorage.removeItem('pending_oauth_role');
+        localStorage.removeItem('oauth_email');
+        localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_photo');
+        localStorage.removeItem('oauth_user_id');
+        toast.success(`Welcome, Instructor ${fullName}! Direct access granted.`);
+        navigate('/admin');
+        return;
+      } else if (h === 'hte' || pending === 'hte') {
+        const authEmail = oauthEmail || '';
+        const fullName = oauthName || 'HTE Representative';
+        const avatarUrl = oauthPhoto || '';
+        const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+        const hteUser = {
+          id: localStorage.getItem('oauth_user_id') || `hte-${Date.now()}`,
+          name: fullName,
+          email: authEmail,
+          role: 'hte' as const,
+          employeeId,
+          photo: avatarUrl,
+          faceRegistered: false,
+        };
+        localStorage.setItem('ojt_user', JSON.stringify(hteUser));
+        localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
+        localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
+        localStorage.removeItem('pending_oauth_role');
+        localStorage.removeItem('oauth_email');
+        localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_photo');
+        localStorage.removeItem('oauth_user_id');
+        toast.success(`Welcome, ${fullName}! Direct access granted to HTE portal.`);
+        navigate('/hte');
+        return;
+      } else if (pending === 'trainee') {
+        setRole('trainee');
+      }
+
       if (oauthEmail || oauthName) {
         setOauthPending(true);
         if (oauthEmail) update('email', oauthEmail);
@@ -313,30 +420,12 @@ export function Register() {
         }
         if (oauthPhoto) {
           setGoogleAvatar(oauthPhoto);
-          // Set as preview photo, but note that trainee must still complete live facial capture
           setPhoto(oauthPhoto);
         }
+        toast.info('Google profile loaded. Please choose your role below to complete registration.');
       }
 
-      if (h === 'hte' || pending === 'hte') {
-        setRole('hte');
-      } else if (pending === 'admin') {
-        setRole('admin');
-      } else if (pending === 'trainee') {
-        setRole('trainee');
-      } else {
-        // Leave role as null so the user chooses Instructor, Trainee, or HTE!
-      }
-
-      if (oauthEmail || oauthName) {
-        if (pending || h) {
-          toast.info('Google account loaded. Please complete your registration details.');
-        } else {
-          toast.info('Google profile loaded. Please choose your role below to complete registration.');
-        }
-      }
-
-      // Clear pending handoff markers
+      // Clear pending handoff markers for trainee
       localStorage.removeItem('pending_oauth_role');
       localStorage.removeItem('oauth_email');
       localStorage.removeItem('oauth_name');
