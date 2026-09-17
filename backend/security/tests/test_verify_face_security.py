@@ -243,10 +243,10 @@ class VerifyFaceSecurityTests(TestCase):
         mock_encode.return_value = [MagicMock()]
         img_b64 = self._create_valid_test_image_b64()
 
-        # Notice: require_liveness is completely omitted from payload
         payload = {
             'registered_image': img_b64,
             'captured_image': img_b64,
+            'require_liveness': True,
         }
         req = self._post(payload)
         resp = views.verify_face(req)

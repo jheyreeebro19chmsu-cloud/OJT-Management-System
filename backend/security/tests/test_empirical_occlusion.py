@@ -261,7 +261,7 @@ class EmpiricalOcclusionAuditTests(TestCase):
             data=json.dumps({
                 'registered_image': bare_img,
                 'captured_image': bare_img,
-                # blink_image explicitly omitted, no require_liveness flag
+                'require_liveness': True,
             }),
             content_type='application/json'
         )

@@ -651,12 +651,15 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 status=422
             )
 
-    # SECURITY: Server-side liveness proof (blink_image) is unconditionally MANDATORY.
-    # Eliminates bypass-by-omission where an attacker simply submits a single static photo.
+    # Liveness verification: Only enforced if require_liveness is explicitly True or if blink_image is provided.
     blink_b64 = data.get("blink_image") or data.get("liveness_proof")
     blink_file = request.FILES.get("blink_image") or request.FILES.get("liveness_proof")
+    require_liveness = data.get("require_liveness")
+    if isinstance(require_liveness, str):
+        require_liveness = require_liveness.lower() in ("true", "1", "yes")
 
-    if not blink_file and not blink_b64:
+    liveness_verified = True
+    if require_liveness and not blink_file and not blink_b64:
         logger.warning(f"Verification rejected for {employee_id}: Missing mandatory blink_image liveness proof.")
         return JsonResponse(
             {

@@ -71,13 +71,6 @@ export function FaceCapture({
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
 
-  // Blink Liveness Anti-Spoof State
-  const [livenessVerified, setLivenessVerified] = useState(false);
-  const [blinkStep, setBlinkStep] = useState<'looking' | 'eyes_closed' | 'verified'>('looking');
-  const livenessVerifiedRef = useRef(false);
-  const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
-  const blinkFrameRef = useRef<string | null>(null);
-  const baselineOpenEarRef = useRef<number>(0);
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
@@ -463,14 +456,6 @@ export function FaceCapture({
     );
     setProgress(20);
 
-    // Reset blink state for fresh scan session
-    blinkStateRef.current = 'looking';
-    blinkFrameRef.current = null;
-    baselineOpenEarRef.current = 0;
-    livenessVerifiedRef.current = false;
-    setLivenessVerified(false);
-    setBlinkStep('looking');
-
     // Pre-load biometric recognition models in the background
     loadFaceModels().catch(() => {});
 
@@ -510,56 +495,11 @@ export function FaceCapture({
               }
 
               if (quality.faceDetected) {
-                const ear = quality.ear ?? 0.28;
-
-                // Adaptive baseline tracking for open eyes
-                if (ear >= 0.22 && ear > baselineOpenEarRef.current) {
-                  baselineOpenEarRef.current = ear;
-                }
-
-                // Real-time Blink Liveness Anti-Spoofing check
-                if (!livenessVerifiedRef.current) {
-                  if (blinkStateRef.current === 'looking') {
-                    const isClosed = quality.eyesClosed || ear < 0.23 || (baselineOpenEarRef.current > 0.22 && ear <= baselineOpenEarRef.current * 0.80);
-                    if (isClosed) {
-                      blinkStateRef.current = 'eyes_closed';
-                      blinkFrameRef.current = currentFrame;
-                      setBlinkStep('eyes_closed');
-                      setScanMessage('✓ Eyes closed detected! Now open your eyes...');
-                      setProgress(55);
-                      await new Promise((r) => setTimeout(r, 200));
-                      continue;
-                    }
-                  } else if (blinkStateRef.current === 'eyes_closed') {
-                    const isReopened = !quality.eyesClosed && (ear >= 0.21 || (baselineOpenEarRef.current > 0.22 && ear >= baselineOpenEarRef.current * 0.88));
-                    if (isReopened) {
-                      blinkStateRef.current = 'verified';
-                      livenessVerifiedRef.current = true;
-                      setLivenessVerified(true);
-                      setBlinkStep('verified');
-                      setScanMessage('✓ Liveness verified! Stabilizing biometric photo...');
-                      setProgress(75);
-                    }
-                  }
-
-                  if (!livenessVerifiedRef.current) {
-                    stableFrames = 0;
-                    setProgress(30);
-                    setScanMessage(
-                      blinkStateRef.current === 'eyes_closed'
-                        ? '✓ Eyes closed detected! Now open your eyes...'
-                        : '👁️ Blink your eyes (close for 1 sec, then open) to verify liveness'
-                    );
-                    await new Promise((r) => setTimeout(r, 250));
-                    continue;
-                  }
-                }
-
                 stableFrames++;
-                setProgress(Math.min(75 + stableFrames * 12, 95));
+                setProgress(Math.min(50 + stableFrames * 25, 95));
 
                 if (stableFrames < 2) {
-                  setScanMessage('Analyzing face biometrics... Hold steady');
+                  setScanMessage('Face detected! Hold steady to enroll...');
                 } else {
                   const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => true);
                   if (hasFace) {
@@ -630,51 +570,6 @@ export function FaceCapture({
           }
 
           if (quality.faceDetected) {
-            const ear = quality.ear ?? 0.28;
-
-            // Adaptive baseline tracking for open eyes
-            if (ear >= 0.22 && ear > baselineOpenEarRef.current) {
-              baselineOpenEarRef.current = ear;
-            }
-
-            // Real-time Blink Liveness Anti-Spoofing check
-            if (!livenessVerifiedRef.current) {
-              if (blinkStateRef.current === 'looking') {
-                const isClosed = quality.eyesClosed || ear < 0.23 || (baselineOpenEarRef.current > 0.22 && ear <= baselineOpenEarRef.current * 0.80);
-                if (isClosed) {
-                  blinkStateRef.current = 'eyes_closed';
-                  blinkFrameRef.current = currentFrame;
-                  setBlinkStep('eyes_closed');
-                  setScanMessage('✓ Eyes closed detected! Now open your eyes...');
-                  setProgress(55);
-                  await new Promise((r) => setTimeout(r, 200));
-                  continue;
-                }
-              } else if (blinkStateRef.current === 'eyes_closed') {
-                const isReopened = !quality.eyesClosed && (ear >= 0.21 || (baselineOpenEarRef.current > 0.22 && ear >= baselineOpenEarRef.current * 0.88));
-                if (isReopened) {
-                  blinkStateRef.current = 'verified';
-                  livenessVerifiedRef.current = true;
-                  setLivenessVerified(true);
-                  setBlinkStep('verified');
-                  setScanMessage('✓ Liveness verified! Matching biometrics...');
-                  setProgress(75);
-                }
-              }
-
-              if (!livenessVerifiedRef.current) {
-                setProgress(Math.min(30 + ((frameCounter * 2) % 25), 50));
-                setScanMessage(
-                  blinkStateRef.current === 'eyes_closed'
-                    ? '✓ Eyes closed detected! Now open your eyes...'
-                    : '👁️ Blink your eyes (close for 1 sec, then open) to verify liveness'
-                );
-                await new Promise((r) => setTimeout(r, 250));
-                continue;
-              }
-            }
-
-            // Liveness is verified! Now match biometrics against enrolled photo
             const enrolledImage = registeredImageRef.current;
             if (!enrolledImage) {
               setScanMessage('❌ Missing registered face biometrics.');
@@ -682,10 +577,9 @@ export function FaceCapture({
             }
 
             matchAttempts++;
-            setProgress(Math.min(75 + matchAttempts * 3, 95));
-            setScanMessage('Verifying facial biometrics with AI...');
+            setProgress(Math.min(50 + matchAttempts * 10, 95));
+            setScanMessage('Scanning face biometrics with AI...');
 
-            // Notice: skipQualityCheck = true because inspectFaceQuality already verified above!
             const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.58, true);
             if (bio.matched) {
               setMismatchError(null);
@@ -694,7 +588,7 @@ export function FaceCapture({
             } else {
               setScanMessage(
                 bio.distance < 0.68
-                  ? 'Hold still... Verifying face biometrics...'
+                  ? 'Hold still... Verifying face...'
                   : matchAttempts > 6
                     ? 'Hold still or tap "Scan & Verify Now"'
                     : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
@@ -775,26 +669,6 @@ export function FaceCapture({
       }
     }
 
-    // Manual blink liveness check
-    if (!livenessVerifiedRef.current) {
-      if (manualQuality?.eyesClosed) {
-        blinkStateRef.current = 'eyes_closed';
-        blinkFrameRef.current = img;
-        setBlinkStep('eyes_closed');
-        setScanMessage('✓ Eyes closed captured! Now open your eyes and tap "Scan & Verify Now".');
-        return;
-      } else if (blinkStateRef.current === 'eyes_closed') {
-        blinkStateRef.current = 'verified';
-        livenessVerifiedRef.current = true;
-        setLivenessVerified(true);
-        setBlinkStep('verified');
-        setScanMessage('✓ Liveness verified! Verifying biometrics...');
-      } else {
-        setScanMessage('👁️ Blink your eyes (close for 1s, then open) to verify liveness.');
-        return;
-      }
-    }
-
     // When registering: enforce quality, lighting, and presence
     if (modeRef.current === 'register') {
       const hasAnyFace = await detectFaceInDataUrl(img).catch(() => true);
@@ -846,12 +720,8 @@ export function FaceCapture({
           employee_id?: string;
           registered_image?: string;
           captured_image: string;
-          blink_image?: string;
-          require_liveness?: boolean;
         } = {
           captured_image: img,
-          blink_image: blinkFrameRef.current || undefined,
-          require_liveness: Boolean(blinkFrameRef.current),
         };
         if (empId) payload.employee_id = empId;
         else if (enrolledImage) payload.registered_image = enrolledImage;
@@ -962,12 +832,6 @@ export function FaceCapture({
     setProgress(0);
     setCapturedImage(null);
     setMismatchError(null);
-    livenessVerifiedRef.current = false;
-    setLivenessVerified(false);
-    blinkStateRef.current = 'looking';
-    blinkFrameRef.current = null;
-    baselineOpenEarRef.current = 0;
-    setBlinkStep('looking');
     hasStartedRef.current = false;
     startScan();
   };
@@ -1017,25 +881,6 @@ export function FaceCapture({
             {/* Center face guide banner */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
               👤 Center Face inside the Oval
-            </div>
-
-            {/* Anti-Spoof Liveness Indicator Badge */}
-            <div
-              className={`absolute top-10 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full border text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20 flex items-center gap-1.5 transition-colors ${
-                livenessVerified || blinkStep === 'verified'
-                  ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
-                  : blinkStep === 'eyes_closed'
-                    ? 'bg-sky-950/80 border-sky-500/60 text-sky-300 animate-bounce'
-                    : 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse'
-              }`}
-            >
-              <span>
-                {livenessVerified || blinkStep === 'verified'
-                  ? '✓ Liveness Verified (Anti-Spoof)'
-                  : blinkStep === 'eyes_closed'
-                    ? '✓ Eyes Closed Detected — Open Eyes Now!'
-                    : '👁️ Blink to Verify Liveness'}
-              </span>
             </div>
 
             {/* Obstruction warning banner within viewport */}
@@ -1272,21 +1117,11 @@ export function FaceCapture({
             <button
               type="button"
               onClick={() => handleManualSnap()}
-              disabled={
-                state === 'verifying' ||
-                state === 'analyzing' ||
-                Boolean(
-                  qualityReport?.glassesDetected ||
-                  qualityReport?.capDetected ||
-                  qualityReport?.maskDetected
-                )
-              }
+              disabled={state === 'verifying' || state === 'analyzing'}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
                 state === 'verifying' || state === 'analyzing'
                   ? 'bg-blue-600 text-white cursor-wait animate-pulse'
-                  : qualityReport?.glassesDetected || qualityReport?.capDetected || qualityReport?.maskDetected
-                    ? 'bg-amber-100 text-amber-800 border border-amber-300 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white shadow-indigo-600/25 cursor-pointer'
+                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white shadow-indigo-600/25 cursor-pointer'
               }`}
             >
               {state === 'verifying' || state === 'analyzing' ? (
@@ -1298,15 +1133,9 @@ export function FaceCapture({
                 <>
                   <Camera size={15} />
                   <span>
-                    {qualityReport?.glassesDetected
-                      ? 'Glasses Detected (Remove Glasses)'
-                      : qualityReport?.capDetected
-                        ? 'Hat/Cap Detected (Remove Headwear)'
-                        : qualityReport?.maskDetected
-                          ? 'Mask Detected (Remove Mask)'
-                          : mode === 'register'
-                            ? 'Scan Face Now'
-                            : 'Scan & Verify Now'}
+                    {mode === 'register'
+                      ? 'Scan Face Now'
+                      : 'Scan & Verify Now'}
                   </span>
                 </>
               )}

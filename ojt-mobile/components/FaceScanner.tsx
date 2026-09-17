@@ -278,30 +278,6 @@ export default function FaceScanner({
           return;
         }
 
-        // 2. Anti-Spoof Blink Liveness Detection (Prevents photo-of-a-photo / screen spoofing)
-        if (!livenessVerifiedRef.current) {
-          if (blinkStateRef.current === 'looking') {
-            if (quality.eyesClosed) {
-              blinkStateRef.current = 'eyes_closed';
-              blinkFrameRef.current = dataUrl; // Capture proof of eye closure
-            }
-          } else if (blinkStateRef.current === 'eyes_closed') {
-            if (!quality.eyesClosed && (quality.ear ?? 0.30) >= 0.22) {
-              blinkStateRef.current = 'verified';
-              livenessVerifiedRef.current = true;
-              setLivenessVerified(true);
-            }
-          }
-
-          if (!livenessVerifiedRef.current) {
-            consecutiveStable = 0;
-            setStableCount(0);
-            setScanStatus('analyzing');
-            setStatusMessage('👁️ Blink to verify liveness (anti-spoof check)');
-            Animated.timing(progressAnim, { toValue: 0.35, duration: 200, useNativeDriver: false }).start();
-            return;
-          }
-        }
 
         // 3. Mode-Specific Evaluation
         if (mode === 'enroll') {
@@ -440,14 +416,6 @@ export default function FaceScanner({
         return;
       }
 
-      // In verification mode, require liveness verification
-      if (!livenessVerifiedRef.current) {
-        setScanStatus('failed');
-        setErrorMessage('⚠️ Liveness check required! Please blink your eyes in front of the camera before capturing.');
-        setStatusMessage('👁️ Blink to verify liveness');
-        setIsCapturing(false);
-        return;
-      }
 
       // If in DTR verification mode, check against enrolled photo with DeepFace AI
       if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
@@ -639,17 +607,17 @@ export default function FaceScanner({
           <View
             style={[
               styles.livenessBadge,
-              livenessVerified ? styles.livenessBadgeVerified : styles.livenessBadgePending,
+              styles.livenessBadgeVerified,
             ]}
           >
-            <Eye size={12} color={livenessVerified ? '#4ade80' : '#facc15'} />
+            <Eye size={12} color="#4ade80" />
             <Text
               style={[
                 styles.livenessBadgeText,
-                { color: livenessVerified ? '#4ade80' : '#facc15' },
+                { color: '#4ade80' },
               ]}
             >
-              {livenessVerified ? '✓ Liveness Verified (Anti-Spoof)' : '👁️ Blink to Verify Liveness'}
+              {mode === 'enroll' ? '📷 Scanning Face for Enrollment' : '🔍 Scanning Face Biometrics'}
             </Text>
           </View>
 
