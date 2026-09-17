@@ -606,133 +606,113 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       const skinB = Math.round((cheek1.b + cheek2.b) / 2);
       const skinLum = Math.max(35, Math.round((cheek1.lum + cheek2.lum) / 2));
 
-      // 2. HAT / CAP / HEADWEAR DETECTION
+      // 2. HAT / CAP / HEADWEAR DETECTION (Soft non-blocking advisory)
       if (landmarks && landmarks.length >= 68) {
         const browMidY = (landmarks[21].y + landmarks[22].y) / 2;
         const noseBridgeX = landmarks[27].x;
 
         const fore1 = getPatchAvg(noseBridgeX, browMidY - 14, 2);
         const fore2 = getPatchAvg(noseBridgeX, browMidY - 26, 2);
-        const fore3 = getPatchAvg(noseBridgeX, browMidY - 38, 2);
 
-        const foreColorDiff1 = Math.abs(fore1.r - skinR) + Math.abs(fore1.g - skinG) + Math.abs(fore1.b - skinB);
-        const foreColorDiff2 = Math.abs(fore2.r - skinR) + Math.abs(fore2.g - skinG) + Math.abs(fore2.b - skinB);
-        const foreColorDiff3 = Math.abs(fore3.r - skinR) + Math.abs(fore3.g - skinG) + Math.abs(fore3.b - skinB);
+        // Avoid false positives from bangs or natural forehead hair. Only flag heavy solid dark brim.
+        const isCapBrim = fore1.lum < 15 && fore2.lum < 15 && skinLum > 65;
 
-        const isForeheadFabric = (foreColorDiff1 > 38 && foreColorDiff2 > 38) || (foreColorDiff2 > 38 && foreColorDiff3 > 38);
-        const isCapBrimShadow = fore1.lum < skinLum * 0.45 && fore2.lum < skinLum * 0.45;
-        const foreheadHeight = browMidY - box.y;
-        const foreheadTruncated = foreheadHeight < 14;
-
-        if ((isForeheadFabric || isCapBrimShadow) && (foreheadHeight > 16 || foreheadTruncated)) {
+        if (isCapBrim) {
           result.capDetected = true;
-          result.issues.push('🚨 HAT / CAP DETECTED! Institutional policy strictly requires a bare face. Please remove headwear.');
+          result.issues.push('Tip: Ensure forehead and face are clear.');
         }
       }
 
-      // 3. SUNGLASSES / EYE OBSTRUCTION DETECTION
-      // Zero false positives on bare faces: Only genuine dark sunglasses or heavy lens obstruction
+      // 3. SUNGLASSES / EYE OBSTRUCTION DETECTION (Soft non-blocking advisory)
+      // Never false positive on natural dark Filipino irises: check wide sclera coverage, not a single pupil pixel
       if (landmarks && landmarks.length >= 68) {
         const rPupilX = (landmarks[36].x + landmarks[39].x) / 2;
         const rPupilY = (landmarks[37].y + landmarks[40].y) / 2;
         const lPupilX = (landmarks[42].x + landmarks[45].x) / 2;
         const lPupilY = (landmarks[43].y + landmarks[46].y) / 2;
-        const rCenter = getPixel(rPupilX, rPupilY);
-        const lCenter = getPixel(lPupilX, lPupilY);
 
-        // Genuine dark sunglasses: BOTH eye centers are pitch black (< 18) while face is well illuminated (> 65)
+        const rOuter = getPixel(landmarks[36].x, landmarks[36].y);
+        const rInner = getPixel(landmarks[39].x, landmarks[39].y);
+        const lInner = getPixel(landmarks[42].x, landmarks[42].y);
+        const lOuter = getPixel(landmarks[45].x, landmarks[45].y);
+        const rCenter = getPatchAvg(rPupilX, rPupilY, 3);
+        const lCenter = getPatchAvg(lPupilX, lPupilY, 3);
+
+        // Genuine dark sunglasses: entire eye socket including white sclera is completely opaque black (< 14)
         const isDarkSunglasses = (
-          rCenter.lum < 18 &&
-          lCenter.lum < 18 &&
+          rCenter.lum < 14 && lCenter.lum < 14 &&
+          rOuter.lum < 18 && lOuter.lum < 18 &&
+          rInner.lum < 18 && lInner.lum < 18 &&
           skinLum > 65
         );
 
-        // Heavy lens glare / reflective sunglasses: completely washed out white reflection over both pupils
+        // Heavy specular lens glare completely washing out both eyes
         const isReflectiveSunglasses = (
-          rCenter.lum > 250 &&
-          lCenter.lum > 250 &&
-          rCenter.r > 245 &&
-          lCenter.r > 245
+          rCenter.lum > 252 && lCenter.lum > 252 &&
+          rCenter.r > 248 && lCenter.r > 248
         );
 
         if (isDarkSunglasses || isReflectiveSunglasses) {
           result.glassesDetected = true;
-          result.issues.push('🚨 SUNGLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove sunglasses to scan.');
+          result.issues.push('Tip: Please ensure eyes are clearly visible without sunglasses.');
         }
       }
 
-        // 4. MASK DETECTION (Surgical / Fabric Mask)
-        if (landmarks && landmarks.length >= 68) {
-          // Philtrum: point between base of nose (33) and top of upper lip (51)
-          const philtrumX = (landmarks[33].x + landmarks[51].x) / 2;
-          const philtrumY = (landmarks[33].y + landmarks[51].y) / 2;
-          const philtrumP = getPatchAvg(philtrumX, philtrumY, 2);
+      // 4. MASK DETECTION (Surgical / Fabric Mask - Soft non-blocking advisory)
+      if (landmarks && landmarks.length >= 68) {
+        const philtrumX = (landmarks[33].x + landmarks[51].x) / 2;
+        const philtrumY = (landmarks[33].y + landmarks[51].y) / 2;
+        const philtrumP = getPatchAvg(philtrumX, philtrumY, 2);
 
-          // Chin: point between lower lip (57) and jaw bottom (8)
-          const chinX = (landmarks[57].x + landmarks[8].x) / 2;
-          const chinY = (landmarks[57].y + landmarks[8].y) / 2;
-          const chinP = getPatchAvg(chinX, chinY, 2);
+        const chinX = (landmarks[57].x + landmarks[8].x) / 2;
+        const chinY = (landmarks[57].y + landmarks[8].y) / 2;
+        const chinP = getPatchAvg(chinX, chinY, 2);
 
-          const philColorDiff = Math.abs(philtrumP.r - skinR) + Math.abs(philtrumP.g - skinG) + Math.abs(philtrumP.b - skinB);
-          const chinColorDiff = Math.abs(chinP.r - skinR) + Math.abs(chinP.g - skinG) + Math.abs(chinP.b - skinB);
+        // Avoid false positives from natural nasal or chin shadows: require blatant surgical blue or solid black mask
+        const isSurgicalBlue = (philtrumP.b > philtrumP.r + 35 && philtrumP.b > 90) || (chinP.b > chinP.r + 35 && chinP.b > 90);
+        const isBlackMask = (philtrumP.lum < 16 && chinP.lum < 16 && skinLum > 60);
 
-          const philtrumIsSkin = philColorDiff < 50 && philtrumP.lum > skinLum * 0.45;
-          const chinIsSkin = chinColorDiff < 50 && chinP.lum > skinLum * 0.45;
-
-          const isSurgicalBlue = (philtrumP.b > philtrumP.r + 25 && philtrumP.b > 70) || (chinP.b > chinP.r + 25 && chinP.b > 70);
-          const isBlackMask = (philtrumP.lum < 26 && chinP.lum < 26 && skinLum > 55);
-          const isMaskFabric = (!philtrumIsSkin && !chinIsSkin && (philColorDiff > 55 && chinColorDiff > 55));
-
-          if (isSurgicalBlue || isBlackMask || isMaskFabric) {
-            result.maskDetected = true;
-            result.issues.push('🚨 FACE MASK DETECTED! Please remove your face mask to scan.');
-          }
+        if (isSurgicalBlue || isBlackMask) {
+          result.maskDetected = true;
+          result.issues.push('Tip: Please ensure your face mask is removed.');
         }
+      }
 
-        // 5. Eye Aspect Ratio (EAR) for Blink Liveness Anti-Spoofing Detection
-        if (landmarks && landmarks.length >= 68) {
-          const dist = (p1: { x: number; y: number }, p2: { x: number; y: number }) =>
-            Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      // 5. Eye Aspect Ratio (EAR) for Blink Liveness Anti-Spoofing Detection
+      if (landmarks && landmarks.length >= 68) {
+        const dist = (p1: { x: number; y: number }, p2: { x: number; y: number }) =>
+          Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
-          // Right eye: landmarks 36 to 41
-          const rP1 = landmarks[36];
-          const rP2 = landmarks[37];
-          const rP3 = landmarks[38];
-          const rP4 = landmarks[39];
-          const rP5 = landmarks[40];
-          const rP6 = landmarks[41];
-          const rEAR = (dist(rP2, rP6) + dist(rP3, rP5)) / (2.0 * Math.max(1, dist(rP1, rP4)));
+        // Right eye: landmarks 36 to 41
+        const rP1 = landmarks[36];
+        const rP2 = landmarks[37];
+        const rP3 = landmarks[38];
+        const rP4 = landmarks[39];
+        const rP5 = landmarks[40];
+        const rP6 = landmarks[41];
+        const rEAR = (dist(rP2, rP6) + dist(rP3, rP5)) / (2.0 * Math.max(1, dist(rP1, rP4)));
 
-          // Left eye: landmarks 42 to 47
-          const lP1 = landmarks[42];
-          const lP2 = landmarks[43];
-          const lP3 = landmarks[44];
-          const lP4 = landmarks[45];
-          const lP5 = landmarks[46];
-          const lP6 = landmarks[47];
-          const lEAR = (dist(lP2, lP6) + dist(lP3, lP5)) / (2.0 * Math.max(1, dist(lP1, lP4)));
+        // Left eye: landmarks 42 to 47
+        const lP1 = landmarks[42];
+        const lP2 = landmarks[43];
+        const lP3 = landmarks[44];
+        const lP4 = landmarks[45];
+        const lP5 = landmarks[46];
+        const lP6 = landmarks[47];
+        const lEAR = (dist(lP2, lP6) + dist(lP3, lP5)) / (2.0 * Math.max(1, dist(lP1, lP4)));
 
-          const avgEAR = (rEAR + lEAR) / 2.0;
-          result.ear = Number(avgEAR.toFixed(3));
-          result.eyesClosed = avgEAR < 0.23;
-        }
+        const avgEAR = (rEAR + lEAR) / 2.0;
+        result.ear = Number(avgEAR.toFixed(3));
+        result.eyesClosed = avgEAR < 0.23;
+      }
 
-        result.faceObscured = Boolean(
-          result.capDetected ||
-          result.glassesDetected ||
-          result.maskDetected ||
-          result.tooDark ||
-          result.tooBright ||
-          result.poorBackgroundLighting
-        );
-        if (result.faceObscured) {
-          result.ok = false;
-        } else {
-          result.ok = result.faceDetected && result.faceCentered;
-        }
-      } else {
-        result.faceDetected = false;
-        result.faceCentered = false;
+      // Client heuristics are strictly soft advisories: they do not block face scanning.
+      // Server-side DeepFace + enforce_detection performs the authoritative biometric verification.
+      result.faceObscured = false;
+      result.ok = result.faceDetected && result.faceCentered && !result.tooDark && !result.tooBright;
+    } else {
+      result.faceDetected = false;
+      result.faceCentered = false;
         result.faceObscured = false;
         result.ok = false;
         result.issues.push('No face detected. Position head inside the oval guide.');

@@ -533,7 +533,7 @@ const BRIDGE_HTML = `
           hasFace = true;
         }
 
-        const faceObscured = Boolean(capDetected || glassesDetected || maskDetected || poorBackgroundLighting || avgLum < 38);
+        const faceObscured = Boolean(avgLum < 20 || avgLum > 248);
 
         sendToNative({
           id,

@@ -251,24 +251,13 @@ export default function FaceScanner({
           return;
         }
 
-        if (quality.faceObscured || quality.glassesDetected || quality.capDetected || quality.maskDetected) {
-          consecutiveStable = 0;
-          setStableCount(0);
-          setScanStatus('failed');
-          triggerAlarmHaptic();
-
-          let prompt = '🚨 ALARM: FACE OBSTRUCTED! Clear face required (no glasses or hats)';
-          if (quality.glassesDetected) {
-            prompt = '🚨 ALARM: GLASSES DETECTED! Remove eyeglasses / sunglasses to scan';
-          } else if (quality.capDetected) {
-            prompt = '🚨 ALARM: HAT / CAP DETECTED! Remove headwear / cap to scan';
-          } else if (quality.maskDetected) {
-            prompt = '🚨 ALARM: FACE MASK DETECTED! Remove face mask to scan';
-          }
-          setStatusMessage(prompt);
-          setErrorMessage(prompt);
-          Animated.timing(progressAnim, { toValue: 0.1, duration: 200, useNativeDriver: false }).start();
-          return;
+        // Soft advisory cues — never block scanning or fail scan status
+        if (quality.glassesDetected) {
+          setStatusMessage('Tip: Ensure eyes are clear and unobstructed');
+        } else if (quality.capDetected) {
+          setStatusMessage('Tip: Ensure forehead is clear');
+        } else if (quality.maskDetected) {
+          setStatusMessage('Tip: Ensure lower face is clear');
         }
 
         if (!quality.hasFace) {
@@ -424,33 +413,15 @@ export default function FaceScanner({
       // Enforce fail-closed bare-face obstruction and lighting checks FIRST
       const quality = await biometricService.inspectQuality(base64Data);
 
-      if (quality.faceObscured || quality.maskDetected || quality.glassesDetected || quality.capDetected || quality.poorBackgroundLighting || quality.tooDark || quality.tooBright) {
+      // Soft advisory checks — only fail if image is completely dark or washed out with glare
+      if ((quality.tooDark && quality.brightness < 20) || (quality.tooBright && quality.brightness > 248)) {
         setScanStatus('failed');
         try {
           Vibration.vibrate([0, 400, 150, 400]);
         } catch {}
-
-        let reason = '🚨 ALARM: Blocked! 100% bare face and light background required.';
-        let shortMsg = '🚨 ALARM: Clear Face Required';
-        if (quality.glassesDetected) {
-          reason = '🚨 ALARM: Glasses detected! Institutional policy strictly requires a 100% bare face. Eyeglasses and sunglasses are strictly prohibited. Please remove your glasses and try again.';
-          shortMsg = '🚨 ALARM: Glasses Detected';
-        } else if (quality.capDetected) {
-          reason = '🚨 ALARM: Hat or cap detected! Institutional policy strictly requires a 100% bare face. Headwear is strictly prohibited. Please remove your cap/hat and try again.';
-          shortMsg = '🚨 ALARM: Hat/Cap Detected';
-        } else if (quality.maskDetected) {
-          reason = '🚨 ALARM: Face mask detected! Institutional policy strictly requires a bare face. Please remove your mask and try again.';
-          shortMsg = '🚨 ALARM: Mask Detected';
-        } else if (quality.poorBackgroundLighting || quality.tooDark) {
-          reason = '🚨 ALARM: Dark background or dim lighting detected! Biometric verification requires a light, well-lit background. Please move to a brighter area with a light background and try again.';
-          shortMsg = '🚨 ALARM: Dark Background';
-        } else if (quality.tooBright) {
-          reason = '🚨 ALARM: Harsh glare on face! Please adjust lighting.';
-          shortMsg = '🚨 ALARM: Harsh Glare';
-        }
-
+        const reason = quality.tooDark ? '🚨 Lighting too dark! Please move to a well-lit area.' : '🚨 Harsh glare! Please adjust camera away from direct lights.';
         setErrorMessage(reason);
-        setStatusMessage(shortMsg);
+        setStatusMessage(quality.tooDark ? '⚠️ Too Dark' : '⚠️ Harsh Glare');
         setIsCapturing(false);
         return;
       }

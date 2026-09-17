@@ -328,9 +328,15 @@ def validate_face_obstruction(image_path: str) -> Dict[str, any]:
             re_center = get_pixel(re_cx, re_cy)
             le_center = get_pixel(le_cx, le_cy)
 
-            # Genuine dark sunglasses: BOTH eye centers are pitch black (< 18) while face is well illuminated (> 65)
+            # Check both eye centers AND outer eye corners (sclera)
+            re_outer = get_pixel(re[0][0], re[0][1])
+            le_outer = get_pixel(le[3][0], le[3][1])
+
+            # Genuine dark sunglasses: BOTH eye centers AND outer eye corners (sclera) are covered in dark tint
             is_dark_sunglasses = (
-                re_center['lum'] < 18 and le_center['lum'] < 18 and skin_lum > 65
+                re_center['lum'] < 18 and le_center['lum'] < 18 and
+                re_outer['lum'] < 22 and le_outer['lum'] < 22 and
+                skin_lum > 65
             )
 
             # Heavy specular lens glare across both eye centers
@@ -358,14 +364,10 @@ def validate_face_obstruction(image_path: str) -> Dict[str, any]:
                 phil_p = get_patch_avg(phil_x, phil_y, 2)
                 chin_p = get_patch_avg(chin_x, chin_y, 2)
 
-                phil_diff = abs(phil_p['r'] - skin_r) + abs(phil_p['g'] - skin_g) + abs(phil_p['b'] - skin_b)
-                chin_diff = abs(chin_p['r'] - skin_r) + abs(chin_p['g'] - skin_g) + abs(chin_p['b'] - skin_b)
-
                 is_blue = (phil_p['b'] > phil_p['r'] + 25 and phil_p['b'] > 70) or (chin_p['b'] > chin_p['r'] + 25 and chin_p['b'] > 70)
-                is_black = (phil_p['lum'] < 26 and chin_p['lum'] < 26 and skin_lum > 55)
-                is_mask_fabric = (phil_diff > 55 and chin_diff > 55)
+                is_black = (phil_p['lum'] < 18 and chin_p['lum'] < 18 and skin_lum > 55)
 
-                if is_blue or is_black or is_mask_fabric:
+                if is_blue or is_black:
                     return {
                         'valid': False,
                         'status': 'mask_detected',

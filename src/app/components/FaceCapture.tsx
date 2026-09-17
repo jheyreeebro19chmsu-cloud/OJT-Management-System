@@ -486,26 +486,13 @@ export function FaceCapture({
             if (quality) {
               setQualityReport(quality);
 
+              // Soft advisory cues — never block scanning or reset stableFrames
               if (quality.glassesDetected) {
-                stableFrames = 0;
-                setProgress(15);
-                setScanMessage('🚨 GLASSES DETECTED! Remove glasses to scan (clear face only).');
-                await new Promise((r) => setTimeout(r, 400));
-                continue;
-              }
-              if (quality.capDetected) {
-                stableFrames = 0;
-                setProgress(15);
-                setScanMessage('🚨 HAT / CAP DETECTED! Remove headwear to scan (clear face only).');
-                await new Promise((r) => setTimeout(r, 400));
-                continue;
-              }
-              if (quality.maskDetected) {
-                stableFrames = 0;
-                setProgress(15);
-                setScanMessage('🚨 FACE MASK DETECTED! Remove mask to scan.');
-                await new Promise((r) => setTimeout(r, 400));
-                continue;
+                setScanMessage('Tip: Ensure eyes are clear and unobstructed.');
+              } else if (quality.capDetected) {
+                setScanMessage('Tip: Ensure forehead is clear.');
+              } else if (quality.maskDetected) {
+                setScanMessage('Tip: Ensure lower face is clear.');
               }
               if (quality.tooDark && (quality.brightness ?? 100) < 22) {
                 stableFrames = 0;
@@ -633,35 +620,13 @@ export function FaceCapture({
         if (quality) {
           setQualityReport(quality);
 
+          // Soft advisory cues — do not block capture
           if (quality.glassesDetected) {
-            setScanMessage('🚨 GLASSES DETECTED! Remove glasses to scan (clear face only).');
-            await new Promise((r) => setTimeout(r, 400));
-            continue;
-          }
-          if (quality.capDetected) {
-            setScanMessage('🚨 HAT / CAP DETECTED! Remove headwear to scan (clear face only).');
-            await new Promise((r) => setTimeout(r, 400));
-            continue;
-          }
-          if (quality.maskDetected) {
-            setScanMessage('🚨 FACE MASK DETECTED! Remove mask to scan.');
-            await new Promise((r) => setTimeout(r, 400));
-            continue;
-          }
-          if (quality.tooDark && (quality.brightness ?? 100) < 22) {
-            setScanMessage('⚠️ Too dark! Move to a well-lit area.');
-            await new Promise((r) => setTimeout(r, 350));
-            continue;
-          }
-          if (quality.tooBright) {
-            setScanMessage('⚠️ Too bright! Avoid harsh glare on face.');
-            await new Promise((r) => setTimeout(r, 350));
-            continue;
-          }
-          if (quality.faceObscured) {
-            setScanMessage('⚠️ Clear face required. Remove obstructions.');
-            await new Promise((r) => setTimeout(r, 350));
-            continue;
+            setScanMessage('Tip: Ensure eyes are clear and unobstructed.');
+          } else if (quality.capDetected) {
+            setScanMessage('Tip: Ensure forehead is clear.');
+          } else if (quality.maskDetected) {
+            setScanMessage('Tip: Ensure lower face is clear.');
           }
 
           if (quality.faceDetected) {
@@ -788,40 +753,17 @@ export function FaceCapture({
     const manualQuality = await inspectFaceQuality(img).catch(() => null);
     if (manualQuality) {
       setQualityReport(manualQuality);
-      if (manualQuality.glassesDetected) {
+      // Quality hints are advisory — only reject if pitch black or heavily blown out
+      if (manualQuality.tooDark && (manualQuality.brightness ?? 100) < 20) {
         setState('failed');
-        setMismatchError('🚨 GLASSES DETECTED! Institutional policy strictly requires a 100% bare face. Please remove eyeglasses / sunglasses to scan.');
-        setScanMessage('❌ Glasses detected. Bare face required.');
-        return;
-      }
-      if (manualQuality.capDetected) {
-        setState('failed');
-        setMismatchError('🚨 HAT / CAP DETECTED! Institutional policy strictly requires a 100% bare face. Please remove headwear to scan.');
-        setScanMessage('❌ Hat/cap detected. Bare face required.');
-        return;
-      }
-      if (manualQuality.maskDetected) {
-        setState('failed');
-        setMismatchError('🚨 FACE MASK DETECTED! Please remove face mask to scan.');
-        setScanMessage('❌ Mask detected. Bare face required.');
-        return;
-      }
-      if (manualQuality.tooDark && (manualQuality.brightness ?? 100) < 22) {
-        setState('failed');
-        setMismatchError('Dim lighting! Please move to a brighter, well-lit area.');
+        setMismatchError('Lighting too dark. Please move to a brighter, well-lit area.');
         setScanMessage('❌ Lighting too dark.');
         return;
       }
-      if (manualQuality.tooBright) {
+      if (manualQuality.tooBright && (manualQuality.brightness ?? 100) > 248) {
         setState('failed');
         setMismatchError('Harsh glare on face! Please adjust lighting.');
         setScanMessage('❌ Harsh glare detected.');
-        return;
-      }
-      if (manualQuality.faceObscured) {
-        setState('failed');
-        setMismatchError('Face obstruction detected. Bare face required.');
-        setScanMessage('❌ Face obstruction detected.');
         return;
       }
       if (!manualQuality.faceDetected) {
@@ -956,23 +898,13 @@ export function FaceCapture({
         const quality = await inspectFaceQuality(img).catch(() => null);
         if (quality) {
           setQualityReport(quality);
+          // Non-blocking advisory cues for photo upload
           if (quality.glassesDetected) {
-            setState('failed');
-            setMismatchError('Upload rejected: Glasses detected! Institutional policy strictly requires a bare face. Please remove eyeglasses/sunglasses.');
-            setScanMessage('❌ Glasses detected. Bare face required.');
-            return;
-          }
-          if (quality.capDetected) {
-            setState('failed');
-            setMismatchError('Upload rejected: Hat or cap detected! Institutional policy strictly requires a bare face. Please remove headwear.');
-            setScanMessage('❌ Hat/cap detected. Bare face required.');
-            return;
-          }
-          if (quality.maskDetected) {
-            setState('failed');
-            setMismatchError('Upload rejected: Face mask detected! Institutional policy strictly requires a bare face.');
-            setScanMessage('❌ Mask detected. Bare face required.');
-            return;
+            setScanMessage('Tip: Ensure eyes are clear and unobstructed.');
+          } else if (quality.capDetected) {
+            setScanMessage('Tip: Ensure forehead is clear.');
+          } else if (quality.maskDetected) {
+            setScanMessage('Tip: Ensure lower face is clear.');
           }
           if (quality.poorBackgroundLighting || quality.tooDark) {
             setState('failed');
