@@ -547,16 +547,27 @@ def verify_face(request: HttpRequest) -> JsonResponse:
     known_image = None
     if employee_id:
         registration = FaceRegistration.objects.filter(employee_id=employee_id).first()
-        if not registration or not registration.image:
+        if not registration or (not registration.image and not registration.image_data):
             return JsonResponse(
                 {"success": False, "message": "No registered face found for this employee."},
                 status=404,
             )
 
-        try:
-            known_image = face_recognition.load_image_file(registration.image.path)
-        except Exception:
-            known_image = None
+        if registration.image_data:
+            import io
+            try:
+                known_image = face_recognition.load_image_file(io.BytesIO(registration.image_data))
+            except Exception:
+                pass
+
+        if known_image is None and registration.image:
+            try:
+                if hasattr(registration.image, 'path') and os.path.exists(registration.image.path):
+                    known_image = face_recognition.load_image_file(registration.image.path)
+                elif hasattr(registration.image, 'file'):
+                    known_image = face_recognition.load_image_file(registration.image.file)
+            except Exception:
+                known_image = None
 
         if registration.face_encoding:
             import numpy as np  # type: ignore

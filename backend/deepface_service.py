@@ -5,8 +5,22 @@ into the OJT Management System with multi-tier fallback capabilities.
 """
 
 import os
+import sys
 import logging
 from typing import Dict, Any, Optional, Union, List
+
+# Ensure UTF-8 output encoding on Windows so DeepFace emojis don't fail cp1252 consoles
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+# Configure PyTorch as the DeepFace backend engine
+os.environ.setdefault("DEEPFACE_BACKEND_ENGINE", "pytorch")
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +67,63 @@ def verify_face_pair(
     if not DEEPFACE_AVAILABLE or DeepFace is None:
         return _fallback_verification(img1, img2)
 
-    try:
-        result = DeepFace.verify(
-            img1_path=img1,
-            img2_path=img2,
-            model_name=model_name,
-            detector_backend=detector_backend,
-            distance_metric=distance_metric,
-            enforce_detection=enforce_detection,
-            align=align,
-        )
+    # Detectors to attempt in order of priority. If the requested detector
+    # (e.g. 'retinaface' which requires TensorFlow) is not available,
+    # seamlessly fall back to 'dlib' (which is tested and available).
+    detectors_to_try = [detector_backend]
+    for alt in ["dlib", "opencv", "ssd"]:
+        if alt not in detectors_to_try:
+            detectors_to_try.append(alt)
 
+    result = None
+    actual_detector = detector_backend
+    last_error = None
+
+    for det in detectors_to_try:
+        try:
+            result = DeepFace.verify(
+                img1_path=img1,
+                img2_path=img2,
+                model_name=model_name,
+                detector_backend=det,
+                distance_metric=distance_metric,
+                enforce_detection=enforce_detection,
+                align=align,
+            )
+            actual_detector = det
+            break
+        except ValueError as val_err:
+            err_full = f"{val_err} {val_err.__cause__} {val_err.__context__}".lower()
+            # If the error is due to a missing package or engine for the detector (e.g. retinaface needing tensorflow)
+            if any(x in err_full for x in ["retina-face", "tensorflow", "install", "violated", "confirm that opencv"]):
+                logger.info("Detector '%s' unavailable (%s), trying fallback detector...", det, val_err)
+                last_error = val_err
+                continue
+            # Legitimate detection failure when enforce_detection=True
+            logger.warning("DeepFace detection warning: %s", val_err)
+            return {
+                "success": False,
+                "matched": False,
+                "verified": False,
+                "error": str(val_err),
+                "message": "No face detected in image. Please center your face in good lighting.",
+                "backend": "deepface",
+            }
+        except Exception as err:
+            err_full = f"{err} {getattr(err, '__cause__', '')} {getattr(err, '__context__', '')}".lower()
+            if any(x in err_full for x in ["retinaface", "retina-face", "tensorflow", "install"]):
+                logger.info("Detector '%s' error (%s), trying fallback detector...", det, err)
+                last_error = err
+                continue
+            logger.error("DeepFace verification failed with detector %s: %s", det, err)
+            last_error = err
+            continue
+
+    if result is None:
+        logger.error("All DeepFace detector backends exhausted: %s", last_error)
+        return _fallback_verification(img1, img2, original_error=str(last_error))
+
+    try:
         verified = bool(result.get("verified", False))
         distance = float(result.get("distance", 1.0))
         threshold = float(result.get("threshold", 0.4))
@@ -84,34 +144,22 @@ def verify_face_pair(
             "confidence": round(confidence, 4),
             "similarity_percent": round(confidence * 100, 1),
             "model": result.get("model", model_name),
-            "detector_backend": detector_backend,
+            "detector_backend": actual_detector,
             "similarity_metric": distance_metric,
             "facial_areas": result.get("facial_areas", {}),
             "time": result.get("time", 0),
             "backend": "deepface",
             "message": "Face verified successfully with DeepFace." if verified else "Face does not match registered profile."
         }
-    except ValueError as val_err:
-        # Usually triggered when enforce_detection=True and no face is detected
-        logger.warning("DeepFace detection warning: %s", val_err)
-        return {
-            "success": False,
-            "matched": False,
-            "verified": False,
-            "error": str(val_err),
-            "message": "No face detected in image. Please center your face in good lighting.",
-            "backend": "deepface",
-        }
     except Exception as err:
-        logger.error("DeepFace verification failed: %s", err)
-        # Attempt fallback to legacy face_recognition if available
+        logger.error("DeepFace verification processing failed: %s", err)
         return _fallback_verification(img1, img2, original_error=str(err))
 
 
 def extract_face_embedding(
     img: Union[str, Any],
     model_name: str = "VGG-Face",
-    detector_backend: str = "opencv",
+    detector_backend: str = "dlib",
     enforce_detection: bool = False,
 ) -> Optional[List[float]]:
     """
@@ -120,25 +168,31 @@ def extract_face_embedding(
     if not DEEPFACE_AVAILABLE or DeepFace is None:
         return None
 
-    try:
-        embeddings = DeepFace.represent(
-            img_path=img,
-            model_name=model_name,
-            detector_backend=detector_backend,
-            enforce_detection=enforce_detection,
-        )
-        if embeddings and len(embeddings) > 0:
-            return embeddings[0].get("embedding")
-        return None
-    except Exception as e:
-        logger.warning("DeepFace embedding extraction error: %s", e)
-        return None
+    detectors = [detector_backend] + [d for d in ["dlib", "opencv", "ssd"] if d != detector_backend]
+    for det in detectors:
+        try:
+            embeddings = DeepFace.represent(
+                img_path=img,
+                model_name=model_name,
+                detector_backend=det,
+                enforce_detection=enforce_detection,
+            )
+            if embeddings and len(embeddings) > 0:
+                return embeddings[0].get("embedding")
+            return None
+        except Exception as e:
+            err_str = str(e).lower()
+            if "retina-face" in err_str or "tensorflow" in err_str or "violated" in err_str:
+                continue
+            logger.warning("DeepFace embedding extraction error with detector %s: %s", det, e)
+            continue
+    return None
 
 
 def analyze_face_attributes(
     img: Union[str, Any],
     actions: Optional[List[str]] = None,
-    detector_backend: str = "opencv",
+    detector_backend: str = "dlib",
     enforce_detection: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -150,31 +204,35 @@ def analyze_face_attributes(
     if not DEEPFACE_AVAILABLE or DeepFace is None:
         return {"success": False, "message": "DeepFace not available for attribute analysis."}
 
-    try:
-        results = DeepFace.analyze(
-            img_path=img,
-            actions=actions,
-            detector_backend=detector_backend,
-            enforce_detection=enforce_detection,
-        )
-        if isinstance(results, list) and len(results) > 0:
-            res = results[0]
-        else:
-            res = results
+    detectors = [detector_backend] + [d for d in ["dlib", "opencv", "ssd"] if d != detector_backend]
+    for det in detectors:
+        try:
+            results = DeepFace.analyze(
+                img_path=img,
+                actions=actions,
+                detector_backend=det,
+                enforce_detection=enforce_detection,
+            )
+            if isinstance(results, list) and len(results) > 0:
+                res = results[0]
+            else:
+                res = results
 
-        return {
-            "success": True,
-            "age": res.get("age"),
-            "gender": res.get("dominant_gender", res.get("gender")),
-            "emotion": res.get("dominant_emotion"),
-            "emotions_breakdown": res.get("emotion"),
-            "race": res.get("dominant_race"),
-            "region": res.get("region", {}),
-            "backend": "deepface",
-        }
-    except Exception as e:
-        logger.warning("DeepFace attribute analysis error: %s", e)
-        return {"success": False, "error": str(e), "backend": "deepface"}
+            return {
+                "success": True,
+                "age": res.get("age"),
+                "gender": res.get("dominant_gender", res.get("gender")),
+                "emotion": res.get("dominant_emotion"),
+                "emotions_breakdown": res.get("emotion"),
+                "race": res.get("dominant_race"),
+                "region": res.get("region", {}),
+                "backend": "deepface",
+            }
+        except Exception as e:
+            err_str = str(e).lower()
+            if "retina-face" in err_str or "tensorflow" in err_str or "violated" in err_str:
+                continue
+    return {"success": False, "error": "Attribute analysis failed across all detectors.", "backend": "deepface"}
 
 
 def _fallback_verification(img1: Any, img2: Any, original_error: Optional[str] = None) -> Dict[str, Any]:
