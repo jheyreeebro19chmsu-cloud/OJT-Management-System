@@ -863,8 +863,18 @@ export function FaceCapture({
           setScanMessage('❌ Server verification: Identity mismatch.');
           return;
         }
-      } catch {
-        // client-verified descriptor fallback
+      } catch (serverErr) {
+        // SECURITY: fail CLOSED, not open. If the server verification call
+        // itself fails (network error, server down, timeout), do NOT treat
+        // the earlier client-only descriptor match as sufficient -- that
+        // reopens the exact "spoofable on-device decision" hole that was
+        // already fixed on the mobile app. Block the clock-in instead and
+        // ask the person to retry once connectivity is back.
+        console.warn('Server verification unreachable:', serverErr);
+        setState('failed');
+        setMismatchError("Can't verify right now — check your connection and try again.");
+        setScanMessage('❌ Verification server unreachable.');
+        return;
       }
     }
 

@@ -746,54 +746,6 @@ export async function strictBiometricVerify(
     };
   }
 
-  // ZERO-TOLERANCE OBSTRUCTION GATING:
-  // Institutional policy strictly requires a 100% bare face. Glasses, hats, and masks are UNCONDITIONALLY BLOCKED.
-  const liveQuality = await inspectFaceQuality(liveDataUrl).catch(() => null);
-  if (liveQuality) {
-    if (liveQuality.glassesDetected) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Glasses detected! Institutional policy strictly requires a bare face. Please remove eyeglasses/sunglasses to scan.',
-      };
-    }
-    if (liveQuality.capDetected) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Hat or cap detected! Institutional policy strictly requires a bare face. Please remove headwear to scan.',
-      };
-    }
-    if (liveQuality.maskDetected) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Verification blocked: Face mask detected! Please remove face mask to scan.',
-      };
-    }
-    if (!skipQualityCheck) {
-      if (liveQuality.poorBackgroundLighting || liveQuality.tooDark) {
-        return {
-          matched: false,
-          distance: Infinity,
-          confidence: 0,
-          error: 'Verification blocked: Dark background / poor lighting. Please move in front of a light, well-lit background.',
-        };
-      }
-      if (liveQuality.tooBright) {
-        return {
-          matched: false,
-          distance: Infinity,
-          confidence: 0,
-          error: 'Verification blocked: Harsh glare on face. Please adjust lighting.',
-        };
-      }
-    }
-  }
-
   const modelsAvailable = _modelsLoaded;
 
   const [t1, t2] = await Promise.all([
