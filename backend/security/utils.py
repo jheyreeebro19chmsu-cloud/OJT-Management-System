@@ -319,124 +319,8 @@ def validate_face_obstruction(image_path: str) -> Dict[str, any]:
                         'recommendations': ['Remove hats, caps, and headwear', 'Ensure face and forehead are completely bare'],
                     }
 
-            # 3. ULTRA-SENSITIVE ZERO-TOLERANCE GLASSES DETECTION (Clear, Wireframe, Reading, Plastic, Sunglasses)
-            # A. Multi-Point Vertical Nasal Ridge Corridor Scan (Brow to Mid-Nose)
-            brow_mid_y = (leb[-1][1] + reb[0][1]) / 2.0 if (leb and reb) else nb[0][1] - 8
-            nose_bridge_x = nb[0][0]
-            max_bridge_color_diff = 0
-            max_bridge_grad = 0.0
-            prev_bridge_lum = get_pixel(nose_bridge_x, brow_mid_y - 4)['lum']
-
-            for y_step in range(int(brow_mid_y - 6), int(nb[-1][1]) + 1, 2):
-                sp = get_pixel(nose_bridge_x, y_step)
-                diff = abs(sp['r'] - skin_r) + abs(sp['g'] - skin_g) + abs(sp['b'] - skin_b)
-                if diff > max_bridge_color_diff:
-                    max_bridge_color_diff = diff
-                grad = abs(sp['lum'] - prev_bridge_lum)
-                if grad > max_bridge_grad:
-                    max_bridge_grad = grad
-                prev_bridge_lum = sp['lum']
-
-            # B. Multi-Level Horizontal Bridge Sweeps across Inner Canthi
-            inner_l = le[3]  # left eye inner corner
-            inner_r = re[0]  # right eye inner corner
-            max_span_var = 0.0
-            max_sweep_diff = 0.0
-
-            sweep_y_levels = [
-                brow_mid_y,
-                nb[0][1] - 4,
-                nb[0][1],
-                nb[0][1] + 4,
-                (inner_l[1] + inner_r[1]) / 2.0,
-                nb[1][1] if len(nb) > 1 else nb[0][1] + 8,
-            ]
-
-            for sy in sweep_y_levels:
-                s_lums = []
-                s_diffs = []
-                for step in range(1, 6):
-                    sx = inner_r[0] + (inner_l[0] - inner_r[0]) * (step / 6.0)
-                    sp = get_pixel(sx, sy)
-                    s_lums.append(sp['lum'])
-                    s_diffs.append(abs(sp['r'] - skin_r) + abs(sp['g'] - skin_g) + abs(sp['b'] - skin_b))
-                if s_lums:
-                    span_var = max(s_lums) - min(s_lums)
-                    if span_var > max_span_var:
-                        max_span_var = span_var
-                    avg_diff = sum(s_diffs) / len(s_diffs)
-                    if avg_diff > max_sweep_diff:
-                        max_sweep_diff = avg_diff
-
-            has_bridge_frame = (
-                max_bridge_color_diff > 10
-                or max_bridge_grad > 9.0
-                or max_span_var > 10.0
-                or max_sweep_diff > 11.0
-            )
-
-            # C. Nose Pad Detection on Nasal Bone Slopes
-            r_pad_x = (inner_r[0] + nb[0][0]) / 2.0
-            r_pad_y = (inner_r[1] + nb[1][1]) / 2.0 if len(nb) > 1 else (inner_r[1] + nb[0][1] + 6) / 2.0
-            l_pad_x = (inner_l[0] + nb[0][0]) / 2.0
-            l_pad_y = (inner_l[1] + nb[1][1]) / 2.0 if len(nb) > 1 else (inner_l[1] + nb[0][1] + 6) / 2.0
-            r_pad = get_pixel(r_pad_x, r_pad_y)
-            l_pad = get_pixel(l_pad_x, l_pad_y)
-            r_pad_diff = abs(r_pad['r'] - skin_r) + abs(r_pad['g'] - skin_g) + abs(r_pad['b'] - skin_b)
-            l_pad_diff = abs(l_pad['r'] - skin_r) + abs(l_pad['g'] - skin_g) + abs(l_pad['b'] - skin_b)
-
-            has_nose_pads = (
-                (r_pad_diff > 9 or l_pad_diff > 9)
-                or (r_pad['lum'] < skin_lum * 0.72 or l_pad['lum'] < skin_lum * 0.72)
-                or (r_pad['lum'] > skin_lum * 1.35 or l_pad['lum'] > skin_lum * 1.35)
-            )
-
-            # D. Multi-Depth Under-Eye Cheek Corridor (Lower Rims & Bottom Lens Edges)
-            max_cheek_diff = 0
-            max_cheek_grad = 0.0
-            prev_r_lum = get_pixel(re[4][0], re[4][1] + 2)['lum']
-            prev_l_lum = get_pixel(le[4][0], le[4][1] + 2)['lum']
-
-            for dy in range(4, 38, 2):
-                rp = get_pixel(re[4][0], re[4][1] + dy)
-                lp = get_pixel(le[4][0], le[4][1] + dy)
-                r_diff = abs(rp['r'] - skin_r) + abs(rp['g'] - skin_g) + abs(rp['b'] - skin_b)
-                l_diff = abs(lp['r'] - skin_r) + abs(lp['g'] - skin_g) + abs(lp['b'] - skin_b)
-                if r_diff > max_cheek_diff:
-                    max_cheek_diff = r_diff
-                if l_diff > max_cheek_diff:
-                    max_cheek_diff = l_diff
-                r_grad = abs(rp['lum'] - prev_r_lum)
-                l_grad = abs(lp['lum'] - prev_l_lum)
-                if r_grad > max_cheek_grad:
-                    max_cheek_grad = r_grad
-                if l_grad > max_cheek_grad:
-                    max_cheek_grad = l_grad
-                prev_r_lum = rp['lum']
-                prev_l_lum = lp['lum']
-
-            has_lower_rim = (max_cheek_diff > 10 or max_cheek_grad > 9.0)
-
-            # E. Temporal Arms / Frame Hinges
-            max_temple_diff = 0
-            min_temple_lum = 255.0
-            for dx in range(4, 18, 3):
-                rt = get_pixel(re[3][0] - dx, re[3][1])
-                lt = get_pixel(le[0][0] + dx, le[0][1])
-                r_tdiff = abs(rt['r'] - skin_r) + abs(rt['g'] - skin_g) + abs(rt['b'] - skin_b)
-                l_tdiff = abs(lt['r'] - skin_r) + abs(lt['g'] - skin_g) + abs(lt['b'] - skin_b)
-                if r_tdiff > max_temple_diff:
-                    max_temple_diff = r_tdiff
-                if l_tdiff > max_temple_diff:
-                    max_temple_diff = l_tdiff
-                if rt['lum'] < min_temple_lum:
-                    min_temple_lum = rt['lum']
-                if lt['lum'] < min_temple_lum:
-                    min_temple_lum = lt['lum']
-
-            has_temple_arms = (max_temple_diff > 11 or min_temple_lum < skin_lum * 0.65)
-
-            # F. Eye Centers: Sunglasses / Specular Lens Reflection & Refraction
+            # 3. SUNGLASSES / EYE OBSTRUCTION DETECTION
+            # Zero false positives on bare faces: Only genuine dark sunglasses or heavy lens obstruction
             re_cx = sum(p[0] for p in re) / len(re)
             re_cy = sum(p[1] for p in re) / len(re)
             le_cx = sum(p[0] for p in le) / len(le)
@@ -444,36 +328,18 @@ def validate_face_obstruction(image_path: str) -> Dict[str, any]:
             re_center = get_pixel(re_cx, re_cy)
             le_center = get_pixel(le_cx, le_cy)
 
-            is_dark_lens = (re_center['lum'] < 45 and le_center['lum'] < 45 and skin_lum > 48)
-            re_color_diff = abs(re_center['r'] - skin_r) + abs(re_center['g'] - skin_g) + abs(re_center['b'] - skin_b)
-            le_color_diff = abs(le_center['r'] - skin_r) + abs(le_center['g'] - skin_g) + abs(le_center['b'] - skin_b)
-            is_lens_glare = (
-                re_center['lum'] > 175 or le_center['lum'] > 175
-                or re_center['lum'] > skin_lum + 35 or le_center['lum'] > skin_lum + 35
-                or re_color_diff > 35 or le_color_diff > 35
+            # Genuine dark sunglasses: BOTH eye centers are pitch black (< 18) while face is well illuminated (> 65)
+            is_dark_sunglasses = (
+                re_center['lum'] < 18 and le_center['lum'] < 18 and skin_lum > 65
             )
 
-            # G. Browline Upper Rim Sweeps
-            has_upper_rim = False
-            if reb and leb:
-                for off in (-3, 0, 3):
-                    ru = get_pixel(reb[2][0], reb[2][1] + off)
-                    lu = get_pixel(leb[2][0], leb[2][1] + off)
-                    ru_diff = abs(ru['r'] - skin_r) + abs(ru['g'] - skin_g) + abs(ru['b'] - skin_b)
-                    lu_diff = abs(lu['r'] - skin_r) + abs(lu['g'] - skin_g) + abs(lu['b'] - skin_b)
-                    if ru_diff > 11 or lu_diff > 11:
-                        has_upper_rim = True
-                        break
+            # Heavy specular lens glare across both eye centers
+            is_lens_glare = (
+                re_center['lum'] > 250 and le_center['lum'] > 250
+                and re_center['r'] > 245 and le_center['r'] > 245
+            )
 
-            if (
-                has_bridge_frame
-                or has_nose_pads
-                or has_lower_rim
-                or has_temple_arms
-                or is_dark_lens
-                or is_lens_glare
-                or has_upper_rim
-            ):
+            if is_dark_sunglasses or is_lens_glare:
                 return {
                     'valid': False,
                     'status': 'glasses_detected',
