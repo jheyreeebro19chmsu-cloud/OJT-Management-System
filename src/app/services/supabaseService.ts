@@ -1540,7 +1540,7 @@ function transformSupabaseTimeRecord(data: any): TimeRecord {
     timeOutFaceVerified: data.time_out_face_verified,
     timeInPhoto: data.time_in_photo,
     timeOutPhoto: data.time_out_photo,
-    totalHours: data.total_hours,
+    totalHours: data.total_hours != null ? Math.round(Number(data.total_hours) * 100) / 100 : undefined,
     status: data.status,
     notes: data.notes,
     academicYear: data.academic_year,

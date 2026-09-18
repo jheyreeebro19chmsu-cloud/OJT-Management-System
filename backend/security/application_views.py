@@ -423,9 +423,9 @@ def get_hte_dashboard(request: HttpRequest) -> JsonResponse:
             'cancelled': applications.filter(status='cancelled').count(),
         }
 
-        total_required_hours = sum(a.required_hours for a in applications)
-        total_rendered_hours = sum(a.rendered_hours for a in applications)
-        total_remaining_hours = sum(a.remaining_hours for a in applications) # Accessing as property now
+        total_required_hours = round(sum(a.required_hours for a in applications), 1)
+        total_rendered_hours = round(sum(a.rendered_hours for a in applications), 1)
+        total_remaining_hours = round(sum(a.remaining_hours for a in applications), 1) # Accessing as property now
 
         unique_students = applications.values_list('student__user__id', flat=True).distinct().count()
 

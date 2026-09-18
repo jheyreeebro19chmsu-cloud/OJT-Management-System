@@ -68,6 +68,14 @@ const ANN_ICON: Record<Announcement['type'], React.ReactNode> = {
   urgent: <Bell size={14} />,
 };
 
+function formatMetricHours(val: number | string | undefined | null): string {
+  if (val === undefined || val === null || val === '') return '0';
+  const num = Number(val);
+  if (isNaN(num)) return '0';
+  const rounded = Math.round(num * 10) / 10;
+  return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(1);
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const {
@@ -295,6 +303,10 @@ export function Dashboard() {
           totalRenderedHours = timeRecords.reduce((sum: number, r: any) => sum + (Number(r.total_hours || r.totalHours || r.hours_rendered) || 0), 0);
         }
 
+        totalRenderedHours = Math.round(totalRenderedHours * 10) / 10;
+        totalRequiredHours = Math.round(totalRequiredHours * 10) / 10;
+        const totalRemainingHours = Math.max(0, Math.round((totalRequiredHours - totalRenderedHours) * 10) / 10);
+
         setMetrics({
           total_applications: totalApplications,
           status_counts: {
@@ -306,7 +318,7 @@ export function Dashboard() {
           },
           total_required_hours: totalRequiredHours,
           total_rendered_hours: totalRenderedHours,
-          total_remaining_hours: Math.max(0, totalRequiredHours - totalRenderedHours),
+          total_remaining_hours: totalRemainingHours,
           unique_students: totalApplications,
         });
 
@@ -361,10 +373,10 @@ export function Dashboard() {
       const allStudents = studentEmployees;
       const approvedCount = allStudents.filter((e) => e.active && e.approvalStatus !== 'pending').length;
       const pendingCount = allStudents.filter((e) => !e.active || e.approvalStatus === 'pending').length;
-      const totalReq = allStudents.reduce((sum, e) => sum + (e.requiredHours || 486), 0);
+      const totalReq = Math.round(allStudents.reduce((sum, e) => sum + (e.requiredHours || 486), 0) * 10) / 10;
       const activeIds = new Set(allStudents.map((e) => e.id).concat(allStudents.map((e) => e.employeeId)));
       const activeTimeRecs = contextTimeRecords.filter((r) => activeIds.has(r.employeeId));
-      const totalRendered = activeTimeRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+      const totalRendered = Math.round(activeTimeRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0) * 10) / 10;
 
       setMetrics({
         total_applications: allStudents.length,
@@ -377,7 +389,7 @@ export function Dashboard() {
         },
         total_required_hours: totalReq,
         total_rendered_hours: totalRendered,
-        total_remaining_hours: Math.max(0, totalReq - totalRendered),
+        total_remaining_hours: Math.max(0, Math.round((totalReq - totalRendered) * 10) / 10),
         unique_students: allStudents.length,
       });
 
@@ -813,7 +825,7 @@ export function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-blue-100 text-sm font-medium">Total Required Hours</p>
-                <p className="text-4xl font-bold mt-2">{metrics?.total_required_hours || 0}</p>
+                <p className="text-4xl font-bold mt-2">{formatMetricHours(metrics?.total_required_hours)}</p>
               </div>
               <Clock className="w-12 h-12 text-blue-300 opacity-30" />
             </div>
@@ -823,7 +835,7 @@ export function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-green-100 text-sm font-medium">Total Rendered Hours</p>
-                <p className="text-4xl font-bold mt-2">{metrics?.total_rendered_hours || 0}</p>
+                <p className="text-4xl font-bold mt-2">{formatMetricHours(metrics?.total_rendered_hours)}</p>
               </div>
               <BarChart3 className="w-12 h-12 text-green-300 opacity-30" />
             </div>
@@ -833,7 +845,7 @@ export function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-orange-100 text-sm font-medium">Remaining Hours</p>
-                <p className="text-4xl font-bold mt-2">{metrics?.total_remaining_hours || 0}</p>
+                <p className="text-4xl font-bold mt-2">{formatMetricHours(metrics?.total_remaining_hours)}</p>
               </div>
               <AlertCircle className="w-12 h-12 text-orange-300 opacity-30" />
             </div>

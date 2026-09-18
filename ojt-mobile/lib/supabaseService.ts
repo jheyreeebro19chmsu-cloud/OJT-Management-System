@@ -239,7 +239,7 @@ function transformTimeRecord(data: any): TimeRecord {
     timeOutFaceVerified: Boolean(data.time_out_face_verified),
     timeInPhoto: data.time_in_photo,
     timeOutPhoto: data.time_out_photo,
-    totalHours: Number(data.total_hours) || 0,
+    totalHours: Math.round((Number(data.total_hours) || 0) * 100) / 100,
     status: data.status || 'present',
     notes: data.notes,
     academicYear: data.academic_year,
