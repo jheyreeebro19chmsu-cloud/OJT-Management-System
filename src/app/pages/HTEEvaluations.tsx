@@ -27,8 +27,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
-import { Employee, Evaluation } from '../types';
+import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire } from '../types';
 import { getPhotoUrl } from '../services/config';
+import { CHMSUEvaluationSheet } from '../components/CHMSUEvaluationSheet';
 
 const GRADE_CONFIG: Record<
   Evaluation['grade'],
@@ -79,77 +80,15 @@ function getGrade(score: number): Evaluation['grade'] {
   return 'Needs Improvement';
 }
 
-const EVALUATION_SECTIONS = [
-  {
-    id: 'sec1',
-    title: 'Section I: Job Performance & Technical Skills',
-    weight: '30%',
-    key: 'performanceScore',
-    subCriteria: [
-      'Quality & Accuracy of Work Output',
-      'Technical & Practical Skill Application',
-      'Task Productivity & Completion Efficiency',
-    ],
-  },
-  {
-    id: 'sec2',
-    title: 'Section II: Work Habits, Conduct & Punctuality',
-    weight: '30%',
-    key: 'attendanceScore',
-    subCriteria: [
-      'Regularity of Attendance & Punctuality',
-      'Dependability & Responsibility towards assigned tasks',
-      'Compliance with Company Rules, Safety & Ethics',
-    ],
-  },
-  {
-    id: 'sec3',
-    title: 'Section III: Interpersonal & Communication Skills',
-    weight: '20%',
-    key: 'communicationScore',
-    subCriteria: [
-      'Teamwork & Cooperation with Co-workers/Supervisors',
-      'Verbal & Written Communication Ability',
-      'Professional Demeanor, Courtesy & Respect',
-    ],
-  },
-  {
-    id: 'sec4',
-    title: 'Section IV: Time Management & Problem Solving',
-    weight: '20%',
-    key: 'punctualityScore',
-    subCriteria: [
-      'Time Management & Deadline Adherence',
-      'Initiative, Resourcefulness & Self-Motivation',
-      'Critical Thinking & Analytical Problem Solving',
-    ],
-  },
-] as const;
-
-type EvaluationForm = Pick<
-  Evaluation,
-  | 'attendanceScore'
-  | 'performanceScore'
-  | 'attitudeScore'
-  | 'punctualityScore'
-  | 'communicationScore'
-  | 'strengths'
-  | 'areasForImprovement'
-  | 'recommendations'
-  | 'status'
->;
-
-const BLANK_FORM: EvaluationForm = {
-  attendanceScore: 85,
-  performanceScore: 85,
-  attitudeScore: 85,
-  punctualityScore: 85,
-  communicationScore: 85,
-  strengths: '',
-  areasForImprovement: '',
-  recommendations: '',
-  status: 'draft' as Evaluation['status'],
-};
+function getDefaultRatings(): Record<string, number> {
+  const ratings: Record<string, number> = {};
+  CHMSU_EVALUATION_CATEGORIES.forEach((cat) => {
+    cat.items.forEach((item) => {
+      ratings[item.id] = 4;
+    });
+  });
+  return ratings;
+}
 
 export function HTEEvaluations() {
   const location = useLocation();
@@ -175,7 +114,15 @@ export function HTEEvaluations() {
   const preselectedStudentId = queryParams.get('studentId');
 
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
-  const [form, setForm] = useState<EvaluationForm>(BLANK_FORM);
+  const [ratings, setRatings] = useState<Record<string, number>>(getDefaultRatings);
+  const [ratingComments, setRatingComments] = useState<Record<string, string>>({
+    workHabits: '',
+    workSkills: '',
+    socialSkills: '',
+  });
+  const [commentsSuggestions, setCommentsSuggestions] = useState<string>('');
+  const [questionnaire, setQuestionnaire] = useState<EvaluationQuestionnaire>({});
+  const [formStatus, setFormStatus] = useState<Evaluation['status']>('draft');
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
   const [searchTerm, setSearchTerm] = useState('');
@@ -247,61 +194,153 @@ export function HTEEvaluations() {
     }
   }, [preselectedStudentId, activeTrainees]);
 
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, number> = { workHabits: 4, workSkills: 4, socialSkills: 4 };
+    CHMSU_EVALUATION_CATEGORIES.forEach((cat) => {
+      const valid = cat.items
+        .map((item) => ratings[item.id] ?? 4)
+        .filter((score) => score > 0);
+      const avg = valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 4;
+      stats[cat.id] = Number(avg.toFixed(2));
+    });
+    return stats;
+  }, [ratings]);
+
+  const overallRating = useMemo(() => {
+    const allItems = CHMSU_EVALUATION_CATEGORIES.flatMap((c) => c.items);
+    const valid = allItems
+      .map((item) => ratings[item.id] ?? 4)
+      .filter((score) => score > 0);
+    const avg = valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 4;
+    return Number(avg.toFixed(2));
+  }, [ratings]);
+
+  const grade = useMemo<Evaluation['grade']>(() => {
+    if (overallRating >= 4.5) return 'Excellent';
+    if (overallRating >= 3.5) return 'Very Good';
+    if (overallRating >= 2.5) return 'Good';
+    if (overallRating >= 1.5) return 'Satisfactory';
+    return 'Needs Improvement';
+  }, [overallRating]);
+
   const openNewEval = (emp: Employee) => {
     const existing = evaluations.find((e) => e.employeeId === emp.id);
     setSelectedEmp(emp);
     if (existing) {
       setEditEvalId(existing.id);
-      setForm({
-        attendanceScore: existing.attendanceScore,
-        performanceScore: existing.performanceScore,
-        attitudeScore: existing.attitudeScore,
-        punctualityScore: existing.punctualityScore,
-        communicationScore: existing.communicationScore,
-        strengths: existing.strengths,
-        areasForImprovement: existing.areasForImprovement,
-        recommendations: existing.recommendations,
-        status: existing.status,
-      });
+      setRatings(existing.ratings || getDefaultRatings());
+      setRatingComments(
+        existing.ratingComments || {
+          workHabits: existing.strengths || '',
+          workSkills: '',
+          socialSkills: existing.areasForImprovement || '',
+        }
+      );
+      setCommentsSuggestions(existing.commentsSuggestions || existing.recommendations || '');
+      setQuestionnaire(existing.questionnaire || {});
+      setFormStatus(existing.status);
     } else {
-      // Auto-calculate attendance score from DTR
       const recs = timeRecords.filter((r) => r.employeeId === emp.id);
       const lateCount = recs.filter((r) => r.status === 'late').length;
-      const totalDays = recs.length;
-      const autoAttendance = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 40)) : 85;
-      const autoOnTime = totalDays > 0 ? Math.round(Math.max(0, 100 - (lateCount / totalDays) * 60)) : 85;
+      const initialRatings = getDefaultRatings();
+      if (recs.length > 0 && lateCount === 0) {
+        initialRatings['wh_1'] = 5;
+        initialRatings['wh_2'] = 5;
+      } else if (lateCount > 2) {
+        initialRatings['wh_1'] = 3;
+      }
       setEditEvalId(null);
-      setForm({ ...BLANK_FORM, attendanceScore: autoAttendance, punctualityScore: autoOnTime });
+      setRatings(initialRatings);
+      setRatingComments({ workHabits: '', workSkills: '', socialSkills: '' });
+      setCommentsSuggestions('');
+      setQuestionnaire({
+        companyAddress: emp.department || '',
+        contactPerson: supervisorName,
+        trainingDateFrom: '',
+        trainingDateTo: '',
+        dateOfEvaluation: new Date().toISOString().split('T')[0],
+        dateOfLastEvaluation: '',
+        employabilityStatus: 'OJT Trainee',
+        employedCompanyName: '',
+        allowanceSalary: '',
+        telephoneNo: emp.phone || '',
+        department: emp.department || 'IT Department',
+        position: 'ON - THE - JOB TRAINEE',
+        otherDeptAssigned: 'None',
+      });
+      setFormStatus('draft');
     }
     setViewMode('form');
   };
 
   const viewEval = (emp: Employee) => {
+    const existing = evaluations.find((e) => e.employeeId === emp.id);
     setSelectedEmp(emp);
+    if (existing) {
+      setRatings(existing.ratings || getDefaultRatings());
+      setRatingComments(
+        existing.ratingComments || {
+          workHabits: existing.strengths || '',
+          workSkills: '',
+          socialSkills: existing.areasForImprovement || '',
+        }
+      );
+      setCommentsSuggestions(existing.commentsSuggestions || existing.recommendations || '');
+      setQuestionnaire(existing.questionnaire || {});
+    }
     setViewMode('view');
   };
 
   const handleSave = (status: Evaluation['status']) => {
     if (!selectedEmp) return;
 
-    const scores = [
-      form.attendanceScore,
-      form.performanceScore,
-      form.attitudeScore,
-      form.punctualityScore,
-      form.communicationScore,
-    ];
-    const overallScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-    const grade = getGrade(overallScore);
+    const overallPercent = Math.round((overallRating / 5) * 100);
+    const attendanceScore = Math.round((categoryStats.workHabits / 5) * 100);
+    const performanceScore = Math.round((categoryStats.workSkills / 5) * 100);
+    const attitudeScore = Math.round((categoryStats.workHabits / 5) * 100);
+    const punctualityScore = ratings['wh_1'] ? Math.round((ratings['wh_1'] / 5) * 100) : attendanceScore;
+    const communicationScore = Math.round((categoryStats.socialSkills / 5) * 100);
 
     const resolvedAcademicYear = selectedEmp.academicYear || settings?.activeAcademicYear || '2026-2027';
 
-    const data = {
+    const compiledStrengths =
+      ratingComments.workSkills ||
+      ratingComments.workHabits ||
+      'Demonstrates strong work dedication and technical competence.';
+
+    const compiledImprovement =
+      ratingComments.socialSkills ||
+      'Continue developing advanced domain knowledge and leadership skills.';
+
+    const data: Omit<Evaluation, 'id'> = {
       employeeId: selectedEmp.id,
       evaluatedBy: supervisorName,
-      ...form,
-      overallScore,
+      evaluatorName: supervisorName,
+      evaluatorPosition: currentEmp?.position || hteUser?.position || 'HTE Supervisor',
+      date: new Date().toISOString().split('T')[0],
+      ratings,
+      categoryScores: {
+        workHabits: categoryStats.workHabits,
+        workSkills: categoryStats.workSkills,
+        socialSkills: categoryStats.socialSkills,
+      },
+      ratingComments,
+      overallRating,
+      commentsSuggestions,
+      questionnaire,
+      totalScore: overallPercent,
+      attendanceScore,
+      performanceScore,
+      attitudeScore,
+      punctualityScore,
+      communicationScore,
+      overallScore: overallPercent,
       grade,
+      strengths: compiledStrengths,
+      areasForImprovement: compiledImprovement,
+      recommendations:
+        commentsSuggestions ||
+        (overallRating >= 3.5 ? 'Recommended for completion of OJT program.' : 'For further development.'),
       evaluatedAt: new Date().toISOString(),
       status,
       academicYear: resolvedAcademicYear,
@@ -350,14 +389,14 @@ export function HTEEvaluations() {
         hostCompany: companyName,
         hostPosition: currentEmp?.position || hteUser?.position || 'Supervisor',
         hostEmail: hfEmail,
-        attendanceScore: form.attendanceScore,
-        performanceScore: form.performanceScore,
-        attitudeScore: form.attitudeScore,
-        communicationScore: form.communicationScore,
-        teamworkScore: form.punctualityScore,
-        strengths: form.strengths || 'Exemplary dedication and competence.',
-        areasForImprovement: form.areasForImprovement || 'Continue active growth.',
-        recommendation: (overallScore >= 80 ? 'Recommended' : 'For Improvement') as 'Recommended' | 'For Improvement',
+        attendanceScore,
+        performanceScore,
+        attitudeScore,
+        communicationScore,
+        teamworkScore: punctualityScore,
+        strengths: compiledStrengths,
+        areasForImprovement: compiledImprovement,
+        recommendation: (overallPercent >= 75 ? 'Recommended' : 'For Improvement') as 'Recommended' | 'For Improvement',
         academicYear: resolvedAcademicYear,
       };
 
@@ -391,20 +430,6 @@ export function HTEEvaluations() {
     return { totalHours, present, late, totalDays: recs.length };
   };
 
-  const upd = (key: string, val: number | string) => setForm((p) => ({ ...p, [key]: val }));
-
-  const overallScore = Math.round(
-    [
-      form.attendanceScore,
-      form.performanceScore,
-      form.attitudeScore,
-      form.punctualityScore,
-      form.communicationScore,
-    ].reduce((a, b) => a + b, 0) / 5
-  );
-  const grade = getGrade(overallScore);
-  const gradeConfig = GRADE_CONFIG[grade];
-
   const courses = useMemo(() => {
     const set = new Set(activeTrainees.map((e) => e.course).filter(Boolean));
     return Array.from(set);
@@ -426,361 +451,31 @@ export function HTEEvaluations() {
   // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === 'form' && selectedEmp) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto pb-12 font-sans">
-        {/* Navigation & Action Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 no-print">
-          <button
-            onClick={() => setViewMode('list')}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-700 hover:text-slate-900 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all"
-          >
-            <X size={16} />
-            Cancel & Return
-          </button>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => {
-                const ev = evaluations.find((e) => e.employeeId === selectedEmp.id);
-                const csvData = [
-                  ['Trainee Name', 'Employee ID', 'Establishment', 'Supervisor', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
-                  [
-                    selectedEmp.name,
-                    selectedEmp.employeeId,
-                    companyName,
-                    supervisorName,
-                    `${overallScore}%`,
-                    grade,
-                    new Date().toISOString(),
-                    'final',
-                  ],
-                ];
-                const csvContent = csvData.map((e) => e.join(',')).join('\n');
-                const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `HTE_Evaluation_${selectedEmp.name.replace(/\s+/g, '_')}.csv`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-                toast.success('CSV exported successfully!');
-              }}
-              className="px-3.5 py-2 bg-emerald-600 text-white rounded-2xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <Download size={15} />
-              Export CSV
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
-              title="Print Evaluation Sheet"
-            >
-              <Printer size={15} />
-              Print Form
-            </button>
-            <button
-              onClick={() => handleSave('draft')}
-              className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-2xl text-xs font-bold hover:bg-slate-50 transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <Save size={15} />
-              Save Draft
-            </button>
-            <button
-              onClick={() => handleSave('final')}
-              className="px-5 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/30"
-            >
-              <Check size={16} />
-              Finalize & Sync Evaluation
-            </button>
-          </div>
-        </div>
-
-        {/* Official Printable Evaluation Sheet */}
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-          {/* Institutional Header */}
-          <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
-            <div className="flex flex-col items-center justify-center gap-2">
-              <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
-                <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
-              </div>
-              <div>
-                <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
-                  Carlos Hilado Memorial State University
-                </h1>
-                <p className="text-xs text-slate-300 font-medium tracking-wider uppercase">
-                  Office of On-the-Job Training & Student Internship Program
-                </p>
-                <div className="mt-2 inline-block px-4 py-1 bg-blue-600/40 border border-blue-400/30 rounded-full text-xs font-bold tracking-widest text-sky-200 uppercase">
-                  Host Training Establishment (HTE) Performance Evaluation
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6 sm:p-8 space-y-6">
-            {/* Student & Host Establishment Particulars */}
-            <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <GraduationCap className="w-4 h-4 text-blue-600" />
-                  <span>Trainee & Establishment Particulars</span>
-                </span>
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                  AY {selectedEmp.academicYear || settings?.activeAcademicYear || '2026-2027'}
-                </span>
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-xs">
-                <div>
-                  <span className="text-slate-400 font-semibold block">Student Trainee Name:</span>
-                  <span className="font-extrabold text-slate-900 text-sm">{selectedEmp.name}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Student ID / Employee ID:</span>
-                  <span className="font-mono font-bold text-slate-800">{selectedEmp.employeeId || selectedEmp.id.slice(0, 8)}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
-                  <span className="font-bold text-slate-800">{selectedEmp.requiredHours || 486} Hours</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">School & Program:</span>
-                  <span className="font-semibold text-slate-700">{selectedEmp.schoolName || 'Carlos Hilado Memorial State University'} ({selectedEmp.course || 'OJT Trainee'})</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Campus & Department:</span>
-                  <span className="font-medium text-slate-700">{selectedEmp.campus || 'Main Campus'} • {selectedEmp.department || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">CHMSU OJT Instructor / Coordinator:</span>
-                  <span className="font-bold text-blue-900">{instructorName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Host Establishment (HTE):</span>
-                  <span className="font-extrabold text-blue-900">{companyName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Immediate HTE Supervisor / Evaluator:</span>
-                  <span className="font-bold text-slate-800">{supervisorName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-semibold block">Evaluation Date:</span>
-                  <span className="font-medium text-slate-700">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Rating Scale Legend */}
-            <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 space-y-2">
-              <p className="font-bold uppercase tracking-wider text-[11px] text-blue-800">Standard Grading Rubric:</p>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] text-center font-medium">
-                <span className="bg-emerald-100 text-emerald-800 p-1.5 rounded-xl font-bold">90-100%: Excellent</span>
-                <span className="bg-blue-100 text-blue-800 p-1.5 rounded-xl font-bold">80-89%: Very Good</span>
-                <span className="bg-sky-100 text-sky-800 p-1.5 rounded-xl font-bold">70-79%: Good</span>
-                <span className="bg-amber-100 text-amber-800 p-1.5 rounded-xl font-bold">60-69%: Fair</span>
-                <span className="bg-rose-100 text-rose-800 p-1.5 rounded-xl font-bold">&lt;60%: Unsatisfactory</span>
-              </div>
-            </div>
-
-            {/* Performance Criteria Rating Matrix */}
-            <div className="space-y-5">
-              <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2 flex items-center justify-between">
-                <span>Evaluation Competency Criteria</span>
-                <span className="text-xs text-slate-400 font-normal">Score Range: 0 to 100%</span>
-              </h3>
-
-              {EVALUATION_SECTIONS.map((sec) => {
-                const currentScore = form[sec.key as keyof EvaluationForm] as number;
-                return (
-                  <div key={sec.id} className="border border-slate-200 rounded-2xl p-5 space-y-3 bg-white hover:border-blue-300 transition-colors shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm">{sec.title}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">Weight Component: {sec.weight}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-400">Score:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={currentScore}
-                          onChange={(e) => upd(sec.key, Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                          className="w-18 px-2.5 py-1.5 border border-slate-300 rounded-xl text-center font-extrabold text-sm text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
-                        />
-                        <span className="font-bold text-slate-600">%</span>
-                      </div>
-                    </div>
-
-                    <div className="pl-3 border-l-2 border-blue-400 space-y-1.5 text-xs text-slate-600">
-                      {sec.subCriteria.map((sub, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 bg-blue-600 rounded-full shrink-0" />
-                          <span>{sub}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Interactive Slider */}
-                    <div className="pt-2 no-print">
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={currentScore}
-                        onChange={(e) => upd(sec.key, parseInt(e.target.value))}
-                        className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-100 rounded-lg"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Final Overall Grade Summary Card */}
-            <div className={`rounded-2xl p-6 border-2 ${gradeConfig.bg} ${gradeConfig.border} flex items-center justify-between shadow-sm`}>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Overall Weighted Evaluation Score</p>
-                <p className="text-4xl font-black text-slate-900 mt-1">{overallScore}%</p>
-                <p className="text-xs text-slate-500 mt-1">Calculated across all evaluated competencies</p>
-              </div>
-              <div className="text-right">
-                <div className="inline-block p-2.5 rounded-full bg-white shadow-sm mb-1">
-                  <Award size={28} className={gradeConfig.color} />
-                </div>
-                <p className={`text-lg font-black ${gradeConfig.color}`}>{grade}</p>
-                <p className="text-xs font-bold text-slate-600">{gradeConfig.label}</p>
-              </div>
-            </div>
-
-            {/* Written Assessment & Remarks */}
-            <div className="space-y-4 pt-2">
-              <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2">
-                Qualitative Assessment & Recommendations
-              </h3>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  1. Major Strengths & Notable Achievements *
-                </label>
-                <textarea
-                  value={form.strengths}
-                  onChange={(e) => upd('strengths', e.target.value)}
-                  rows={3}
-                  className="w-full p-3 border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
-                  placeholder="Describe specific strengths, work accomplishments, technical skills, and commendable behavior demonstrated by the intern..."
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  2. Key Areas for Growth & Professional Improvement *
-                </label>
-                <textarea
-                  value={form.areasForImprovement}
-                  onChange={(e) => upd('areasForImprovement', e.target.value)}
-                  rows={3}
-                  className="w-full p-3 border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
-                  placeholder="Identify skills, competencies, or professional habits the student intern should continue developing..."
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  3. Official Recommendation & Employment Readiness *
-                </label>
-                <textarea
-                  value={form.recommendations}
-                  onChange={(e) => upd('recommendations', e.target.value)}
-                  rows={2}
-                  className="w-full p-3 border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
-                  placeholder="Provide overall endorsement and evaluation remarks regarding the student's industry readiness..."
-                />
-              </div>
-            </div>
-
-            {/* Official Signatures Certification Box */}
-            <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
-                Official Certification, Conforme & Endorsement
-              </h4>
-              <p className="text-xs text-slate-500 italic leading-relaxed">
-                I hereby certify that the performance ratings, competency evaluations, and qualitative recommendations recorded above represent a true, objective,
-                and comprehensive evaluation of the student intern's on-the-job training performance.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 text-center text-xs">
-                {/* 1. Student Intern / Trainee */}
-                <div className="flex flex-col justify-end">
-                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900 uppercase tracking-wider">
-                    {selectedEmp.name}
-                  </div>
-                  <div className="font-semibold text-slate-700 mt-1">Student Intern / Trainee</div>
-                  <div className="text-slate-500 text-[10px]">Conforme / Signature over Printed Name</div>
-                  <div className="text-slate-400 text-[10px]">ID: {selectedEmp.employeeId || selectedEmp.id.slice(0, 8)}</div>
-                </div>
-
-                {/* 2. Immediate HTE Supervisor */}
-                <div className="flex flex-col justify-end">
-                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900 uppercase tracking-wider">
-                    {supervisorName}
-                  </div>
-                  <div className="font-semibold text-slate-700 mt-1">HTE Immediate Supervisor / Evaluator</div>
-                  <div className="text-slate-500 text-[10px]">Signature over Printed Name</div>
-                  <div className="text-slate-400 text-[10px]">{companyName}</div>
-                </div>
-
-                {/* 3. CHMSU OJT Instructor / Coordinator */}
-                <div className="flex flex-col justify-end">
-                  <div className="border-b border-slate-400 pb-1 font-bold text-slate-900 uppercase tracking-wider">
-                    {instructorName}
-                  </div>
-                  <div className="font-semibold text-slate-700 mt-1">CHMSU OJT Instructor / Coordinator</div>
-                  <div className="text-slate-500 text-[10px]">Noted & Endorsed by</div>
-                  <div className="text-slate-400 text-[10px]">Office of Student Internship Program</div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 text-[11px] text-slate-500">
-                <span>Evaluation Date: <strong className="text-slate-800">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
-                <span className="text-emerald-700 font-bold flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                  Official Digital Document Verification
-                </span>
-              </div>
-            </div>
-
-            {/* Bottom Save Action */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 no-print">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-2xl transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <Printer size={15} />
-                <span>Print Form</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSave('submitted_to_instructor')}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5"
-              >
-                <Check size={16} />
-                <span>Submit &amp; Pass to Instructor</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CHMSUEvaluationSheet
+        trainee={selectedEmp}
+        companyName={companyName}
+        supervisorName={supervisorName}
+        instructorName={instructorName}
+        evaluationDate={editEvalId ? evaluations.find((e) => e.id === editEvalId)?.evaluatedAt : undefined}
+        ratings={ratings}
+        ratingComments={ratingComments}
+        commentsSuggestions={commentsSuggestions}
+        overallRating={overallRating}
+        grade={grade}
+        questionnaire={questionnaire}
+        isReadOnly={false}
+        status={formStatus}
+        role="hte"
+        onRatingChange={(id, score) => setRatings((prev) => ({ ...prev, [id]: score }))}
+        onRatingCommentChange={(catId, comment) =>
+          setRatingComments((prev) => ({ ...prev, [catId]: comment }))
+        }
+        onCommentsSuggestionsChange={setCommentsSuggestions}
+        onQuestionnaireChange={setQuestionnaire}
+        onSaveDraft={() => handleSave('draft')}
+        onSubmitFinal={() => handleSave('submitted_to_instructor')}
+        onClose={() => setViewMode('list')}
+      />
     );
   }
 
@@ -789,32 +484,28 @@ export function HTEEvaluations() {
   // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === 'view' && selectedEmp) {
     const existing = evaluations.find((e) => e.employeeId === selectedEmp.id);
-    const evScore = existing?.overallScore || 85;
-    const evGrade = existing?.grade || getGrade(evScore);
-    const evGradeConfig = GRADE_CONFIG[evGrade];
+    const viewRatings = existing?.ratings || ratings;
+    const viewComments = existing?.ratingComments || ratingComments;
+    const viewSuggestions = existing?.commentsSuggestions || existing?.recommendations || commentsSuggestions;
+    const viewOverall =
+      existing?.overallRating || (existing?.overallScore ? existing.overallScore / 20 : overallRating);
+    const viewGrade = existing?.grade || grade;
+    const viewQuestionnaire = existing?.questionnaire || questionnaire;
 
     return (
-      <div className="space-y-6 max-w-4xl mx-auto pb-12 font-sans">
-        <div className="flex items-center justify-between no-print">
+      <div className="space-y-4 font-sans">
+        <div className="flex items-center justify-between no-print max-w-5xl mx-auto">
           <button
             onClick={() => setViewMode('list')}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-700 hover:text-slate-900 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-700 hover:text-slate-900 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all cursor-pointer"
           >
             <X size={16} />
             Back to Trainees List
           </button>
           <div className="flex gap-2">
             <button
-              type="button"
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-slate-900 text-white rounded-2xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <Printer size={15} />
-              <span>Print Form</span>
-            </button>
-            <button
               onClick={() => openNewEval(selectedEmp)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/20"
+              className="px-4 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
             >
               <Edit2 size={15} />
               Edit Evaluation
@@ -822,69 +513,23 @@ export function HTEEvaluations() {
           </div>
         </div>
 
-        {/* Official Printable Sheet */}
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
-            <div className="flex flex-col items-center justify-center gap-2">
-              <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
-                <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
-              </div>
-              <h1 className="font-serif text-lg font-bold tracking-wide uppercase text-slate-100">
-                Carlos Hilado Memorial State University
-              </h1>
-              <p className="text-xs text-slate-300 uppercase">
-                Official Trainee Performance Evaluation Form
-              </p>
-            </div>
-          </div>
-
-          <div className="p-6 sm:p-8 space-y-6">
-            <div className="grid grid-cols-2 gap-4 text-xs border border-slate-200 rounded-2xl p-5 bg-slate-50/50">
-              <div>
-                <span className="text-slate-400 font-semibold block">Student Intern:</span>
-                <span className="font-extrabold text-slate-900 text-sm">{selectedEmp.name}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block">Student ID:</span>
-                <span className="font-mono font-bold text-slate-800">{selectedEmp.employeeId}</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block">School & Program:</span>
-                <span className="font-medium text-slate-700">{selectedEmp.schoolName} ({selectedEmp.course})</span>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold block">Host Establishment:</span>
-                <span className="font-bold text-blue-900">{companyName}</span>
-              </div>
-            </div>
-
-            <div className={`rounded-2xl p-6 border-2 ${evGradeConfig.bg} ${evGradeConfig.border} flex items-center justify-between`}>
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Official Evaluation Score</span>
-                <p className="text-4xl font-black text-slate-900 mt-1">{evScore}%</p>
-              </div>
-              <div className="text-right">
-                <p className={`text-xl font-black ${evGradeConfig.color}`}>{evGrade}</p>
-                <p className="text-xs font-semibold text-slate-600">{evGradeConfig.label}</p>
-              </div>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <span className="font-bold text-slate-800 block mb-1">Key Strengths & Achievements:</span>
-                <p className="text-slate-600 leading-relaxed">{existing?.strengths || 'Exemplary work performance.'}</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <span className="font-bold text-slate-800 block mb-1">Areas for Improvement:</span>
-                <p className="text-slate-600 leading-relaxed">{existing?.areasForImprovement || 'Continuous learning and growth.'}</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <span className="font-bold text-slate-800 block mb-1">Recommendation Remarks:</span>
-                <p className="text-slate-600 leading-relaxed">{existing?.recommendations || 'Recommended for completion of OJT.'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CHMSUEvaluationSheet
+          trainee={selectedEmp}
+          companyName={companyName}
+          supervisorName={existing?.evaluatorName || supervisorName}
+          instructorName={instructorName}
+          evaluationDate={existing?.evaluatedAt}
+          ratings={viewRatings}
+          ratingComments={viewComments}
+          commentsSuggestions={viewSuggestions}
+          overallRating={viewOverall}
+          grade={viewGrade}
+          questionnaire={viewQuestionnaire}
+          isReadOnly={true}
+          status={existing?.status || 'draft'}
+          role="hte"
+          onClose={() => setViewMode('list')}
+        />
       </div>
     );
   }

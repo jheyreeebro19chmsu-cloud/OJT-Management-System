@@ -502,6 +502,29 @@ export function AdminEmployees() {
                           <p className="text-xs text-gray-500 mt-0.5">
                             {emp.department} • {isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || emp.position)}
                           </p>
+                          {(() => {
+                            const hasCustomGeo = Boolean(
+                              emp.registrationLocation?.lat ||
+                              (emp as any)?.registration_lat ||
+                              geofenceZones.some((z) => z.id === `station-${emp.id}` || z.id === `personal-${emp.id}` || (z.name && emp.name && z.name.toLowerCase().includes(emp.name.toLowerCase())))
+                            );
+                            const matchedZone = geofenceZones.find((z) => z.id === `station-${emp.id}` || z.id === `personal-${emp.id}` || (z.name && emp.name && z.name.toLowerCase().includes(emp.name.toLowerCase())));
+                            const zoneRadius = Number(emp.registrationLocation?.radius || emp.registrationRadius || matchedZone?.radius || 50);
+
+                            return (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {hasCustomGeo ? (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                                    <MapPin size={10} /> Geofenced ({zoneRadius}m)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                                    <MapPin size={10} /> Campus Geofence (50m)
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           {isPendingGroup ? (
@@ -1298,7 +1321,7 @@ export function AdminEmployees() {
                               {selectedEmp.registrationLocation ? (
                                 <div className="flex items-center justify-between gap-2 mt-1">
                                   <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
-                                    📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±100m)
+                                    📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±{selectedEmp.registrationLocation.radius || selectedEmp.registrationRadius || 50}m)
                                   </p>
                                   <a
                                     href={`https://www.google.com/maps?q=${selectedEmp.registrationLocation.lat},${selectedEmp.registrationLocation.lng}`}
@@ -1311,7 +1334,7 @@ export function AdminEmployees() {
                                 </div>
                               ) : (
                                 <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
-                                  📍 Campus Geofence Boundary: Institutional Campus Zone (100m)
+                                  📍 Campus Geofence Boundary: Institutional Campus Zone (50m)
                                 </p>
                               )}
                             </div>

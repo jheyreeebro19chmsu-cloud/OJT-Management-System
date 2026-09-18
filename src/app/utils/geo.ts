@@ -1,4 +1,4 @@
-export const GEOFENCE_RADIUS_METERS = 100;
+export const GEOFENCE_RADIUS_METERS = 50;
 
 export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000; // Earth's radius in meters
@@ -20,8 +20,8 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // Allow a realistic GPS sensor variance (clamped to max 25m) to prevent false-rejections while maintaining high boundary precision
-  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 25) : 15;
+  // Allow a realistic GPS sensor variance (clamped to max 15m) to prevent false-rejections while maintaining high boundary precision
+  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 15) : 10;
   const maxAllowedDistance = radiusMeters + accuracyAllowance;
   return distance <= maxAllowedDistance;
 }

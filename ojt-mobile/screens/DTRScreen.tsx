@@ -91,8 +91,20 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       }
     });
 
+    // Real-time Supabase sync for geofence adjustments by instructor
+    const channel = supabase
+      .channel(`dtr-geofence-live-${profile?.id || 'trainee'}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'geofence_zones' }, () => {
+        checkGeofence();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+        checkGeofence();
+      })
+      .subscribe();
+
     return () => {
       if (sub) sub.remove();
+      supabase.removeChannel(channel);
     };
   }, [profile]);
 
@@ -130,12 +142,34 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       }
     }
 
+    let dynamicRadius = 50; // default 50 meters small perimeter
+    try {
+      const zones = await mobileDb.getGeofenceZones();
+      const empId = profile?.id || profile?.employeeId || '';
+      const matchedZone = zones.find(
+        (z) =>
+          z.id === `personal-${empId}` ||
+          z.id === `station-${empId}` ||
+          (profile?.name && z.name && z.name.toLowerCase().includes(profile.name.toLowerCase())) ||
+          (profile?.companyName && z.name && z.name.toLowerCase().includes(profile.companyName.toLowerCase()))
+      );
+      if (matchedZone?.radius) {
+        dynamicRadius = Number(matchedZone.radius);
+      }
+    } catch (zErr) {
+      console.debug('Geofence zone fetch notice:', zErr);
+    }
+
+    if (regLoc?.radius) {
+      dynamicRadius = Number(regLoc.radius);
+    }
+
     if (regLoc?.lat && regLoc?.lng) {
-      // Strictly rely on where account was registered
+      // Strictly rely on where account was registered with instructor-configured radius
       targetCoords.push({
         lat: Number(regLoc.lat),
         lng: Number(regLoc.lng),
-        radius: 300,
+        radius: dynamicRadius,
       });
     } else {
       // 2. Geofence zones from Supabase fallback only if no registered account location
@@ -144,14 +178,18 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
         const empId = profile?.id || profile?.employeeId || '';
         zones.forEach((z) => {
           if (z.lat && z.lng) {
-            const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}` || z.id === `station-${empId}`;
+            const isPersonal =
+              z.id === `personal-${empId}` ||
+              z.id === `geo-trainee-${empId}` ||
+              z.id === `station-${empId}` ||
+              (profile?.name && z.name && z.name.toLowerCase().includes(profile.name.toLowerCase()));
             const isCompany =
               profile?.companyName && z.name && z.name.toLowerCase().includes(profile.companyName.toLowerCase());
             if (isPersonal || isCompany) {
               targetCoords.push({
                 lat: z.lat,
                 lng: z.lng,
-                radius: z.radius || 300,
+                radius: z.radius || 50,
               });
             }
           }

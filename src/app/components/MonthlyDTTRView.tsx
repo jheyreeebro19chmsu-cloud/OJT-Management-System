@@ -71,6 +71,22 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     );
   }, [employees, selectedEmployeeId, traineeList]);
 
+  const instructorName = useMemo(() => {
+    if (selectedEmployee?.instructorId) {
+      const linked = employees.find(
+        (e) => e.id === selectedEmployee.instructorId || e.employeeId === selectedEmployee.instructorId
+      );
+      if (linked?.name) return linked.name;
+    }
+    const anyInst = employees.find(
+      (e) =>
+        e.position === 'OJT Instructor' ||
+        (e.position && e.position.toLowerCase().includes('instructor'))
+    );
+    if (anyInst?.name) return anyInst.name;
+    return 'CHMSU OJT Coordinator';
+  }, [selectedEmployee, employees]);
+
   // Number of days in selected month/year
   const daysInMonth = useMemo(() => {
     return new Date(selectedYear, selectedMonth, 0).getDate();
@@ -408,10 +424,11 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Print Complete Official DTTR Document"
             >
               <Printer size={14} />
-              <span>Print DTTR</span>
+              <span>Print Official DTTR (Full Doc)</span>
             </button>
           </div>
         </div>
@@ -503,75 +520,87 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       {/* =========================================================
           OFFICIAL PRINTABLE / VIEWABLE DTTR DOCUMENT (EXACT CHMSU FORMAT)
           ========================================================= */}
-      <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-300 shadow-md print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none">
-        
+      <div
+        id="dttr-printable-document"
+        className="dttr-sheet bg-white p-6 sm:p-10 rounded-3xl border border-slate-300 shadow-md print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none"
+      >
         {/* CHMSU Official Institutional Header */}
-        <div className="text-center relative pb-3 mb-4 border-b-2 border-slate-900">
-          <div className="flex items-center justify-center gap-4 mb-1">
-            <img
-              src="/chmsu-logo.png"
-              alt="CHMSU Logo"
-              className="w-16 h-16 object-contain"
-              onError={(e) => {
-                // Fallback to SVG or hide
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-slate-600 font-semibold">
+        <div className="text-center relative pb-3 mb-3 border-b-2 border-slate-900">
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <div className="w-16 h-16 shrink-0 flex items-center justify-center">
+              <img
+                src="/chmsu-logo.png"
+                alt="CHMSU Logo"
+                className="w-14 h-14 object-contain drop-shadow-xs"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            </div>
+            <div className="flex-1 px-1 text-center">
+              <p className="text-[9px] uppercase tracking-widest text-slate-600 font-bold">
                 Republic of the Philippines
               </p>
-              <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight">
+              <h1 className="text-base sm:text-lg font-black text-emerald-950 tracking-tight leading-tight uppercase font-serif">
                 CARLOS HILADO MEMORIAL STATE UNIVERSITY
               </h1>
-              <p className="text-[10px] text-emerald-800 font-medium italic">
+              <p className="text-[9.5px] text-slate-600 font-medium">
+                Alijis Campus • Binalbagan Campus • Fortune Towne Campus • Talisay (Main) Campus
+              </p>
+              <p className="text-[9px] text-emerald-800 font-semibold italic">
                 A leading GREEN institution of higher learning in the global community by 2030
               </p>
-              <p className="text-[9px] text-slate-500">
-                (Good governance, Research-oriented, Environmentalism, Education for Sustainable Development, and Nation-building)
+              <p className="text-[8.5px] text-slate-500">
+                (Good governance, Research-oriented, Extension-driven, Education for Sustainable Development, and Nation-building)
               </p>
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 mt-1">
+                College of Computer Studies
+              </h2>
+              <h3 className="text-sm sm:text-base font-black text-slate-950 tracking-wide uppercase mt-0.5">
+                DAILY TIME &amp; TASKS RECORD (DTTR)
+              </h3>
+            </div>
+            <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-right text-[8px] text-slate-500 font-mono leading-tight">
+              <span className="font-bold text-slate-700">CHMSU-CCS</span>
+              <span>DTTR-FM-01</span>
+              <span>Rev: 01</span>
+              <span>AY 2026-2027</span>
             </div>
           </div>
-          <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-800 mt-2">
-            College of Computer Studies
-          </h2>
-          <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-wide uppercase mt-1">
-            DAILY TIME &amp; TASKS RECORD (DTTR)
-          </h3>
         </div>
 
         {/* Trainee & Agency Details Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium text-slate-800 mb-4">
-          <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-medium text-slate-800 mb-3 print:mb-2">
+          <div className="space-y-1.5">
             <div className="flex items-baseline">
-              <span className="font-bold text-[11px] text-slate-900 whitespace-nowrap mr-2">NAME:</span>
-              <span className="flex-1 font-bold text-sm text-slate-900 uppercase border-b border-slate-800 px-2 pb-0.5">
+              <span className="font-bold text-[11px] text-slate-900 whitespace-nowrap mr-2">NAME OF TRAINEE:</span>
+              <span className="flex-1 font-black text-sm text-slate-950 uppercase border-b border-slate-800 px-1 pb-0.5 tracking-wide">
                 {selectedEmployee?.name || '__________________________'}
               </span>
             </div>
             <div className="flex items-baseline">
               <span className="font-bold text-[10px] text-slate-700 whitespace-nowrap mr-2">
-                INDUSTRY / AGENCY NAME / DEPARTMENT:
+                HOST TRAINING ESTABLISHMENT (HTE) / AGENCY:
               </span>
-              <span className="flex-1 font-semibold text-xs text-slate-900 border-b border-slate-800 px-2 pb-0.5 truncate">
+              <span className="flex-1 font-semibold text-xs text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
                 {companyName}
               </span>
             </div>
           </div>
 
-          <div className="space-y-2 md:pl-6">
+          <div className="space-y-1.5 md:pl-4">
             <div className="flex items-baseline">
-              <span className="font-bold text-[11px] text-slate-900 whitespace-nowrap mr-2">MONTH:</span>
-              <span className="flex-1 font-bold text-sm text-slate-900 border-b border-slate-800 px-2 pb-0.5">
+              <span className="font-bold text-[11px] text-slate-900 whitespace-nowrap mr-2">MONTH &amp; YEAR:</span>
+              <span className="flex-1 font-bold text-sm text-slate-900 border-b border-slate-800 px-1 pb-0.5">
                 {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
               </span>
             </div>
             <div className="flex items-baseline">
               <span className="font-bold text-[10px] text-slate-700 whitespace-nowrap mr-2">
-                COURSE &amp; CAMPUS:
+                COURSE, YEAR &amp; SECTION:
               </span>
-              <span className="flex-1 text-xs text-slate-900 border-b border-slate-800 px-2 pb-0.5 truncate">
-                {selectedEmployee?.course || 'BS Information Systems'} - {selectedEmployee?.campus || 'Alijis Campus'}
+              <span className="flex-1 text-xs text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
+                {selectedEmployee?.course || 'BS Information Systems'} • {selectedEmployee?.campus || 'Alijis Campus'}
               </span>
             </div>
           </div>
@@ -635,43 +664,43 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 return (
                   <tr
                     key={r.day}
-                    className={`border-b border-slate-400 text-center ${
+                    className={`border-b border-slate-400 text-center print:py-0 print:border-slate-800 ${
                       !hasData ? 'text-slate-400 bg-white' : isEven ? 'bg-slate-50/60' : 'bg-white'
                     }`}
-                    style={{ height: '24px' }}
+                    style={{ minHeight: '20px' }}
                   >
                     {/* DAY */}
-                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] py-0.5">
+                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] print:text-[9px] py-0.5">
                       {r.day}
                     </td>
 
                     {/* AM ARRIVAL */}
-                    <td className="border-r border-slate-300 text-[10px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-300 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
                       {r.amArrival || ''}
                     </td>
 
                     {/* AM DEPARTURE */}
-                    <td className="border-r border-slate-900 text-[10px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-900 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
                       {r.amDeparture || ''}
                     </td>
 
                     {/* PM ARRIVAL */}
-                    <td className="border-r border-slate-300 text-[10px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-300 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
                       {r.pmArrival || ''}
                     </td>
 
                     {/* PM DEPARTURE */}
-                    <td className="border-r border-slate-900 text-[10px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-900 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
                       {r.pmDeparture || ''}
                     </td>
 
                     {/* NO. OF HOURS (Automatic) */}
-                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] px-1 py-0.5 bg-slate-50/30">
+                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] print:text-[9px] px-1 py-0.5 bg-slate-50/30">
                       {r.hours > 0 ? r.hours : ''}
                     </td>
 
                     {/* TASKS / ASSIGNMENTS PERFORMED */}
-                    <td className="text-left px-2.5 py-0.5 text-[11px] text-slate-800 leading-tight truncate max-w-[320px] sm:max-w-none">
+                    <td className="text-left px-2 py-0.5 text-[11px] print:text-[9px] text-slate-800 leading-tight truncate max-w-[320px] sm:max-w-none print:max-w-none print:overflow-visible print:whitespace-normal">
                       {r.tasks || ''}
                     </td>
                   </tr>
@@ -697,62 +726,77 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         </div>
 
         {/* Certification Statement */}
-        <div className="mt-4 text-[10px] sm:text-[11px] text-slate-800 text-justify leading-relaxed italic border-t border-slate-300 pt-3">
+        <div className="mt-3 text-[10px] sm:text-[11px] text-slate-800 text-justify leading-relaxed italic border-t border-slate-400 pt-2.5">
           I hereby certify on my honor that the above is a true and correct report of hours and assignments/tasks
           performed, a record of which was made daily at the time of arrival and departure from the office.
         </div>
 
-        {/* Signatures Section */}
-        <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-8 text-center text-xs">
-          {/* Student Signature */}
+        {/* Official 3-Party Signatures Section */}
+        <div className="mt-6 pt-3 border-t border-slate-300 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs dttr-break-avoid">
+          {/* 1. Student Trainee Signature */}
           <div className="flex flex-col items-center">
-            <div className="w-64 border-b-2 border-slate-900 pb-1 mb-1">
-              <span className="font-bold text-sm uppercase text-slate-900">
+            <div className="w-full max-w-[200px] border-b-2 border-slate-900 pb-1 mb-1 min-h-[22px] flex items-end justify-center">
+              <span className="font-bold text-xs sm:text-sm uppercase text-slate-900 truncate block">
                 {selectedEmployee?.name}
               </span>
             </div>
-            <p className="font-bold text-[11px] uppercase tracking-wider text-slate-800">
-              Student's Signature
+            <p className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">
+              OJT Trainee Signature
             </p>
             <p className="text-[10px] text-slate-500">
-              Trainee / Intern ID: {selectedEmployee?.employeeId || 'OJT-STUDENT'}
+              Student ID: {selectedEmployee?.employeeId || 'OJT-STUDENT'}
             </p>
           </div>
 
-          {/* HTE Supervisor Signature & Endorsement */}
+          {/* 2. HTE Supervisor Signature & Endorsement */}
           <div className="flex flex-col items-center">
-            <div className="w-72 border-b-2 border-slate-900 pb-1 mb-1 relative">
+            <div className="w-full max-w-[220px] border-b-2 border-slate-900 pb-1 mb-1 relative min-h-[22px] flex items-end justify-center">
               {isSignedByHte ? (
                 <div className="space-y-0.5">
-                  <span className="font-black text-sm uppercase text-slate-900">
+                  <span className="font-black text-xs sm:text-sm uppercase text-slate-900 truncate block">
                     {savedDttr?.hteSupervisorName || defaultSupervisorName}
                   </span>
-                  <div className="text-[9px] font-bold text-emerald-700 uppercase flex items-center justify-center gap-1">
+                  <div className="text-[8px] font-bold text-emerald-700 uppercase flex items-center justify-center gap-1 print:text-black">
                     <CheckCircle2 size={10} /> Verified &amp; Signed {savedDttr?.hteSignedAt ? new Date(savedDttr.hteSignedAt).toLocaleDateString() : ''}
                   </div>
                 </div>
               ) : (
-                <div className="h-6 flex items-center justify-center text-slate-400 italic text-[11px]">
-                  Pending Supervisor Signature
-                </div>
+                <span className="font-bold text-xs uppercase text-slate-900 truncate block">
+                  {savedDttr?.hteSupervisorName || defaultSupervisorName || 'HTE Supervisor'}
+                </span>
               )}
             </div>
-            <p className="font-bold text-[11px] uppercase tracking-wider text-slate-800">
-              HTE Supervisor Printed Name &amp; Signature
+            <p className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">
+              Immediate HTE Supervisor
+            </p>
+            <p className="text-[10px] text-slate-500 truncate max-w-[220px]">
+              {savedDttr?.hteSupervisorTitle || supervisorFromHost?.position || 'Supervisor'} • {companyName}
+            </p>
+          </div>
+
+          {/* 3. CHMSU OJT Coordinator / Instructor */}
+          <div className="flex flex-col items-center">
+            <div className="w-full max-w-[220px] border-b-2 border-slate-900 pb-1 mb-1 min-h-[22px] flex items-end justify-center">
+              <span className="font-black text-xs sm:text-sm uppercase text-slate-900 truncate block">
+                {instructorName}
+              </span>
+            </div>
+            <p className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">
+              CHMSU OJT Coordinator
             </p>
             <p className="text-[10px] text-slate-500">
-              {savedDttr?.hteSupervisorTitle || supervisorFromHost?.position || 'Host Training Supervisor'} • {companyName}
+              College of Computer Studies
             </p>
           </div>
         </div>
 
         {/* Institutional Footer */}
-        <div className="mt-8 pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-[9px] text-slate-500">
-          <span>college.computerstudies@chmsc.edu.ph</span>
-          <span className="font-bold tracking-widest text-emerald-800 uppercase">
-            GREEN CHMSU • OJT MANAGEMENT SYSTEM
+        <div className="mt-6 pt-2 border-t-2 border-emerald-800/60 flex flex-col sm:flex-row items-center justify-between text-[9px] text-slate-600 font-medium">
+          <span>college.computerstudies@chmsu.edu.ph • (034) 434 8148 • chmsu.edu.ph</span>
+          <span className="font-black tracking-widest text-emerald-900 uppercase">
+            GREEN CHMSU EXCELSIOR!
           </span>
-          <span>CHMSU-CCS-DTTR-V1</span>
+          <span>Doc Code: CHMSU-CCS-DTTR-FM-01</span>
         </div>
       </div>
 

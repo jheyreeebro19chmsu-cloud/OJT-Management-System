@@ -292,6 +292,15 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if ('registrationAddress' in updates) {
     supabaseUpdates.registration_address = updates.registrationAddress ?? null;
   }
+  const regRadius = updates.registrationLocation?.radius ?? updates.registrationRadius;
+  if ('registrationLocation' in updates || updates.registrationRadius !== undefined) {
+    supabaseUpdates.registration_location = {
+      ...(typeof updates.registrationLocation === 'object' ? updates.registrationLocation : {}),
+      lat: updates.registrationLocation?.lat ?? null,
+      lng: updates.registrationLocation?.lng ?? null,
+      radius: regRadius ? Number(regRadius) : 50,
+    };
+  }
   if (
     updates.contactPhone !== undefined ||
     updates.phone !== undefined ||
@@ -618,7 +627,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     address: zone.address || '',
     lat: Number(zone.lat),
     lng: Number(zone.lng),
-    radius: Number(zone.radius) || 100,
+    radius: Number(zone.radius) || 50,
     active: zone.active !== false,
   };
 
@@ -652,11 +661,6 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
 export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZone>): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  if (!isValidUUID(id)) {
-    console.debug('Skipping database update for non-UUID zone ID:', id);
-    return true;
-  }
-
   const supabaseUpdates: any = {};
   if (updates.name !== undefined) supabaseUpdates.name = updates.name;
   if (updates.address !== undefined) supabaseUpdates.address = updates.address;
@@ -665,11 +669,35 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
 
-  const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
+  if (isValidUUID(id)) {
+    const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
+    if (error) {
+      console.error('Error updating geofence zone in Supabase:', error);
+      throw new Error(error.message || 'Failed to update geofence zone');
+    }
+    return true;
+  }
 
-  if (error) {
-    console.error('Error updating geofence zone in Supabase:', error);
-    throw new Error(error.message || 'Failed to update geofence zone');
+  // Non-UUID ID (e.g. station-xxx or personal-xxx): attempt matching existing zone by name
+  if (updates.name) {
+    const { data: matched } = await supabase.from('geofence_zones').select('id').eq('name', updates.name).limit(1);
+    if (matched && matched.length > 0 && isValidUUID(matched[0].id)) {
+      const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matched[0].id);
+      if (!error) return true;
+    }
+  }
+
+  // If not yet present in geofence_zones table, create record
+  if (updates.name && updates.lat && updates.lng) {
+    await createGeofenceZone({
+      name: updates.name,
+      address: updates.address || '',
+      lat: Number(updates.lat),
+      lng: Number(updates.lng),
+      radius: Number(updates.radius) || 50,
+      active: updates.active !== false,
+      academicYear: updates.academicYear,
+    });
   }
 
   return true;
@@ -804,6 +832,44 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
 
 // ─── Evaluations ─────────────────────────────────────────────────────────────
 
+const CHMSU_EVAL_META_TAG = '<!--CHMSU_EVAL_META-->';
+
+function packEvaluationMeta(recommendations?: string, extra?: any): string {
+  const cleanRec = (recommendations || '').split(CHMSU_EVAL_META_TAG)[0].trim();
+  if (!extra || Object.keys(extra).length === 0) return cleanRec;
+  return `${cleanRec}\n\n${CHMSU_EVAL_META_TAG}\n${JSON.stringify(extra)}`;
+}
+
+function unpackEvaluationMeta(rawRecommendations?: string): {
+  recommendations: string;
+  ratings?: Record<string, number>;
+  ratingComments?: Record<string, string>;
+  commentsSuggestions?: string;
+  overallRating?: number;
+  questionnaire?: any;
+} {
+  if (!rawRecommendations) {
+    return { recommendations: '' };
+  }
+  if (!rawRecommendations.includes(CHMSU_EVAL_META_TAG)) {
+    return { recommendations: rawRecommendations };
+  }
+  const [cleanRec, jsonPart] = rawRecommendations.split(CHMSU_EVAL_META_TAG);
+  try {
+    const parsed = JSON.parse(jsonPart.trim());
+    return {
+      recommendations: cleanRec.trim(),
+      ratings: parsed.ratings,
+      ratingComments: parsed.ratingComments,
+      commentsSuggestions: parsed.commentsSuggestions,
+      overallRating: parsed.overallRating,
+      questionnaire: parsed.questionnaire,
+    };
+  } catch {
+    return { recommendations: cleanRec.trim() };
+  }
+}
+
 export async function fetchEvaluations(): Promise<Evaluation[]> {
   if (!isSupabaseConfigured()) return [];
 
@@ -814,24 +880,32 @@ export async function fetchEvaluations(): Promise<Evaluation[]> {
     return [];
   }
 
-  return (data || []).map((evaluation: any) => ({
-    id: evaluation.id,
-    employeeId: evaluation.employee_id,
-    evaluatedBy: evaluation.evaluated_by,
-    attendanceScore: evaluation.attendance_score,
-    performanceScore: evaluation.performance_score,
-    attitudeScore: evaluation.attitude_score,
-    punctualityScore: evaluation.punctuality_score,
-    communicationScore: evaluation.communication_score,
-    overallScore: evaluation.overall_score,
-    grade: evaluation.grade,
-    strengths: evaluation.strengths,
-    areasForImprovement: evaluation.areas_for_improvement,
-    recommendations: evaluation.recommendations,
-    evaluatedAt: evaluation.evaluated_at,
-    status: evaluation.status,
-    academicYear: evaluation.academic_year,
-  }));
+  return (data || []).map((evaluation: any) => {
+    const unpacked = unpackEvaluationMeta(evaluation.recommendations);
+    return {
+      id: evaluation.id,
+      employeeId: evaluation.employee_id,
+      evaluatedBy: evaluation.evaluated_by,
+      attendanceScore: evaluation.attendance_score,
+      performanceScore: evaluation.performance_score,
+      attitudeScore: evaluation.attitude_score,
+      punctualityScore: evaluation.punctuality_score,
+      communicationScore: evaluation.communication_score,
+      overallScore: evaluation.overall_score,
+      grade: evaluation.grade,
+      strengths: evaluation.strengths,
+      areasForImprovement: evaluation.areas_for_improvement,
+      recommendations: unpacked.recommendations,
+      ratings: unpacked.ratings,
+      ratingComments: unpacked.ratingComments,
+      commentsSuggestions: unpacked.commentsSuggestions,
+      overallRating: unpacked.overallRating,
+      questionnaire: unpacked.questionnaire,
+      evaluatedAt: evaluation.evaluated_at,
+      status: evaluation.status,
+      academicYear: evaluation.academic_year,
+    };
+  });
 }
 
 export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Promise<Evaluation | null> {
@@ -844,6 +918,19 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
   } else if (dbStatus !== 'final' && dbStatus !== 'draft') {
     dbStatus = 'final';
   }
+
+  const metaPayload = {
+    ratings: evaluation.ratings,
+    ratingComments: evaluation.ratingComments,
+    commentsSuggestions: evaluation.commentsSuggestions,
+    overallRating: evaluation.overallRating,
+    questionnaire: evaluation.questionnaire,
+  };
+
+  const packedRecommendations = packEvaluationMeta(
+    evaluation.recommendations || evaluation.commentsSuggestions || '',
+    metaPayload
+  );
 
   // Live schema has no academic_year column; send only live columns
   const supabaseEval: any = {
@@ -858,7 +945,7 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     grade: evaluation.grade,
     strengths: evaluation.strengths,
     areas_for_improvement: evaluation.areasForImprovement,
-    recommendations: evaluation.recommendations,
+    recommendations: packedRecommendations,
     evaluated_at: evaluation.evaluatedAt || new Date().toISOString(),
     status: dbStatus,
   };
@@ -869,6 +956,8 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     console.error('Error creating evaluation in Supabase:', error);
     throw new Error(error.message || JSON.stringify(error));
   }
+
+  const unpacked = unpackEvaluationMeta(data.recommendations);
 
   return {
     id: data.id,
@@ -883,7 +972,12 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     grade: data.grade,
     strengths: data.strengths,
     areasForImprovement: data.areas_for_improvement,
-    recommendations: data.recommendations,
+    recommendations: unpacked.recommendations,
+    ratings: evaluation.ratings || unpacked.ratings,
+    ratingComments: evaluation.ratingComments || unpacked.ratingComments,
+    commentsSuggestions: evaluation.commentsSuggestions || unpacked.commentsSuggestions,
+    overallRating: evaluation.overallRating || unpacked.overallRating,
+    questionnaire: evaluation.questionnaire || unpacked.questionnaire,
     evaluatedAt: data.evaluated_at,
     status: data.status,
     academicYear: evaluation.academicYear,
@@ -904,7 +998,28 @@ export async function updateEvaluation(id: string, updates: Partial<Evaluation>)
   if (updates.grade !== undefined) supabaseUpdates.grade = updates.grade;
   if (updates.strengths !== undefined) supabaseUpdates.strengths = updates.strengths;
   if (updates.areasForImprovement !== undefined) supabaseUpdates.areas_for_improvement = updates.areasForImprovement;
-  if (updates.recommendations !== undefined) supabaseUpdates.recommendations = updates.recommendations;
+
+  if (
+    updates.recommendations !== undefined ||
+    updates.ratings !== undefined ||
+    updates.ratingComments !== undefined ||
+    updates.commentsSuggestions !== undefined ||
+    updates.overallRating !== undefined ||
+    updates.questionnaire !== undefined
+  ) {
+    const metaPayload = {
+      ratings: updates.ratings,
+      ratingComments: updates.ratingComments,
+      commentsSuggestions: updates.commentsSuggestions,
+      overallRating: updates.overallRating,
+      questionnaire: updates.questionnaire,
+    };
+    supabaseUpdates.recommendations = packEvaluationMeta(
+      updates.recommendations ?? updates.commentsSuggestions ?? '',
+      metaPayload
+    );
+  }
+
   if (updates.status !== undefined) {
     let dbStatus = updates.status;
     if (dbStatus === 'submitted_to_instructor' || dbStatus === 'reviewed_by_instructor') {
@@ -1371,20 +1486,22 @@ export function transformSupabaseEmployee(data: any): Employee {
     active: data.active,
     academicYear: data.academic_year,
     registrationLocation: (() => {
+      const radiusVal = Number(data.registration_radius ?? regLoc?.radius ?? 50);
       if (data.registration_lat != null && data.registration_lng != null) {
-        return { lat: Number(data.registration_lat), lng: Number(data.registration_lng) };
+        return { lat: Number(data.registration_lat), lng: Number(data.registration_lng), radius: radiusVal };
       }
       if (regLoc?.lat != null && regLoc?.lng != null) {
-        return { lat: Number(regLoc.lat), lng: Number(regLoc.lng) };
+        return { lat: Number(regLoc.lat), lng: Number(regLoc.lng), radius: radiusVal };
       }
       if (data.registration_address) {
         const match = String(data.registration_address).match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
         if (match) {
-          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), radius: radiusVal };
         }
       }
       return undefined;
     })(),
+    registrationRadius: Number(data.registration_radius ?? regLoc?.radius ?? 50),
     registrationAddress: data.registration_address || regLoc?.address || undefined,
     contactPhone: data.contact_phone || data.phone || regLoc?.contactPhone || regLoc?.phone || undefined,
     phone: data.phone || data.contact_phone || regLoc?.phone || regLoc?.contactPhone || undefined,

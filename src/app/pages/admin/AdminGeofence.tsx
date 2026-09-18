@@ -314,6 +314,11 @@ export function AdminGeofence() {
           regLng = parseFloat(match[2]);
         }
       }
+      // Ensure all trainees and staff have a monitorable geofence station (defaulting to campus station coordinates)
+      if (regLat == null || regLng == null) {
+        regLat = campusInfo.lat;
+        regLng = campusInfo.lng;
+      }
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
         const normEmp = normalizeName(emp.name);
         const personKey = isTr ? `trainee-${emp.id || normEmp}` : `acc-${normEmp}`;
@@ -333,7 +338,7 @@ export function AdminGeofence() {
             address: stationAddr,
             lat: Number(regLat),
             lng: Number(regLng),
-            radius: isInst ? campusInfo.radius : 100,
+            radius: isInst ? campusInfo.radius : ((emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || GEOFENCE_RADIUS_METERS),
             active: true,
             academicYear: emp.academicYear || settings.activeAcademicYear,
           });
@@ -405,28 +410,31 @@ export function AdminGeofence() {
   const saveZoneCoordinates = (zoneId: string, updatedData: Partial<GeofenceZone>) => {
     const matchedZone = allCombinedZones.find((z) => z.id === zoneId);
     const account = getAccountForZone(matchedZone || { id: zoneId });
+    const targetRadius = Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS);
 
     if (account) {
       updateEmployee(account.id, {
         registrationLocation: {
           lat: Number(updatedData.lat ?? matchedZone?.lat),
           lng: Number(updatedData.lng ?? matchedZone?.lng),
+          radius: targetRadius,
         },
+        registrationRadius: targetRadius,
         registrationAddress: updatedData.address || matchedZone?.address,
       });
     }
 
     const existsInZones = geofenceZones.some((z) => z.id === zoneId);
     if (existsInZones) {
-      updateGeofenceZone(zoneId, updatedData);
+      updateGeofenceZone(zoneId, { ...updatedData, radius: targetRadius });
     } else {
       addGeofenceZone({
         id: zoneId,
-        name: updatedData.name || matchedZone?.name || 'Geofence Zone',
+        name: updatedData.name || matchedZone?.name || (account ? `${account.name} - Trainee Geofence` : 'Geofence Zone'),
         address: updatedData.address || matchedZone?.address || 'Official Workplace GPS',
         lat: Number(updatedData.lat ?? matchedZone?.lat ?? 10.741),
         lng: Number(updatedData.lng ?? matchedZone?.lng ?? 122.9702),
-        radius: Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS),
+        radius: targetRadius,
         active: updatedData.active ?? matchedZone?.active ?? true,
         academicYear: selectedAcademicYear !== 'all' ? selectedAcademicYear : settings.activeAcademicYear,
       });
@@ -574,20 +582,23 @@ export function AdminGeofence() {
     return allCombinedZones.find((z) => z.id === dragZoneId) || null;
   }, [dragZoneId, allCombinedZones]);
 
-  // Display zones list with live drag coordinates overridden
+  // Display zones list with live drag coordinates and real-time editing radius overridden
   const displayZones = useMemo(() => {
-    if (!dragZoneId || !dragCoords) return filteredZones;
     return filteredZones.map((z) => {
-      if (z.id === dragZoneId) {
-        return {
-          ...z,
-          lat: dragCoords.lat,
-          lng: dragCoords.lng,
-        };
+      let updated = { ...z };
+      if (dragZoneId && dragCoords && z.id === dragZoneId) {
+        updated.lat = dragCoords.lat;
+        updated.lng = dragCoords.lng;
       }
-      return z;
+      if (editId && z.id === editId) {
+        if (form.radius) updated.radius = Number(form.radius);
+        if (form.lat) updated.lat = Number(form.lat);
+        if (form.lng) updated.lng = Number(form.lng);
+        if (form.name) updated.name = form.name;
+      }
+      return updated;
     });
-  }, [filteredZones, dragZoneId, dragCoords]);
+  }, [filteredZones, dragZoneId, dragCoords, editId, form.radius, form.lat, form.lng, form.name]);
 
   return (
     <div className="space-y-5">
@@ -842,6 +853,7 @@ export function AdminGeofence() {
           zones={displayZones}
           picking={Boolean(showAdd || (editId && !dragZoneId))}
           pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : undefined}
+          pickedRadius={Number(form.radius) || GEOFENCE_RADIUS_METERS}
           focusCoords={focusCoords}
           className="h-80"
           draggableZoneId={dragZoneId}
@@ -1552,15 +1564,15 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       <div className="space-y-2 p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-gray-800">
-            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 100} meters</span>
+            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 50} meters</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
               min={10}
               max={1000}
-              value={form.radius || 100}
-              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 100))}
+              value={form.radius || 50}
+              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 50))}
               className="w-16 px-2 py-1 bg-white border border-gray-300 rounded-lg text-center font-bold text-xs text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
             />
             <span className="text-xs text-gray-500 font-bold">m</span>
@@ -1569,32 +1581,32 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
 
         <input
           type="range"
-          min={30}
+          min={15}
           max={500}
-          step={10}
-          value={form.radius || 100}
-          onChange={(e) => upd('radius', parseInt(e.target.value) || 100)}
+          step={5}
+          value={form.radius || 50}
+          onChange={(e) => upd('radius', parseInt(e.target.value) || 50)}
           className="w-full accent-blue-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
         />
 
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {[50, 75, 100, 150, 200, 250, 300].map((preset) => (
+          {[30, 50, 75, 100, 150, 200, 300].map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => upd('radius', preset)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                (form.radius || 100) === preset
+                (form.radius || 50) === preset
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
               }`}
             >
-              {preset}m {preset === 100 ? '(Standard)' : ''}
+              {preset}m {preset === 50 ? '(Recommended - Small)' : ''}
             </button>
           ))}
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
-          Standard workplace radius is 100 meters. Adjust this according to the size of the establishment facility.
+          Standard workplace perimeter is 50 meters (small boundary). You can adjust this according to the size of the establishment facility. Updates reflect live on the map and for trainee attendance.
         </p>
       </div>
 

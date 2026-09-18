@@ -16,6 +16,7 @@ import { useApp } from '../store/AppContext';
 import { uploadFacePhoto } from '../services/supabaseService';
 import { formatTime, calculateTotalHours, getAttendanceStatus, getCurrentLocation, getDTRSessionDate } from '../utils/geo';
 import { authAPI } from '../services/authApi';
+import type { TimeRecord as TimeRecordType } from '../types';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
@@ -300,7 +301,7 @@ export function TimeRecord() {
       }
     } else if (currentRecord) {
       const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
-      const updatedFields: Partial<TimeRecord> = {
+      const updatedFields: Partial<TimeRecordType> = {
         employeeId: targetEmpId,
         date: currentRecord.date || getDTRSessionDate(now),
         timeOut: timeStr,

@@ -2086,8 +2086,14 @@ export function Dashboard() {
                   >
                     {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
                   </span>
-                  {!record.timeInGeofenced && (
-                    <span className="text-xs text-red-500 flex items-center gap-0.5">⚠ Off-premises</span>
+                  {record.timeInGeofenced ? (
+                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                      📍 Geofenced (50m)
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                      ⚠ Off-premises
+                    </span>
                   )}
                 </div>
               </div>

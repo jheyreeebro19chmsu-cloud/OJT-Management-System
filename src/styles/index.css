@@ -53,37 +53,126 @@
 
 @media print {
   @page {
-    margin: 10mm 12mm;
-    size: auto;
+    margin: 8mm 10mm;
+    size: portrait;
   }
-  .no-print {
-    display: none !important;
+
+  /* Reset all overflow clipping so browser print paginator can print ALL pages */
+  html,
+  body,
+  #root,
+  #root > div,
+  .h-screen,
+  .min-h-screen,
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto,
+  [class*="overflow-"] {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
   }
-  .print-only {
-    display: block !important;
-  }
+
   body {
     background: white !important;
     padding: 0 !important;
     margin: 0 !important;
+    color: #0f172a !important;
   }
+
   main {
     padding: 0 !important;
     margin: 0 !important;
     background: white !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+    display: block !important;
   }
+
+  .no-print,
+  header.no-print,
+  nav.no-print,
+  aside.no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* Tables must paginate across sheets cleanly */
+  table {
+    page-break-inside: auto !important;
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
   .page-break {
-    page-break-before: always;
+    page-break-before: always !important;
+    break-before: page !important;
   }
+
+  .page-break-after {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  /* DTTR specific print optimizations so all 31 days and signatures fit cleanly */
+  .dttr-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .dttr-sheet table {
+    font-size: 10px !important;
+  }
+
+  .dttr-sheet table td,
+  .dttr-sheet table th {
+    padding-top: 1.5px !important;
+    padding-bottom: 1.5px !important;
+  }
+
+  .dttr-sheet tr {
+    height: auto !important;
+  }
+
+  .dttr-break-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   input[type="range"] {
     display: none !important;
   }
+
   textarea {
     resize: none !important;
     overflow: visible !important;
     border: 1px solid #cbd5e1 !important;
     background: #ffffff !important;
   }
+
   /* Ensure colors and backgrounds print */
   * {
     -webkit-print-color-adjust: exact !important;

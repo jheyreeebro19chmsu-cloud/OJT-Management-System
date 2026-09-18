@@ -38,7 +38,7 @@ export interface LeafletGeofenceMapProps {
 export default function LeafletGeofenceMap({
   centerLat,
   centerLng,
-  radius = 300,
+  radius = 50,
   userLat,
   userLng,
   userAccuracy,

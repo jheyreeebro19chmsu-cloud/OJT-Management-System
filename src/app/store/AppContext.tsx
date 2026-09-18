@@ -775,6 +775,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const channel = supabase
       .channel('public-realtime-system-binding')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'geofence_zones' }, async () => {
+        try {
+          const supabaseZones = await supabaseService.fetchGeofenceZones();
+          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+          if (sanitizedZones.length > 0) {
+            setGeofenceZones(sanitizedZones);
+            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
+          }
+        } catch (err) {
+          console.error('Real-time geofence_zones sync error:', err);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, async () => {
+        try {
+          const [supabaseEmployees, supabaseZones] = await Promise.all([
+            supabaseService.fetchEmployees(),
+            supabaseService.fetchGeofenceZones(),
+          ]);
+          setEmployees(supabaseEmployees);
+          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+          if (sanitizedZones.length > 0) {
+            setGeofenceZones(sanitizedZones);
+            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
+          }
+        } catch (err) {
+          console.error('Real-time employees/geofence sync error:', err);
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
         try {
           const [
@@ -810,7 +838,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             });
           }
           const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-          if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
+          if (sanitizedZones.length > 0) {
+            setGeofenceZones(sanitizedZones);
+            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
+          }
           if (supabaseSettings) setSettings(supabaseSettings);
           if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
@@ -2524,19 +2555,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateGeofenceZone = (id: string, data: Partial<GeofenceZone>) => {
     const previous = geofenceZones.find((z) => z.id === id);
-    setGeofenceZones((prev) =>
-      prev.map((z) => {
+    setGeofenceZones((prev) => {
+      const next = prev.map((z) => {
         if (z.id !== id) return z;
         const merged = sanitizeGeofenceZone({ ...z, ...data });
         return merged || z;
-      })
-    );
+      });
+      saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, next);
+      return next;
+    });
 
     if (useSupabase) {
       supabaseService.updateGeofenceZone(id, data).catch((err) => {
         console.error('[AppContext] Failed to update geofence zone in Supabase:', err);
         if (previous) {
-          setGeofenceZones((prev) => prev.map((z) => (z.id === id ? previous : z)));
+          setGeofenceZones((prev) => {
+            const restored = prev.map((z) => (z.id === id ? previous : z));
+            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, restored);
+            return restored;
+          });
         }
         alert('Failed to save geofence zone update to cloud. Changes have been rolled back.');
       });

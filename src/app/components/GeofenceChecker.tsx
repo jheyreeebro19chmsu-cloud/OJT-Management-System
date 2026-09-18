@@ -69,13 +69,29 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       }
     }
     if (regLat != null && regLng != null && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
+      const matchedZone = geofenceZones.find(
+        (z) =>
+          z.id === `station-${employee?.id}` ||
+          z.id === `personal-${employee?.id}` ||
+          (z.name && employee?.name && z.name.toLowerCase().includes(employee.name.toLowerCase()))
+      );
+      const dynamicRadius = Number(
+        matchedZone?.radius ??
+        employee?.registrationLocation?.radius ??
+        employee?.registrationRadius ??
+        (employee as any)?.registration_radius ??
+        (employee as any)?.geofenceRadius ??
+        (employee as any)?.radius ??
+        GEOFENCE_RADIUS_METERS
+      );
+
       zones.unshift({
         id: `personal-${employee?.id || 'trainee'}`,
         name: employee?.companyName ? `${employee.companyName} (Designated Workplace)` : 'Registered Account Geofence',
         address: employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
         lat: Number(regLat),
         lng: Number(regLng),
-        radius: Math.max(Number((employee as any)?.geofenceRadius || (employee as any)?.radius || 250), 200),
+        radius: dynamicRadius || GEOFENCE_RADIUS_METERS,
         active: true,
       });
     }

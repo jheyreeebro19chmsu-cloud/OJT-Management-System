@@ -39,7 +39,7 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
   const [companyName, setCompanyName] = useState(profile?.companyName || 'Host Training Establishment');
   const [latitude, setLatitude] = useState<string>('');
   const [longitude, setLongitude] = useState<string>('');
-  const [radius, setRadius] = useState<number>(300);
+  const [radius, setRadius] = useState<number>(50);
   const [address, setAddress] = useState<string>('');
   const [currentGps, setCurrentGps] = useState<Location.LocationObject | null>(null);
 
@@ -54,10 +54,12 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
       if (regLoc?.lat && regLoc?.lng) {
         setLatitude(String(regLoc.lat));
         setLongitude(String(regLoc.lng));
+        setRadius(regLoc.radius || 50);
         if (regLoc.address) setAddress(regLoc.address);
       } else if (profile?.registration_lat && profile?.registration_lng) {
         setLatitude(String(profile.registration_lat));
         setLongitude(String(profile.registration_lng));
+        setRadius(profile?.registration_radius || 50);
         if (profile.registration_address) setAddress(profile.registration_address);
       } else {
         // Fallback: search geofence_zones for company name
@@ -66,7 +68,7 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
         if (found) {
           setLatitude(String(found.lat));
           setLongitude(String(found.lng));
-          setRadius(found.radius || 300);
+          setRadius(found.radius || 50);
           if (found.address) setAddress(found.address);
         }
       }
