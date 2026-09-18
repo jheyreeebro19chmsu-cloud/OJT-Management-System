@@ -31,7 +31,7 @@ interface HTEGeofenceScreenProps {
   profile: any;
 }
 
-const RADIUS_OPTIONS = [50, 100, 150, 200, 300, 500];
+const RADIUS_OPTIONS = [40, 50, 75, 100, 150, 200, 300, 500];
 
 export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreenProps) {
   const [loading, setLoading] = useState(false);
@@ -39,7 +39,7 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
   const [companyName, setCompanyName] = useState(profile?.companyName || 'Host Training Establishment');
   const [latitude, setLatitude] = useState<string>('');
   const [longitude, setLongitude] = useState<string>('');
-  const [radius, setRadius] = useState<number>(50);
+  const [radius, setRadius] = useState<number>(40);
   const [address, setAddress] = useState<string>('');
   const [currentGps, setCurrentGps] = useState<Location.LocationObject | null>(null);
 
@@ -54,12 +54,12 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
       if (regLoc?.lat && regLoc?.lng) {
         setLatitude(String(regLoc.lat));
         setLongitude(String(regLoc.lng));
-        setRadius(regLoc.radius || 50);
+        setRadius(Math.max(40, Number(regLoc.radius) || 40));
         if (regLoc.address) setAddress(regLoc.address);
       } else if (profile?.registration_lat && profile?.registration_lng) {
         setLatitude(String(profile.registration_lat));
         setLongitude(String(profile.registration_lng));
-        setRadius(profile?.registration_radius || 50);
+        setRadius(Math.max(40, Number(profile?.registration_radius) || 40));
         if (profile.registration_address) setAddress(profile.registration_address);
       } else {
         // Fallback: search geofence_zones for company name
@@ -68,7 +68,7 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
         if (found) {
           setLatitude(String(found.lat));
           setLongitude(String(found.lng));
-          setRadius(found.radius || 50);
+          setRadius(Math.max(40, Number(found.radius) || 40));
           if (found.address) setAddress(found.address);
         }
       }
@@ -125,6 +125,7 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
 
     setLoading(true);
     try {
+      const clampedRadius = Math.max(40, Number(radius) || 40);
       const zoneId = `geo-hte-${profile?.id || profile?.employeeId || 'office'}`;
       const zonePayload = {
         id: zoneId,
@@ -132,7 +133,7 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
         address: address || `${latNum.toFixed(6)}, ${lngNum.toFixed(6)}`,
         lat: latNum,
         lng: lngNum,
-        radius: radius,
+        radius: clampedRadius,
         active: true,
       };
 
@@ -152,8 +153,9 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
               lat: latNum,
               lng: lngNum,
               address: address,
-              radius: radius,
+              radius: clampedRadius,
             },
+            registration_radius: clampedRadius,
           })
           .eq('id', empId);
       }

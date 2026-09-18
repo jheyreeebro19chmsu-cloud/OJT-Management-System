@@ -14,7 +14,7 @@ export const CHMSU_CAMPUS_LOCATIONS: Record<string, CampusLocationInfo> = {
     address: 'Carlos Hilado Memorial State University - Talisay Campus, Mabini St., Talisay City, Negros Occidental, Philippines',
     lat: 10.7410,
     lng: 122.9702,
-    radius: 50,
+    radius: 40,
   },
   'Alijis Campus': {
     campus: 'Alijis Campus',
@@ -22,7 +22,7 @@ export const CHMSU_CAMPUS_LOCATIONS: Record<string, CampusLocationInfo> = {
     address: 'Carlos Hilado Memorial State University - Alijis Campus, Alijis Road, Bacolod City, Negros Occidental, Philippines',
     lat: 10.6387,
     lng: 122.9692,
-    radius: 50,
+    radius: 40,
   },
   'Fortune Towne Campus': {
     campus: 'Fortune Towne Campus',
@@ -30,7 +30,7 @@ export const CHMSU_CAMPUS_LOCATIONS: Record<string, CampusLocationInfo> = {
     address: 'Carlos Hilado Memorial State University - Fortune Towne Campus, Bacolod City, Negros Occidental, Philippines',
     lat: 10.6728,
     lng: 122.9890,
-    radius: 50,
+    radius: 40,
   },
   'Binalbagan Campus': {
     campus: 'Binalbagan Campus',
@@ -38,7 +38,7 @@ export const CHMSU_CAMPUS_LOCATIONS: Record<string, CampusLocationInfo> = {
     address: 'Carlos Hilado Memorial State University - Binalbagan Campus, Enclaro, Binalbagan, Negros Occidental, Philippines',
     lat: 10.1948,
     lng: 122.8581,
-    radius: 50,
+    radius: 40,
   },
 };
 

@@ -75,14 +75,17 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           z.id === `personal-${employee?.id}` ||
           (z.name && employee?.name && z.name.toLowerCase().includes(employee.name.toLowerCase()))
       );
-      const dynamicRadius = Number(
-        matchedZone?.radius ??
-        employee?.registrationLocation?.radius ??
-        employee?.registrationRadius ??
-        (employee as any)?.registration_radius ??
-        (employee as any)?.geofenceRadius ??
-        (employee as any)?.radius ??
-        GEOFENCE_RADIUS_METERS
+      const dynamicRadius = Math.max(
+        40,
+        Number(
+          matchedZone?.radius ??
+          employee?.registrationLocation?.radius ??
+          employee?.registrationRadius ??
+          (employee as any)?.registration_radius ??
+          (employee as any)?.geofenceRadius ??
+          (employee as any)?.radius ??
+          GEOFENCE_RADIUS_METERS
+        ) || 40
       );
 
       zones.unshift({
@@ -91,7 +94,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         address: employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
         lat: Number(regLat),
         lng: Number(regLng),
-        radius: dynamicRadius || GEOFENCE_RADIUS_METERS,
+        radius: dynamicRadius,
         active: true,
       });
     }

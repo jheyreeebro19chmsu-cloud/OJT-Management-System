@@ -98,17 +98,17 @@ class TestGeofenceWhiteBox:
         dist = calculate_distance(lat, lng, lat, lng)
         assert math.isclose(dist, 0.0, abs_tol=1e-5), f"Expected 0m, got {dist}"
 
-    @qase.title("Geofence Verification - Inside 50m Radius")
-    def test_user_inside_50m_geofence(self):
+    @qase.title("Geofence Verification - Inside 40m Radius")
+    def test_user_inside_40m_geofence(self):
         campus_lat, campus_lng = 10.7410, 122.9702
         user_lat, user_lng = 10.7412, 122.9702  # ~22 meters away
-        assert is_within_geofence(user_lat, user_lng, campus_lat, campus_lng, radius_meters=50, accuracy_meters=5) is True
+        assert is_within_geofence(user_lat, user_lng, campus_lat, campus_lng, radius_meters=40, accuracy_meters=5) is True
 
-    @qase.title("Geofence Verification - Outside 50m Radius")
-    def test_user_outside_50m_geofence(self):
+    @qase.title("Geofence Verification - Outside 40m Radius")
+    def test_user_outside_40m_geofence(self):
         campus_lat, campus_lng = 10.7410, 122.9702
         user_lat, user_lng = 10.7450, 122.9702  # ~440 meters away
-        assert is_within_geofence(user_lat, user_lng, campus_lat, campus_lng, radius_meters=50, accuracy_meters=5) is False
+        assert is_within_geofence(user_lat, user_lng, campus_lat, campus_lng, radius_meters=40, accuracy_meters=5) is False
 
     @qase.title("Time Conversion - 24-hour to 12-hour AM/PM boundaries")
     @pytest.mark.parametrize("time_24h, expected_12h", [

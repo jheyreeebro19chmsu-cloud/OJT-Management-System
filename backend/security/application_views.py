@@ -59,7 +59,7 @@ def submit_ojt_application(request: HttpRequest) -> JsonResponse:
         company_address = sanitize_string(data.get('company_address', ''))
         gps_lat = data.get('gps_latitude')
         gps_lng = data.get('gps_longitude')
-        geofence_radius = data.get('geofence_radius', 100)
+        geofence_radius = max(40.0, float(data.get('geofence_radius', 40.0) or 40.0))
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         required_hours = data.get('required_hours')
@@ -116,7 +116,7 @@ def submit_ojt_application(request: HttpRequest) -> JsonResponse:
             company_address=company_address,
             gps_latitude=float(gps_lat),
             gps_longitude=float(gps_lng),
-            geofence_radius=100.0,
+            geofence_radius=geofence_radius,
             start_date=start_date,
             end_date=end_date,
             required_hours=int(required_hours),

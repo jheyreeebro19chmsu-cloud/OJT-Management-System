@@ -718,7 +718,7 @@ export default function RegisterScreen({
             address: computedRegistrationAddress || `${Number(location.lat).toFixed(6)}, ${Number(location.lng).toFixed(6)}`,
             lat: location.lat,
             lng: location.lng,
-            radius: 100,
+            radius: 40,
             active: true,
             academic_year: activeAcademicYear,
           };

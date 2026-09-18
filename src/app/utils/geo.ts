@@ -1,4 +1,5 @@
-export const GEOFENCE_RADIUS_METERS = 50;
+export const GEOFENCE_RADIUS_METERS = 40;
+export const GEOFENCE_MIN_RADIUS_METERS = 40;
 
 export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000; // Earth's radius in meters

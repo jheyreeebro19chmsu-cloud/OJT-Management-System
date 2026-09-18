@@ -298,7 +298,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
       ...(typeof updates.registrationLocation === 'object' ? updates.registrationLocation : {}),
       lat: updates.registrationLocation?.lat ?? null,
       lng: updates.registrationLocation?.lng ?? null,
-      radius: regRadius ? Number(regRadius) : 50,
+      radius: regRadius ? Math.max(40, Number(regRadius)) : 40,
     };
   }
   if (
@@ -627,7 +627,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     address: zone.address || '',
     lat: Number(zone.lat),
     lng: Number(zone.lng),
-    radius: Number(zone.radius) || 50,
+    radius: Math.max(40, Number(zone.radius) || 40),
     active: zone.active !== false,
   };
 
@@ -694,7 +694,7 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
       address: updates.address || '',
       lat: Number(updates.lat),
       lng: Number(updates.lng),
-      radius: Number(updates.radius) || 50,
+      radius: Math.max(40, Number(updates.radius) || 40),
       active: updates.active !== false,
       academicYear: updates.academicYear,
     });
@@ -1486,7 +1486,7 @@ export function transformSupabaseEmployee(data: any): Employee {
     active: data.active,
     academicYear: data.academic_year,
     registrationLocation: (() => {
-      const radiusVal = Number(data.registration_radius ?? regLoc?.radius ?? 50);
+      const radiusVal = Math.max(40, Number(data.registration_radius ?? regLoc?.radius ?? 40));
       if (data.registration_lat != null && data.registration_lng != null) {
         return { lat: Number(data.registration_lat), lng: Number(data.registration_lng), radius: radiusVal };
       }
@@ -1501,7 +1501,7 @@ export function transformSupabaseEmployee(data: any): Employee {
       }
       return undefined;
     })(),
-    registrationRadius: Number(data.registration_radius ?? regLoc?.radius ?? 50),
+    registrationRadius: Math.max(40, Number(data.registration_radius ?? regLoc?.radius ?? 40)),
     registrationAddress: data.registration_address || regLoc?.address || undefined,
     contactPhone: data.contact_phone || data.phone || regLoc?.contactPhone || regLoc?.phone || undefined,
     phone: data.phone || data.contact_phone || regLoc?.phone || regLoc?.contactPhone || undefined,

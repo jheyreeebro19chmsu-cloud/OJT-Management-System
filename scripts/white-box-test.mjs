@@ -89,17 +89,17 @@ printSectionHeader('1. WHITE BOX TESTS: Geofence Logic & Haversine Distance');
 const d0 = calculateDistance(10.7410, 122.9702, 10.7410, 122.9702);
 assert('Distance between identical coordinates is 0m', Math.abs(d0) < 0.001, `Got ${d0}`);
 
-// Test 1.2: Inside 50-meter radius boundary
+// Test 1.2: Inside 40-meter radius boundary
 // Approx 0.0001 deg lat ~ 11.1 meters
 const dInside = calculateDistance(10.7410, 122.9702, 10.7412, 122.9702);
 assert('Small offset (~22m) computes accurate distance', dInside > 20 && dInside < 25, `Distance was ${dInside.toFixed(2)}m`);
 
-const withinZone = isWithinGeofence(10.7412, 122.9702, 10.7410, 122.9702, 50, 5);
-assert('User at 22m is within 50m geofence radius', withinZone === true);
+const withinZone = isWithinGeofence(10.7412, 122.9702, 10.7410, 122.9702, 40, 5);
+assert('User at 22m is within 40m geofence radius', withinZone === true);
 
-// Test 1.3: Outside 50-meter radius boundary (e.g. 500m away)
-const outsideZone = isWithinGeofence(10.7450, 122.9702, 10.7410, 122.9702, 50, 5);
-assert('User at 440m is outside 50m geofence radius', outsideZone === false);
+// Test 1.3: Outside 40-meter radius boundary (e.g. 500m away)
+const outsideZone = isWithinGeofence(10.7450, 122.9702, 10.7410, 122.9702, 40, 5);
+assert('User at 440m is outside 40m geofence radius', outsideZone === false);
 
 // Test 1.4: Time formatting 24h to 12h AM/PM conversions
 assert('formatTime("08:05") -> "8:05 AM"', formatTime('08:05') === '8:05 AM');

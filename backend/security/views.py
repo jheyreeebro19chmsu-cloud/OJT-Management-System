@@ -194,7 +194,7 @@ def check_geofence(request: HttpRequest) -> JsonResponse:
     if nearest_zone is None:
         return JsonResponse({"inside": False, "reason": "no_zones"}, status=400)
 
-    radius = safe_float(nearest_zone.get("radius"), 0.0)
+    radius = max(40.0, safe_float(nearest_zone.get("radius"), 40.0))
     # Consider client-reported accuracy if provided. Be conservative: treat user as outside unless
     # (distance + accuracy) <= radius.
     accuracy = safe_float(data.get("accuracy"), 0.0)

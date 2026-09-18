@@ -32,7 +32,7 @@ export function GeofenceMap({
   zones,
   picking = false,
   pickedCoords,
-  pickedRadius = 50,
+  pickedRadius = 40,
   onPick,
   focusCoords,
   liveUser = null,
@@ -151,7 +151,7 @@ export function GeofenceMap({
             <React.Fragment key={zone.id}>
               <Circle
                 center={[zone.lat, zone.lng]}
-                radius={Number(zone.radius) || 50}
+                radius={Number(zone.radius) || 40}
                 pathOptions={{
                   color: isDraggable ? '#2563eb' : zone.active ? '#2563eb' : '#94a3b8',
                   fillColor: isDraggable ? '#3b82f6' : zone.active ? '#3b82f6' : '#94a3b8',
@@ -188,7 +188,7 @@ export function GeofenceMap({
                         📍 Drag mode active: Drag this pin to relocate
                       </p>
                     )}
-                    <p>Radius: {Math.round(zone.radius || 50)}m</p>
+                    <p>Radius: {Math.round(zone.radius || 40)}m</p>
                     <p>Coordinates: {zone.lat.toFixed(5)}, {zone.lng.toFixed(5)}</p>
                     <p>Status: {zone.active ? 'Active' : 'Inactive'}</p>
                   </div>
@@ -202,7 +202,7 @@ export function GeofenceMap({
           <>
             <Circle
               center={[safePickedCoords.lat, safePickedCoords.lng]}
-              radius={Number(pickedRadius) || 50}
+              radius={Number(pickedRadius) || 40}
               pathOptions={{
                 color: '#2563eb',
                 fillColor: '#3b82f6',
@@ -215,7 +215,7 @@ export function GeofenceMap({
               <Popup className="leaflet-geofence-popup">
                 <div className="leaflet-popup-card">
                   <p className="leaflet-popup-title">Picked Zone Center</p>
-                  <p>Radius: {Math.round(Number(pickedRadius) || 50)}m</p>
+                  <p>Radius: {Math.round(Number(pickedRadius) || 40)}m</p>
                   <p>Coordinates: {safePickedCoords.lat.toFixed(5)}, {safePickedCoords.lng.toFixed(5)}</p>
                 </div>
               </Popup>

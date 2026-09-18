@@ -403,7 +403,9 @@ export default function InstructorTraineesScreen({
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Geofence Radius:</Text>
-                    <Text style={styles.detailValue}>300 Meters</Text>
+                    <Text style={styles.detailValue}>
+                      {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±40m min)
+                    </Text>
                   </View>
                   {selectedTrainee.registrationLocation && (
                     <TouchableOpacity
@@ -420,7 +422,7 @@ export default function InstructorTraineesScreen({
                   <View style={styles.geofenceStatusRow}>
                     <ShieldCheck size={14} color="#059669" />
                     <Text style={styles.geofenceStatusText}>
-                      Attendance is restricted to this 300m workplace boundary.
+                      Attendance is restricted to this {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
                     </Text>
                   </View>
                 </View>

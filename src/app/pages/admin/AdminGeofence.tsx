@@ -410,7 +410,7 @@ export function AdminGeofence() {
   const saveZoneCoordinates = (zoneId: string, updatedData: Partial<GeofenceZone>) => {
     const matchedZone = allCombinedZones.find((z) => z.id === zoneId);
     const account = getAccountForZone(matchedZone || { id: zoneId });
-    const targetRadius = Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS);
+    const targetRadius = Math.max(40, Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS));
 
     if (account) {
       updateEmployee(account.id, {
@@ -1564,15 +1564,15 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       <div className="space-y-2 p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-gray-800">
-            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 50} meters</span>
+            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 40} meters</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
-              min={10}
+              min={40}
               max={1000}
-              value={form.radius || 50}
-              onChange={(e) => upd('radius', Math.max(10, parseInt(e.target.value) || 50))}
+              value={form.radius || 40}
+              onChange={(e) => upd('radius', Math.max(40, parseInt(e.target.value) || 40))}
               className="w-16 px-2 py-1 bg-white border border-gray-300 rounded-lg text-center font-bold text-xs text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
             />
             <span className="text-xs text-gray-500 font-bold">m</span>
@@ -1581,32 +1581,32 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
 
         <input
           type="range"
-          min={15}
+          min={40}
           max={500}
           step={5}
-          value={form.radius || 50}
-          onChange={(e) => upd('radius', parseInt(e.target.value) || 50)}
+          value={form.radius || 40}
+          onChange={(e) => upd('radius', Math.max(40, parseInt(e.target.value) || 40))}
           className="w-full accent-blue-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
         />
 
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {[30, 50, 75, 100, 150, 200, 300].map((preset) => (
+          {[40, 50, 75, 100, 150, 200, 300].map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => upd('radius', preset)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                (form.radius || 50) === preset
+                (form.radius || 40) === preset
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
               }`}
             >
-              {preset}m {preset === 50 ? '(Recommended - Small)' : ''}
+              {preset}m {preset === 40 ? '(Minimum / Standard)' : ''}
             </button>
           ))}
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
-          Standard workplace perimeter is 50 meters (small boundary). You can adjust this according to the size of the establishment facility. Updates reflect live on the map and for trainee attendance.
+          Minimum allowed workplace perimeter is 40 meters. You can adjust this according to the size of the establishment facility. Updates reflect live on the map and for trainee attendance.
         </p>
       </div>
 

@@ -240,7 +240,7 @@ DEFAULT_GEOFENCE_ZONES = [
         "name": "Main Training Center",
         "lat": 14.5547,
         "lng": 121.0244,
-        "radius": 50,
+        "radius": 40,
         "active": True,
     }
 ]

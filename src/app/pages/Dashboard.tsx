@@ -2088,7 +2088,7 @@ export function Dashboard() {
                   </span>
                   {record.timeInGeofenced ? (
                     <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                      📍 Geofenced (50m)
+                      📍 Geofenced (40m)
                     </span>
                   ) : (
                     <span className="text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
