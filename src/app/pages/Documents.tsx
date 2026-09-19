@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   RefreshCw,
   Info,
+  Image as ImageIcon,
+  File as FileGeneric,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -26,6 +28,7 @@ import { useApp } from '../store/AppContext';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
 import { uploadDocumentToStorage } from '../services/supabaseService';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 
 export const STANDARD_REQUIRED_DOCS = REQUIRED_TRAINEE_DOCUMENTS;
 
@@ -75,19 +78,27 @@ export function Documents() {
   const handleFileUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
 
-    // Validate file type — only PDF, JPG, PNG accepted
-    const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png)$/i;
+    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
       toast.error(
-        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Only PDF, JPG, and PNG files are accepted.`
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
       );
       return;
     }
 
-    // Check size limit: max 10MB
+    // Check size limit: max 10MB (supports 5–10MB picture and document files)
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please choose a smaller file.');
+      toast.error('File size exceeds 10MB limit. Please upload a file up to 10MB.');
       return;
     }
 
@@ -269,9 +280,19 @@ export function Documents() {
           />
         </div>
 
-        <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
-          <Info size={13} className="shrink-0 text-slate-400" />
-          <span>Accepted document formats: <strong>PDF, JPG, PNG</strong> (max 10MB per file). Files are securely stored.</span>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
+          <div className="flex items-center gap-1.5">
+            <Info size={13} className="shrink-0 text-blue-500" />
+            <span>Accepted formats: <strong>Pictures (JPG, PNG, WEBP)</strong>, <strong>PDF</strong>, and <strong>Word (DOC, DOCX)</strong></span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span>File size: <strong>Supports 5–10MB</strong> per file (high-res pictures supported)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+            <span>All submitted documents can be downloaded anytime</span>
+          </div>
         </div>
       </motion.div>
 
@@ -284,6 +305,7 @@ export function Documents() {
           const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
           const isUploading = uploadingKey === item.key;
           const Icon = item.icon;
+          const docCategory = doc ? getFileCategory(doc.name || doc.fileType || '') : 'other';
 
           return (
             <motion.div
@@ -338,14 +360,44 @@ export function Documents() {
                   </span>
                 </div>
 
-                <p className="text-xs text-slate-600 leading-relaxed mb-4">{item.desc}</p>
+                <p className="text-xs text-slate-600 leading-relaxed mb-3">{item.desc}</p>
+
+                {/* Accepted format pills */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-4">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    Pictures (JPG/PNG)
+                  </span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    PDF
+                  </span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    DOC / DOCX
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+                    5–10MB Max
+                  </span>
+                </div>
 
                 {/* Uploaded File Info Card */}
                 {hasFile && doc && (
                   <div className="mb-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-2">
                     <div className="min-w-0 flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                        <FileText size={15} />
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          docCategory === 'picture'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : docCategory === 'doc'
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {docCategory === 'picture' ? (
+                          <ImageIcon size={16} />
+                        ) : docCategory === 'doc' ? (
+                          <FileText size={16} />
+                        ) : (
+                          <FileGeneric size={16} />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
@@ -354,6 +406,9 @@ export function Documents() {
                         <p className="text-[10px] text-slate-400">
                           {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Uploaded'}
                           {doc.size ? ` • ${formatFileSize(doc.size)}` : ''}
+                          <span className="ml-1.5 font-semibold text-slate-500 uppercase">
+                            ({docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
+                          </span>
                         </p>
                       </div>
                     </div>
@@ -389,9 +444,21 @@ export function Documents() {
                           status: doc?.status || 'passed',
                         });
                       }}
-                      className="flex-1 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                      className="flex-1 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
                     >
                       <Eye size={14} /> View File
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const resolvedUrl = resolveDocDataUrl(item.key, doc);
+                        downloadDocument(resolvedUrl, doc?.name || `${item.key}_document`);
+                      }}
+                      className="py-2 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                      title="Download file"
+                    >
+                      <Download size={13} /> Download
                     </button>
 
                     <label
@@ -404,7 +471,7 @@ export function Documents() {
                     <input
                       type="file"
                       id={`replace-doc-${item.key}`}
-                      accept=".pdf,.png,.jpg,.jpeg"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       onChange={(e) => handleFileUpload(item.key, e.target.files?.[0] || null)}
                       className="hidden"
                       disabled={isUploading}
@@ -424,7 +491,7 @@ export function Documents() {
                     <input
                       type="file"
                       id={`upload-doc-${item.key}`}
-                      accept=".pdf,.png,.jpg,.jpeg"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       onChange={(e) => handleFileUpload(item.key, e.target.files?.[0] || null)}
                       className="hidden"
                       disabled={isUploading}
@@ -464,13 +531,14 @@ export function Documents() {
                   </button>
 
                   {previewDoc.dataUrl && (
-                    <a
-                      href={previewDoc.dataUrl}
-                      download={previewDoc.fileName || 'ojt-document'}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+                    <button
+                      type="button"
+                      onClick={() => downloadDocument(previewDoc.dataUrl || '', previewDoc.fileName)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+                      title="Download file"
                     >
                       <Download size={13} /> Download
-                    </a>
+                    </button>
                   )}
 
                   <button
@@ -502,19 +570,89 @@ export function Documents() {
               {/* Preview Content */}
               <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex items-center justify-center min-h-[350px]">
                 {previewDoc.dataUrl ? (
-                  previewDoc.dataUrl.startsWith('data:image/') || previewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ? (
-                    <img
-                      src={previewDoc.dataUrl}
-                      alt={previewDoc.title}
-                      className="max-h-[520px] max-w-full object-contain rounded-2xl shadow-lg border border-slate-200 bg-white"
-                    />
-                  ) : (
-                    <iframe
-                      src={previewDoc.dataUrl}
-                      className="w-full h-[520px] rounded-2xl border border-slate-200 bg-white shadow"
-                      title="Document Preview"
-                    />
-                  )
+                  (() => {
+                    const cat = getFileCategory(previewDoc.fileName || previewDoc.dataUrl);
+                    const isImg =
+                      cat === 'picture' ||
+                      previewDoc.dataUrl.startsWith('data:image/') ||
+                      previewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                    const isWord =
+                      cat === 'doc' ||
+                      previewDoc.dataUrl.startsWith('data:application/msword') ||
+                      previewDoc.dataUrl.startsWith('data:application/vnd') ||
+                      previewDoc.fileName?.match(/\.(doc|docx)$/i);
+
+                    if (isImg) {
+                      return (
+                        <div className="flex flex-col items-center justify-center gap-3 max-w-full">
+                          <img
+                            src={previewDoc.dataUrl}
+                            alt={previewDoc.title}
+                            className="max-h-[520px] max-w-full object-contain rounded-2xl shadow-lg border border-slate-200 bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => downloadDocument(previewDoc.dataUrl || '', previewDoc.fileName)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                          >
+                            <Download size={14} /> Download Picture
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if (isWord) {
+                      return (
+                        <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-blue-200 shadow-lg text-center">
+                          <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
+                            <FileText size={36} className="stroke-[2.2]" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 uppercase tracking-wider inline-block mb-2">
+                            Microsoft Word Document
+                          </span>
+                          <h4 className="text-base font-bold text-slate-900 mb-1">{previewDoc.title}</h4>
+                          <p className="text-xs text-slate-500 font-mono mb-4 break-all">{previewDoc.fileName}</p>
+
+                          <div className="bg-slate-50 rounded-2xl p-4 text-xs text-left space-y-2 border border-slate-100 mb-5 text-slate-600">
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Document Type:</span>
+                              <span className="font-bold text-slate-800">Word (.doc / .docx)</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">File Size:</span>
+                              <span className="font-bold text-slate-800">
+                                {previewDoc.fileSize ? formatFileSize(previewDoc.fileSize) : 'Available for Download'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Status:</span>
+                              <span className="font-bold text-emerald-600">✓ PASSED / RECORDED</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+                            Word files download directly to open with Microsoft Word, Google Docs, or Office apps.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => downloadDocument(previewDoc.dataUrl || '', previewDoc.fileName)}
+                            className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all cursor-pointer"
+                          >
+                            <Download size={15} /> Download Word Document
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <iframe
+                        src={previewDoc.dataUrl}
+                        className="w-full h-[520px] rounded-2xl border border-slate-200 bg-white shadow"
+                        title="Document Preview"
+                      />
+                    );
+                  })()
                 ) : (
                   <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-sm text-center">
                     <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
@@ -550,14 +688,14 @@ export function Documents() {
                     </div>
 
                     <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
-                      This document has been verified in the system. To view the live image/PDF rendering or attach a fresh copy, choose your file below:
+                      Attach a fresh copy (Pictures, PDF, or Word Docs up to 10MB) below:
                     </p>
 
                     <label className="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 w-full">
                       <Upload size={14} /> Attach File for Live Preview
                       <input
                         type="file"
-                        accept=".pdf,.png,.jpg,.jpeg"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];

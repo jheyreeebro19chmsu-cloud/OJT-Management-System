@@ -98,3 +98,65 @@ export function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
+
+export function getFileCategory(nameOrType: string): 'pdf' | 'doc' | 'picture' | 'other' {
+  if (!nameOrType) return 'other';
+  const str = nameOrType.toLowerCase();
+  if (str.endsWith('.pdf') || str.includes('application/pdf')) return 'pdf';
+  if (
+    str.endsWith('.doc') ||
+    str.endsWith('.docx') ||
+    str.includes('msword') ||
+    str.includes('wordprocessingml')
+  ) {
+    return 'doc';
+  }
+  if (
+    str.endsWith('.jpg') ||
+    str.endsWith('.jpeg') ||
+    str.endsWith('.png') ||
+    str.endsWith('.webp') ||
+    str.endsWith('.gif') ||
+    str.includes('image/')
+  ) {
+    return 'picture';
+  }
+  return 'other';
+}
+
+export async function downloadDocument(url: string, fileName?: string): Promise<void> {
+  if (!url) return;
+  const resolvedFileName = fileName || 'downloaded-document';
+
+  try {
+    if (url.startsWith('data:') || url.startsWith('blob:')) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = resolvedFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = resolvedFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+  } catch (err) {
+    console.warn('Direct blob download failed, falling back to window navigation:', err);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = resolvedFileName;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}

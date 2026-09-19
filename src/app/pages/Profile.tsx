@@ -39,6 +39,7 @@ import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 
 
 const GRADE_CONFIG = {
@@ -197,19 +198,27 @@ export function Profile() {
   const handleProfileDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
 
-    // Validate file type — only PDF, JPG, PNG accepted
-    const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png)$/i;
+    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
       toast.error(
-        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Only PDF, JPG, and PNG files are accepted.`
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
       );
       return;
     }
 
-    // Max 10MB
+    // Check size limit: max 10MB
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please choose a smaller file.');
+      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
       return;
     }
 
@@ -800,6 +809,16 @@ export function Profile() {
                       <Eye size={13} />
                     </button>
                   )}
+                  {hasFile && doc?.dataUrl && (
+                    <button
+                      type="button"
+                      onClick={() => downloadDocument(doc.dataUrl!, doc.name || `${item.key}_document`)}
+                      className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 transition-all"
+                      title="Download document"
+                    >
+                      <Download size={13} />
+                    </button>
+                  )}
                   <label
                     htmlFor={`profile-doc-${item.key}`}
                     className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
@@ -815,7 +834,7 @@ export function Profile() {
                     <input
                       type="file"
                       id={`profile-doc-${item.key}`}
-                      accept=".pdf,.jpg,.jpeg,.png"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       className="hidden"
                       disabled={isUploading}
                       onChange={(e) => handleProfileDocUpload(item.key, e.target.files?.[0] || null)}
@@ -828,7 +847,7 @@ export function Profile() {
         </div>
 
         <p className="text-[10px] text-gray-400 mt-3 text-center">
-          Accepted formats: PDF, JPG, PNG · Max 10MB per file
+          Accepted formats: Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX) · Up to 10MB per file · Downloadable anytime
         </p>
       </motion.div>
 
@@ -1142,8 +1161,18 @@ export function Profile() {
                   onClick={() => window.print()}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm cursor-pointer"
                 >
-                  <Printer size={14} /> Print Document
+                  <Printer size={14} /> Print
                 </button>
+                {previewDocModal.fileUrl && (
+                  <button
+                    type="button"
+                    onClick={() => downloadDocument(previewDocModal.fileUrl!, previewDocModal.fileName)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+                    title="Download document"
+                  >
+                    <Download size={14} /> Download
+                  </button>
+                )}
                 <button
                   onClick={() => setPreviewDocModal(null)}
                   className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
@@ -1182,13 +1211,72 @@ export function Profile() {
               </div>
 
               {previewDocModal.fileUrl ? (
-                previewDocModal.fileUrl.startsWith('data:image/') || previewDocModal.fileUrl.match(/\.(jpeg|jpg|gif|png)$/i) ? (
-                  <div className="flex justify-center bg-black/5 p-2 rounded-xl border border-slate-200">
-                    <img src={previewDocModal.fileUrl} alt="Document preview" className="max-h-[500px] object-contain rounded-lg shadow-sm" />
-                  </div>
-                ) : (
-                  <iframe src={previewDocModal.fileUrl} className="w-full h-96 rounded-xl border border-slate-200 bg-white" title="Document PDF Preview" />
-                )
+                (() => {
+                  const cat = getFileCategory(previewDocModal.fileName || previewDocModal.fileUrl);
+                  const isImg =
+                    cat === 'picture' ||
+                    previewDocModal.fileUrl.startsWith('data:image/') ||
+                    previewDocModal.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+                  const isWord =
+                    cat === 'doc' ||
+                    previewDocModal.fileUrl.startsWith('data:application/msword') ||
+                    previewDocModal.fileUrl.startsWith('data:application/vnd') ||
+                    previewDocModal.fileName?.match(/\.(doc|docx)$/i);
+
+                  if (isImg) {
+                    return (
+                      <div className="flex flex-col items-center justify-center gap-3 bg-black/5 p-3 rounded-xl border border-slate-200">
+                        <img
+                          src={previewDocModal.fileUrl}
+                          alt="Document preview"
+                          className="max-h-[500px] object-contain rounded-lg shadow-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => downloadDocument(previewDocModal.fileUrl!, previewDocModal.fileName)}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        >
+                          <Download size={14} /> Download Picture
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (isWord) {
+                    return (
+                      <div className="w-full max-w-md mx-auto bg-white rounded-3xl p-6 border border-blue-200 shadow-md text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
+                          <FileText size={36} className="stroke-[2.2]" />
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 uppercase tracking-wider inline-block mb-2">
+                          Microsoft Word Document
+                        </span>
+                        <h4 className="text-base font-bold text-slate-900 mb-1">{previewDocModal.title}</h4>
+                        <p className="text-xs text-slate-500 font-mono mb-4 break-all">{previewDocModal.fileName}</p>
+
+                        <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+                          Word documents download directly to open with Microsoft Word, Google Docs, or Office apps.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => downloadDocument(previewDocModal.fileUrl!, previewDocModal.fileName)}
+                          className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all cursor-pointer"
+                        >
+                          <Download size={15} /> Download Word Document
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <iframe
+                      src={previewDocModal.fileUrl}
+                      className="w-full h-96 rounded-xl border border-slate-200 bg-white"
+                      title="Document PDF Preview"
+                    />
+                  );
+                })()
               ) : (
                 <p className="text-center py-10 text-xs text-gray-500">No media preview available for this document.</p>
               )}

@@ -11,6 +11,7 @@ import { getPhotoUrl } from '../../services/config';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../../data/documentRequirements';
+import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper';
 
 
 
@@ -1161,8 +1162,24 @@ export function AdminEmployees() {
                                           }
                                           className="flex-1 py-1 px-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
                                         >
-                                          <Eye size={11} /> {hasFile ? 'View Uploaded File' : 'View Document'}
+                                          <Eye size={11} /> {hasFile ? 'View' : 'View Doc'}
                                         </button>
+
+                                        {hasFile && doc?.dataUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              downloadDocument(
+                                                doc.dataUrl!,
+                                                doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}`
+                                              )
+                                            }
+                                            className="py-1 px-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
+                                            title="Download student file"
+                                          >
+                                            <Download size={11} /> Download
+                                          </button>
+                                        )}
 
                                         <button
                                           type="button"
@@ -1535,13 +1552,14 @@ export function AdminEmployees() {
                   <Printer size={13} /> Print
                 </button>
                 {previewInstructorDoc.fileUrl && (
-                  <a
-                    href={previewInstructorDoc.fileUrl}
-                    download={previewInstructorDoc.fileName || 'ojt-document'}
+                  <button
+                    type="button"
+                    onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-all shadow-sm cursor-pointer"
+                    title="Download document"
                   >
-                    <Download size={13} /> Save
-                  </a>
+                    <Download size={13} /> Download
+                  </button>
                 )}
                 <button
                   onClick={() => setPreviewInstructorDoc(null)}
@@ -1581,23 +1599,85 @@ export function AdminEmployees() {
             </div>
 
             {/* File preview */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 flex items-center justify-center min-h-[350px]">
               {previewInstructorDoc.fileUrl ? (
-                previewInstructorDoc.fileUrl.startsWith('data:image/') || previewInstructorDoc.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
-                  <div className="flex justify-center">
-                    <img
+                (() => {
+                  const cat = getFileCategory(previewInstructorDoc.fileName || previewInstructorDoc.fileUrl);
+                  const isImg =
+                    cat === 'picture' ||
+                    previewInstructorDoc.fileUrl.startsWith('data:image/') ||
+                    previewInstructorDoc.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                  const isWord =
+                    cat === 'doc' ||
+                    previewInstructorDoc.fileUrl.startsWith('data:application/msword') ||
+                    previewInstructorDoc.fileUrl.startsWith('data:application/vnd') ||
+                    previewInstructorDoc.fileName?.match(/\.(doc|docx)$/i);
+
+                  if (isImg) {
+                    return (
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <img
+                          src={previewInstructorDoc.fileUrl}
+                          alt="Document preview"
+                          className="max-h-[500px] object-contain rounded-xl shadow border border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        >
+                          <Download size={14} /> Download Picture
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (isWord) {
+                    return (
+                      <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-blue-200 shadow-lg text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
+                          <FileText size={36} className="stroke-[2.2]" />
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 uppercase tracking-wider inline-block mb-2">
+                          Microsoft Word Document
+                        </span>
+                        <h4 className="text-base font-bold text-slate-900 mb-1">{previewInstructorDoc.title}</h4>
+                        <p className="text-xs text-slate-500 font-mono mb-4 break-all">{previewInstructorDoc.fileName}</p>
+
+                        <div className="bg-slate-50 rounded-2xl p-4 text-xs text-left space-y-2 border border-slate-100 mb-5 text-slate-600">
+                          <div className="flex justify-between">
+                            <span className="font-semibold text-slate-500">Student:</span>
+                            <span className="font-bold text-slate-800">{previewInstructorDoc.studentName}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-semibold text-slate-500">Format:</span>
+                            <span className="font-bold text-slate-800">Word (.doc / .docx)</span>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+                          Download this student's Word submission to view in Microsoft Word, Google Docs, or LibreOffice.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}
+                          className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all cursor-pointer"
+                        >
+                          <Download size={15} /> Download Word Document
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <iframe
                       src={previewInstructorDoc.fileUrl}
-                      alt="Document preview"
-                      className="max-h-[500px] object-contain rounded-xl shadow border border-gray-200"
+                      className="w-full h-[480px] rounded-xl border border-gray-200 bg-white"
+                      title="Document Preview"
                     />
-                  </div>
-                ) : (
-                  <iframe
-                    src={previewInstructorDoc.fileUrl}
-                    className="w-full h-[480px] rounded-xl border border-gray-200 bg-white"
-                    title="Document Preview"
-                  />
-                )
+                  );
+                })()
               ) : (
                 <div className="flex flex-col items-center justify-center h-48 text-gray-400 gap-3">
                   <FileText size={40} />

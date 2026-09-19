@@ -19,6 +19,7 @@ import {
   FileCheck,
   Shield,
   Upload,
+  Download,
   Trash2,
   Clock,
   Phone,
@@ -29,6 +30,7 @@ import {
   Navigation,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { downloadDocument } from '../utils/attachmentHelper';
 import { QRCodeSVG } from 'qrcode.react';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
@@ -147,14 +149,23 @@ export function Register() {
 
   const handleDocumentUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
-    const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png)$/i;
+    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-      toast.error(`Unsupported file: "${file.name}". Please attach a PDF, JPG, or PNG document.`);
+      toast.error(`Unsupported file: "${file.name}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`);
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please choose a smaller file.');
+      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
       return;
     }
     const reader = new FileReader();
@@ -3271,6 +3282,12 @@ export function Register() {
                     <p className="text-[11px] text-gray-500">
                       Attach your onboarding credentials now or complete them later in your Trainee Dashboard. Submissions reflect directly in your assigned Instructor's account.
                     </p>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 pb-1">
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium">Pictures (JPG, PNG)</span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium">PDF</span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium">DOC / DOCX</span>
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold border border-blue-100">Supports 5–10MB</span>
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {REQUIRED_TRAINEE_DOCUMENTS.map((item) => {
@@ -3321,7 +3338,7 @@ export function Register() {
                               <input
                                 type="file"
                                 id={`reg-doc-${item.key}`}
-                                accept=".pdf,.png,.jpg,.jpeg"
+                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                                 onChange={(e) => {
                                   const file = e.target.files?.[0] || null;
                                   handleDocumentUpload(item.key, file);
@@ -3331,10 +3348,18 @@ export function Register() {
 
                               {uploaded ? (
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="text-[11px] font-medium text-emerald-700 truncate max-w-[130px]">
+                                  <span className="text-[11px] font-medium text-emerald-700 truncate max-w-[120px]" title={uploaded.name}>
                                     📎 {uploaded.name}
                                   </span>
                                   <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => downloadDocument(uploaded.dataUrl, uploaded.name)}
+                                      className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors inline-flex items-center gap-0.5"
+                                      title="Download attached file"
+                                    >
+                                      <Download size={10} /> Save
+                                    </button>
                                     <label
                                       htmlFor={`reg-doc-${item.key}`}
                                       className="cursor-pointer text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors"

@@ -52,6 +52,7 @@ import { getPhotoUrl } from '../services/config';
 import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -146,8 +147,27 @@ export function Dashboard() {
 
   const handleDashboardDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file || !currentEmp) return;
+
+    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
+      );
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit.');
+      toast.error('File size exceeds 10MB limit. Allowed size is up to 10MB.');
       return;
     }
 
@@ -1781,6 +1801,17 @@ export function Dashboard() {
                         >
                           <Eye size={12} /> View
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const resolvedUrl = resolveDocDataUrl(docItem.key, doc);
+                            downloadDocument(resolvedUrl, doc?.name || `${docItem.key}_document`);
+                          }}
+                          className="py-1 px-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
+                          title="Download file"
+                        >
+                          <Download size={12} /> Download
+                        </button>
                         <label
                           htmlFor={`dash-replace-${docItem.key}`}
                           className="py-1 px-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
@@ -1791,7 +1822,7 @@ export function Dashboard() {
                         <input
                           type="file"
                           id={`dash-replace-${docItem.key}`}
-                          accept=".pdf,.png,.jpg,.jpeg"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                           onChange={(e) => handleDashboardDocUpload(docItem.key, e.target.files?.[0] || null)}
                           className="hidden"
                           disabled={isUploading}
@@ -1811,7 +1842,7 @@ export function Dashboard() {
                         <input
                           type="file"
                           id={`dash-upload-${docItem.key}`}
-                          accept=".pdf,.png,.jpg,.jpeg"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                           onChange={(e) => handleDashboardDocUpload(docItem.key, e.target.files?.[0] || null)}
                           className="hidden"
                           disabled={isUploading}
@@ -2135,25 +2166,26 @@ export function Dashboard() {
                   <button
                     type="button"
                     onClick={() => window.print()}
-                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-200 transition-colors"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-200 transition-colors cursor-pointer"
                   >
                     <Printer size={13} /> Print
                   </button>
 
                   {dashboardPreviewDoc.dataUrl && (
-                    <a
-                      href={dashboardPreviewDoc.dataUrl}
-                      download={dashboardPreviewDoc.fileName || 'ojt-document'}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm"
+                    <button
+                      type="button"
+                      onClick={() => downloadDocument(dashboardPreviewDoc.dataUrl, dashboardPreviewDoc.fileName)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm cursor-pointer"
+                      title="Download file"
                     >
                       <Download size={13} /> Download
-                    </a>
+                    </button>
                   )}
 
                   <button
                     type="button"
                     onClick={() => setDashboardPreviewDoc(null)}
-                    className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-1"
+                    className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-1 cursor-pointer"
                   >
                     <X size={18} />
                   </button>
@@ -2163,19 +2195,83 @@ export function Dashboard() {
               {/* Preview Content */}
               <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex items-center justify-center min-h-[350px]">
                 {dashboardPreviewDoc.dataUrl ? (
-                  dashboardPreviewDoc.dataUrl.startsWith('data:image/') || dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ? (
-                    <img
-                      src={dashboardPreviewDoc.dataUrl}
-                      alt={dashboardPreviewDoc.title}
-                      className="max-h-[520px] max-w-full object-contain rounded-2xl shadow-lg border border-slate-200 bg-white"
-                    />
-                  ) : (
-                    <iframe
-                      src={dashboardPreviewDoc.dataUrl}
-                      className="w-full h-[520px] rounded-2xl border border-slate-200 bg-white shadow"
-                      title="Document Preview"
-                    />
-                  )
+                  (() => {
+                    const cat = getFileCategory(dashboardPreviewDoc.fileName || dashboardPreviewDoc.dataUrl);
+                    const isImg =
+                      cat === 'picture' ||
+                      dashboardPreviewDoc.dataUrl.startsWith('data:image/') ||
+                      dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                    const isWord =
+                      cat === 'doc' ||
+                      dashboardPreviewDoc.dataUrl.startsWith('data:application/msword') ||
+                      dashboardPreviewDoc.dataUrl.startsWith('data:application/vnd') ||
+                      dashboardPreviewDoc.fileName?.match(/\.(doc|docx)$/i);
+
+                    if (isImg) {
+                      return (
+                        <div className="flex flex-col items-center justify-center gap-3 max-w-full">
+                          <img
+                            src={dashboardPreviewDoc.dataUrl}
+                            alt={dashboardPreviewDoc.title}
+                            className="max-h-[520px] max-w-full object-contain rounded-2xl shadow-lg border border-slate-200 bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => downloadDocument(dashboardPreviewDoc.dataUrl, dashboardPreviewDoc.fileName)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                          >
+                            <Download size={14} /> Download Picture
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if (isWord) {
+                      return (
+                        <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-blue-200 shadow-lg text-center">
+                          <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
+                            <FileText size={36} className="stroke-[2.2]" />
+                          </div>
+                          <span className="px-3 py-1 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200 uppercase tracking-wider inline-block mb-2">
+                            Microsoft Word Document
+                          </span>
+                          <h4 className="text-base font-bold text-slate-900 mb-1">{dashboardPreviewDoc.title}</h4>
+                          <p className="text-xs text-slate-500 font-mono mb-4 break-all">{dashboardPreviewDoc.fileName}</p>
+
+                          <div className="bg-slate-50 rounded-2xl p-4 text-xs text-left space-y-2 border border-slate-100 mb-5 text-slate-600">
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Document Type:</span>
+                              <span className="font-bold text-slate-800">Word (.doc / .docx)</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="font-semibold text-slate-500">Status:</span>
+                              <span className="font-bold text-emerald-600">✓ PASSED / RECORDED</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
+                            Word files download directly to open with Microsoft Word, Google Docs, or Office apps.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => downloadDocument(dashboardPreviewDoc.dataUrl, dashboardPreviewDoc.fileName)}
+                            className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all cursor-pointer"
+                          >
+                            <Download size={15} /> Download Word Document
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <iframe
+                        src={dashboardPreviewDoc.dataUrl}
+                        className="w-full h-[520px] rounded-2xl border border-slate-200 bg-white shadow"
+                        title="Document Preview"
+                      />
+                    );
+                  })()
                 ) : (
                   <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-sm text-center">
                     <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3 border border-blue-100 shadow-inner">
@@ -2211,14 +2307,14 @@ export function Dashboard() {
                     </div>
 
                     <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
-                      This document has been verified. To view live image/PDF rendering or attach a fresh copy, choose your file below:
+                      Attach a fresh copy (Pictures, PDF, or Word Docs up to 10MB) below:
                     </p>
 
                     <label className="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 w-full">
                       <Upload size={14} /> Attach File for Live Preview
                       <input
                         type="file"
-                        accept=".pdf,.png,.jpg,.jpeg"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
