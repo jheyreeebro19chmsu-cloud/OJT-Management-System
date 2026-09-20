@@ -21,6 +21,8 @@ import {
   Upload,
   FileText,
   AlertCircle,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
@@ -255,6 +257,127 @@ export function Profile() {
     reader.readAsDataURL(file);
   };
 
+  const [editingReqDocId, setEditingReqDocId] = useState<string | null>(null);
+  const [submittingReqDocId, setSubmittingReqDocId] = useState<string | null>(null);
+
+  const handleReqDocFileSelect = (docId: string, file: File | null) => {
+    if (!file) return;
+
+    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: PDF (.pdf), Word (.doc, .docx), and Pictures (.jpg, .jpeg, .png, .webp).`
+      );
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
+      return;
+    }
+
+    setDocumentFileName((prev) => ({ ...prev, [docId]: file.name }));
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDocumentFileUrl((prev) => ({ ...prev, [docId]: String(reader.result || '') }));
+      toast.success(`Attached "${file.name}" ready for submission.`);
+    };
+    reader.onerror = () => {
+      toast.error('Failed to read file. Please try again.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleReqDocQuickReplace = (docId: string, file: File | null) => {
+    if (!file) return;
+
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: PDF (.pdf), Word (.doc, .docx), and Pictures (.jpg, .jpeg, .png, .webp).`
+      );
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
+      return;
+    }
+
+    setSubmittingReqDocId(docId);
+    const existing = getRequiredDocumentSubmission(docId, employee.id);
+    const note = documentNote[docId] !== undefined ? documentNote[docId] : (existing?.note || existing?.notes || '');
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const fileUrl = String(reader.result || '');
+      setDocumentFileName((prev) => ({ ...prev, [docId]: file.name }));
+      setDocumentFileUrl((prev) => ({ ...prev, [docId]: fileUrl }));
+
+      submitRequiredDocument(docId, employee.id, {
+        note,
+        notes: note,
+        fileName: file.name,
+        fileUrl,
+      });
+      setSubmittingReqDocId(null);
+      setEditingReqDocId(null);
+      toast.success(`✓ Replaced document with "${file.name}"!`);
+    };
+    reader.onerror = () => {
+      setSubmittingReqDocId(null);
+      toast.error('Failed to read file. Please try again.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleReqDocSubmit = (docId: string) => {
+    const existing = getRequiredDocumentSubmission(docId, employee.id);
+    const note = documentNote[docId] !== undefined ? documentNote[docId] : (existing?.note || existing?.notes || '');
+    const fileName = documentFileName[docId] || existing?.fileName || '';
+    const fileUrl = documentFileUrl[docId] || existing?.fileUrl || '';
+
+    if (!fileUrl) {
+      toast.error('Please attach a PDF, Word document, or Image file.');
+      return;
+    }
+
+    setSubmittingReqDocId(docId);
+    try {
+      submitRequiredDocument(docId, employee.id, {
+        note,
+        notes: note,
+        fileName,
+        fileUrl,
+      });
+      setEditingReqDocId(null);
+      toast.success('✓ Document updated and submitted!');
+    } catch (err: any) {
+      toast.error('Failed to submit document: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setSubmittingReqDocId(null);
+    }
+  };
+
   const handleProfileFaceSuccess = async (img?: string) => {
     if (!img || !employee) return;
     setFaceCaptureOpen(false);
@@ -457,8 +580,13 @@ export function Profile() {
           {requiredDocuments.map((doc) => {
             const submission = getRequiredDocumentSubmission(doc.id, employee.id);
             const status = getRequirementStatus(doc.id, employee.id);
+            const isEditing = editingReqDocId === doc.id;
+            const isSubmitting = submittingReqDocId === doc.id;
+            const currentFileName = documentFileName[doc.id] || submission?.fileName || '';
+            const docCategory = currentFileName ? getFileCategory(currentFileName) : 'other';
+
             return (
-              <div key={doc.id} className="rounded-xl border border-violet-100 bg-violet-50/70 p-3.5 space-y-2.5 shadow-sm">
+              <div key={doc.id} className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3 shadow-xs">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-violet-950">{doc.title}</p>
@@ -479,16 +607,24 @@ export function Profile() {
                     <Clock size={11} className="text-slate-400" /> Due: {doc.dueDate}
                   </p>
                 )}
-                {submission ? (
-                  <div className="rounded-lg bg-white border border-violet-100 p-2.5 text-[11px] text-gray-700 space-y-1.5">
+
+                {submission && !isEditing ? (
+                  <div className="rounded-xl bg-white border border-violet-100 p-3 text-[11px] text-gray-700 space-y-2 shadow-xs">
                     <div className="flex items-center justify-between">
                       <p className="font-semibold text-gray-800">Submitted Document</p>
                       <p className="text-[10px] text-gray-400">{new Date(submission.submittedAt).toLocaleDateString()}</p>
                     </div>
                     {submission.note && <p className="text-gray-600">Note: {submission.note}</p>}
-                    {submission.fileName && <p className="font-medium text-slate-800">File: {submission.fileName}</p>}
-                    
-                    <div className="flex items-center gap-2 pt-1">
+                    {submission.fileName && (
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-slate-800 truncate max-w-sm">File: {submission.fileName}</p>
+                        <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 uppercase tracking-wide shrink-0">
+                          {docCategory === 'picture' ? 'Image / JPEG' : docCategory === 'doc' ? 'Word DOC' : 'PDF'}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
                       {submission.fileUrl && (
                         <button
                           type="button"
@@ -499,67 +635,131 @@ export function Profile() {
                             note: submission.note,
                             date: new Date(submission.submittedAt).toLocaleDateString(),
                           })}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-sm"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-xs cursor-pointer"
                         >
-                          <Eye size={12} /> View Document
+                          <Eye size={13} /> View Document
                         </button>
                       )}
                       {submission.fileUrl && (
-                        <a
-                          href={submission.fileUrl}
-                          download={submission.fileName || 'ojt-document'}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-violet-200 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-50 transition-all"
+                        <button
+                          type="button"
+                          onClick={() => downloadDocument(submission.fileUrl!, submission.fileName || 'ojt-document')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-violet-200 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-50 transition-all cursor-pointer shadow-xs"
                         >
-                          <Download size={12} /> Download
-                        </a>
+                          <Download size={13} /> Download
+                        </button>
                       )}
+
+                      {/* Change / Replace Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingReqDocId(doc.id);
+                          if (documentNote[doc.id] === undefined) {
+                            setDocumentNote((prev) => ({ ...prev, [doc.id]: submission.note || submission.notes || '' }));
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                      >
+                        <RefreshCw size={12} /> Change / Replace
+                      </button>
+
+                      {/* Direct Quick Replace via file picker */}
+                      <label
+                        htmlFor={`quick-replace-${doc.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer transition-colors shadow-xs"
+                        title="Upload a new file (PDF, DOCX, JPEG) to replace immediately"
+                      >
+                        <Upload size={12} className={isSubmitting ? 'animate-spin' : ''} />
+                        <span>{isSubmitting ? 'Replacing...' : 'Quick Replace File'}</span>
+                        <input
+                          type="file"
+                          id={`quick-replace-${doc.id}`}
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          className="hidden"
+                          disabled={isSubmitting}
+                          onChange={(e) => handleReqDocQuickReplace(doc.id, e.target.files?.[0] || null)}
+                        />
+                      </label>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-2 pt-1 border-t border-violet-100">
+                  <div className="space-y-2.5 pt-1 border-t border-violet-100 bg-white p-3.5 rounded-xl border border-violet-200/80 shadow-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-violet-950">
+                        {isEditing ? 'Change / Update Document Submission' : 'Submit Required Document'}
+                      </span>
+                      {isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingReqDocId(null)}
+                          className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+
                     <textarea
-                      value={documentNote[doc.id] || ''}
+                      value={documentNote[doc.id] !== undefined ? documentNote[doc.id] : (submission?.note || '')}
                       onChange={(e) => setDocumentNote((prev) => ({ ...prev, [doc.id]: e.target.value }))}
                       rows={2}
                       placeholder="Add description / notes for this document..."
                       className="w-full px-3 py-2 border border-violet-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
                     />
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg border border-violet-200 bg-white text-violet-700 hover:bg-violet-50 cursor-pointer transition-colors shadow-sm">
-                        Attach file
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-800 cursor-pointer transition-colors shadow-xs inline-flex items-center gap-1.5">
+                        <Upload size={13} />
+                        <span>{documentFileName[doc.id] ? 'Change Selected File' : 'Attach File (PDF, DOC, JPEG/PNG)'}</span>
                         <input
                           type="file"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                           className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setDocumentFileName((prev) => ({ ...prev, [doc.id]: file.name }));
-                              const reader = new FileReader();
-                              reader.onload = () => setDocumentFileUrl((prev) => ({ ...prev, [doc.id]: String(reader.result || '') }));
-                              reader.readAsDataURL(file);
-                            }
-                          }}
+                          onChange={(e) => handleReqDocFileSelect(doc.id, e.target.files?.[0] || null)}
                         />
                       </label>
-                      {documentFileName[doc.id] && <span className="text-[10px] text-gray-600 truncate max-w-[150px]">{documentFileName[doc.id]}</span>}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const note = documentNote[doc.id] || '';
-                          const fileName = documentFileName[doc.id] || '';
-                          const fileUrl = documentFileUrl[doc.id] || '';
-                          if (!fileUrl) {
-                            toast.error('Please attach the required file.');
-                            return;
-                          }
-                          submitRequiredDocument(doc.id, employee.id, { note, notes: note, fileName, fileUrl });
-                          toast.success('Document submitted.');
-                        }}
-                        className="ml-auto px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 shadow-sm transition-all"
-                      >
-                        Submit
-                      </button>
+
+                      {currentFileName && (
+                        <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg truncate max-w-[220px]" title={currentFileName}>
+                          📎 {currentFileName}
+                        </span>
+                      )}
+
+                      <div className="ml-auto flex items-center gap-2">
+                        {isEditing && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingReqDocId(null)}
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-semibold transition-all cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => handleReqDocSubmit(doc.id)}
+                          className="px-3.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 shadow-sm transition-all disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" />
+                              <span>Saving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check size={13} />
+                              <span>{isEditing ? 'Save & Replace' : 'Submit Document'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
+
+                    <p className="text-[10px] text-slate-400">
+                      Accepted formats: <strong>PDF (.pdf)</strong>, <strong>Word (.doc, .docx)</strong>, <strong>Images (.jpg, .jpeg, .png, .webp)</strong> · Max 10MB
+                    </p>
                   </div>
                 )}
               </div>
