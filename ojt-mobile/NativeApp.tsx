@@ -631,13 +631,26 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
 
       const roleChoice = explicitRole || targetAuthRole || selectedRole || 'trainee';
 
-      // 1. Check if user already exists in employees or host_supervisors table
-      const { data: existingEmp } = await supabase
-        .from('employees')
-        .select('*')
-        .or(`id.eq.${authId},email.ilike.${authEmail}`)
-        .limit(1)
-        .maybeSingle();
+      // 1. Check if user already exists in employees table (by email or id)
+      let existingEmp: any = null;
+      if (authEmail) {
+        const { data: byEmail } = await supabase
+          .from('employees')
+          .select('*')
+          .ilike('email', authEmail)
+          .limit(1)
+          .maybeSingle();
+        if (byEmail) existingEmp = byEmail;
+      }
+      if (!existingEmp && authId) {
+        const { data: byId } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('id', authId)
+          .limit(1)
+          .maybeSingle();
+        if (byId) existingEmp = byId;
+      }
 
       if (existingEmp) {
         if (roleChoice === 'admin') {
@@ -677,68 +690,66 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
           setLoading(false);
           return;
         } else {
-          // roleChoice === 'trainee'
+          // Trainee who is already registered -> Log in directly to dashboard
           existingEmp.role = 'employee';
-          existingEmp.position = 'OJT Trainee';
+          existingEmp.position = existingEmp.position || 'OJT Trainee';
           try {
             await supabase
               .from('employees')
-              .update({ role: 'employee', position: 'OJT Trainee' })
+              .update({ role: 'employee', position: existingEmp.position || 'OJT Trainee' })
               .eq('id', existingEmp.id);
           } catch (syncErr) {
             console.warn('Notice syncing trainee role to DB:', syncErr);
           }
 
-          if (existingEmp.face_registered) {
-            const np = normalizeProfile(existingEmp);
-            await authStore.saveUser(np);
-            setSession(googleSession);
-            setProfile(np);
-            setLoading(false);
-            return;
-          } else {
-            // New trainee or face not yet enrolled — complete registration
-            setPendingGoogleUser({
-              id: authId,
-              email: authEmail,
-              fullName,
-              photo: avatarUrl || existingEmp.photo,
-            });
-            setLoading(false);
-            setView('register');
-            return;
-          }
-        }
-      }
-
-      // Check host_supervisors if not in employees
-      const { data: existingHost } = await supabase
-        .from('host_supervisors')
-        .select('*')
-        .or(`id.eq.${authId},email.ilike.${authEmail}`)
-        .limit(1)
-        .maybeSingle();
-
-      if (existingHost) {
-        if (roleChoice === 'hte' || roleChoice === 'admin') {
-          const hostProfile = {
-            id: existingHost.id,
-            name: existingHost.name,
-            email: existingHost.email,
-            role: roleChoice === 'admin' ? 'admin' : 'hte',
-            position: roleChoice === 'admin' ? 'OJT Instructor' : 'HTE Representative',
-            companyName: existingHost.company_name,
-            supervisorName: existingHost.name,
-            active: existingHost.active !== false,
-            application_status: 'approved',
-          };
-          const np = normalizeProfile(hostProfile);
+          const np = normalizeProfile(existingEmp);
           await authStore.saveUser(np);
           setSession(googleSession);
           setProfile(np);
           setLoading(false);
           return;
         }
+      }
+
+      // Check host_supervisors if not in employees
+      let existingHost: any = null;
+      if (authEmail) {
+        const { data: hostByEmail } = await supabase
+          .from('host_supervisors')
+          .select('*')
+          .ilike('email', authEmail)
+          .limit(1)
+          .maybeSingle();
+        if (hostByEmail) existingHost = hostByEmail;
+      }
+      if (!existingHost && authId) {
+        const { data: hostById } = await supabase
+          .from('host_supervisors')
+          .select('*')
+          .eq('id', authId)
+          .limit(1)
+          .maybeSingle();
+        if (hostById) existingHost = hostById;
+      }
+
+      if (existingHost) {
+        const hostProfile = {
+          id: existingHost.id || authId,
+          name: existingHost.name || fullName,
+          email: existingHost.email || authEmail,
+          role: 'hte',
+          position: 'HTE Representative',
+          companyName: existingHost.company_name,
+          supervisorName: existingHost.name || fullName,
+          active: existingHost.active !== false,
+          application_status: 'approved',
+        };
+        const np = normalizeProfile(hostProfile);
+        await authStore.saveUser(np);
+        setSession(googleSession);
+        setProfile(np);
+        setLoading(false);
+        return;
       }
 
       // 2. First-time authentication based on selected role:
