@@ -256,17 +256,6 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                 <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
               </div>
             </div>
-
-            {/* Header Right Actions */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-[#1E3A66] font-medium cursor-pointer"
-              >
-                <LogOut size={14} />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
-            </div>
           </div>
         </header>
 
