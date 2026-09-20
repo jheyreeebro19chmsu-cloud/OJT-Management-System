@@ -253,11 +253,11 @@ export default function FaceScanner({
 
         // Soft advisory cues — never block scanning or fail scan status
         if (quality.glassesDetected) {
-          setStatusMessage('Tip: Ensure eyes are clear and unobstructed');
+          setStatusMessage('⚠️ Warning: Glasses detected. Please remove glasses');
         } else if (quality.capDetected) {
-          setStatusMessage('Tip: Ensure forehead is clear');
+          setStatusMessage('⚠️ Warning: Hat/cap detected. Please remove headwear');
         } else if (quality.maskDetected) {
-          setStatusMessage('Tip: Ensure lower face is clear');
+          setStatusMessage('⚠️ Warning: Face mask detected. Please remove mask');
         }
 
         if (!quality.hasFace) {

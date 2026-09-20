@@ -193,15 +193,15 @@ export function FaceCapture({
       const currentState = stateRef.current;
       const currentQuality = qualityReportRef.current;
       const currentMismatch = mismatchErrorRef.current;
-      const isObscured = Boolean(
-        currentMismatch ||
-        currentQuality?.faceObscured ||
-        currentQuality?.maskDetected ||
-        currentQuality?.glassesDetected ||
-        currentQuality?.capDetected ||
-        currentQuality?.poorBackgroundLighting ||
-        currentQuality?.tooDark
-      );
+
+      const lineColor =
+        currentState === 'success'
+          ? '#22c55e'
+          : currentState === 'failed' || currentMismatch
+            ? '#ef4444'
+            : currentQuality && !currentQuality.ok && (currentQuality.tooDark || currentQuality.tooBright)
+              ? '#f59e0b'
+              : '#00e5ff';
 
       // 1. Dark Vignette Backdrop Outside Oval using evenodd cutout
       ctx.save();
@@ -217,15 +217,6 @@ export function FaceCapture({
       ctx.beginPath();
       ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
       ctx.clip();
-
-      const lineColor =
-        currentState === 'success'
-          ? '#22c55e'
-          : currentState === 'failed' || isObscured
-            ? '#ef4444'
-            : currentQuality && !currentQuality.ok
-              ? '#f59e0b'
-              : '#00e5ff';
 
       const scanRange = radiusY * 2;
       scanLineRef.current = (scanLineRef.current + (2.5 * dpr)) % scanRange;
@@ -473,11 +464,11 @@ export function FaceCapture({
 
               // Soft advisory cues — never block scanning or reset stableFrames
               if (quality.glassesDetected) {
-                setScanMessage('Tip: Ensure eyes are clear and unobstructed.');
+                setScanMessage('⚠️ Warning: Glasses detected. Please remove glasses for clear facial recognition.');
               } else if (quality.capDetected) {
-                setScanMessage('Tip: Ensure forehead is clear.');
+                setScanMessage('⚠️ Warning: Hat/cap detected. Please remove headwear for clear facial recognition.');
               } else if (quality.maskDetected) {
-                setScanMessage('Tip: Ensure lower face is clear.');
+                setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
               }
               if (quality.tooDark && (quality.brightness ?? 100) < 22) {
                 stableFrames = 0;
@@ -562,11 +553,11 @@ export function FaceCapture({
 
           // Soft advisory cues — do not block capture
           if (quality.glassesDetected) {
-            setScanMessage('Tip: Ensure eyes are clear and unobstructed.');
+            setScanMessage('⚠️ Warning: Glasses detected. Please remove glasses for clear facial recognition.');
           } else if (quality.capDetected) {
-            setScanMessage('Tip: Ensure forehead is clear.');
+            setScanMessage('⚠️ Warning: Hat/cap detected. Please remove headwear for clear facial recognition.');
           } else if (quality.maskDetected) {
-            setScanMessage('Tip: Ensure lower face is clear.');
+            setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
           }
 
           if (quality.faceDetected) {
@@ -780,11 +771,11 @@ export function FaceCapture({
           setQualityReport(quality);
           // Non-blocking advisory cues for photo upload
           if (quality.glassesDetected) {
-            setScanMessage('Tip: Ensure eyes are clear and unobstructed.');
+            setScanMessage('⚠️ Warning: Glasses detected. Please remove glasses for clear facial recognition.');
           } else if (quality.capDetected) {
-            setScanMessage('Tip: Ensure forehead is clear.');
+            setScanMessage('⚠️ Warning: Hat/cap detected. Please remove headwear for clear facial recognition.');
           } else if (quality.maskDetected) {
-            setScanMessage('Tip: Ensure lower face is clear.');
+            setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
           }
           if (quality.poorBackgroundLighting || quality.tooDark) {
             setState('failed');
@@ -883,27 +874,27 @@ export function FaceCapture({
               👤 Center Face inside the Oval
             </div>
 
-            {/* Obstruction warning banner within viewport */}
+            {/* Obstruction warning banner within viewport (clean warning text, no intrusive indicator overlays) */}
             {qualityReport && (qualityReport.faceObscured || qualityReport.glassesDetected || qualityReport.capDetected || qualityReport.maskDetected || qualityReport.poorBackgroundLighting || qualityReport.tooDark) && (
-              <div className="absolute top-11 left-3 right-3 bg-red-950/90 border border-red-500/80 text-white rounded-xl p-2 text-center backdrop-blur-md z-30 shadow-lg animate-pulse">
-                <p className="text-[11px] font-bold text-red-300 flex items-center justify-center gap-1.5">
-                  <AlertTriangle size={13} className="text-red-400 shrink-0" />
+              <div className="absolute top-11 left-3 right-3 bg-slate-900/90 border border-amber-500/70 text-white rounded-2xl p-2.5 text-center backdrop-blur-md z-30 shadow-xl">
+                <p className="text-[11px] font-bold text-amber-300 flex items-center justify-center gap-1.5">
+                  <AlertTriangle size={13} className="text-amber-400 shrink-0" />
                   <span>
                     {qualityReport.glassesDetected
-                      ? '🚨 GLASSES DETECTED: Remove Glasses'
+                      ? '⚠️ Warning: Glasses Detected — Please remove glasses'
                       : qualityReport.capDetected
-                        ? '🚨 HAT / CAP DETECTED: Remove Headwear'
+                        ? '⚠️ Warning: Hat / Cap Detected — Please remove headwear'
                         : qualityReport.maskDetected
-                          ? '🚨 FACE MASK DETECTED: Remove Mask'
+                          ? '⚠️ Warning: Face Mask Detected — Please remove mask'
                           : qualityReport.poorBackgroundLighting
-                            ? '🚨 DARK BACKGROUND: Move to Light Area'
+                            ? '⚠️ Warning: Dark Background — Move to light area'
                             : qualityReport.tooDark
-                              ? '🚨 LIGHTING TOO DIM: Move to Bright Light'
-                              : '🚨 CLEAR FACE REQUIRED'}
+                              ? '⚠️ Warning: Dim Lighting — Move to bright light'
+                              : '⚠️ Warning: Please ensure your face is clear'}
                   </span>
                 </p>
-                <p className="text-[10px] text-red-200/90 mt-0.5">
-                  Only an unobstructed clear face against a light, well-lit background is accepted.
+                <p className="text-[10px] text-slate-300 mt-0.5">
+                  Ensure face, eyes, and forehead are fully visible without accessories.
                 </p>
               </div>
             )}
