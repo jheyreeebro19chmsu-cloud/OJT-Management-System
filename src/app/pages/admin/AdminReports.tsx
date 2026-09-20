@@ -15,13 +15,21 @@ import {
   Building,
   CheckCircle2,
   FileText,
+  FileCheck,
   Eye,
   X,
   Lock,
   ThumbsUp,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  SlidersHorizontal,
+  ArrowUpDown,
+  RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -65,6 +73,13 @@ export function AdminReports() {
   const [selectedEmpId, setSelectedEmpId] = useState('all');
   const [selectedApprovalStatus, setSelectedApprovalStatus] = useState<'all' | 'pending' | 'approved' | 'disapproved'>('all');
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
+
+  // Trainee Rendering Progress Data Table State
+  const [traineeSearch, setTraineeSearch] = useState('');
+  const [traineeSortBy, setTraineeSortBy] = useState<'hours' | 'monthHours' | 'name' | 'progress' | 'present' | 'late'>('hours');
+  const [traineePage, setTraineePage] = useState(1);
+  const [traineePerPage, setTraineePerPage] = useState(8);
+  const [selectedTraineeModal, setSelectedTraineeModal] = useState<{ emp: Employee; stats: any } | null>(null);
 
   // Evaluation Filters
   const [evalSearch, setEvalSearch] = useState('');
@@ -190,23 +205,112 @@ export function AdminReports() {
     });
   }, [filteredRecords, selectedMonth]);
 
-  // Per-employee attendance summary
+  // Per-employee attendance summary with accurate record matching and lifetime/monthly breakdown
   const employeeSummary = useMemo(() => {
     const activeTrainees =
       selectedEmpId === 'all'
         ? traineeEmployees
         : traineeEmployees.filter((e) => e.id === selectedEmpId);
+
     return activeTrainees
       .map((emp) => {
-        const recs = filteredRecords.filter((r) => r.employeeId === emp.id);
-        const totalHours = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
-        const present = recs.filter((r) => r.status === 'present' || r.status === 'overtime').length;
-        const late = recs.filter((r) => r.status === 'late').length;
-        const absent = Math.max(0, 22 - recs.length);
-        return { emp, totalHours, present, late, absent, records: recs };
+        const empIdLower = (emp.id || '').toLowerCase().trim();
+        const studentIdLower = (emp.employeeId || '').toLowerCase().trim();
+        const emailLower = (emp.email || '').toLowerCase().trim();
+
+        // Month-filtered records for this trainee
+        const monthRecs = filteredRecords.filter((r) => {
+          const rEmp = (r.employeeId || '').toLowerCase().trim();
+          return (
+            (empIdLower && rEmp === empIdLower) ||
+            (studentIdLower && rEmp === studentIdLower) ||
+            (emailLower && rEmp === emailLower)
+          );
+        });
+
+        // Lifetime / Academic-Year records for this trainee (for all-time rendered & percentage completion)
+        const allEmpRecs = timeRecords.filter((r) => {
+          const rEmp = (r.employeeId || '').toLowerCase().trim();
+          const matchYear =
+            selectedAcademicYear === 'all' ||
+            !r.academicYear ||
+            r.academicYear === selectedAcademicYear ||
+            r.academicYear === settings?.activeAcademicYear;
+          return (
+            matchYear &&
+            ((empIdLower && rEmp === empIdLower) ||
+              (studentIdLower && rEmp === studentIdLower) ||
+              (emailLower && rEmp === emailLower))
+          );
+        });
+
+        const monthTotalHours = monthRecs.reduce((s, r) => s + (Number(r.totalHours) || 0), 0);
+        const allTotalHours = allEmpRecs.reduce((s, r) => s + (Number(r.totalHours) || 0), 0);
+        const requiredHours = Number(emp.requiredHours) || 486;
+        const progress = Math.min(100, Math.max(0, (allTotalHours / requiredHours) * 100));
+        const remainingHours = Math.max(0, requiredHours - allTotalHours);
+
+        const present = monthRecs.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+        const late = monthRecs.filter((r) => r.status === 'late').length;
+        const allPresent = allEmpRecs.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+        const allLate = allEmpRecs.filter((r) => r.status === 'late').length;
+        const absent = Math.max(0, 22 - monthRecs.length);
+
+        return {
+          emp,
+          totalHours: monthTotalHours,
+          monthTotalHours,
+          allTotalHours,
+          requiredHours,
+          remainingHours,
+          progress,
+          present,
+          late,
+          allPresent,
+          allLate,
+          absent,
+          records: monthRecs,
+          allRecords: allEmpRecs,
+        };
       })
-      .sort((a, b) => b.totalHours - a.totalHours);
-  }, [filteredRecords, traineeEmployees, selectedEmpId]);
+      .sort((a, b) => b.allTotalHours - a.allTotalHours || b.monthTotalHours - a.monthTotalHours);
+  }, [filteredRecords, timeRecords, traineeEmployees, selectedEmpId, selectedAcademicYear, settings]);
+
+  const filteredEmployeeSummary = useMemo(() => {
+    let list = employeeSummary;
+    if (traineeSearch.trim()) {
+      const q = traineeSearch.toLowerCase().trim();
+      list = list.filter(({ emp }) =>
+        (emp.name || '').toLowerCase().includes(q) ||
+        (emp.employeeId || '').toLowerCase().includes(q) ||
+        (emp.email || '').toLowerCase().includes(q) ||
+        (emp.course || '').toLowerCase().includes(q) ||
+        (emp.department || '').toLowerCase().includes(q) ||
+        (emp.companyName || '').toLowerCase().includes(q)
+      );
+    }
+    return list.slice().sort((a, b) => {
+      if (traineeSortBy === 'hours') return b.allTotalHours - a.allTotalHours || b.monthTotalHours - a.monthTotalHours;
+      if (traineeSortBy === 'monthHours') return b.monthTotalHours - a.monthTotalHours;
+      if (traineeSortBy === 'name') return (a.emp.name || '').localeCompare(b.emp.name || '');
+      if (traineeSortBy === 'progress') return b.progress - a.progress;
+      if (traineeSortBy === 'present') return b.present - a.present;
+      if (traineeSortBy === 'late') return b.late - a.late;
+      return 0;
+    });
+  }, [employeeSummary, traineeSearch, traineeSortBy]);
+
+  const totalTraineePages = Math.ceil(filteredEmployeeSummary.length / traineePerPage) || 1;
+  const paginatedEmployeeSummary = useMemo(() => {
+    const startIndex = (traineePage - 1) * traineePerPage;
+    return filteredEmployeeSummary.slice(startIndex, startIndex + traineePerPage);
+  }, [filteredEmployeeSummary, traineePage, traineePerPage]);
+
+  useEffect(() => {
+    if (traineePage > totalTraineePages) {
+      setTraineePage(1);
+    }
+  }, [traineePage, totalTraineePages]);
 
   const totalHours = filteredRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
   const presentCount = filteredRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
@@ -1068,69 +1172,301 @@ export function AdminReports() {
             </div>
           </div>
 
-          {/* Trainee Hours Summary Table */}
+          {/* Trainee Hours Summary Data Table */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-5 border-b border-gray-100">
-              <h3 className="font-bold text-gray-800">Trainee Rendering Progress</h3>
+            {/* Header with Search and Filters */}
+            <div className="p-5 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-gray-800 text-base">Trainee Rendering Progress</h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                    {filteredEmployeeSummary.length} {filteredEmployeeSummary.length === 1 ? 'Trainee' : 'Trainees'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Accurate tracking of student OJT hours, completion %, and attendance metrics
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Search Box */}
+                <div className="relative min-w-[220px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={traineeSearch}
+                    onChange={(e) => {
+                      setTraineeSearch(e.target.value);
+                      setTraineePage(1);
+                    }}
+                    placeholder="Search name, ID, course, HTE..."
+                    className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                  {traineeSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTraineeSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <ArrowUpDown size={14} className="text-gray-400" />
+                  <select
+                    value={traineeSortBy}
+                    onChange={(e) => setTraineeSortBy(e.target.value as any)}
+                    className="px-2.5 py-1.5 border border-gray-200 rounded-xl text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="hours">Sort: Total Hours (High-Low)</option>
+                    <option value="monthHours">Sort: This Month Hours</option>
+                    <option value="progress">Sort: Progress % (High-Low)</option>
+                    <option value="name">Sort: Name (A-Z)</option>
+                    <option value="present">Sort: Present Logs</option>
+                    <option value="late">Sort: Late Logs</option>
+                  </select>
+                </div>
+
+                {/* Per Page Select */}
+                <select
+                  value={traineePerPage}
+                  onChange={(e) => {
+                    setTraineePerPage(Number(e.target.value));
+                    setTraineePage(1);
+                  }}
+                  className="px-2.5 py-1.5 border border-gray-200 rounded-xl text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                >
+                  <option value={8}>8 per page</option>
+                  <option value={15}>15 per page</option>
+                  <option value={25}>25 per page</option>
+                </select>
+              </div>
             </div>
+
+            {/* Data Table View */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[560px]">
+              <table className="w-full text-left min-w-[760px]">
                 <thead>
-                  <tr className="bg-gray-50 text-xs font-semibold text-gray-500 border-b border-gray-100 whitespace-nowrap">
-                    <th className="py-3 px-4">Trainee</th>
-                    <th className="py-3 px-4">Rendered This Month</th>
-                    <th className="py-3 px-4">Required Total</th>
-                    <th className="py-3 px-4">Progress</th>
-                    <th className="py-3 px-4">Present</th>
-                    <th className="py-3 px-4">Late</th>
+                  <tr className="bg-gray-50/80 text-xs font-semibold text-gray-500 border-b border-gray-100 whitespace-nowrap">
+                    <th className="py-3 px-4 font-bold">Active Trainee</th>
+                    <th className="py-3 px-4 font-bold">Academic &amp; Placement</th>
+                    <th className="py-3 px-4 font-bold">Hours &amp; Progress</th>
+                    <th className="py-3 px-4 font-bold text-center">Attendance Logs</th>
+                    <th className="py-3 px-4 font-bold">Status Badges</th>
+                    <th className="py-3 px-4 font-bold text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50 text-sm">
-                  {employeeSummary.map(({ emp, totalHours: empHrs, present, late }) => {
-                    const required = emp.requiredHours || 486;
-                    const allRecords = timeRecords.filter((r) => r.employeeId === emp.id);
-                    const allTotalHours = allRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
-                    const pct = Math.min(100, Math.round((allTotalHours / required) * 100));
+                <tbody className="divide-y divide-gray-100 text-sm">
+                  {paginatedEmployeeSummary.map((summaryItem) => {
+                    const { emp, allTotalHours, monthTotalHours, requiredHours, remainingHours, progress, present, late } = summaryItem;
+                    const pct = Math.round(progress);
+
                     return (
-                      <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                      <tr
+                        key={emp.id}
+                        onClick={() => setSelectedTraineeModal({ emp, stats: summaryItem })}
+                        className="hover:bg-blue-50/50 transition-colors cursor-pointer group"
+                        title="Click to view detailed attendance history"
+                      >
+                        {/* 1. Trainee Identity Column */}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 overflow-hidden shrink-0 border border-gray-200">
+                            <div className="w-9 h-9 rounded-xl bg-blue-100 overflow-hidden shrink-0 border border-gray-200 flex items-center justify-center font-bold text-blue-700 text-xs">
                               {emp.photo ? (
-                                <img src={getPhotoUrl(emp.photo)} alt={emp.name} className="w-full h-full object-cover" />
+                                <img
+                                  src={getPhotoUrl(emp.photo)}
+                                  alt={emp.name}
+                                  className="w-full h-full object-cover"
+                                  style={{ transform: 'scaleX(-1)' }}
+                                />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center font-bold text-blue-700 text-xs">
-                                  {emp.name.charAt(0)}
-                                </div>
+                                emp.name?.charAt(0)?.toUpperCase() || 'T'
                               )}
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-800 text-xs">{emp.name}</p>
-                              <p className="text-[10px] text-gray-400 font-mono">{emp.employeeId}</p>
+                              <p className="font-semibold text-gray-800 text-xs group-hover:text-blue-700 transition-colors">
+                                {emp.name}
+                              </p>
+                              <p className="text-[11px] text-gray-400 font-mono">
+                                {emp.employeeId} {emp.email ? `• ${emp.email}` : ''}
+                              </p>
+                              {emp.academicYear && (
+                                <span className="inline-block mt-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
+                                  A.Y. {emp.academicYear}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4 font-semibold text-blue-700">{empHrs.toFixed(1)}h</td>
-                        <td className="py-3 px-4 text-gray-500">{required}h</td>
+
+                        {/* 2. Academic & Placement Column */}
                         <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-gray-100 rounded-full h-2 min-w-[80px]">
+                          <p className="text-xs font-semibold text-gray-700">
+                            {emp.department || 'College of Computer Studies'}
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            {emp.course || 'Bachelor of Science in Information Systems'}
+                          </p>
+                          <div className="flex items-center gap-1 mt-1 text-[11px] font-semibold text-blue-700 bg-blue-50/80 px-2 py-0.5 rounded-md border border-blue-100/60 inline-flex">
+                            <Building size={11} className="text-blue-600 shrink-0" />
+                            <span className="truncate max-w-[140px]">{emp.companyName || 'Host Establishment'}</span>
+                          </div>
+                        </td>
+
+                        {/* 3. Hours & Progress Column (ACCURATE) */}
+                        <td className="py-3 px-4">
+                          <div className="min-w-[140px] max-w-[180px]">
+                            <div className="flex justify-between items-baseline text-xs mb-1">
+                              <span className="font-bold text-blue-700">
+                                {allTotalHours.toFixed(1)}h{' '}
+                                <span className="text-[10px] font-normal text-gray-400">
+                                  ({monthTotalHours.toFixed(1)}h mo.)
+                                </span>
+                              </span>
+                              <span className="font-bold text-gray-700">{pct}%</span>
+                            </div>
+                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                               <div
-                                className="bg-blue-600 h-2 rounded-full transition-all"
-                                style={{ width: `${pct}%` }}
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  pct >= 100
+                                    ? 'bg-emerald-500'
+                                    : pct >= 50
+                                    ? 'bg-blue-600'
+                                    : pct > 0
+                                    ? 'bg-amber-500'
+                                    : 'bg-gray-300'
+                                }`}
+                                style={{ width: `${Math.min(100, Math.max(pct, pct > 0 ? 3 : 0))}%` }}
                               />
                             </div>
-                            <span className="text-xs font-semibold text-gray-600">{pct}%</span>
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              {requiredHours}h required • {remainingHours.toFixed(1)}h left
+                            </p>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-green-600 font-semibold">{present}</td>
-                        <td className="py-3 px-4 text-orange-600 font-semibold">{late}</td>
+
+                        {/* 4. Attendance Metrics Column */}
+                        <td className="py-3 px-4 text-center">
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200" title="Present Check-ins">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                              {present} Present
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200" title="Late Check-ins">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                              {late} Late
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 5. Status Badges Column */}
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col gap-1 items-start">
+                            {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
+                              <span className="text-[10px] font-bold flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                <FileCheck size={10} className="text-emerald-600" /> Docs: Passed
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                                <FileText size={10} className="text-amber-600" /> Docs: Pending
+                              </span>
+                            )}
+                            {emp.faceRegistered ? (
+                              <span className="text-[10px] font-medium flex items-center gap-1 text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-md">
+                                <Camera size={10} /> Face Enrolled
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium flex items-center gap-1 text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-md">
+                                <XCircle size={10} /> Face Pending
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 6. Action Column */}
+                        <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTraineeModal({ emp, stats: summaryItem })}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all cursor-pointer"
+                            title="View Trainee Attendance & DTTR"
+                          >
+                            <Eye size={16} />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
+
+                  {filteredEmployeeSummary.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-12 text-gray-400">
+                        <Users size={32} className="mx-auto mb-2 opacity-20" />
+                        <p className="font-semibold text-sm text-gray-600">No trainees found</p>
+                        <p className="text-xs text-gray-400 mt-1">Try adjusting your search query or academic year filter.</p>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {/* Data Table Pagination Footer */}
+            {filteredEmployeeSummary.length > 0 && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 border-t border-gray-100 bg-gray-50/50">
+                <div className="text-xs text-gray-500 font-medium">
+                  Showing <span className="font-bold text-gray-800">{(traineePage - 1) * traineePerPage + 1}</span> to{' '}
+                  <span className="font-bold text-gray-800">
+                    {Math.min(traineePage * traineePerPage, filteredEmployeeSummary.length)}
+                  </span>{' '}
+                  of <span className="font-bold text-gray-800">{filteredEmployeeSummary.length}</span> trainees
+                </div>
+
+                {totalTraineePages > 1 && (
+                  <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setTraineePage((p) => Math.max(1, p - 1))}
+                      disabled={traineePage === 1}
+                      className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                      title="Previous Page"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalTraineePages }, (_, i) => i + 1).map((page) => (
+                        <button
+                          type="button"
+                          key={page}
+                          onClick={() => setTraineePage(page)}
+                          className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            traineePage === page
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                              : 'border border-gray-200 text-gray-600 hover:bg-white'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setTraineePage((p) => Math.min(totalTraineePages, p + 1))}
+                      disabled={traineePage === totalTraineePages}
+                      className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                      title="Next Page"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Detailed Records Table */}
@@ -1620,7 +1956,168 @@ export function AdminReports() {
                 <button
                   type="button"
                   onClick={() => setSelectedEvalModal(null)}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-300 transition-colors"
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-300 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TRAINEE ATTENDANCE & DTTR DETAILS MODAL                   */}
+        {/* ========================================================= */}
+        {selectedTraineeModal && (
+          <div
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+            onClick={(e) => e.target === e.currentTarget && setSelectedTraineeModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 overflow-hidden shrink-0 border border-blue-200 flex items-center justify-center font-bold text-blue-700 text-sm">
+                    {selectedTraineeModal.emp.photo ? (
+                      <img
+                        src={getPhotoUrl(selectedTraineeModal.emp.photo)}
+                        alt={selectedTraineeModal.emp.name}
+                        className="w-full h-full object-cover"
+                        style={{ transform: 'scaleX(-1)' }}
+                      />
+                    ) : (
+                      selectedTraineeModal.emp.name?.charAt(0)?.toUpperCase() || 'T'
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-sm">{selectedTraineeModal.emp.name}</h3>
+                    <p className="text-xs text-gray-400 font-mono">
+                      {selectedTraineeModal.emp.employeeId} • {selectedTraineeModal.emp.email || 'No email'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedEmpId(selectedTraineeModal.emp.id);
+                      setActiveTab('monthly_dttr');
+                      setSelectedTraineeModal(null);
+                    }}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <FileText size={13} /> View Full DTTR
+                  </button>
+                  <button
+                    onClick={() => setSelectedTraineeModal(null)}
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-5">
+                {/* Placement & Academic Card */}
+                <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div>
+                    <span className="text-gray-400 font-medium">Department / College:</span>
+                    <p className="font-bold text-gray-800">{selectedTraineeModal.emp.department || 'College of Computer Studies'}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 font-medium">Degree Program / Course:</span>
+                    <p className="font-bold text-gray-800">{selectedTraineeModal.emp.course || 'BS Information Systems'}</p>
+                  </div>
+                  <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                    <div>
+                      <span className="text-gray-400 font-medium">Host Establishment (HTE):</span>
+                      <p className="font-bold text-blue-700">{selectedTraineeModal.emp.companyName || 'Host Training Establishment'}</p>
+                    </div>
+                    {selectedTraineeModal.emp.academicYear && (
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                        A.Y. {selectedTraineeModal.emp.academicYear}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress & Hours Metric Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl text-center">
+                    <p className="text-[10px] uppercase font-bold text-blue-600">Total Rendered</p>
+                    <p className="text-lg font-black text-blue-900 mt-0.5">{selectedTraineeModal.stats.allTotalHours.toFixed(1)}h</p>
+                  </div>
+                  <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl text-center">
+                    <p className="text-[10px] uppercase font-bold text-emerald-600">This Month</p>
+                    <p className="text-lg font-black text-emerald-900 mt-0.5">{selectedTraineeModal.stats.monthTotalHours.toFixed(1)}h</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Required Hours</p>
+                    <p className="text-lg font-black text-gray-800 mt-0.5">{selectedTraineeModal.stats.requiredHours}h</p>
+                  </div>
+                  <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl text-center">
+                    <p className="text-[10px] uppercase font-bold text-purple-600">Completion %</p>
+                    <p className="text-lg font-black text-purple-900 mt-0.5">{Math.round(selectedTraineeModal.stats.progress)}%</p>
+                  </div>
+                </div>
+
+                {/* Completion Progress Bar */}
+                <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-xs">
+                  <div className="flex justify-between items-center text-xs font-semibold mb-1.5">
+                    <span className="text-gray-700">OJT Completion Progress</span>
+                    <span className="text-blue-700 font-bold">{Math.round(selectedTraineeModal.stats.progress)}% Completed</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, Math.max(selectedTraineeModal.stats.progress, 2))}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-gray-400 mt-1">
+                    <span>{selectedTraineeModal.stats.allTotalHours.toFixed(1)} hours completed</span>
+                    <span>{selectedTraineeModal.stats.remainingHours.toFixed(1)} hours remaining</span>
+                  </div>
+                </div>
+
+                {/* Attendance Summary */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider">Attendance Logs Breakdown</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2.5 bg-green-50 border border-green-200 rounded-xl text-center">
+                      <span className="text-xs font-bold text-green-800">{selectedTraineeModal.stats.allPresent} Present</span>
+                    </div>
+                    <div className="p-2.5 bg-orange-50 border border-orange-200 rounded-xl text-center">
+                      <span className="text-xs font-bold text-orange-800">{selectedTraineeModal.stats.allLate} Late</span>
+                    </div>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                      <span className="text-xs font-bold text-slate-700">{selectedTraineeModal.stats.allRecords.length} Total Logs</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEmpId(selectedTraineeModal.emp.id);
+                    setActiveTab('monthly_dttr');
+                    setSelectedTraineeModal(null);
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <FileText size={14} /> Open Trainee Monthly DTTR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTraineeModal(null)}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   Close
                 </button>

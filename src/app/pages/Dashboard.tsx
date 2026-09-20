@@ -9,6 +9,7 @@ import {
   TrendingUp,
   Calendar,
   Camera,
+  ChevronLeft,
   ChevronRight,
   Bell,
   Info,
@@ -39,7 +40,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -99,10 +100,24 @@ export function Dashboard() {
   const [metrics, setMetrics] = useState<any>(null);
   const [recentRecords, setRecentRecords] = useState<any[]>([]);
   const [linkedStudents, setLinkedStudents] = useState<any[]>([]);
+  const [linkedStudentsPage, setLinkedStudentsPage] = useState(1);
+  const [linkedStudentsPerPage, setLinkedStudentsPerPage] = useState(6);
   const [searchId, setSearchId] = useState('');
   const [isLinking, setIsLinking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  const totalLinkedPages = Math.ceil(linkedStudents.length / linkedStudentsPerPage) || 1;
+  const paginatedLinkedStudents = useMemo(() => {
+    const startIndex = (linkedStudentsPage - 1) * linkedStudentsPerPage;
+    return linkedStudents.slice(startIndex, startIndex + linkedStudentsPerPage);
+  }, [linkedStudents, linkedStudentsPage, linkedStudentsPerPage]);
+
+  useEffect(() => {
+    if (linkedStudentsPage > totalLinkedPages) {
+      setLinkedStudentsPage(1);
+    }
+  }, [linkedStudentsPage, totalLinkedPages]);
   
   // Original Dashboard State (for non-admin/students)
   const currentEmp = employee || getCurrentEmployee();
@@ -875,18 +890,20 @@ export function Dashboard() {
 
         {/* Linked Students Status */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
             <div>
               <h3 className="text-lg font-bold text-gray-900">HTE Linked Students</h3>
               <p className="text-xs text-gray-500 mt-0.5">Trainees officially assigned to Host Training Establishments</p>
             </div>
-            <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">
-              {linkedStudents.length} Assigned
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">
+                {linkedStudents.length} Assigned
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {linkedStudents.map((link) => (
+            {paginatedLinkedStudents.map((link) => (
               <div key={link.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50/70 hover:bg-white hover:shadow-sm transition-all">
                 <div className="flex justify-between items-start">
                   <div>
@@ -919,6 +936,60 @@ export function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {linkedStudents.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-5 mt-5 border-t border-gray-100">
+              <div className="text-xs text-gray-500 font-medium">
+                Showing <span className="font-bold text-gray-800">{(linkedStudentsPage - 1) * linkedStudentsPerPage + 1}</span> to{' '}
+                <span className="font-bold text-gray-800">
+                  {Math.min(linkedStudentsPage * linkedStudentsPerPage, linkedStudents.length)}
+                </span>{' '}
+                of <span className="font-bold text-gray-800">{linkedStudents.length}</span> assigned trainees
+              </div>
+
+              {totalLinkedPages > 1 && (
+                <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setLinkedStudentsPage((p) => Math.max(1, p - 1))}
+                    disabled={linkedStudentsPage === 1}
+                    className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalLinkedPages }, (_, i) => i + 1).map((page) => (
+                      <button
+                        type="button"
+                        key={page}
+                        onClick={() => setLinkedStudentsPage(page)}
+                        className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          linkedStudentsPage === page
+                            ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                            : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setLinkedStudentsPage((p) => Math.min(totalLinkedPages, p + 1))}
+                    disabled={linkedStudentsPage === totalLinkedPages}
+                    className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                    title="Next Page"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Recent Time Records */}

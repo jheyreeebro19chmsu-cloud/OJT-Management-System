@@ -7,6 +7,9 @@ import {
   ActivityIndicator,
   Platform,
   Dimensions,
+  Modal,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import {
@@ -14,11 +17,13 @@ import {
   MapPin,
   Compass,
   Maximize2,
+  Minimize2,
   ZoomIn,
   ZoomOut,
   Layers,
   ShieldCheck,
   AlertTriangle,
+  X,
 } from 'lucide-react-native';
 
 export interface LeafletGeofenceMapProps {
@@ -50,6 +55,7 @@ export default function LeafletGeofenceMap({
 }: LeafletGeofenceMapProps) {
   const webViewRef = useRef<WebView | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [currentLat, setCurrentLat] = useState(centerLat || 10.7412);
   const [currentLng, setCurrentLng] = useState(centerLng || 122.9691);
 
@@ -466,6 +472,15 @@ export default function LeafletGeofenceMap({
 
       {/* Map Control Overlay Buttons */}
       <View style={styles.controlsContainer} pointerEvents="box-none">
+        {/* Maximize to Full Screen */}
+        <TouchableOpacity
+          style={[styles.controlBtn, styles.fullscreenTriggerBtn]}
+          onPress={() => setIsFullScreen(true)}
+          activeOpacity={0.8}
+        >
+          <Maximize2 size={16} color="#2563eb" />
+        </TouchableOpacity>
+
         {/* Recenter on Office Pin */}
         <TouchableOpacity style={styles.controlBtn} onPress={centerOnOffice} activeOpacity={0.8}>
           <MapPin size={17} color="#059669" />
@@ -499,6 +514,89 @@ export default function LeafletGeofenceMap({
           </Text>
         </View>
       )}
+
+      {/* Fullscreen Mobile Modal */}
+      <Modal
+        visible={isFullScreen}
+        animationType="slide"
+        onRequestClose={() => setIsFullScreen(false)}
+      >
+        <SafeAreaView style={styles.fullscreenModalContainer}>
+          <StatusBar barStyle="light-content" backgroundColor="#090d16" />
+
+          {/* Fullscreen Header */}
+          <View style={styles.fullscreenHeader}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.fullscreenTitle} numberOfLines={1}>
+                  {zoneName}
+                </Text>
+                <View style={styles.fullscreenBadge}>
+                  <Text style={styles.fullscreenBadgeText}>Full Screen</Text>
+                </View>
+              </View>
+              <Text style={styles.fullscreenSubtitle}>
+                Perimeter: {radius}m • Lat: {Number(currentLat).toFixed(5)}, Lng: {Number(currentLng).toFixed(5)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.fullscreenCloseBtn}
+              onPress={() => setIsFullScreen(false)}
+              activeOpacity={0.8}
+            >
+              <Minimize2 size={16} color="#ffffff" style={{ marginRight: 4 }} />
+              <Text style={styles.fullscreenCloseBtnText}>Exit</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Fullscreen Map Body */}
+          <View style={styles.fullscreenMapBody}>
+            <WebView
+              originWhitelist={['*']}
+              source={{ html: leafletHtml }}
+              style={styles.webView}
+              onMessage={handleMessage}
+              scrollEnabled={false}
+              bounces={false}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+            />
+
+            {/* Controls Overlay in Fullscreen */}
+            <View style={styles.controlsContainer} pointerEvents="box-none">
+              <TouchableOpacity style={styles.controlBtn} onPress={centerOnOffice} activeOpacity={0.8}>
+                <MapPin size={17} color="#059669" />
+              </TouchableOpacity>
+
+              {Boolean(userLat && userLng) && (
+                <TouchableOpacity style={styles.controlBtn} onPress={centerOnUser} activeOpacity={0.8}>
+                  <Navigation size={17} color="#2563eb" />
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.zoomButtonGroup}>
+                <TouchableOpacity style={styles.zoomBtn} onPress={zoomIn} activeOpacity={0.8}>
+                  <ZoomIn size={16} color="#334155" />
+                </TouchableOpacity>
+                <View style={styles.zoomDivider} />
+                <TouchableOpacity style={styles.zoomBtn} onPress={zoomOut} activeOpacity={0.8}>
+                  <ZoomOut size={16} color="#334155" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Footer hint in fullscreen */}
+            {interactive && (
+              <View style={styles.footerHint} pointerEvents="none">
+                <Compass size={12} color="#64748b" style={{ marginRight: 4 }} />
+                <Text style={styles.footerHintText}>
+                  Tap anywhere or drag pin to set workplace coordinates
+                </Text>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -666,5 +764,65 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  fullscreenTriggerBtn: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  fullscreenModalContainer: {
+    flex: 1,
+    backgroundColor: '#090d16',
+  },
+  fullscreenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  fullscreenTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  fullscreenSubtitle: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  fullscreenBadge: {
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+  },
+  fullscreenBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#60a5fa',
+  },
+  fullscreenCloseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginLeft: 12,
+  },
+  fullscreenCloseBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  fullscreenMapBody: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#e2e8f0',
   },
 });

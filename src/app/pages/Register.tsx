@@ -25,6 +25,7 @@ import {
   Phone,
   ShieldAlert,
   AlertTriangle,
+  AlertCircle,
   RefreshCw,
   Crosshair,
   Navigation,
@@ -2759,12 +2760,12 @@ export function Register() {
                           onChange={(e) => update('street', e.target.value)}
                           placeholder="e.g. Block 5 Lot 12, Rose Street, Villa Angela Subd."
                           className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                            attemptedNext && role === 'trainee' && !isStreetValid
+                            attemptedNext && role === 'trainee' && !form.street?.trim()
                               ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
                               : 'border-gray-200 focus:ring-blue-500'
                           }`}
                         />
-                        {attemptedNext && role === 'trainee' && !isStreetValid && (
+                        {attemptedNext && role === 'trainee' && !form.street?.trim() && (
                           <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Street Address / House Number</p>
                         )}
                       </div>
@@ -2915,7 +2916,7 @@ export function Register() {
                           </div>
                         )}
 
-                        {attemptedNext && role === 'trainee' && !hasValidLocation && (
+                        {attemptedNext && role === 'trainee' && !registrationLocation && (
                           <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
                             <AlertCircle size={16} className="text-red-600 shrink-0" />
                             <span>GPS Geofence Required: Please acquire a high-accuracy GPS satellite fix or click &quot;Adjust Pin&quot; to mark your attendance location.</span>

@@ -57,7 +57,7 @@
     size: portrait;
   }
 
-  /* Reset all overflow clipping so browser print paginator can print ALL pages */
+  /* Reset all overflow clipping so browser print paginator can print ALL pages cleanly */
   html,
   body,
   #root,
@@ -80,6 +80,9 @@
     padding: 0 !important;
     margin: 0 !important;
     color: #0f172a !important;
+    font-size: 11pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   main {
@@ -92,10 +95,15 @@
     display: block !important;
   }
 
+  /* Universal print hide */
   .no-print,
   header.no-print,
   nav.no-print,
-  aside.no-print {
+  aside.no-print,
+  button.no-print,
+  .leaflet-control-container,
+  .toast,
+  [data-sonner-toaster] {
     display: none !important;
   }
 
@@ -103,7 +111,7 @@
     display: block !important;
   }
 
-  /* Tables must paginate across sheets cleanly */
+  /* High fidelity print borders & tables */
   table {
     page-break-inside: auto !important;
     border-collapse: collapse !important;
@@ -120,20 +128,72 @@
 
   tr {
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
     page-break-after: auto !important;
   }
 
-  .page-break {
+  .page-break,
+  .page-break-before-always {
     page-break-before: always !important;
     break-before: page !important;
   }
 
-  .page-break-after {
+  .page-break-after,
+  .page-break-after-always {
     page-break-after: always !important;
     break-after: page !important;
   }
 
-  /* DTTR specific print optimizations so all 31 days and signatures fit cleanly */
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────────
+     EVALUATION REPORT SHEET PRINT RULES (EXACT 1-PAGE PER SECTION / 2-PAGE TOTAL)
+     ───────────────────────────────────────────────────────────────────────────── */
+  .eval-sheet-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+  }
+
+  .eval-page {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: white !important;
+  }
+
+  .eval-page-1 {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  .eval-page-2 {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  .eval-table th,
+  .eval-table td {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    font-size: 8.5pt !important;
+    line-height: 1.2 !important;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────────
+     DTTR (DAILY TIME & TASKS RECORD) PRINT SPECIFIC RULES
+     ───────────────────────────────────────────────────────────────────────────── */
   .dttr-sheet {
     box-shadow: none !important;
     border: none !important;
@@ -141,16 +201,22 @@
     margin: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+    background: white !important;
   }
 
   .dttr-sheet table {
-    font-size: 10px !important;
+    font-size: 8pt !important;
+    border-collapse: collapse !important;
+    width: 100% !important;
   }
 
   .dttr-sheet table td,
   .dttr-sheet table th {
-    padding-top: 1.5px !important;
-    padding-bottom: 1.5px !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    line-height: 1.15 !important;
   }
 
   .dttr-sheet tr {
@@ -162,18 +228,19 @@
     break-inside: avoid !important;
   }
 
-  input[type="range"] {
+  input[type="range"],
+  input[type="file"] {
     display: none !important;
   }
 
   textarea {
     resize: none !important;
     overflow: visible !important;
-    border: 1px solid #cbd5e1 !important;
-    background: #ffffff !important;
+    border: none !important;
+    background: transparent !important;
   }
 
-  /* Ensure colors and backgrounds print */
+  /* Ensure colors and backgrounds print sharply */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;

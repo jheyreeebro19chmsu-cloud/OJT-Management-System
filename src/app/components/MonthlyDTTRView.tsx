@@ -247,13 +247,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   }, [dailyRows]);
 
   // HTE Company and Supervisor details
-  const companyName = selectedEmployee?.company || selectedEmployee?.department || 'Partner Host Training Establishment';
+  const companyName = selectedEmployee?.companyName || (selectedEmployee as any)?.company || selectedEmployee?.department || 'Partner Host Training Establishment';
   const supervisorFromHost = useMemo(() => {
-    if (!selectedEmployee?.company) return null;
+    const comp = selectedEmployee?.companyName || (selectedEmployee as any)?.company;
+    if (!comp) return null;
     return hostSupervisors.find(
-      (h) => h.companyName?.toLowerCase() === selectedEmployee.company?.toLowerCase()
+      (h) => h.companyName?.toLowerCase() === comp.toLowerCase()
     );
-  }, [hostSupervisors, selectedEmployee?.company]);
+  }, [hostSupervisors, selectedEmployee]);
 
   const defaultSupervisorName =
     savedDttr?.hteSupervisorName ||
@@ -449,7 +450,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 >
                   {traineeList.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.employeeId || 'No ID'}) - {t.company || 'Unassigned'}
+                      {t.name} ({t.employeeId || 'No ID'}) - {t.companyName || (t as any).company || 'Unassigned'}
                     </option>
                   ))}
                 </select>
@@ -525,42 +526,39 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         className="dttr-sheet bg-white p-6 sm:p-10 rounded-3xl border border-slate-300 shadow-md print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none"
       >
         {/* CHMSU Official Institutional Header */}
-        <div className="text-center relative pb-3 mb-3 border-b-2 border-slate-900">
-          <div className="flex items-center justify-between gap-3 mb-1">
-            <div className="w-16 h-16 shrink-0 flex items-center justify-center">
+        <div className="text-center relative pb-3 mb-3 print:pb-1.5 print:mb-1.5 border-b-2 border-slate-900">
+          <div className="flex items-center justify-between gap-3 mb-1 print:mb-0.5">
+            <div className="w-16 h-16 shrink-0 flex items-center justify-center print:w-12 print:h-12">
               <img
                 src="/chmsu-logo.png"
                 alt="CHMSU Logo"
-                className="w-14 h-14 object-contain drop-shadow-xs"
+                className="w-14 h-14 object-contain drop-shadow-xs print:w-11 print:h-11"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
               />
             </div>
             <div className="flex-1 px-1 text-center">
-              <p className="text-[9px] uppercase tracking-widest text-slate-600 font-bold">
+              <p className="text-[9px] print:text-[7.5pt] uppercase tracking-widest text-slate-600 font-bold">
                 Republic of the Philippines
               </p>
-              <h1 className="text-base sm:text-lg font-black text-emerald-950 tracking-tight leading-tight uppercase font-serif">
+              <h1 className="text-base sm:text-lg print:text-[12pt] font-black text-emerald-950 tracking-tight leading-tight uppercase font-serif">
                 CARLOS HILADO MEMORIAL STATE UNIVERSITY
               </h1>
-              <p className="text-[9.5px] text-slate-600 font-medium">
+              <p className="text-[9.5px] print:text-[7.5pt] text-slate-600 font-medium">
                 Alijis Campus • Binalbagan Campus • Fortune Towne Campus • Talisay (Main) Campus
               </p>
-              <p className="text-[9px] text-emerald-800 font-semibold italic">
+              <p className="text-[9px] print:text-[7pt] text-emerald-800 font-semibold italic">
                 A leading GREEN institution of higher learning in the global community by 2030
               </p>
-              <p className="text-[8.5px] text-slate-500">
-                (Good governance, Research-oriented, Extension-driven, Education for Sustainable Development, and Nation-building)
-              </p>
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 mt-1">
+              <h2 className="text-xs print:text-[8.5pt] font-black uppercase tracking-wider text-slate-900 mt-1 print:mt-0.5">
                 College of Computer Studies
               </h2>
-              <h3 className="text-sm sm:text-base font-black text-slate-950 tracking-wide uppercase mt-0.5">
+              <h3 className="text-sm sm:text-base print:text-[10pt] font-black text-slate-950 tracking-wide uppercase mt-0.5">
                 DAILY TIME &amp; TASKS RECORD (DTTR)
               </h3>
             </div>
-            <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-right text-[8px] text-slate-500 font-mono leading-tight">
+            <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-right text-[8px] print:text-[7pt] text-slate-500 font-mono leading-tight print:w-12 print:h-12">
               <span className="font-bold text-slate-700">CHMSU-CCS</span>
               <span>DTTR-FM-01</span>
               <span>Rev: 01</span>
@@ -570,36 +568,36 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         </div>
 
         {/* Trainee & Agency Details Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-medium text-slate-800 mb-3 print:mb-2">
-          <div className="space-y-1.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 print:gap-2 text-xs print:text-[8pt] font-medium text-slate-800 mb-3 print:mb-1.5">
+          <div className="space-y-1.5 print:space-y-0.5">
             <div className="flex items-baseline">
-              <span className="font-bold text-[11px] text-slate-900 whitespace-nowrap mr-2">NAME OF TRAINEE:</span>
-              <span className="flex-1 font-black text-sm text-slate-950 uppercase border-b border-slate-800 px-1 pb-0.5 tracking-wide">
+              <span className="font-bold text-[11px] print:text-[8pt] text-slate-900 whitespace-nowrap mr-2">NAME OF TRAINEE:</span>
+              <span className="flex-1 font-black text-sm print:text-[9pt] text-slate-950 uppercase border-b border-slate-800 px-1 pb-0.5 tracking-wide">
                 {selectedEmployee?.name || '__________________________'}
               </span>
             </div>
             <div className="flex items-baseline">
-              <span className="font-bold text-[10px] text-slate-700 whitespace-nowrap mr-2">
+              <span className="font-bold text-[10px] print:text-[7.5pt] text-slate-700 whitespace-nowrap mr-2">
                 HOST TRAINING ESTABLISHMENT (HTE) / AGENCY:
               </span>
-              <span className="flex-1 font-semibold text-xs text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
+              <span className="flex-1 font-semibold text-xs print:text-[8pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
                 {companyName}
               </span>
             </div>
           </div>
 
-          <div className="space-y-1.5 md:pl-4">
+          <div className="space-y-1.5 print:space-y-0.5 md:pl-4 print:pl-2">
             <div className="flex items-baseline">
-              <span className="font-bold text-[11px] text-slate-900 whitespace-nowrap mr-2">MONTH &amp; YEAR:</span>
-              <span className="flex-1 font-bold text-sm text-slate-900 border-b border-slate-800 px-1 pb-0.5">
+              <span className="font-bold text-[11px] print:text-[8pt] text-slate-900 whitespace-nowrap mr-2">MONTH &amp; YEAR:</span>
+              <span className="flex-1 font-bold text-sm print:text-[9pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5">
                 {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
               </span>
             </div>
             <div className="flex items-baseline">
-              <span className="font-bold text-[10px] text-slate-700 whitespace-nowrap mr-2">
+              <span className="font-bold text-[10px] print:text-[7.5pt] text-slate-700 whitespace-nowrap mr-2">
                 COURSE, YEAR &amp; SECTION:
               </span>
-              <span className="flex-1 text-xs text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
+              <span className="flex-1 text-xs print:text-[8pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
                 {selectedEmployee?.course || 'BS Information Systems'} • {selectedEmployee?.campus || 'Alijis Campus'}
               </span>
             </div>
@@ -607,49 +605,49 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         </div>
 
         {/* Official DTTR Table (Pixel-perfect match to CHMSU paper form) */}
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse border-2 border-slate-900 text-xs font-sans text-slate-900">
+        <div className="overflow-x-auto print:overflow-visible">
+          <table className="w-full border-collapse border-2 border-slate-900 text-xs print:text-[7.5pt] font-sans text-slate-900">
             <thead>
               {/* Row 1 Headers */}
               <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 text-center font-bold">
                 <th
                   rowSpan={2}
-                  className="border-r border-slate-900 px-1 py-1.5 w-10 text-[11px] font-black"
+                  className="border-r border-slate-900 px-1 py-1.5 print:py-0.5 w-8 print:w-7 text-[11px] print:text-[7.5pt] font-black"
                 >
                   DAY
                 </th>
                 <th
                   colSpan={4}
-                  className="border-r border-slate-900 py-1 text-[11px] uppercase tracking-wider font-black"
+                  className="border-r border-slate-900 py-1 print:py-0.5 text-[11px] print:text-[7.5pt] uppercase tracking-wider font-black"
                 >
                   Official Hour of Arrival and Departure
                 </th>
                 <th
                   rowSpan={2}
-                  className="border-r border-slate-900 px-1 py-1.5 w-16 text-[10px] font-black uppercase leading-tight"
+                  className="border-r border-slate-900 px-1 py-1.5 print:py-0.5 w-14 print:w-11 text-[10px] print:text-[7pt] font-black uppercase leading-tight"
                 >
                   NO. OF<br />HOURS
                 </th>
                 <th
                   rowSpan={2}
-                  className="px-3 py-1.5 text-left text-[11px] font-black uppercase tracking-wider"
+                  className="px-2 py-1.5 print:py-0.5 text-left text-[11px] print:text-[7.5pt] font-black uppercase tracking-wider"
                 >
                   TASKS / ASSIGNMENTS PERFORMED
                 </th>
               </tr>
 
               {/* Row 2 Subheaders */}
-              <tr className="bg-slate-50 text-slate-800 border-b-2 border-slate-900 text-center text-[10px] font-bold">
-                <th colSpan={2} className="border-r border-slate-900 py-0.5">
-                  <div className="font-black text-slate-900 border-b border-slate-300 pb-0.5">AM</div>
-                  <div className="grid grid-cols-2 text-[9px] pt-0.5">
+              <tr className="bg-slate-50 text-slate-800 border-b-2 border-slate-900 text-center text-[10px] print:text-[7pt] font-bold">
+                <th colSpan={2} className="border-r border-slate-900 py-0.5 print:py-0">
+                  <div className="font-black text-slate-900 border-b border-slate-300 pb-0.5 print:pb-0">AM</div>
+                  <div className="grid grid-cols-2 text-[9px] print:text-[6.5pt] pt-0.5 print:pt-0">
                     <span className="border-r border-slate-300">ARRIVAL</span>
                     <span>DEPARTURE</span>
                   </div>
                 </th>
-                <th colSpan={2} className="border-r border-slate-900 py-0.5">
-                  <div className="font-black text-slate-900 border-b border-slate-300 pb-0.5">PM</div>
-                  <div className="grid grid-cols-2 text-[9px] pt-0.5">
+                <th colSpan={2} className="border-r border-slate-900 py-0.5 print:py-0">
+                  <div className="font-black text-slate-900 border-b border-slate-300 pb-0.5 print:pb-0">PM</div>
+                  <div className="grid grid-cols-2 text-[9px] print:text-[6.5pt] pt-0.5 print:pt-0">
                     <span className="border-r border-slate-300">ARRIVAL</span>
                     <span>DEPARTURE</span>
                   </div>
@@ -664,43 +662,42 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 return (
                   <tr
                     key={r.day}
-                    className={`border-b border-slate-400 text-center print:py-0 print:border-slate-800 ${
-                      !hasData ? 'text-slate-400 bg-white' : isEven ? 'bg-slate-50/60' : 'bg-white'
+                    className={`border-b border-slate-400 text-center print:py-0 print:border-slate-700 ${
+                      !hasData ? 'text-slate-400 bg-white' : isEven ? 'bg-slate-50/60 print:bg-white' : 'bg-white'
                     }`}
-                    style={{ minHeight: '20px' }}
                   >
                     {/* DAY */}
-                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] print:text-[9px] py-0.5">
+                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] print:text-[7.5pt] py-0.5 print:py-0">
                       {r.day}
                     </td>
 
                     {/* AM ARRIVAL */}
-                    <td className="border-r border-slate-300 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-300 print:border-slate-400 text-[10px] print:text-[7pt] px-1 py-0.5 print:py-0 font-medium whitespace-nowrap">
                       {r.amArrival || ''}
                     </td>
 
                     {/* AM DEPARTURE */}
-                    <td className="border-r border-slate-900 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-900 text-[10px] print:text-[7pt] px-1 py-0.5 print:py-0 font-medium whitespace-nowrap">
                       {r.amDeparture || ''}
                     </td>
 
                     {/* PM ARRIVAL */}
-                    <td className="border-r border-slate-300 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-300 print:border-slate-400 text-[10px] print:text-[7pt] px-1 py-0.5 print:py-0 font-medium whitespace-nowrap">
                       {r.pmArrival || ''}
                     </td>
 
                     {/* PM DEPARTURE */}
-                    <td className="border-r border-slate-900 text-[10px] print:text-[8.5px] px-1 py-0.5 font-medium whitespace-nowrap">
+                    <td className="border-r border-slate-900 text-[10px] print:text-[7pt] px-1 py-0.5 print:py-0 font-medium whitespace-nowrap">
                       {r.pmDeparture || ''}
                     </td>
 
                     {/* NO. OF HOURS (Automatic) */}
-                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] print:text-[9px] px-1 py-0.5 bg-slate-50/30">
+                    <td className="border-r border-slate-900 font-bold text-slate-900 text-[11px] print:text-[7.5pt] px-1 py-0.5 print:py-0 bg-slate-50/30 print:bg-white">
                       {r.hours > 0 ? r.hours : ''}
                     </td>
 
                     {/* TASKS / ASSIGNMENTS PERFORMED */}
-                    <td className="text-left px-2 py-0.5 text-[11px] print:text-[9px] text-slate-800 leading-tight truncate max-w-[320px] sm:max-w-none print:max-w-none print:overflow-visible print:whitespace-normal">
+                    <td className="text-left px-2 py-0.5 print:py-0 print:px-1 text-[11px] print:text-[7pt] text-slate-800 leading-tight truncate max-w-[320px] sm:max-w-none print:max-w-none print:overflow-visible print:whitespace-normal">
                       {r.tasks || ''}
                     </td>
                   </tr>
@@ -710,14 +707,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
             {/* Table Footer with TOTAL NO. OF HOURS */}
             <tfoot>
-              <tr className="border-t-2 border-slate-900 bg-slate-100 font-black text-slate-900">
-                <td colSpan={5} className="border-r border-slate-900 px-3 py-2 text-right text-xs uppercase tracking-wider">
+              <tr className="border-t-2 border-slate-900 bg-slate-100 print:bg-slate-50 font-black text-slate-900">
+                <td colSpan={5} className="border-r border-slate-900 px-3 py-1.5 print:py-0.5 text-right text-xs print:text-[7.5pt] uppercase tracking-wider">
                   TOTAL NO. OF HOURS:
                 </td>
-                <td className="border-r border-slate-900 px-2 py-2 text-center text-sm font-black bg-white border-2 border-slate-900">
+                <td className="border-r border-slate-900 px-2 py-1.5 print:py-0.5 text-center text-sm print:text-[8pt] font-black bg-white border-2 border-slate-900">
                   {totalMonthlyHours.toFixed(0)}
                 </td>
-                <td className="px-3 py-2 text-[10px] text-slate-600 font-normal italic">
+                <td className="px-3 py-1.5 print:py-0.5 text-[10px] print:text-[7pt] text-slate-600 font-normal italic">
                   Automatic summary of daily rendered OJT hours for {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
                 </td>
               </tr>
@@ -726,72 +723,72 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         </div>
 
         {/* Certification Statement */}
-        <div className="mt-3 text-[10px] sm:text-[11px] text-slate-800 text-justify leading-relaxed italic border-t border-slate-400 pt-2.5">
+        <div className="mt-2 text-[10px] sm:text-[11px] print:text-[7.5pt] text-slate-800 text-justify leading-relaxed italic border-t border-slate-400 pt-1.5 print:mt-1 print:pt-1">
           I hereby certify on my honor that the above is a true and correct report of hours and assignments/tasks
           performed, a record of which was made daily at the time of arrival and departure from the office.
         </div>
 
         {/* Official 3-Party Signatures Section */}
-        <div className="mt-6 pt-3 border-t border-slate-300 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs dttr-break-avoid">
+        <div className="mt-4 pt-2 print:mt-2 print:pt-1 border-t border-slate-300 print:border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-4 print:gap-3 text-center text-xs print:text-[8pt] dttr-break-avoid">
           {/* 1. Student Trainee Signature */}
           <div className="flex flex-col items-center">
-            <div className="w-full max-w-[200px] border-b-2 border-slate-900 pb-1 mb-1 min-h-[22px] flex items-end justify-center">
-              <span className="font-bold text-xs sm:text-sm uppercase text-slate-900 truncate block">
+            <div className="w-full max-w-[200px] border-b-2 border-slate-900 pb-0.5 mb-0.5 min-h-[20px] print:min-h-[16px] flex items-end justify-center">
+              <span className="font-bold text-xs sm:text-sm print:text-[8.5pt] uppercase text-slate-900 truncate block">
                 {selectedEmployee?.name}
               </span>
             </div>
-            <p className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">
+            <p className="font-extrabold text-[11px] print:text-[7.5pt] uppercase tracking-wider text-slate-800">
               OJT Trainee Signature
             </p>
-            <p className="text-[10px] text-slate-500">
+            <p className="text-[10px] print:text-[7pt] text-slate-500">
               Student ID: {selectedEmployee?.employeeId || 'OJT-STUDENT'}
             </p>
           </div>
 
           {/* 2. HTE Supervisor Signature & Endorsement */}
           <div className="flex flex-col items-center">
-            <div className="w-full max-w-[220px] border-b-2 border-slate-900 pb-1 mb-1 relative min-h-[22px] flex items-end justify-center">
+            <div className="w-full max-w-[220px] border-b-2 border-slate-900 pb-0.5 mb-0.5 relative min-h-[20px] print:min-h-[16px] flex items-end justify-center">
               {isSignedByHte ? (
                 <div className="space-y-0.5">
-                  <span className="font-black text-xs sm:text-sm uppercase text-slate-900 truncate block">
+                  <span className="font-black text-xs sm:text-sm print:text-[8.5pt] uppercase text-slate-900 truncate block">
                     {savedDttr?.hteSupervisorName || defaultSupervisorName}
                   </span>
-                  <div className="text-[8px] font-bold text-emerald-700 uppercase flex items-center justify-center gap-1 print:text-black">
+                  <div className="text-[8px] print:text-[6.5pt] font-bold text-emerald-700 uppercase flex items-center justify-center gap-1 print:text-black">
                     <CheckCircle2 size={10} /> Verified &amp; Signed {savedDttr?.hteSignedAt ? new Date(savedDttr.hteSignedAt).toLocaleDateString() : ''}
                   </div>
                 </div>
               ) : (
-                <span className="font-bold text-xs uppercase text-slate-900 truncate block">
+                <span className="font-bold text-xs print:text-[8.5pt] uppercase text-slate-900 truncate block">
                   {savedDttr?.hteSupervisorName || defaultSupervisorName || 'HTE Supervisor'}
                 </span>
               )}
             </div>
-            <p className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">
+            <p className="font-extrabold text-[11px] print:text-[7.5pt] uppercase tracking-wider text-slate-800">
               Immediate HTE Supervisor
             </p>
-            <p className="text-[10px] text-slate-500 truncate max-w-[220px]">
+            <p className="text-[10px] print:text-[7pt] text-slate-500 truncate max-w-[220px]">
               {savedDttr?.hteSupervisorTitle || supervisorFromHost?.position || 'Supervisor'} • {companyName}
             </p>
           </div>
 
           {/* 3. CHMSU OJT Coordinator / Instructor */}
           <div className="flex flex-col items-center">
-            <div className="w-full max-w-[220px] border-b-2 border-slate-900 pb-1 mb-1 min-h-[22px] flex items-end justify-center">
-              <span className="font-black text-xs sm:text-sm uppercase text-slate-900 truncate block">
+            <div className="w-full max-w-[220px] border-b-2 border-slate-900 pb-0.5 mb-0.5 min-h-[20px] print:min-h-[16px] flex items-end justify-center">
+              <span className="font-black text-xs sm:text-sm print:text-[8.5pt] uppercase text-slate-900 truncate block">
                 {instructorName}
               </span>
             </div>
-            <p className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">
+            <p className="font-extrabold text-[11px] print:text-[7.5pt] uppercase tracking-wider text-slate-800">
               CHMSU OJT Coordinator
             </p>
-            <p className="text-[10px] text-slate-500">
+            <p className="text-[10px] print:text-[7pt] text-slate-500">
               College of Computer Studies
             </p>
           </div>
         </div>
 
         {/* Institutional Footer */}
-        <div className="mt-6 pt-2 border-t-2 border-emerald-800/60 flex flex-col sm:flex-row items-center justify-between text-[9px] text-slate-600 font-medium">
+        <div className="mt-4 pt-1.5 print:mt-1.5 print:pt-1 border-t-2 border-emerald-800/60 print:border-slate-800 flex flex-col sm:flex-row items-center justify-between text-[9px] print:text-[6.5pt] text-slate-600 font-medium">
           <span>college.computerstudies@chmsu.edu.ph • (034) 434 8148 • chmsu.edu.ph</span>
           <span className="font-black tracking-widest text-emerald-900 uppercase">
             GREEN CHMSU EXCELSIOR!

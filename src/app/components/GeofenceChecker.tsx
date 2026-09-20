@@ -1,9 +1,9 @@
 import { MapPin, CheckCircle, XCircle, Loader, AlertTriangle, Navigation, ShieldOff, RefreshCw, Compass } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Circle, CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
 
 import 'leaflet/dist/leaflet.css';
+import { GeofenceMap } from './GeofenceMap';
 import { checkGeofence as checkGeofenceApi, isSecurityApiConfigured } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import {
@@ -16,6 +16,10 @@ import {
 } from '../utils/geo';
 
 export type GeoState = 'idle' | 'checking' | 'inside' | 'outside' | 'denied' | 'error' | 'demo';
+
+function isValidCoord(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+}
 
 export interface GeofenceResult {
   state: GeoState;
@@ -612,120 +616,30 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
 
       {mapCenter && (
         <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm relative z-0 isolate">
-          <div className="px-3 py-2 border-b border-gray-100 bg-slate-50">
-            <p className="text-xs font-semibold text-slate-800">Live location map (Leaflet)</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              {result.verifiedBy === 'server'
-                ? 'Checked by Django backend geofence API.'
-                : 'Showing device GPS with local geofence fallback.'}
-            </p>
+          <div className="px-3 py-2 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-800">Live Location Map (Leaflet)</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {result.verifiedBy === 'server'
+                  ? 'Verified by Django backend geofence API.'
+                  : 'Showing device GPS with real-time geofence perimeter.'}
+              </p>
+            </div>
             {liveCoords && (
-              <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
+              <p className="text-[11px] text-slate-500 font-mono hidden sm:block">
                 {liveCoords.lat.toFixed(5)}, {liveCoords.lng.toFixed(5)}
                 {liveCoords.accuracy !== undefined ? ` (±${Math.round(liveCoords.accuracy)}m)` : ''}
               </p>
             )}
           </div>
-          <div className="h-64 relative z-0 isolate overflow-hidden">
-            <MapContainer
-              center={mapCenter}
-              zoom={16}
-              scrollWheelZoom
-              className="h-full w-full relative z-0"
-              style={{ width: '100%', height: '100%' }}
-            >
-              <MapAutoResizer />
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              {liveCoords && <LiveMapFollow liveCoords={liveCoords} />}
-              {nearestZone && (
-                <Circle
-                  center={[nearestZone.lat, nearestZone.lng]}
-                  radius={nearestZone.radius}
-                  pathOptions={{ color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.16, weight: 2 }}
-                />
-              )}
-              {liveCoords &&
-                typeof liveCoords.accuracy === 'number' &&
-                liveCoords.accuracy > 5 &&
-                liveCoords.accuracy < 3000 && (
-                  <Circle
-                    center={[liveCoords.lat, liveCoords.lng]}
-                    radius={liveCoords.accuracy}
-                    pathOptions={{ color: '#0284c7', fillColor: '#38bdf8', fillOpacity: 0.12, weight: 1 }}
-                  />
-                )}
-              {liveCoords && isValidCoord(liveCoords.lat, liveCoords.lng) && (
-                <>
-                  <CircleMarker
-                    center={[liveCoords.lat, liveCoords.lng]}
-                    radius={12}
-                    pathOptions={{ stroke: false, fillColor: '#38bdf8', fillOpacity: 0.32 }}
-                  />
-                  <CircleMarker
-                    center={[liveCoords.lat, liveCoords.lng]}
-                    radius={6}
-                    pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0ea5e9', fillOpacity: 1 }}
-                  />
-                </>
-              )}
-            </MapContainer>
-          </div>
+          <GeofenceMap
+            zones={activeZones}
+            liveUser={liveCoords || (result.coords ? { lat: result.coords.lat, lng: result.coords.lng, accuracy: result.coords.accuracy } : null)}
+            className="h-64"
+            title="Live Workplace Geofence Check"
+          />
         </div>
       )}
     </div>
   );
-}
-
-function isValidCoord(lat: number, lng: number): boolean {
-  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-}
-
-function LiveMapFollow({ liveCoords }: { liveCoords: { lat: number; lng: number } }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!isValidCoord(liveCoords.lat, liveCoords.lng)) return;
-    map.setView([liveCoords.lat, liveCoords.lng], map.getZoom(), { animate: true });
-  }, [liveCoords, map]);
-  return null;
-}
-
-function MapAutoResizer() {
-  const map = useMap();
-
-  useEffect(() => {
-    map.invalidateSize();
-
-    const timers = [
-      setTimeout(() => map.invalidateSize(), 80),
-      setTimeout(() => map.invalidateSize(), 200),
-      setTimeout(() => map.invalidateSize(), 400),
-      setTimeout(() => map.invalidateSize(), 800),
-    ];
-
-    let ro: ResizeObserver | null = null;
-    try {
-      const container = map.getContainer();
-      if (typeof ResizeObserver !== 'undefined' && container) {
-        ro = new ResizeObserver(() => {
-          map.invalidateSize();
-        });
-        ro.observe(container);
-        if (container.parentElement) {
-          ro.observe(container.parentElement);
-        }
-      }
-    } catch {
-      // Ignore if ResizeObserver is unsupported or throws
-    }
-
-    return () => {
-      timers.forEach(clearTimeout);
-      if (ro) ro.disconnect();
-    };
-  }, [map]);
-
-  return null;
 }
