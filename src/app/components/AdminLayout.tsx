@@ -179,7 +179,7 @@ export function AdminLayout() {
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-none">
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -280,7 +280,7 @@ export function AdminLayout() {
                   <span className="text-[10px] text-[#D9A441] uppercase tracking-wider font-bold">Active</span>
                 </div>
               </div>
-              <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              <nav className="flex-1 p-3 space-y-1 overflow-y-auto scrollbar-none">
                 {navItems.map(({ to, label, icon: Icon, end }) => (
                   <NavLink
                     key={to}
