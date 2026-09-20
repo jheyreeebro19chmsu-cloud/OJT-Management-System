@@ -238,7 +238,7 @@ export function AdminGeofence() {
     );
   };
 
-  // Combine explicit geofenceZones with instructor, HTE, and Trainee registered stations
+  // Combine explicit geofenceZones with instructor, HTE, and Trainee registered stations (with strict deduplication)
   const allCombinedZones = useMemo<GeofenceZone[]>(() => {
     const zoneMap = new Map<string, GeofenceZone>();
 
@@ -253,8 +253,13 @@ export function AdminGeofence() {
       )
       .forEach((z) => {
         const account = getAccountForZone(z);
-        const normPerson = account ? normalizeName(account.name) : normalizeName(z.name.split(' - ')[0] || z.name);
-        const personKey = normPerson ? `acc-${normPerson}` : `zone-${z.lat.toFixed(3)},${z.lng.toFixed(3)}`;
+        const personName = account?.name || (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || '').trim();
+        const normPerson = normalizeName(personName);
+        const personKey = normPerson
+          ? `person-${normPerson}`
+          : account
+          ? `emp-${account.id}`
+          : `zone-${z.lat.toFixed(4)},${z.lng.toFixed(4)}`;
 
         // If zone belongs to an instructor, ensure address and coordinates are based on campus station geofencing location
         let zoneData: GeofenceZone = { ...z, active: z.active !== false };
@@ -280,15 +285,27 @@ export function AdminGeofence() {
           zoneMap.set(personKey, zoneData);
         } else {
           const existing = zoneMap.get(personKey)!;
-          if ((!existing.address || existing.address === 'Official Workplace GPS') && zoneData.address) {
+          const isExistingGeneric = !existing.address || existing.address === 'Official Workplace GPS' || existing.address.includes('GPS Locked');
+          const isNewSpecific = Boolean(zoneData.address && zoneData.address !== 'Official Workplace GPS' && !zoneData.address.includes('GPS Locked'));
+          if (isExistingGeneric && isNewSpecific) {
             zoneMap.set(personKey, zoneData);
           }
         }
       });
 
-    // 2. Include registered Instructors, HTEs, and Trainees with GPS coordinates
+    // 2. Include registered Instructors, HTEs, and Trainees with GPS coordinates (skipping duplicates)
     employees.forEach((emp: Employee) => {
-      if (emp.name?.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
+      if (!emp.name || !emp.name.trim()) return;
+      if (emp.name.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
+
+      const normEmp = normalizeName(emp.name);
+      const personKey = normEmp ? `person-${normEmp}` : `emp-${emp.id}`;
+
+      // If this person already has a configured geofence zone, do not create a redundant duplicate
+      if (zoneMap.has(personKey)) {
+        return;
+      }
+
       const isInst = Boolean(
         emp.position === 'OJT Instructor' ||
         (emp.position && emp.position.toLowerCase().includes('instructor')) ||
@@ -301,7 +318,6 @@ export function AdminGeofence() {
         (emp.employeeId && emp.employeeId.startsWith('HTE-')) ||
         (emp.id && emp.id.toLowerCase().startsWith('hte'))
       );
-      const isTr = isTraineeAccount(emp);
 
       const campusInfo = getCampusLocation(emp.campus);
       let regLat = isInst ? campusInfo.lat : (emp.registrationLocation?.lat ?? (emp as any)?.registration_lat ?? (emp as any)?.latitude);
@@ -320,29 +336,25 @@ export function AdminGeofence() {
         regLng = campusInfo.lng;
       }
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
-        const normEmp = normalizeName(emp.name);
-        const personKey = isTr ? `trainee-${emp.id || normEmp}` : `acc-${normEmp}`;
-        if (!zoneMap.has(personKey)) {
-          const defaultName = isInst
-            ? `${emp.name} - Official Station`
-            : isHte
-            ? `${emp.name} - ${emp.companyName || 'HTE Workplace'}`
-            : `${emp.name} - Trainee Geofence (${emp.companyName || 'Assigned Workplace'})`;
-          const stationAddr = isInst
-            ? campusInfo.address
-            : (emp.companyAddress || emp.registrationAddress || 'Trainee GPS Locked Station');
+        const defaultName = isInst
+          ? `${emp.name} - Official Station`
+          : isHte
+          ? `${emp.name} - ${emp.companyName || 'HTE Workplace'}`
+          : `${emp.name} - Trainee Geofence (${emp.companyName || 'Assigned Workplace'})`;
+        const stationAddr = isInst
+          ? campusInfo.address
+          : (emp.companyAddress || emp.registrationAddress || 'Trainee GPS Locked Station');
 
-          zoneMap.set(personKey, {
-            id: `station-${emp.id}`,
-            name: defaultName,
-            address: stationAddr,
-            lat: Number(regLat),
-            lng: Number(regLng),
-            radius: isInst ? campusInfo.radius : ((emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || GEOFENCE_RADIUS_METERS),
-            active: true,
-            academicYear: emp.academicYear || settings.activeAcademicYear,
-          });
-        }
+        zoneMap.set(personKey, {
+          id: `station-${emp.id}`,
+          name: defaultName,
+          address: stationAddr,
+          lat: Number(regLat),
+          lng: Number(regLng),
+          radius: isInst ? campusInfo.radius : ((emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || GEOFENCE_RADIUS_METERS),
+          active: true,
+          academicYear: emp.academicYear || settings.activeAcademicYear,
+        });
       }
     });
 
