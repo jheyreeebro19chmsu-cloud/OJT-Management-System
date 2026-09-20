@@ -518,12 +518,12 @@ export function AdminHostFeedback() {
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 rounded-3xl p-6 sm:p-8 text-white shadow-lg shadow-blue-500/10"
+        className="relative overflow-hidden bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-700 rounded-3xl p-6 sm:p-8 text-white shadow-lg shadow-emerald-900/15"
       >
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shrink-0 shadow-inner">
-              <Star className="w-6 h-6 text-yellow-300 fill-yellow-300" />
+              <Star className="w-6 h-6 text-amber-300 fill-amber-300" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -532,14 +532,14 @@ export function AdminHostFeedback() {
                   A.Y. {settings.activeAcademicYear || '2026-2027'}
                 </span>
               </div>
-              <p className="text-sm text-blue-100/90 mt-1 max-w-2xl leading-relaxed">
+              <p className="text-sm text-emerald-100/90 mt-1 max-w-2xl leading-relaxed">
                 Trainee evaluations and performance reports submitted by their Host Training Establishment (HTE) placement supervisors.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 self-start md:self-auto bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 text-xs text-white">
-            <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
             <span>{unifiedItems.length} Total Submissions</span>
           </div>
         </div>

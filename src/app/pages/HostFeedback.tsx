@@ -261,22 +261,22 @@ export function HostFeedback() {
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-blue-900 via-indigo-900 to-sky-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden"
+        className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden"
       >
-        <div className="absolute -right-10 -bottom-10 w-56 h-56 bg-sky-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -right-10 -bottom-10 w-56 h-56 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner">
-              <Star size={24} className="text-yellow-400 fill-yellow-400" />
+              <Star size={24} className="text-amber-300 fill-amber-300" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight">Evaluate Host Establishment</h1>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-500/30 text-sky-200 border border-sky-400/30">
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/30">
                   Trainee Portal
                 </span>
               </div>
-              <p className="text-blue-200 text-xs sm:text-sm mt-0.5">
+              <p className="text-emerald-200 text-xs sm:text-sm mt-0.5">
                 Share your official evaluation and learning experience at your Host Training Establishment (HTE)
               </p>
             </div>
@@ -284,9 +284,9 @@ export function HostFeedback() {
 
           {currentEmp && (
             <div className="px-4 py-2 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/15 text-xs text-right shrink-0">
-              <span className="text-blue-300 block text-[10px] uppercase font-bold">Evaluator (Trainee)</span>
+              <span className="text-emerald-300 block text-[10px] uppercase font-bold">Evaluator (Trainee)</span>
               <span className="font-bold text-white">{currentEmp.name}</span>
-              <span className="text-blue-200 block text-[11px]">{currentEmp.employeeId}</span>
+              <span className="text-emerald-200 block text-[11px]">{currentEmp.employeeId}</span>
             </div>
           )}
         </div>
