@@ -50,14 +50,99 @@ import { formatTime } from '../../utils/geo';
 import { getPhotoUrl } from '../../services/config';
 import { Employee, Evaluation } from '../../types';
 import { MonthlyDTTRView } from '../../components/MonthlyDTTRView';
+import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 
-const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }> = {
+export const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }> = {
   Excellent: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   'Very Good': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   Good: { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
   Satisfactory: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   'Needs Improvement': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
 };
+
+export function getEvaluationMetrics(ev?: Evaluation | null) {
+  if (!ev) {
+    return {
+      isRated: false,
+      scorePercent: 0,
+      rating5: 0,
+      grade: 'Pending' as 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Needs Improvement' | 'Pending',
+      performanceScore: 0,
+      attendanceScore: 0,
+      attitudeScore: 0,
+      punctualityScore: 0,
+      communicationScore: 0,
+    };
+  }
+
+  let rating5 = 0;
+  let scorePercent = 0;
+
+  if (typeof ev.overallRating === 'number' && ev.overallRating > 0) {
+    rating5 = ev.overallRating;
+    scorePercent = Math.round((rating5 / 5) * 100);
+  } else if (typeof ev.totalScore === 'number' && ev.totalScore > 0) {
+    scorePercent = Math.round(ev.totalScore);
+    rating5 = Number((scorePercent / 20).toFixed(2));
+  } else if (typeof ev.overallScore === 'number' && ev.overallScore > 0) {
+    scorePercent = Math.round(ev.overallScore);
+    rating5 = Number((scorePercent / 20).toFixed(2));
+  } else if (ev.ratings && Object.keys(ev.ratings).length > 0) {
+    const vals = Object.values(ev.ratings).filter((v) => typeof v === 'number' && v > 0);
+    if (vals.length > 0) {
+      rating5 = Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2));
+      scorePercent = Math.round((rating5 / 5) * 100);
+    }
+  }
+
+  const isRated = scorePercent > 0 || rating5 > 0;
+
+  let grade = ev.grade;
+  if (!grade || !GRADE_BADGES[grade]) {
+    if (rating5 >= 4.5 || scorePercent >= 90) grade = 'Excellent';
+    else if (rating5 >= 3.5 || scorePercent >= 80) grade = 'Very Good';
+    else if (rating5 >= 2.5 || scorePercent >= 70) grade = 'Good';
+    else if (rating5 >= 1.5 || scorePercent >= 60) grade = 'Satisfactory';
+    else if (isRated) grade = 'Needs Improvement';
+    else grade = 'Pending' as any;
+  }
+
+  const workHabits5 = ev.categoryScores?.workHabits || (rating5 > 0 ? rating5 : 0);
+  const workSkills5 = ev.categoryScores?.workSkills || (rating5 > 0 ? rating5 : 0);
+  const socialSkills5 = ev.categoryScores?.socialSkills || (rating5 > 0 ? rating5 : 0);
+
+  const performanceScore = typeof ev.performanceScore === 'number' && ev.performanceScore > 0
+    ? ev.performanceScore
+    : (workSkills5 > 0 ? Math.round((workSkills5 / 5) * 100) : scorePercent);
+
+  const attendanceScore = typeof ev.attendanceScore === 'number' && ev.attendanceScore > 0
+    ? ev.attendanceScore
+    : (workHabits5 > 0 ? Math.round((workHabits5 / 5) * 100) : scorePercent);
+
+  const attitudeScore = typeof ev.attitudeScore === 'number' && ev.attitudeScore > 0
+    ? ev.attitudeScore
+    : (workHabits5 > 0 ? Math.round((workHabits5 / 5) * 100) : scorePercent);
+
+  const punctualityScore = typeof ev.punctualityScore === 'number' && ev.punctualityScore > 0
+    ? ev.punctualityScore
+    : (workHabits5 > 0 ? Math.round((workHabits5 / 5) * 100) : scorePercent);
+
+  const communicationScore = typeof ev.communicationScore === 'number' && ev.communicationScore > 0
+    ? ev.communicationScore
+    : (socialSkills5 > 0 ? Math.round((socialSkills5 / 5) * 100) : scorePercent);
+
+  return {
+    isRated,
+    scorePercent: isRated ? scorePercent : 0,
+    rating5: isRated ? rating5 : 0,
+    grade,
+    performanceScore,
+    attendanceScore,
+    attitudeScore,
+    punctualityScore,
+    communicationScore,
+  };
+}
 
 export function AdminReports() {
   const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings } = useApp();
@@ -87,6 +172,7 @@ export function AdminReports() {
   const [evalCompanyFilter, setEvalCompanyFilter] = useState('all');
   const [evalGradeFilter, setEvalGradeFilter] = useState('all');
   const [selectedEvalModal, setSelectedEvalModal] = useState<{ emp: Employee; eval?: Evaluation } | null>(null);
+  const [officialSheetModal, setOfficialSheetModal] = useState<{ emp: Employee; eval?: Evaluation } | null>(null);
 
   const monthOptions = useMemo(() => {
     const opts = [{ value: 'all', label: 'All Months / Dates' }];
@@ -413,10 +499,11 @@ export function AdminReports() {
       const evaluation = evaluations.find(
         (ev) => ev.employeeId === emp.id || ev.employeeId === emp.employeeId
       );
-      return { emp, evaluation };
+      const metrics = getEvaluationMetrics(evaluation);
+      return { emp, evaluation, metrics };
     });
 
-    return list.filter(({ emp, evaluation }) => {
+    return list.filter(({ emp, evaluation, metrics }) => {
       // Academic year filter
       if (selectedAcademicYear !== 'all') {
         const matchYear =
@@ -433,8 +520,8 @@ export function AdminReports() {
       // Grade filter
       if (evalGradeFilter !== 'all') {
         if (evalGradeFilter === 'pending') {
-          if (evaluation && evaluation.totalScore > 0) return false;
-        } else if (evaluation?.grade !== evalGradeFilter) {
+          if (metrics.isRated) return false;
+        } else if (metrics.grade !== evalGradeFilter) {
           return false;
         }
       }
@@ -462,14 +549,20 @@ export function AdminReports() {
 
   // Evaluation summary statistics
   const totalTraineesCount = traineeEmployees.length;
-  const evaluatedCount = traineeEmployees.filter((emp) =>
-    evaluations.some((ev) => (ev.employeeId === emp.id || ev.employeeId === emp.employeeId) && ev.totalScore > 0)
-  ).length;
+
+  const allTraineeEvals = useMemo(() => {
+    return traineeEmployees.map((emp) => {
+      const ev = evaluations.find((e) => e.employeeId === emp.id || e.employeeId === emp.employeeId);
+      return { emp, ev, metrics: getEvaluationMetrics(ev) };
+    });
+  }, [traineeEmployees, evaluations]);
+
+  const evaluatedCount = allTraineeEvals.filter((item) => item.metrics.isRated).length;
   const evaluatedPercent = totalTraineesCount > 0 ? Math.round((evaluatedCount / totalTraineesCount) * 100) : 0;
 
-  const validScores = evaluations
-    .filter((e) => traineeIds.has(e.employeeId) && e.totalScore > 0)
-    .map((e) => e.totalScore);
+  const validScores = allTraineeEvals
+    .filter((item) => item.metrics.isRated)
+    .map((item) => item.metrics.scorePercent);
   const avgEvaluationScore =
     validScores.length > 0
       ? (validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(1)
@@ -488,16 +581,15 @@ export function AdminReports() {
       'Needs Improvement': 0,
       Pending: 0,
     };
-    traineeEmployees.forEach((emp) => {
-      const ev = evaluations.find((e) => e.employeeId === emp.id || e.employeeId === emp.employeeId);
-      if (ev?.grade && counts[ev.grade] !== undefined) {
-        counts[ev.grade]++;
+    allTraineeEvals.forEach((item) => {
+      if (item.metrics.isRated && counts[item.metrics.grade as keyof typeof counts] !== undefined) {
+        counts[item.metrics.grade as keyof typeof counts]++;
       } else {
         counts.Pending++;
       }
     });
     return counts;
-  }, [traineeEmployees, evaluations]);
+  }, [allTraineeEvals]);
 
   // Attendance CSV Export
   const exportAttendanceCsv = () => {
@@ -542,6 +634,7 @@ export function AdminReports() {
       'Punctuality/Delivery (15%)',
       'Communication (20%)',
       'Total Score (%)',
+      'Rating (out of 5)',
       'Official Grade',
       'Verification Status',
       'Strengths',
@@ -549,21 +642,22 @@ export function AdminReports() {
       'Supervisor Recommendations',
     ];
 
-    const rows = evaluatedTraineesList.map(({ emp, evaluation }) => {
+    const rows = evaluatedTraineesList.map(({ emp, evaluation, metrics }) => {
       return [
         emp.name,
         emp.employeeId || '',
         emp.course || 'BSIS',
         emp.companyName || 'N/A',
         evaluation?.evaluatorName || emp.supervisorName || 'Pending',
-        evaluation?.date || 'N/A',
-        evaluation?.performanceScore != null ? `${evaluation.performanceScore}%` : 'N/A',
-        evaluation?.attendanceScore != null ? `${evaluation.attendanceScore}%` : 'N/A',
-        evaluation?.attitudeScore != null ? `${evaluation.attitudeScore}%` : 'N/A',
-        evaluation?.punctualityScore != null ? `${evaluation.punctualityScore}%` : 'N/A',
-        evaluation?.communicationScore != null ? `${evaluation.communicationScore}%` : 'N/A',
-        evaluation?.totalScore != null ? `${evaluation.totalScore}%` : 'N/A',
-        evaluation?.grade || 'Awaiting Evaluation',
+        evaluation?.date || evaluation?.evaluatedAt || 'N/A',
+        metrics.isRated ? `${metrics.performanceScore}%` : 'N/A',
+        metrics.isRated ? `${metrics.attendanceScore}%` : 'N/A',
+        metrics.isRated ? `${metrics.attitudeScore}%` : 'N/A',
+        metrics.isRated ? `${metrics.punctualityScore}%` : 'N/A',
+        metrics.isRated ? `${metrics.communicationScore}%` : 'N/A',
+        metrics.isRated ? `${metrics.scorePercent}%` : 'N/A',
+        metrics.isRated ? `${metrics.rating5.toFixed(2)} / 5.00` : 'N/A',
+        metrics.isRated ? metrics.grade : 'Awaiting Evaluation',
         evaluation?.status === 'reviewed_by_instructor'
           ? 'Verified by Instructor'
           : evaluation?.status === 'submitted_to_instructor' || evaluation?.status === 'final'
@@ -571,7 +665,7 @@ export function AdminReports() {
           : 'Pending Evaluation',
         evaluation?.strengths || '',
         evaluation?.areasForImprovement || '',
-        evaluation?.recommendations || '',
+        evaluation?.recommendations || evaluation?.commentsSuggestions || '',
       ];
     });
 
@@ -892,8 +986,8 @@ export function AdminReports() {
                       </td>
                     </tr>
                   ) : (
-                    evaluatedTraineesList.map(({ emp, evaluation }) => {
-                      const gradeStyle = evaluation?.grade ? GRADE_BADGES[evaluation.grade] : null;
+                    evaluatedTraineesList.map(({ emp, evaluation, metrics }) => {
+                      const gradeStyle = metrics.isRated && metrics.grade ? GRADE_BADGES[metrics.grade] : null;
                       return (
                         <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
                           {/* Trainee Info */}
@@ -927,31 +1021,31 @@ export function AdminReports() {
 
                           {/* Domain Scores */}
                           <td className="py-3 px-2 text-center font-mono font-semibold text-gray-700">
-                            {evaluation?.performanceScore != null ? `${evaluation.performanceScore}%` : '—'}
+                            {metrics.isRated ? `${metrics.performanceScore}%` : '—'}
                           </td>
                           <td className="py-3 px-2 text-center font-mono font-semibold text-gray-700">
-                            {evaluation?.attendanceScore != null ? `${evaluation.attendanceScore}%` : '—'}
+                            {metrics.isRated ? `${metrics.attendanceScore}%` : '—'}
                           </td>
                           <td className="py-3 px-2 text-center font-mono font-semibold text-gray-700">
-                            {evaluation?.attitudeScore != null ? `${evaluation.attitudeScore}%` : '—'}
+                            {metrics.isRated ? `${metrics.attitudeScore}%` : '—'}
                           </td>
                           <td className="py-3 px-2 text-center font-mono font-semibold text-gray-700">
-                            {evaluation?.punctualityScore != null ? `${evaluation.punctualityScore}%` : '—'}
+                            {metrics.isRated ? `${metrics.punctualityScore}%` : '—'}
                           </td>
                           <td className="py-3 px-2 text-center font-mono font-semibold text-gray-700">
-                            {evaluation?.communicationScore != null ? `${evaluation.communicationScore}%` : '—'}
+                            {metrics.isRated ? `${metrics.communicationScore}%` : '—'}
                           </td>
 
                           {/* Overall Score & Grade */}
                           <td className="py-3 px-3 text-center">
-                            {evaluation?.totalScore != null ? (
+                            {metrics.isRated ? (
                               <div className="inline-flex flex-col items-center">
-                                <span className="font-black text-sm text-gray-900">{evaluation.totalScore}%</span>
+                                <span className="font-black text-sm text-gray-900">{metrics.scorePercent}%</span>
                                 {gradeStyle && (
                                   <span
-                                    className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-md border ${gradeStyle.bg} ${gradeStyle.text} ${gradeStyle.border}`}
+                                    className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border ${gradeStyle.bg} ${gradeStyle.text} ${gradeStyle.border}`}
                                   >
-                                    {evaluation.grade}
+                                    {metrics.grade}
                                   </span>
                                 )}
                               </div>
@@ -966,7 +1060,7 @@ export function AdminReports() {
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 <CheckCircle2 size={10} /> Verified
                               </span>
-                            ) : evaluation ? (
+                            ) : metrics.isRated ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                                 <Clock size={10} /> Evaluated
                               </span>
@@ -979,11 +1073,11 @@ export function AdminReports() {
 
                           {/* Actions */}
                           <td className="py-3 px-3 text-right no-print">
-                            {evaluation ? (
+                            {metrics.isRated || evaluation ? (
                               <button
                                 type="button"
                                 onClick={() => setSelectedEvalModal({ emp, eval: evaluation })}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 rounded-lg text-xs font-bold transition-all"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
                               >
                                 <Eye size={12} /> View Scorecard
                               </button>
@@ -1881,16 +1975,25 @@ export function AdminReports() {
             >
               {/* Modal Header */}
               <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                    <Award size={20} />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shadow-sm">
+                    <Award size={22} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900 text-sm">HTE Performance Scorecard</h3>
-                    <p className="text-xs text-gray-400">{selectedEvalModal.emp.name}</p>
+                    <h3 className="font-bold text-gray-900 text-base">HTE Performance Scorecard</h3>
+                    <p className="text-xs text-gray-400">{selectedEvalModal.emp.name} • {selectedEvalModal.emp.employeeId || 'No ID'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setOfficialSheetModal({ emp: selectedEvalModal.emp, eval: selectedEvalModal.eval });
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                    title="Open Full 2-Page Official CHMSU Evaluation Sheet"
+                  >
+                    <FileText size={14} /> Full CHMSU Form
+                  </button>
                   <button
                     onClick={() => window.print()}
                     className="p-2 text-gray-500 hover:text-gray-800 rounded-xl hover:bg-gray-100 transition-colors"
@@ -1907,115 +2010,151 @@ export function AdminReports() {
                 </div>
               </div>
 
-              <div className="p-6 space-y-6">
-                {/* Hero Overall Grade */}
-                {selectedEvalModal.eval && (
-                  <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-white border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-center sm:text-left">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-                        Official Assessment
-                      </span>
-                      <h4 className="text-xl font-black text-emerald-950 mt-1">
-                        {selectedEvalModal.eval.grade || 'Evaluated'}
-                      </h4>
-                      <p className="text-xs text-gray-600 mt-0.5">
-                        Evaluated by: <strong>{selectedEvalModal.eval.evaluatorName || 'HTE Supervisor'}</strong>
-                      </p>
-                      <p className="text-[11px] text-gray-400">
-                        Date: {selectedEvalModal.eval.date} • AY: {selectedEvalModal.eval.academicYear || settings?.activeAcademicYear}
-                      </p>
+              {(() => {
+                const evalMetrics = getEvaluationMetrics(selectedEvalModal.eval);
+                return (
+                  <div className="p-6 space-y-6">
+                    {/* Hero Overall Grade */}
+                    <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-white border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                      <div className="text-center sm:text-left">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          {evalMetrics.isRated ? 'Official Assessment' : 'Awaiting Assessment'}
+                        </span>
+                        <h4 className="text-2xl font-black text-emerald-950 mt-1.5 flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                          <span>{evalMetrics.grade}</span>
+                          {evalMetrics.isRated && evalMetrics.rating5 > 0 && (
+                            <span className="text-xs font-bold text-emerald-700 bg-white/90 px-2.5 py-1 rounded-lg border border-emerald-200 shadow-xs">
+                              {evalMetrics.rating5.toFixed(2)} / 5.00
+                            </span>
+                          )}
+                        </h4>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Evaluated by: <strong>{selectedEvalModal.eval?.evaluatorName || selectedEvalModal.emp.supervisorName || 'HTE Supervisor'}</strong>
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Date: {selectedEvalModal.eval?.date || selectedEvalModal.eval?.evaluatedAt || 'Official OJT Term'} • AY: {selectedEvalModal.eval?.academicYear || selectedEvalModal.emp.academicYear || settings?.activeAcademicYear}
+                        </p>
+                      </div>
+
+                      <div className="text-center px-6 py-3.5 bg-white rounded-2xl shadow-sm border border-emerald-200 min-w-[130px]">
+                        <span className="text-3xl font-black text-emerald-700 block">
+                          {evalMetrics.isRated ? `${evalMetrics.scorePercent}%` : 'Pending'}
+                        </span>
+                        <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mt-0.5">Overall Rating</p>
+                      </div>
                     </div>
 
-                    <div className="text-center px-6 py-3 bg-white rounded-2xl shadow-sm border border-emerald-100">
-                      <span className="text-3xl font-black text-emerald-700">{selectedEvalModal.eval.totalScore}%</span>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Overall Rating</p>
+                    {/* Trainee and Company Info */}
+                    <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/80 p-4 rounded-2xl border border-gray-200">
+                      <div>
+                        <span className="text-gray-400 font-medium block text-[11px]">Trainee Name</span>
+                        <p className="font-bold text-gray-900">{selectedEvalModal.emp.name}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-medium block text-[11px]">Student ID</span>
+                        <p className="font-bold text-gray-900 font-mono">{selectedEvalModal.emp.employeeId || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-medium block text-[11px]">HTE Establishment</span>
+                        <p className="font-bold text-gray-900">{selectedEvalModal.emp.companyName || 'Pending Assignment'}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-medium block text-[11px]">Degree Program</span>
+                        <p className="font-bold text-gray-900">{selectedEvalModal.emp.course || 'BS Information Systems'}</p>
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {/* Trainee and Company Info */}
-                <div className="grid grid-cols-2 gap-3 text-xs bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                  <div>
-                    <span className="text-gray-400 font-medium">Trainee Name:</span>
-                    <p className="font-bold text-gray-800">{selectedEvalModal.emp.name}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 font-medium">Student ID:</span>
-                    <p className="font-bold text-gray-800 font-mono">{selectedEvalModal.emp.employeeId}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 font-medium">HTE Establishment:</span>
-                    <p className="font-bold text-gray-800">{selectedEvalModal.emp.companyName || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-400 font-medium">Degree Program:</span>
-                    <p className="font-bold text-gray-800">{selectedEvalModal.emp.course || 'BS Information Systems'}</p>
-                  </div>
-                </div>
-
-                {/* Competency Scores Breakdown */}
-                {selectedEvalModal.eval && (
-                  <div className="space-y-3">
-                    <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
-                      Core Competency Domain Breakdown
-                    </h5>
-                    <div className="space-y-2.5">
-                      {[
-                        { title: 'Quality of Work & Competence (25%)', val: selectedEvalModal.eval.performanceScore },
-                        { title: 'Punctuality & Attendance (20%)', val: selectedEvalModal.eval.attendanceScore },
-                        { title: 'Professional Work Attitude (20%)', val: selectedEvalModal.eval.attitudeScore },
-                        { title: 'Dependability & Deadline Delivery (15%)', val: selectedEvalModal.eval.punctualityScore },
-                        { title: 'Interpersonal & Communication Skills (20%)', val: selectedEvalModal.eval.communicationScore },
-                      ].map((domain, i) => (
-                        <div key={i} className="p-3 bg-white border border-gray-200/80 rounded-xl">
-                          <div className="flex justify-between items-center text-xs font-semibold mb-1">
-                            <span className="text-gray-700">{domain.title}</span>
-                            <span className="font-mono text-gray-900 font-bold">{domain.val}%</span>
+                    {/* Competency Scores Breakdown */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                          Core Competency Domain Breakdown
+                        </h5>
+                        <span className="text-[11px] text-gray-400 font-medium">CHMSU CCS Standard Criteria</span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {[
+                          { title: 'Quality of Work & Technical Competence (25%)', val: evalMetrics.performanceScore },
+                          { title: 'Punctuality & Daily Attendance (20%)', val: evalMetrics.attendanceScore },
+                          { title: 'Professional Work Attitude (20%)', val: evalMetrics.attitudeScore },
+                          { title: 'Dependability & Deadline Delivery (15%)', val: evalMetrics.punctualityScore },
+                          { title: 'Interpersonal & Communication Skills (20%)', val: evalMetrics.communicationScore },
+                        ].map((domain, i) => (
+                          <div key={i} className="p-3.5 bg-white border border-gray-200/90 rounded-2xl shadow-xs">
+                            <div className="flex justify-between items-center text-xs font-semibold mb-1.5">
+                              <span className="text-gray-700">{domain.title}</span>
+                              <span className="font-mono text-emerald-800 font-black text-sm">
+                                {evalMetrics.isRated ? `${domain.val}%` : '—'}
+                              </span>
+                            </div>
+                            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                                style={{ width: `${evalMetrics.isRated ? Math.min(100, Math.max(0, domain.val)) : 0}%` }}
+                              />
+                            </div>
                           </div>
-                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full"
-                              style={{ width: `${domain.val}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {/* Qualitative Remarks */}
-                {selectedEvalModal.eval && (
-                  <div className="space-y-3">
-                    <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
-                      Supervisor Evaluation Remarks
-                    </h5>
-                    <div className="space-y-2 text-xs">
-                      {selectedEvalModal.eval.strengths && (
-                        <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl">
-                          <span className="font-bold text-emerald-800 block mb-0.5">Key Strengths & Commendations:</span>
-                          <p className="text-gray-700">{selectedEvalModal.eval.strengths}</p>
-                        </div>
-                      )}
-                      {selectedEvalModal.eval.areasForImprovement && (
-                        <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-xl">
-                          <span className="font-bold text-amber-800 block mb-0.5">Areas for Growth & Guidance:</span>
-                          <p className="text-gray-700">{selectedEvalModal.eval.areasForImprovement}</p>
-                        </div>
-                      )}
-                      {selectedEvalModal.eval.recommendations && (
-                        <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl">
-                          <span className="font-bold text-blue-800 block mb-0.5">Future Recommendations:</span>
-                          <p className="text-gray-700">{selectedEvalModal.eval.recommendations}</p>
-                        </div>
-                      )}
+                    {/* Qualitative Remarks */}
+                    <div className="space-y-3">
+                      <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                        Supervisor Evaluation Remarks
+                      </h5>
+                      <div className="space-y-2.5 text-xs">
+                        {selectedEvalModal.eval?.strengths && (
+                          <div className="p-3.5 bg-emerald-50/60 border border-emerald-200 rounded-2xl">
+                            <span className="font-bold text-emerald-900 block mb-1">Key Strengths & Commendations:</span>
+                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.strengths}</p>
+                          </div>
+                        )}
+                        {selectedEvalModal.eval?.areasForImprovement && (
+                          <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-2xl">
+                            <span className="font-bold text-amber-900 block mb-1">Areas for Growth & Guidance:</span>
+                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.areasForImprovement}</p>
+                          </div>
+                        )}
+                        {selectedEvalModal.eval?.recommendations && (
+                          <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-2xl">
+                            <span className="font-bold text-blue-900 block mb-1">Future Recommendations:</span>
+                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.recommendations}</p>
+                          </div>
+                        )}
+                        {selectedEvalModal.eval?.commentsSuggestions && (
+                          <div className="p-3.5 bg-purple-50/60 border border-purple-200 rounded-2xl">
+                            <span className="font-bold text-purple-900 block mb-1">General Feedback & Notes:</span>
+                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.commentsSuggestions}</p>
+                          </div>
+                        )}
+                        {!selectedEvalModal.eval?.strengths &&
+                          !selectedEvalModal.eval?.areasForImprovement &&
+                          !selectedEvalModal.eval?.recommendations &&
+                          !selectedEvalModal.eval?.commentsSuggestions && (
+                            <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-gray-500 italic text-center">
+                              {evalMetrics.isRated
+                                ? 'Overall performance and competencies verified and endorsed by HTE Supervisor.'
+                                : 'Evaluation is currently pending completion by the HTE Supervisor.'}
+                            </div>
+                          )}
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Modal Footer */}
-              <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOfficialSheetModal({ emp: selectedEvalModal.emp, eval: selectedEvalModal.eval });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer"
+                >
+                  <FileCheck size={14} /> Open Official 2-Page CHMSU Form
+                </button>
                 <button
                   type="button"
                   onClick={() => setSelectedEvalModal(null)}
@@ -2026,6 +2165,30 @@ export function AdminReports() {
               </div>
             </motion.div>
           </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* FULL OFFICIAL CHMSU 2-PAGE EVALUATION SHEET MODAL        */}
+        {/* ========================================================= */}
+        {officialSheetModal && (
+          <CHMSUEvaluationSheet
+            trainee={officialSheetModal.emp}
+            companyName={officialSheetModal.emp.companyName || 'N/A'}
+            supervisorName={officialSheetModal.eval?.evaluatorName || officialSheetModal.emp.supervisorName || 'HTE Supervisor'}
+            instructorName="OJT Instructor / Coordinator"
+            evaluationDate={officialSheetModal.eval?.date || officialSheetModal.eval?.evaluatedAt}
+            ratings={officialSheetModal.eval?.ratings || {}}
+            ratingComments={officialSheetModal.eval?.ratingComments || {}}
+            commentsSuggestions={officialSheetModal.eval?.commentsSuggestions || officialSheetModal.eval?.recommendations || ''}
+            overallRating={getEvaluationMetrics(officialSheetModal.eval).rating5}
+            grade={getEvaluationMetrics(officialSheetModal.eval).grade as any}
+            questionnaire={officialSheetModal.eval?.questionnaire}
+            isReadOnly={true}
+            status={officialSheetModal.eval?.status || 'final'}
+            role="instructor"
+            initialPageTab="both"
+            onClose={() => setOfficialSheetModal(null)}
+          />
         )}
 
         {/* ========================================================= */}
