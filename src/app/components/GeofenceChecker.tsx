@@ -453,45 +453,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         )}
       </AnimatePresence>
 
-      {/* GPS Permission Prompt Helper */}
-      <AnimatePresence>
-        {(permissionState === 'prompt' || result.state === 'checking') && result.state !== 'inside' && result.state !== 'denied' && permissionState !== 'denied' && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="rounded-2xl border-2 border-sky-300 bg-sky-50 p-4 shadow-sm"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center shrink-0 mt-0.5">
-                <Compass size={18} className="animate-spin" />
-              </div>
-              <div className="text-xs text-sky-950 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-bold text-sky-900 text-sm">System Requesting GPS Location Permission</p>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-200 text-sky-800 border border-sky-300">
-                    Prompt Active
-                  </span>
-                </div>
-                <p className="mt-1 text-sky-800 leading-relaxed">
-                  Please click <strong>"Allow"</strong> or <strong>"While using the site"</strong> on your browser's location prompt popup to confirm you are within your designated workplace premises.
-                </p>
-                <div className="mt-2.5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={checkGeofence}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-                  >
-                    <Compass size={13} />
-                    Grant Location Permission
-                  </button>
-                  <span className="text-[11px] text-sky-700">Click to prompt browser if not visible</span>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
 
       {/* GPS Permission Denied — Prominent Warning Card */}
       <AnimatePresence>

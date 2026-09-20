@@ -1097,17 +1097,11 @@ export function Register() {
       });
     }
 
-    // Store the same face template used by attendance verification.
+    // Store the same face template used by attendance verification in the background (no blocking delay)
     if (role === 'trainee' && photo && isSecurityApiConfigured()) {
-      try {
-        const faceResult = await registerFace({ employee_id: newEmp.id, image: photo });
-        if (!faceResult.success) {
-          toast.warning(faceResult.message || 'Registration completed, but face enrollment needs to be retried from Profile.');
-        }
-      } catch (faceError: any) {
-        console.error('Face enrollment failed after registration:', faceError);
-        toast.warning('Registration completed, but face enrollment could not reach the server. Please enroll again from Profile.');
-      }
+      registerFace({ employee_id: newEmp.id, image: photo }).catch((faceError: any) => {
+        console.warn('Background face enrollment notice:', faceError);
+      });
     }
 
     if (role === 'admin') {

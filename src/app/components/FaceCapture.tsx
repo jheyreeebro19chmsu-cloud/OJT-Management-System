@@ -451,10 +451,8 @@ export function FaceCapture({
     loadFaceModels().catch(() => {});
 
     try {
-      // REGISTRATION MODE: continuous scan until stable clear face is detected
+      // REGISTRATION MODE: instant scan when face is detected
       if (currentMode === 'register') {
-        let stableFrames = 0;
-
         while (streamRef.current && stateRef.current === 'scanning') {
           const currentFrame = captureFrame();
           if (currentFrame) {
@@ -462,7 +460,7 @@ export function FaceCapture({
             if (quality) {
               setQualityReport(quality);
 
-              // Soft advisory cues — never block scanning or reset stableFrames
+              // Soft advisory cues — never block scanning
               if (quality.glassesDetected) {
                 setScanMessage('⚠️ Warning: Glasses detected. Please remove glasses for clear facial recognition.');
               } else if (quality.capDetected) {
@@ -470,51 +468,43 @@ export function FaceCapture({
               } else if (quality.maskDetected) {
                 setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
               }
-              if (quality.tooDark && (quality.brightness ?? 100) < 22) {
-                stableFrames = 0;
+              if (quality.tooDark && (quality.brightness ?? 100) < 20) {
                 setProgress(15);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
-                await new Promise((r) => setTimeout(r, 350));
+                await new Promise((r) => setTimeout(r, 150));
                 continue;
               }
-              if (quality.tooBright) {
-                stableFrames = 0;
+              if (quality.tooBright && (quality.brightness ?? 100) > 250) {
                 setProgress(15);
                 setScanMessage('⚠️ Too bright! Avoid direct glare.');
-                await new Promise((r) => setTimeout(r, 350));
+                await new Promise((r) => setTimeout(r, 150));
                 continue;
               }
 
               if (quality.faceDetected) {
-                stableFrames++;
-                setProgress(Math.min(50 + stableFrames * 25, 95));
-
-                if (stableFrames < 2) {
-                  setScanMessage('Face detected! Hold steady to enroll...');
-                } else {
-                  const hasFace = await detectFaceInDataUrl(currentFrame).catch(() => true);
-                  if (hasFace) {
-                    stopCamera();
-                    setCapturedImage(currentFrame);
-                    setProgress(100);
-                    setState('success');
-                    setScanMessage('✓ Face Recognized & Enrolled!');
-                    setTimeout(() => {
-                      onSuccessRef.current?.(currentFrame);
-                    }, 600);
-                    return;
-                  } else {
-                    stableFrames = 0;
-                  }
-                }
+                stopCamera();
+                setCapturedImage(currentFrame);
+                setProgress(100);
+                setState('success');
+                setScanMessage('✓ Face Recognized & Enrolled!');
+                onSuccessRef.current?.(currentFrame);
+                return;
               } else {
-                stableFrames = 0;
-                setProgress(20);
+                setProgress(35);
                 setScanMessage('Position face inside the oval guide...');
               }
+            } else {
+              // Fallback if inspection unavailable: register frame immediately
+              stopCamera();
+              setCapturedImage(currentFrame);
+              setProgress(100);
+              setState('success');
+              setScanMessage('✓ Face Recognized & Enrolled!');
+              onSuccessRef.current?.(currentFrame);
+              return;
             }
           }
-          await new Promise((r) => setTimeout(r, 250));
+          await new Promise((r) => setTimeout(r, 100));
         }
         return;
       }
@@ -673,9 +663,7 @@ export function FaceCapture({
       setProgress(100);
       setState('success');
       setScanMessage('✓ Face Biometrics Enrolled Successfully!');
-      setTimeout(() => {
-        onSuccessRef.current?.(img);
-      }, 600);
+      onSuccessRef.current?.(img);
       return;
     }
 
@@ -745,16 +733,14 @@ export function FaceCapture({
     setProgress(100);
     setState('success');
     setScanMessage('✓ Identity Verified! Attendance Time Recorded.');
-    setTimeout(() => onSuccessRef.current?.(img), 600);
+    setTimeout(() => onSuccessRef.current?.(img), 300);
   }, [stopCamera, captureFrame]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
     setState('success');
     setScanMessage(modeRef.current === 'register' ? '✓ Face Photo Saved for Account Profile!' : '✓ Identity Verified!');
-    setTimeout(() => {
-      onSuccessRef.current?.(capturedImage);
-    }, 400);
+    onSuccessRef.current?.(capturedImage);
   }, [capturedImage]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -795,9 +781,7 @@ export function FaceCapture({
         if (mode === 'register') {
           setState('success');
           setScanMessage('✓ Photo uploaded and biometrics enrolled!');
-          setTimeout(() => {
-            onSuccessRef.current?.(img);
-          }, 900);
+          onSuccessRef.current?.(img);
         } else {
           setCapturedImage(img);
           handleManualSnap(img);

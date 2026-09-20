@@ -515,8 +515,8 @@ export function TimeRecord() {
               </div>
             </div>
 
-            {/* Prominent GPS Permission Warning / Request Banner */}
-            {geofenceStatus === 'denied' ? (
+            {/* Prominent GPS Permission Warning Banner */}
+            {geofenceStatus === 'denied' && (
               <div className="mb-4 bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
                 <AlertTriangle size={22} className="text-amber-600 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-950 flex-1">
@@ -551,22 +551,8 @@ export function TimeRecord() {
                   </div>
                 </div>
               </div>
-            ) : !geofencePassed && (
-              <div className="mb-4 bg-sky-50 border-2 border-sky-300 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
-                <Compass size={22} className="text-sky-600 shrink-0 mt-0.5 animate-spin" />
-                <div className="text-xs text-sky-950 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-sm text-sky-900">📍 System Requesting Location Permission</p>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-200 text-sky-800 border border-sky-300">
-                      Action Required
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sky-800 leading-relaxed">
-                    Daily Time Record (DTR) requires GPS location access to verify that you are physically present at your assigned workplace premises. Please click <strong>"Allow"</strong> on your browser's location prompt.
-                  </p>
-                </div>
-              </div>
             )}
+
 
             {/* Attendance Action Mode Switcher */}
             <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
