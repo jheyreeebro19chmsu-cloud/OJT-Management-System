@@ -99,9 +99,9 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
-            <div className="min-w-0">
-              <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT Management System</div>
-              <div className="text-[#D9A441] text-xs font-semibold">HTE Panel</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-white font-bold text-xs sm:text-[13px] leading-snug">CHMSU OJT Management System</div>
+              <div className="text-[#D9A441] text-xs font-semibold mt-0.5">HTE Panel</div>
             </div>
           </div>
           {isMobile && (
