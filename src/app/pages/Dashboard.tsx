@@ -97,15 +97,136 @@ export function Dashboard() {
   const isAdmin = currentUser?.role === 'admin';
   
   // HTE/Instructor Dashboard Metrics
-  const [metrics, setMetrics] = useState<any>(null);
-  const [recentRecords, setRecentRecords] = useState<any[]>([]);
-  const [linkedStudents, setLinkedStudents] = useState<any[]>([]);
+  // Student trainees across the active cohort
+  const studentEmployees = useMemo(() => {
+    return employees.filter(
+      (e) =>
+        e.position !== 'OJT Instructor' &&
+        e.position !== 'HTE Representative' &&
+        !e.employeeId?.startsWith('ADM-') &&
+        !e.employeeId?.startsWith('HTE-')
+    );
+  }, [employees]);
+
+  // HTE Linked students
+  const linkedStudents = useMemo(() => {
+    return studentEmployees
+      .filter((e) => {
+        return Boolean(
+          (e.hteId && e.hteId.trim().length > 0) ||
+          (e.companyName &&
+            e.companyName.trim().length > 0 &&
+            !e.companyName.toLowerCase().includes('pending') &&
+            e.companyName !== 'N/A' &&
+            e.companyName !== 'None')
+        );
+      })
+      .map((s) => ({
+        id: s.id,
+        status: s.active !== false ? 'approved' : 'pending',
+        employees: {
+          id: s.id,
+          name: s.name,
+          course: s.course || s.department || 'OJT Trainee',
+          companyName: s.companyName,
+          supervisorName: s.supervisorName,
+          photo: s.photo,
+        },
+      }));
+  }, [studentEmployees]);
+
+  // Instructor Dashboard Metrics
+  const metrics = useMemo(() => {
+    const totalApplications = studentEmployees.length;
+    const approved = studentEmployees.filter((s) => s.applicationStatus === 'approved' || s.approvalStatus === 'approved' || s.active !== false).length;
+    const pending = studentEmployees.filter((s) => s.applicationStatus === 'pending' || s.approvalStatus === 'pending' || !s.active).length;
+    const rejected = studentEmployees.filter((s) => s.applicationStatus === 'rejected' || s.approvalStatus === 'rejected').length;
+    const completed = studentEmployees.filter((s) => s.applicationStatus === 'completed').length;
+    const cancelled = studentEmployees.filter((s) => s.applicationStatus === 'cancelled').length;
+
+    let totalRenderedHours = 0;
+    if (contextTimeRecords && contextTimeRecords.length > 0) {
+      totalRenderedHours = contextTimeRecords.reduce((sum, r) => {
+        const hours = Number(r.totalHours || (r as any).total_hours || (r as any).hours_rendered) || 0;
+        return sum + hours;
+      }, 0);
+    }
+
+    const totalRequiredHours = Math.round(
+      studentEmployees.reduce((sum, s) => sum + (Number(s.requiredHours) || 486), 0) * 10
+    ) / 10;
+    totalRenderedHours = Math.round(totalRenderedHours * 10) / 10;
+    const totalRemainingHours = Math.max(0, Math.round((totalRequiredHours - totalRenderedHours) * 10) / 10);
+
+    return {
+      total_applications: totalApplications,
+      status_counts: {
+        pending,
+        approved,
+        rejected,
+        completed,
+        cancelled,
+      },
+      total_required_hours: totalRequiredHours,
+      total_rendered_hours: totalRenderedHours,
+      total_remaining_hours: totalRemainingHours,
+      unique_students: totalApplications,
+    };
+  }, [studentEmployees, contextTimeRecords]);
+
+  // Recent Time Records and Enrolled Trainees
+  const recentRecords = useMemo(() => {
+    // 1. Build records for students who have logged time records
+    const studentTimeLogs = (contextTimeRecords || []).map((r: any) => {
+      const empId = r.employeeId || r.employee_id;
+      const emp = studentEmployees.find(
+        (e) =>
+          e.id === empId ||
+          e.employeeId === empId ||
+          (e.email && empId && e.email.toLowerCase() === empId.toLowerCase()) ||
+          (e.name && (r.employeeName || r.employee_name) && e.name.toLowerCase().trim() === (r.employeeName || r.employee_name).toLowerCase().trim())
+      );
+      const totalHours = Number(r.totalHours || r.total_hours || r.hours_rendered || 0);
+      return {
+        id: r.id,
+        employee_id: emp?.id || empId,
+        student_name: emp?.name || r.employeeName || r.employee_name || 'Student Trainee',
+        student_id: emp?.employeeId || empId || 'OJT-TRAINEE',
+        photo: emp?.photo || r.photo,
+        course: emp?.course || emp?.department || 'OJT Trainee',
+        date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+        hours_rendered: totalHours,
+        is_approved: r.approvalStatus === 'approved' || r.approval_status === 'approved' || r.is_approved || r.status === 'present',
+        status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approvalStatus === 'approved' || r.approval_status === 'approved' ? 'Approved' : 'Pending'),
+        rawEmployee: emp,
+      };
+    });
+
+    // 2. Build rows for enrolled students who haven't clocked in yet so EVERY student is visible!
+    const studentsWithLogs = new Set(studentTimeLogs.map((l: any) => l.student_id).concat(studentTimeLogs.map((l: any) => l.student_name)));
+    const enrolledWithoutLogs = studentEmployees
+      .filter((s) => !studentsWithLogs.has(s.employeeId) && !studentsWithLogs.has(s.name))
+      .map((s) => ({
+        id: `enrolled-${s.id}`,
+        employee_id: s.id,
+        student_name: s.name,
+        student_id: s.employeeId || 'OJT-TRAINEE',
+        photo: s.photo,
+        course: s.course || s.department || 'OJT Trainee',
+        date: s.startDate || 'No clock-in yet',
+        hours_rendered: 0,
+        is_approved: s.active && s.approvalStatus !== 'pending',
+        status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
+        rawEmployee: s,
+      }));
+
+    return [...studentTimeLogs, ...enrolledWithoutLogs];
+  }, [studentEmployees, contextTimeRecords]);
+
   const [linkedStudentsPage, setLinkedStudentsPage] = useState(1);
   const [linkedStudentsPerPage, setLinkedStudentsPerPage] = useState(6);
   const [searchId, setSearchId] = useState('');
   const [isLinking, setIsLinking] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   const [recentRecordsPage, setRecentRecordsPage] = useState(1);
   const RECENT_RECORDS_PER_PAGE = 10;
@@ -260,271 +381,6 @@ export function Dashboard() {
     reader.readAsDataURL(file);
   };
 
-  // Load instructor dashboard metrics
-  useEffect(() => {
-    if (!isAdmin) {
-      setLoading(false);
-      return;
-    }
-
-    const loadInstructorMetrics = async () => {
-      setLoading(true);
-      setDashboardError(null);
-
-      const activeAY = settings.activeAcademicYear || '2026-2027';
-      const defaultAY = settings.academicYears?.[0] || '2025-2026';
-
-      // Student trainees across the active cohort
-      const studentEmployees = employees.filter(
-        (e) =>
-          e.position !== 'OJT Instructor' &&
-          e.position !== 'HTE Representative' &&
-          !e.employeeId?.startsWith('ADM-') &&
-          !e.employeeId?.startsWith('HTE-')
-      );
-
-      try {
-        const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
-        let query = supabase
-          .from('employees')
-          .select('*')
-          .neq('position', 'OJT Instructor')
-          .neq('position', 'HTE Representative');
-        if (currentUser?.id && isUuid(currentUser.id)) {
-          query = query.or(`instructor_id.eq.${currentUser.id},instructor_id.is.null`);
-        }
-        const { data: rawStudents } = await query;
-        
-        // Merge Supabase employees and context student employees
-        const mergedStudentsMap = new Map<string, any>();
-        studentEmployees.forEach((emp) => {
-          mergedStudentsMap.set(emp.id, emp);
-          if (emp.employeeId) mergedStudentsMap.set(emp.employeeId, emp);
-        });
-
-        if (rawStudents && rawStudents.length > 0) {
-          rawStudents.forEach((rs: any) => {
-            const key = rs.id || rs.employee_id;
-            const existing = mergedStudentsMap.get(rs.id) || (rs.employee_id ? mergedStudentsMap.get(rs.employee_id) : undefined);
-            const unified = {
-              id: rs.id,
-              name: rs.name || `${rs.first_name || ''} ${rs.last_name || ''}`.trim() || rs.email || 'Student Trainee',
-              email: rs.email || '',
-              employeeId: rs.employee_id || rs.employeeId || 'OJT-TRAINEE',
-              department: rs.department || '',
-              course: rs.course || rs.department || 'OJT Trainee',
-              position: rs.position || 'OJT Trainee',
-              photo: rs.photo || rs.face_photo_url || rs.avatar_url || existing?.photo,
-              startDate: rs.start_date || rs.created_at || existing?.startDate,
-              active: rs.active !== false,
-              approvalStatus: rs.approval_status || rs.application_status || 'approved',
-              requiredHours: Number(rs.required_hours || rs.requiredHours) || 486,
-            };
-            mergedStudentsMap.set(unified.id, unified);
-            if (unified.employeeId) mergedStudentsMap.set(unified.employeeId, unified);
-          });
-        }
-
-        const allStudentsList: any[] = Array.from(new Set(Array.from(mergedStudentsMap.values())));
-
-        // Calculate metrics
-        const totalApplications = allStudentsList.length;
-        const approved = allStudentsList.filter((s: any) => s.applicationStatus === 'approved' || s.approval_status === 'approved' || s.active !== false).length;
-        const pending = allStudentsList.filter((s: any) => s.applicationStatus === 'pending' || s.approval_status === 'pending').length;
-        const rejected = allStudentsList.filter((s: any) => s.applicationStatus === 'rejected' || s.approval_status === 'rejected').length;
-        const completed = allStudentsList.filter((s: any) => s.applicationStatus === 'completed').length;
-        const cancelled = allStudentsList.filter((s: any) => s.applicationStatus === 'cancelled').length;
-
-        // Get time records
-        const { data: rawTimeRecords } = await supabase
-          .from('time_records')
-          .select('*')
-          .order('date', { ascending: false })
-          .limit(50);
-
-        const timeRecords = (rawTimeRecords && rawTimeRecords.length > 0) ? rawTimeRecords : contextTimeRecords;
-
-        // Calculate hours
-        let totalRenderedHours = 0;
-        let totalRequiredHours = allStudentsList.reduce((sum: number, s: any) => sum + (Number(s.requiredHours || s.required_hours) || 486), 0);
-        if (timeRecords) {
-          totalRenderedHours = timeRecords.reduce((sum: number, r: any) => sum + (Number(r.total_hours || r.totalHours || r.hours_rendered) || 0), 0);
-        }
-
-        totalRenderedHours = Math.round(totalRenderedHours * 10) / 10;
-        totalRequiredHours = Math.round(totalRequiredHours * 10) / 10;
-        const totalRemainingHours = Math.max(0, Math.round((totalRequiredHours - totalRenderedHours) * 10) / 10);
-
-        setMetrics({
-          total_applications: totalApplications,
-          status_counts: {
-            pending,
-            approved,
-            rejected,
-            completed,
-            cancelled,
-          },
-          total_required_hours: totalRequiredHours,
-          total_rendered_hours: totalRenderedHours,
-          total_remaining_hours: totalRemainingHours,
-          unique_students: totalApplications,
-        });
-
-        // 1. Build records for students who have logged time records
-        const studentTimeLogs = (timeRecords || []).map((r: any) => {
-          const empId = r.employee_id || r.employeeId;
-          const emp = allStudentsList.find((e) => e.id === empId || e.employeeId === empId || (e.email && empId && e.email.toLowerCase() === empId.toLowerCase()));
-          const totalHours = Number(r.total_hours || r.totalHours || r.hours_rendered || 0);
-          return {
-            id: r.id,
-            employee_id: emp?.id || empId,
-            student_name: emp?.name || r.employee_name || r.employeeName || 'Student Trainee',
-            student_id: emp?.employeeId || empId || 'OJT-TRAINEE',
-            photo: emp?.photo || r.photo,
-            course: emp?.course || emp?.department || 'OJT Trainee',
-            date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
-            hours_rendered: totalHours,
-            is_approved: r.approval_status === 'approved' || r.approvalStatus === 'approved' || r.is_approved || r.status === 'present',
-            status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approval_status === 'approved' || r.approvalStatus === 'approved' ? 'Approved' : 'Pending'),
-            rawEmployee: emp,
-          };
-        });
-
-        // 2. Build rows for enrolled students who haven't clocked in yet so EVERY student is visible!
-        const studentsWithLogs = new Set(studentTimeLogs.map((l: any) => l.student_id).concat(studentTimeLogs.map((l: any) => l.student_name)));
-        const enrolledWithoutLogs = allStudentsList
-          .filter((s) => !studentsWithLogs.has(s.employeeId) && !studentsWithLogs.has(s.name))
-          .map((s) => ({
-            id: `enrolled-${s.id}`,
-            employee_id: s.id,
-            student_name: s.name,
-            student_id: s.employeeId || 'OJT-TRAINEE',
-            photo: s.photo,
-            course: s.course || s.department || 'OJT Trainee',
-            date: s.startDate || 'No clock-in yet',
-            hours_rendered: 0,
-            is_approved: s.active && s.approvalStatus !== 'pending',
-            status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
-            rawEmployee: s,
-          }));
-
-        const allStudentEntries = [...studentTimeLogs, ...enrolledWithoutLogs];
-        setRecentRecords(allStudentEntries);
-        setLoading(false);
-        fetchLinkedStudents();
-        return;
-      } catch (error: any) {
-        console.warn('Supabase metric query warning, using active AY context metrics:', error);
-      }
-
-      // Context fallback
-      const allStudents = studentEmployees;
-      const approvedCount = allStudents.filter((e) => e.active && e.approvalStatus !== 'pending').length;
-      const pendingCount = allStudents.filter((e) => !e.active || e.approvalStatus === 'pending').length;
-      const totalReq = Math.round(allStudents.reduce((sum, e) => sum + (e.requiredHours || 486), 0) * 10) / 10;
-      const activeIds = new Set(allStudents.map((e) => e.id).concat(allStudents.map((e) => e.employeeId)));
-      const activeTimeRecs = contextTimeRecords.filter((r) => activeIds.has(r.employeeId));
-      const totalRendered = Math.round(activeTimeRecs.reduce((sum, r) => sum + (r.totalHours || 0), 0) * 10) / 10;
-
-      setMetrics({
-        total_applications: allStudents.length,
-        status_counts: {
-          pending: pendingCount,
-          approved: approvedCount,
-          rejected: 0,
-          completed: 0,
-          cancelled: 0,
-        },
-        total_required_hours: totalReq,
-        total_rendered_hours: totalRendered,
-        total_remaining_hours: Math.max(0, Math.round((totalReq - totalRendered) * 10) / 10),
-        unique_students: allStudents.length,
-      });
-
-      const formatted = activeTimeRecs.slice(0, 20).map((r) => {
-        const emp = allStudents.find((e) => e.id === r.employeeId || e.employeeId === r.employeeId);
-        return {
-          id: r.id,
-          employee_id: emp?.id || r.employeeId,
-          student_name: emp?.name || 'Student Trainee',
-          student_id: emp?.employeeId || r.employeeId || 'OJT-TRAINEE',
-          photo: emp?.photo,
-          course: emp?.course || emp?.department || 'OJT Trainee',
-          date: r.date,
-          hours_rendered: r.totalHours || 0,
-          is_approved: r.approvalStatus === 'approved' || r.status === 'present',
-          status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approvalStatus === 'approved' ? 'Approved' : 'Pending'),
-          rawEmployee: emp,
-        };
-      });
-
-      const seenStudents = new Set(formatted.map((f) => f.student_id).concat(formatted.map((f) => f.student_name)));
-      const noLogStudents = allStudents
-        .filter((s) => !seenStudents.has(s.employeeId) && !seenStudents.has(s.name))
-        .map((s) => ({
-          id: `enrolled-${s.id}`,
-          employee_id: s.id,
-          student_name: s.name,
-          student_id: s.employeeId || 'OJT-TRAINEE',
-          photo: s.photo,
-          course: s.course || s.department || 'OJT Trainee',
-          date: s.startDate || 'No clock-in yet',
-          hours_rendered: 0,
-          is_approved: s.active && s.approvalStatus !== 'pending',
-          status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
-          rawEmployee: s,
-        }));
-
-      setRecentRecords([...formatted, ...noLogStudents]);
-      setLoading(false);
-    };
-
-    loadInstructorMetrics();
-  }, [isAdmin, currentUser?.id, employees, contextTimeRecords, settings.activeAcademicYear]);
-
-  const fetchLinkedStudents = async () => {
-    if (!isAdmin) return;
-
-    try {
-      // Pull student trainees who have an assigned HTE
-      const studentEmployees = employees.filter((e) => {
-        const isStudent =
-          e.position !== 'OJT Instructor' &&
-          e.position !== 'HTE Representative' &&
-          !e.employeeId?.startsWith('ADM-') &&
-          !e.employeeId?.startsWith('HTE-');
-
-        const hasAssignedHte = Boolean(
-          (e.hteId && e.hteId.trim().length > 0) ||
-          (e.companyName &&
-            e.companyName.trim().length > 0 &&
-            !e.companyName.toLowerCase().includes('pending') &&
-            e.companyName !== 'N/A' &&
-            e.companyName !== 'None')
-        );
-
-        return isStudent && hasAssignedHte;
-      });
-
-      const formatted = studentEmployees.map((s) => ({
-        id: s.id,
-        status: s.active !== false ? 'approved' : 'pending',
-        employees: {
-          id: s.id,
-          name: s.name,
-          course: s.course || s.department || 'OJT Trainee',
-          companyName: s.companyName,
-          supervisorName: s.supervisorName,
-          photo: s.photo,
-        },
-      }));
-
-      setLinkedStudents(formatted);
-    } catch (error) {
-      console.error('Error fetching linked students:', error);
-    }
-  };
-
   const handleLinkStudent = async () => {
     const queryTerm = searchId.trim();
     if (!queryTerm) return;
@@ -566,7 +422,6 @@ export function Dashboard() {
 
       toast.success(`${student.name} linked successfully!`);
       setSearchId('');
-      fetchLinkedStudents();
     } catch (err: any) {
       toast.error(err.message || 'Failed to link student');
     } finally {
@@ -578,12 +433,13 @@ export function Dashboard() {
   useEffect(() => {
     if (isAdmin) {
       const fetchPending = async () => {
-        const { data } = await supabase
-          .from('employees')
-          .select('*')
-          .or(`instructor_id.eq.${currentUser?.id},instructor_id.is.null`)
-          .eq('application_status', 'pending');
-        if (data) setPendingApps(data.map(transformSupabaseEmployee));
+        try {
+          const { data } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('application_status', 'pending');
+          if (data) setPendingApps(data.map(transformSupabaseEmployee));
+        } catch {}
       };
 
       const fetchHteRequests = async () => {
@@ -591,7 +447,6 @@ export function Dashboard() {
           const { data, error } = await supabase
             .from('hte_student_access')
             .select('*, host_supervisors(*), employees!inner(*)')
-            .eq('employees.instructor_id', currentUser?.id)
             .in('status', ['pending', 'approved'])
             .order('created_at', { ascending: false });
           if (!error && data) setHteRequests(data);
@@ -603,7 +458,7 @@ export function Dashboard() {
       fetchPending();
       fetchHteRequests();
     }
-  }, [isAdmin, currentUser]);
+  }, [isAdmin]);
 
   const handleApproveHte = async (request: any) => {
     setProcessingId(request.id);
@@ -807,31 +662,6 @@ export function Dashboard() {
 
   // ── INSTRUCTOR DASHBOARD (HTE-style) ──
   if (isAdmin) {
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <Loader className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600">Loading dashboard...</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (dashboardError) {
-      return (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
-            <div>
-              <h3 className="font-semibold text-red-900">Error Loading Dashboard</h3>
-              <p className="text-red-700 text-sm mt-1">{dashboardError}</p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="space-y-8">
         {/* Page Header */}
