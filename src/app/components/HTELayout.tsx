@@ -260,28 +260,6 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             {/* Header Right Actions */}
             <div className="flex items-center gap-2">
               <button
-                onClick={() => navigate('/hte/evaluations')}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#146B4D] hover:bg-[#0E523A] text-white border border-[#146B4D]/30 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
-              >
-                <Star size={13} className="text-[#D9A441] fill-[#D9A441]" />
-                <span>Evaluate</span>
-              </button>
-              <div
-                onClick={() => navigate('/hte/profile')}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm flex items-center justify-center bg-[#0E1D35]"
-                title="View Profile"
-              >
-                {avatarSource ? (
-                  <img
-                    src={getPhotoUrl(avatarSource)}
-                    alt={avatarName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <Building size={16} className="text-white p-1" />
-                )}
-              </div>
-              <button
                 onClick={handleLogout}
                 className="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-[#1E3A66] font-medium cursor-pointer"
               >

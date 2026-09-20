@@ -282,24 +282,6 @@ export function EmployeeLayout() {
                 <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div
-                onClick={() => navigate('/app/profile')}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm flex items-center justify-center bg-[#0E1D35] hover:ring-2 hover:ring-[#146B4D] transition-all"
-                title="View Profile"
-              >
-                {avatarUrl ? (
-                  <img
-                    src={getPhotoUrl(avatarUrl)}
-                    alt={displayName}
-                    className="w-full h-full object-cover"
-                    style={{ transform: 'scaleX(-1)' }}
-                  />
-                ) : (
-                  <User size={16} className="text-white p-1" />
-                )}
-              </div>
-            </div>
           </div>
         </header>
 
