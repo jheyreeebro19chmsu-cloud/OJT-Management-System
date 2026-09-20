@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -72,12 +72,27 @@ export function AdminEmployees() {
 
   const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [pageByGroup, setPageByGroup] = useState<Record<string, number>>({
+    pending: 1,
+    student: 1,
+    instructor: 1,
+    hte: 1,
+  });
 
   useEffect(() => {
     if (settings.activeAcademicYear) {
       setSelectedYear(settings.activeAcademicYear);
     }
   }, [settings.activeAcademicYear]);
+
+  useEffect(() => {
+    setPageByGroup({
+      pending: 1,
+      student: 1,
+      instructor: 1,
+      hte: 1,
+    });
+  }, [search, selectedYear]);
 
   const getEmployeeGroup = (emp: Employee) => {
     const normalized = emp.position?.toLowerCase() || '';
@@ -251,6 +266,12 @@ export function AdminEmployees() {
     const isHteGroup = group === 'hte';
     const isTraineeGroup = !isInstructorGroup && !isHteGroup;
 
+    const ITEMS_PER_PAGE = 10;
+    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE) || 1;
+    const currentPage = Math.min(pageByGroup[group] || 1, totalPages);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const paginatedItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
     // Hide pending section entirely if empty, unless it's the only search result
     if (isPendingGroup && items.length === 0 && search === '') return null;
 
@@ -270,7 +291,7 @@ export function AdminEmployees() {
             <p className="text-sm text-gray-500 font-medium">{config.emptyText}</p>
           </div>
         ) : (
-          items.map((emp, idx) => {
+          paginatedItems.map((emp, idx) => {
             const stats = getEmpStats(emp.id);
             const progress = Math.min((stats.totalHours / (emp.requiredHours || 1)) * 100, 100);
             return (
@@ -591,6 +612,53 @@ export function AdminEmployees() {
               </motion.div>
             );
           })
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3.5 bg-gray-50/75 border-t border-gray-100 text-xs">
+            <span className="text-gray-500 font-medium">
+              Showing <span className="font-bold text-gray-800">{startIndex + 1}</span> to{' '}
+              <span className="font-bold text-gray-800">{Math.min(startIndex + ITEMS_PER_PAGE, items.length)}</span> of{' '}
+              <span className="font-bold text-gray-800">{items.length}</span> {config.title.toLowerCase()}
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: Math.max(1, currentPage - 1) }))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+              >
+                <ChevronLeft size={14} /> Previous
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: p }))}
+                    className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      currentPage === p
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: Math.min(totalPages, currentPage + 1) }))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     );

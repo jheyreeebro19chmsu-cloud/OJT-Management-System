@@ -107,6 +107,21 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
+  const [recentRecordsPage, setRecentRecordsPage] = useState(1);
+  const RECENT_RECORDS_PER_PAGE = 10;
+
+  const totalRecentRecordsPages = Math.ceil(recentRecords.length / RECENT_RECORDS_PER_PAGE) || 1;
+  const paginatedRecentRecords = useMemo(() => {
+    const startIndex = (recentRecordsPage - 1) * RECENT_RECORDS_PER_PAGE;
+    return recentRecords.slice(startIndex, startIndex + RECENT_RECORDS_PER_PAGE);
+  }, [recentRecords, recentRecordsPage]);
+
+  useEffect(() => {
+    if (recentRecordsPage > totalRecentRecordsPages) {
+      setRecentRecordsPage(1);
+    }
+  }, [recentRecordsPage, totalRecentRecordsPages]);
+
   const totalLinkedPages = Math.ceil(linkedStudents.length / linkedStudentsPerPage) || 1;
   const paginatedLinkedStudents = useMemo(() => {
     const startIndex = (linkedStudentsPage - 1) * linkedStudentsPerPage;
@@ -1017,8 +1032,8 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {recentRecords.length > 0 ? (
-                  recentRecords.map((record) => (
+                {paginatedRecentRecords.length > 0 ? (
+                  paginatedRecentRecords.map((record) => (
                     <tr
                       key={record.id}
                       onClick={() => handleStudentClick(record)}
@@ -1110,6 +1125,56 @@ export function Dashboard() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls for Recent Time Records (10 per page) */}
+          {totalRecentRecordsPages > 1 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-4 bg-gray-50/75 border-t border-gray-100 text-xs">
+              <span className="text-gray-500 font-medium">
+                Showing <span className="font-bold text-gray-800">{(recentRecordsPage - 1) * RECENT_RECORDS_PER_PAGE + 1}</span> to{' '}
+                <span className="font-bold text-gray-800">
+                  {Math.min(recentRecordsPage * RECENT_RECORDS_PER_PAGE, recentRecords.length)}
+                </span>{' '}
+                of <span className="font-bold text-gray-800">{recentRecords.length}</span> students
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setRecentRecordsPage((prev) => Math.max(1, prev - 1))}
+                  disabled={recentRecordsPage === 1}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                >
+                  <ChevronLeft size={14} /> Previous
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalRecentRecordsPages }, (_, i) => i + 1).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setRecentRecordsPage(p)}
+                      className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        recentRecordsPage === p
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setRecentRecordsPage((prev) => Math.min(totalRecentRecordsPages, prev + 1))}
+                  disabled={recentRecordsPage === totalRecentRecordsPages}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Student Information & OJT Profile Modal */}
