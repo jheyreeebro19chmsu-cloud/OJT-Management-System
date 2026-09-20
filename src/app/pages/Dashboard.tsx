@@ -274,14 +274,13 @@ export function Dashboard() {
       const activeAY = settings.activeAcademicYear || '2026-2027';
       const defaultAY = settings.academicYears?.[0] || '2025-2026';
 
-      // Student trainees strictly in the active academic year
+      // Student trainees across the active cohort
       const studentEmployees = employees.filter(
         (e) =>
           e.position !== 'OJT Instructor' &&
           e.position !== 'HTE Representative' &&
           !e.employeeId?.startsWith('ADM-') &&
-          !e.employeeId?.startsWith('HTE-') &&
-          (e.academicYear === activeAY || (!e.academicYear && activeAY === defaultAY))
+          !e.employeeId?.startsWith('HTE-')
       );
 
       try {
@@ -290,8 +289,7 @@ export function Dashboard() {
           .from('employees')
           .select('*')
           .neq('position', 'OJT Instructor')
-          .neq('position', 'HTE Representative')
-          .eq('academic_year', activeAY);
+          .neq('position', 'HTE Representative');
         if (currentUser?.id && isUuid(currentUser.id)) {
           query = query.or(`instructor_id.eq.${currentUser.id},instructor_id.is.null`);
         }

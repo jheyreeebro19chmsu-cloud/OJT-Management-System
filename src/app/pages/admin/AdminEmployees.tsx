@@ -104,9 +104,8 @@ export function AdminEmployees() {
 
   const matchesYear = (emp: Employee) => {
     if (selectedYear === 'all') return true;
-    const defaultYear = settings.academicYears?.[0] || '2025-2026';
-    const empYear = emp.academicYear || defaultYear;
-    return empYear === selectedYear;
+    if (!emp.academicYear) return true;
+    return emp.academicYear === selectedYear;
   };
 
   const filteredGroups = {
