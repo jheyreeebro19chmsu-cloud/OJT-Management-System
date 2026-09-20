@@ -93,7 +93,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   const renderSidebarContent = (isMobile = false) => (
     <>
       {/* Brand Header */}
-      <div className="p-5 border-b border-blue-800 bg-blue-950/40">
+      <div className="p-5 border-b border-[#0E1D35] bg-[#0E1D35]/40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
@@ -101,13 +101,13 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             </div>
             <div className="min-w-0">
               <div className="text-white font-bold text-sm leading-tight truncate">CHMSU OJT Management System</div>
-              <div className="text-blue-300 text-xs font-semibold">HTE Panel</div>
+              <div className="text-[#D9A441] text-xs font-semibold">HTE Panel</div>
             </div>
           </div>
           {isMobile && (
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1.5 rounded-lg text-blue-200 hover:text-white hover:bg-blue-800 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-[#1E3A66] transition-colors cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -115,12 +115,12 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
         </div>
 
         {/* Academic Year Environment Indicator */}
-        <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+        <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-[#0E1D35]/60 rounded-xl border border-[#1E3A66] text-[11px] text-blue-100 font-semibold">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-[#146B4D] animate-pulse" />
             <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
           </div>
-          <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
+          <span className="text-[10px] text-[#D9A441] uppercase tracking-wider font-bold">Active</span>
         </div>
       </div>
 
@@ -136,24 +136,26 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               onClick={() => isMobile && setSidebarOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
-                  isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                  isActive
+                    ? 'bg-[#146B4D] text-white shadow-md shadow-[#146B4D]/25'
+                    : 'text-slate-300 hover:bg-[#1E3A66] hover:text-white'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
-                  <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-sky-600/40' : ''}`}>
+                  <div className={`relative p-1.5 rounded-xl transition-all ${isActive ? 'bg-white/15' : ''}`}>
                     <Icon size={18} />
                     {isActive && (
                       <motion.div
                         layoutId="nav-indicator-hte"
-                        className="absolute inset-0 bg-sky-600/40 rounded-xl -z-10"
+                        className="absolute inset-0 bg-white/10 rounded-xl -z-10"
                       />
                     )}
                   </div>
                   <span className="text-sm font-medium">{label}</span>
                   {label === 'Announcements' && hteAnnounceCount > 0 && (
-                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
+                    <span className="ml-auto bg-[#DC6B2F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
                       {hteAnnounceCount}
                     </span>
                   )}
@@ -165,9 +167,9 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
       </nav>
 
       {/* Supervisor User Footer on Left Sidebar */}
-      <div className="p-3 border-t border-blue-800 bg-blue-950/30">
+      <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
         <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
-          <div className="w-9 h-9 bg-sky-400 rounded-full flex items-center justify-center overflow-hidden border border-white/20 shadow-inner shrink-0">
+          <div className="w-9 h-9 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20 shadow-inner shrink-0">
             {avatarSource ? (
               <img
                 src={getPhotoUrl(avatarSource)}
@@ -188,7 +190,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             if (isMobile) setSidebarOpen(false);
             handleLogout();
           }}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium cursor-pointer"
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
         >
           <LogOut size={15} />
           Logout
@@ -198,9 +200,9 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   );
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#F7F7F3] text-[#1F2937] overflow-hidden font-sans">
       {/* Desktop Left Sidebar (Matching Instructor & Trainee) */}
-      <aside className="hidden lg:flex w-64 bg-blue-900 flex-col shrink-0 no-print border-r border-blue-800 shadow-xl">
+      <aside className="hidden lg:flex w-64 bg-[#152B4D] flex-col shrink-0 no-print border-r border-[#0E1D35] shadow-xl">
         {renderSidebarContent(false)}
       </aside>
 
@@ -220,7 +222,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              className="fixed inset-y-0 left-0 z-[999] w-72 bg-blue-900 flex flex-col shadow-2xl lg:hidden no-print border-r border-blue-800"
+              className="fixed inset-y-0 left-0 z-[999] w-72 bg-[#152B4D] flex flex-col shadow-2xl lg:hidden no-print border-r border-[#0E1D35]"
             >
               {renderSidebarContent(true)}
             </motion.aside>
@@ -230,13 +232,13 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header with Hamburger Navigation Button on the Left */}
-        <header className="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg z-10 no-print border-b border-blue-700/50">
+        <header className="bg-gradient-to-r from-[#152B4D] to-[#1E3A66] text-white shadow-md z-10 no-print border-b border-[#0E1D35]">
           <div className="max-w-md lg:max-w-none mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Mobile Sidebar Toggle Button on the Left */}
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-xl text-blue-200 hover:text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+                className="lg:hidden p-2 rounded-xl text-blue-200 hover:text-white hover:bg-[#152B4D] transition-colors focus:outline-none focus:ring-2 focus:ring-[#146B4D] cursor-pointer"
                 aria-label="Open Navigation"
               >
                 <Menu size={22} />
@@ -249,8 +251,8 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                 <div className="text-xs text-blue-200 leading-tight">CHMSU OJT Management System</div>
                 <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{companyName}</div>
               </div>
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-700/60 border border-blue-400/40 text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-[#0E1D35]/60 border border-[#1E3A66] text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
+                <span className="w-1.5 h-1.5 bg-[#146B4D] rounded-full animate-pulse" />
                 <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
               </div>
             </div>
@@ -259,14 +261,14 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/hte/evaluations')}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/80 hover:bg-blue-600 text-white border border-blue-400/30 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#146B4D] hover:bg-[#0E523A] text-white border border-[#146B4D]/30 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
               >
-                <Star size={13} className="text-amber-300 fill-amber-300" />
+                <Star size={13} className="text-[#D9A441] fill-[#D9A441]" />
                 <span>Evaluate</span>
               </button>
               <div
                 onClick={() => navigate('/hte/profile')}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm flex items-center justify-center bg-blue-800"
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm flex items-center justify-center bg-[#0E1D35]"
                 title="View Profile"
               >
                 {avatarSource ? (
@@ -281,7 +283,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               </div>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 text-blue-200 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-blue-700 font-medium cursor-pointer"
+                className="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-[#1E3A66] font-medium cursor-pointer"
               >
                 <LogOut size={14} />
                 <span className="hidden sm:inline">Logout</span>

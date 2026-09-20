@@ -2,83 +2,143 @@
 
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
-  --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
+
+  /* ──────────────────────────────────────────────────────────────────────────
+   * CHMSU Official Institutional Color Palette
+   * ──────────────────────────────────────────────────────────────────────────
+   * Primary / Sidebar:     Campus Navy      #152B4D (seal's calm confidence tone)
+   * Brand accent / success: CHMSU Green      #146B4D (seal's green frame)
+   * Secondary accent:       Sugarcane Gold   #D9A441 (seal's book & gear gold)
+   * Attention / action:     Circuit Orange   #DC6B2F (seal's 8 circuit terminals)
+   * Background:             Warm Parchment   #F7F7F3 (institutional off-white)
+   * Text / ink:             Slate Ink        #1F2937 (high-contrast readable neutral)
+   * ────────────────────────────────────────────────────────────────────────── */
+  --campus-navy: #152B4D;
+  --campus-navy-dark: #0E1D35;
+  --campus-navy-light: #1E3A66;
+  --campus-navy-hover: #1A345B;
+
+  --chmsu-green: #146B4D;
+  --chmsu-green-light: #1A845F;
+  --chmsu-green-dark: #0D4934;
+  --chmsu-green-bg: #EAF5F0;
+
+  --sugarcane-gold: #D9A441;
+  --sugarcane-gold-light: #E8B95E;
+  --sugarcane-gold-dark: #B58428;
+  --sugarcane-gold-bg: #FCF6EA;
+
+  --circuit-orange: #DC6B2F;
+  --circuit-orange-light: #E7824C;
+  --circuit-orange-dark: #B64D16;
+  --circuit-orange-bg: #FDF1EA;
+
+  --warm-parchment: #F7F7F3;
+  --warm-parchment-card: #FFFFFF;
+  --warm-parchment-subtle: #ECECE6;
+
+  --slate-ink: #1F2937;
+  --slate-ink-muted: #4B5563;
+  --slate-ink-light: #9CA3AF;
+
+  --background: #F7F7F3;
+  --foreground: #1F2937;
+  --card: #FFFFFF;
+  --card-foreground: #1F2937;
+  --popover: #FFFFFF;
+  --popover-foreground: #1F2937;
+  --primary: #152B4D;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EAF5F0;
+  --secondary-foreground: #146B4D;
+  --muted: #F0F0EB;
+  --muted-foreground: #4B5563;
+  --accent: #FCF6EA;
+  --accent-foreground: #D9A441;
+  --destructive: #DC6B2F;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(31, 41, 55, 0.12);
   --input: transparent;
-  --input-background: #f3f3f5;
-  --switch-background: #cbced4;
+  --input-background: #FFFFFF;
+  --switch-background: #D1D5DB;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --ring: #146B4D;
+  --chart-1: #146B4D;
+  --chart-2: #152B4D;
+  --chart-3: #D9A441;
+  --chart-4: #DC6B2F;
+  --chart-5: #1E3A66;
+  --radius: 0.75rem;
+  --sidebar: #152B4D;
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-primary: #146B4D;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E3A66;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #0E1D35;
+  --sidebar-ring: #D9A441;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --background: #0E1D35;
+  --foreground: #F7F7F3;
+  --card: #152B4D;
+  --card-foreground: #F7F7F3;
+  --popover: #152B4D;
+  --popover-foreground: #F7F7F3;
+  --primary: #146B4D;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1E3A66;
+  --secondary-foreground: #F7F7F3;
+  --muted: #1E3A66;
+  --muted-foreground: #9CA3AF;
+  --accent: #D9A441;
+  --accent-foreground: #0E1D35;
+  --destructive: #DC6B2F;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: #1E3A66;
+  --ring: #146B4D;
+  --sidebar: #0E1D35;
+  --sidebar-foreground: #F7F7F3;
+  --sidebar-primary: #146B4D;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #152B4D;
+  --sidebar-accent-foreground: #F7F7F3;
+  --sidebar-border: #152B4D;
+  --sidebar-ring: #D9A441;
 }
 
 @theme inline {
+  --color-campus-navy: var(--campus-navy);
+  --color-campus-navy-dark: var(--campus-navy-dark);
+  --color-campus-navy-light: var(--campus-navy-light);
+  --color-campus-navy-hover: var(--campus-navy-hover);
+
+  --color-chmsu-green: var(--chmsu-green);
+  --color-chmsu-green-light: var(--chmsu-green-light);
+  --color-chmsu-green-dark: var(--chmsu-green-dark);
+  --color-chmsu-green-bg: var(--chmsu-green-bg);
+
+  --color-sugarcane-gold: var(--sugarcane-gold);
+  --color-sugarcane-gold-light: var(--sugarcane-gold-light);
+  --color-sugarcane-gold-dark: var(--sugarcane-gold-dark);
+  --color-sugarcane-gold-bg: var(--sugarcane-gold-bg);
+
+  --color-circuit-orange: var(--circuit-orange);
+  --color-circuit-orange-light: var(--circuit-orange-light);
+  --color-circuit-orange-dark: var(--circuit-orange-dark);
+  --color-circuit-orange-bg: var(--circuit-orange-bg);
+
+  --color-warm-parchment: var(--warm-parchment);
+  --color-warm-parchment-card: var(--warm-parchment-card);
+  --color-warm-parchment-subtle: var(--warm-parchment-subtle);
+
+  --color-slate-ink: var(--slate-ink);
+  --color-slate-ink-muted: var(--slate-ink-muted);
+  --color-slate-ink-light: var(--slate-ink-light);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

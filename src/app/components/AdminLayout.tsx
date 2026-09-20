@@ -156,30 +156,30 @@ export function AdminLayout() {
   }).length;
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden">
+    <div className="flex h-screen bg-[#F7F7F3] text-[#1F2937] overflow-hidden font-sans">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-60 bg-blue-900 flex-col shrink-0 no-print">
-        <div className="p-5 border-b border-blue-800">
+      <aside className="hidden lg:flex w-60 bg-[#152B4D] flex-col shrink-0 no-print border-r border-[#0E1D35] shadow-xl">
+        <div className="p-5 border-b border-[#0E1D35] bg-[#0E1D35]/40">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div>
               <div className="text-white font-bold text-sm leading-tight">CHMSU OJT Management System</div>
-              <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
+              <div className="text-[#D9A441] text-xs font-semibold">Instructor Panel</div>
             </div>
           </div>
           {/* Academic Year Environment Indicator */}
-          <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+          <div className="mt-3.5 flex items-center justify-between px-3 py-1.5 bg-[#0E1D35]/60 rounded-xl border border-[#1E3A66] text-[11px] text-blue-100 font-semibold">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-[#146B4D] animate-pulse" />
               <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
             </div>
-            <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
+            <span className="text-[10px] text-[#D9A441] uppercase tracking-wider font-bold">Active</span>
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -187,14 +187,17 @@ export function AdminLayout() {
               end={end}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
+                  isActive
+                    ? 'bg-[#146B4D] text-white shadow-md shadow-[#146B4D]/25'
+                    : 'text-slate-300 hover:bg-[#1E3A66] hover:text-white'
                 }`
               }
             >
               <Icon size={16} />
               <span className="flex-1">{label}</span>
               {label === 'Announcements' && unreadAnn > 0 && (
-                <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                <span className="bg-[#DC6B2F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
                   {unreadAnn}
                 </span>
               )}
@@ -202,9 +205,9 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-blue-800">
+        <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
           <div className="flex items-center gap-2 px-3 py-2 mb-2">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+            <div className="w-8 h-8 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20">
               {(() => {
                 const url = getPhotoUrl(employee?.photo as any);
                 return url ? (
@@ -214,21 +217,21 @@ export function AdminLayout() {
                 );
               })()}
             </div>
-            <div>
-              <div className="text-white text-xs font-medium">{employee?.name || 'OJT Instructor'}</div>
-              <div className="text-blue-400 text-xs">{employee?.email || 'No email'}</div>
+            <div className="min-w-0">
+              <div className="text-white text-xs font-medium truncate">{employee?.name || 'OJT Instructor'}</div>
+              <div className="text-blue-300 text-xs truncate">{employee?.email || 'No email'}</div>
             </div>
           </div>
           <button
             onClick={() => navigate('/admin/profile')}
-            className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm"
+            className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm"
           >
             <Users size={14} />
             Profile
           </button>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm"
+            className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm"
           >
             <LogOut size={14} />
             Logout
@@ -245,39 +248,39 @@ export function AdminLayout() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden fixed inset-0 bg-black/50 z-[998]"
+              className="lg:hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[998]"
             />
             <motion.aside
               initial={{ x: -240 }}
               animate={{ x: 0 }}
               exit={{ x: -240 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="lg:hidden fixed left-0 top-0 bottom-0 w-60 bg-blue-900 flex flex-col z-[999] no-print"
+              className="lg:hidden fixed left-0 top-0 bottom-0 w-64 bg-[#152B4D] flex flex-col z-[999] no-print border-r border-[#0E1D35] shadow-2xl"
             >
-              <div className="p-5 border-b border-blue-800 flex flex-col gap-3">
+              <div className="p-5 border-b border-[#0E1D35] bg-[#0E1D35]/50 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
                       <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
                     </div>
                     <div>
-                      <div className="text-white font-bold text-sm">CHMSU OJT Management System</div>
-                      <div className="text-blue-300 text-xs font-semibold">Instructor Panel</div>
+                      <div className="text-white font-bold text-sm leading-tight">CHMSU OJT System</div>
+                      <div className="text-[#D9A441] text-xs font-semibold">Instructor Panel</div>
                     </div>
                   </div>
-                  <button onClick={() => setSidebarOpen(false)} className="text-blue-300 hover:text-white">
+                  <button onClick={() => setSidebarOpen(false)} className="text-slate-300 hover:text-white p-1">
                     <X size={20} />
                   </button>
                 </div>
-                <div className="flex items-center justify-between px-3 py-1.5 bg-blue-950/60 rounded-xl border border-blue-700/50 text-[11px] text-blue-100 font-semibold">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-[#0E1D35]/70 rounded-xl border border-[#1E3A66] text-[11px] text-blue-100 font-semibold">
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-[#146B4D] animate-pulse" />
                     <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
                   </div>
-                  <span className="text-[10px] text-blue-300 uppercase tracking-wider font-bold">Active</span>
+                  <span className="text-[10px] text-[#D9A441] uppercase tracking-wider font-bold">Active</span>
                 </div>
               </div>
-              <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+              <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
                 {navItems.map(({ to, label, icon: Icon, end }) => (
                   <NavLink
                     key={to}
@@ -285,35 +288,38 @@ export function AdminLayout() {
                     end={end}
                     onClick={() => setSidebarOpen(false)}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${isActive ? 'bg-sky-500 text-white' : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                      `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
+                        isActive
+                          ? 'bg-[#146B4D] text-white shadow-md'
+                          : 'text-slate-300 hover:bg-[#1E3A66] hover:text-white'
                       }`
                     }
                   >
                     <Icon size={16} />
                     <span className="flex-1">{label}</span>
                     {label === 'Announcements' && unreadAnn > 0 && (
-                      <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                      <span className="bg-[#DC6B2F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
                         {unreadAnn}
                       </span>
                     )}
                   </NavLink>
                 ))}
               </nav>
-              <div className="p-3 border-t border-blue-800">
+              <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
                 <div className="flex items-center gap-2 px-3 py-2 mb-2">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+                  <div className="w-8 h-8 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20">
                     {(() => {
                       const url = getPhotoUrl(employee?.photo as any);
                       return url ? (
                         <img src={url} alt={employee?.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
                       ) : (
-                        <span className="text-blue-900 text-xs font-bold">AD</span>
+                        <span className="text-white text-xs font-bold">AD</span>
                       );
                     })()}
                   </div>
-                  <div>
-                    <div className="text-white text-xs font-medium">{employee?.name || 'OJT Instructor'}</div>
-                    <div className="text-blue-400 text-xs">{employee?.email || 'No email'}</div>
+                  <div className="min-w-0">
+                    <div className="text-white text-xs font-medium truncate">{employee?.name || 'OJT Instructor'}</div>
+                    <div className="text-blue-300 text-xs truncate">{employee?.email || 'No email'}</div>
                   </div>
                 </div>
                 <button
@@ -321,14 +327,14 @@ export function AdminLayout() {
                     setSidebarOpen(false);
                     navigate('/admin/profile');
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium"
                 >
                   <Users size={14} />
                   Profile
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-blue-300 hover:text-white hover:bg-blue-800 rounded-xl transition-all text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium"
                 >
                   <LogOut size={14} />
                   Logout
