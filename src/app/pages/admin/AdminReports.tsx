@@ -27,6 +27,7 @@ import {
   SlidersHorizontal,
   ArrowUpDown,
   RefreshCw,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -1172,26 +1173,33 @@ export function AdminReports() {
             </div>
           </div>
 
-          {/* Trainee Hours Summary Data Table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            {/* Header with Search and Filters */}
-            <div className="p-5 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Trainee Hours Summary Enterprise Data Table */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden font-sans">
+            {/* Table Header Toolbar with Search, Filters, Export & Actions */}
+            <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/60 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-gray-800 text-base">Trainee Rendering Progress</h3>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                    {filteredEmployeeSummary.length} {filteredEmployeeSummary.length === 1 ? 'Trainee' : 'Trainees'}
-                  </span>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-xs">
+                    <FileSpreadsheet size={16} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-slate-900 text-base">Trainee Rendering Progress</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 text-blue-800 border border-blue-200">
+                        {filteredEmployeeSummary.length} {filteredEmployeeSummary.length === 1 ? 'Trainee' : 'Trainees'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Accurate real-time tracking of student OJT hours, completion %, and attendance metrics
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Accurate tracking of student OJT hours, completion %, and attendance metrics
-                </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5">
                 {/* Search Box */}
-                <div className="relative min-w-[220px]">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <div className="relative min-w-[220px] flex-1 sm:flex-initial">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={traineeSearch}
@@ -1200,13 +1208,13 @@ export function AdminReports() {
                       setTraineePage(1);
                     }}
                     placeholder="Search name, ID, course, HTE..."
-                    className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-2xs font-medium"
                   />
                   {traineeSearch && (
                     <button
                       type="button"
                       onClick={() => setTraineeSearch('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
                       <X size={12} />
                     </button>
@@ -1214,15 +1222,15 @@ export function AdminReports() {
                 </div>
 
                 {/* Sort Dropdown */}
-                <div className="flex items-center gap-1.5">
-                  <ArrowUpDown size={14} className="text-gray-400" />
+                <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-2xs">
+                  <ArrowUpDown size={13} className="text-slate-500 shrink-0" />
                   <select
                     value={traineeSortBy}
                     onChange={(e) => setTraineeSortBy(e.target.value as any)}
-                    className="px-2.5 py-1.5 border border-gray-200 rounded-xl text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                    className="text-xs bg-transparent text-slate-800 focus:outline-none font-bold cursor-pointer"
                   >
                     <option value="hours">Sort: Total Hours (High-Low)</option>
-                    <option value="monthHours">Sort: This Month Hours</option>
+                    <option value="monthHours">Sort: Month Hours</option>
                     <option value="progress">Sort: Progress % (High-Low)</option>
                     <option value="name">Sort: Name (A-Z)</option>
                     <option value="present">Sort: Present Logs</option>
@@ -1237,44 +1245,90 @@ export function AdminReports() {
                     setTraineePerPage(Number(e.target.value));
                     setTraineePage(1);
                   }}
-                  className="px-2.5 py-1.5 border border-gray-200 rounded-xl text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  className="px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold shadow-2xs cursor-pointer"
                 >
                   <option value={8}>8 per page</option>
                   <option value={15}>15 per page</option>
                   <option value={25}>25 per page</option>
+                  <option value={50}>50 per page</option>
                 </select>
+
+                {/* Quick Print Button */}
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer no-print"
+                  title="Print Summary Report"
+                >
+                  <Printer size={13} />
+                  <span>Print</span>
+                </button>
               </div>
             </div>
 
-            {/* Data Table View */}
+            {/* Data Table Grid */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[760px]">
+              <table className="w-full text-left border-collapse min-w-[840px]">
                 <thead>
-                  <tr className="bg-gray-50/80 text-xs font-semibold text-gray-500 border-b border-gray-100 whitespace-nowrap">
-                    <th className="py-3 px-4 font-bold">Active Trainee</th>
-                    <th className="py-3 px-4 font-bold">Academic &amp; Placement</th>
-                    <th className="py-3 px-4 font-bold">Hours &amp; Progress</th>
-                    <th className="py-3 px-4 font-bold text-center">Attendance Logs</th>
-                    <th className="py-3 px-4 font-bold">Status Badges</th>
-                    <th className="py-3 px-4 font-bold text-right">Action</th>
+                  <tr className="bg-slate-100/90 text-slate-700 text-[11px] font-black uppercase tracking-wider border-b-2 border-slate-200">
+                    <th className="py-3 px-3 w-12 text-center border-r border-slate-200/80">#</th>
+                    <th
+                      className="py-3 px-4 border-r border-slate-200/80 cursor-pointer hover:bg-slate-200/60 transition-colors select-none"
+                      onClick={() => setTraineeSortBy(traineeSortBy === 'name' ? 'hours' : 'name')}
+                      title="Click to sort by Name"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Active Trainee</span>
+                        <ArrowUpDown size={12} className={traineeSortBy === 'name' ? 'text-blue-600' : 'text-slate-400'} />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 border-r border-slate-200/80">Academic &amp; Placement</th>
+                    <th
+                      className="py-3 px-4 border-r border-slate-200/80 cursor-pointer hover:bg-slate-200/60 transition-colors select-none"
+                      onClick={() => setTraineeSortBy(traineeSortBy === 'hours' ? 'progress' : 'hours')}
+                      title="Click to sort by Hours or Progress"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Hours &amp; Progress</span>
+                        <ArrowUpDown size={12} className={traineeSortBy === 'hours' || traineeSortBy === 'progress' ? 'text-blue-600' : 'text-slate-400'} />
+                      </div>
+                    </th>
+                    <th
+                      className="py-3 px-4 text-center border-r border-slate-200/80 cursor-pointer hover:bg-slate-200/60 transition-colors select-none"
+                      onClick={() => setTraineeSortBy(traineeSortBy === 'present' ? 'late' : 'present')}
+                      title="Click to sort by Attendance"
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>Attendance Logs</span>
+                        <ArrowUpDown size={12} className={traineeSortBy === 'present' || traineeSortBy === 'late' ? 'text-blue-600' : 'text-slate-400'} />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 border-r border-slate-200/80">Status &amp; Compliance</th>
+                    <th className="py-3 px-4 text-center w-24">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
-                  {paginatedEmployeeSummary.map((summaryItem) => {
+                <tbody className="divide-y divide-slate-200 text-xs text-slate-800">
+                  {paginatedEmployeeSummary.map((summaryItem, idx) => {
                     const { emp, allTotalHours, monthTotalHours, requiredHours, remainingHours, progress, present, late } = summaryItem;
                     const pct = Math.round(progress);
+                    const rowNumber = (traineePage - 1) * traineePerPage + idx + 1;
 
                     return (
                       <tr
                         key={emp.id}
                         onClick={() => setSelectedTraineeModal({ emp, stats: summaryItem })}
-                        className="hover:bg-blue-50/50 transition-colors cursor-pointer group"
-                        title="Click to view detailed attendance history"
+                        className="hover:bg-blue-50/70 even:bg-slate-50/40 transition-colors cursor-pointer group"
+                        title="Click to view detailed trainee attendance & DTTR"
                       >
+                        {/* 0. Row Index */}
+                        <td className="py-3.5 px-3 text-center font-bold text-slate-400 border-r border-slate-150">
+                          {rowNumber}
+                        </td>
+
                         {/* 1. Trainee Identity Column */}
-                        <td className="py-3 px-4">
+                        <td className="py-3.5 px-4 border-r border-slate-150">
                           <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-blue-100 overflow-hidden shrink-0 border border-gray-200 flex items-center justify-center font-bold text-blue-700 text-xs">
+                            <div className="w-10 h-10 rounded-xl bg-blue-100 overflow-hidden shrink-0 border border-slate-200 shadow-2xs flex items-center justify-center font-black text-blue-700 text-xs">
                               {emp.photo ? (
                                 <img
                                   src={getPhotoUrl(emp.photo)}
@@ -1287,15 +1341,16 @@ export function AdminReports() {
                               )}
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-800 text-xs group-hover:text-blue-700 transition-colors">
+                              <p className="font-extrabold text-slate-900 text-xs group-hover:text-blue-700 transition-colors">
                                 {emp.name}
                               </p>
-                              <p className="text-[11px] text-gray-400 font-mono">
-                                {emp.employeeId} {emp.email ? `• ${emp.email}` : ''}
+                              <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                <span className="font-bold text-slate-700">{emp.employeeId || 'NO-ID'}</span>
+                                {emp.email && <span className="text-slate-400 font-sans"> • {emp.email}</span>}
                               </p>
                               {emp.academicYear && (
-                                <span className="inline-block mt-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
-                                  A.Y. {emp.academicYear}
+                                <span className="inline-block mt-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                  AY {emp.academicYear}
                                 </span>
                               )}
                             </div>
@@ -1303,32 +1358,34 @@ export function AdminReports() {
                         </td>
 
                         {/* 2. Academic & Placement Column */}
-                        <td className="py-3 px-4">
-                          <p className="text-xs font-semibold text-gray-700">
+                        <td className="py-3.5 px-4 border-r border-slate-150">
+                          <p className="font-bold text-slate-800 text-xs">
                             {emp.department || 'College of Computer Studies'}
                           </p>
-                          <p className="text-[11px] text-gray-500">
-                            {emp.course || 'Bachelor of Science in Information Systems'}
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            {emp.course || 'BS Information Systems'}
                           </p>
-                          <div className="flex items-center gap-1 mt-1 text-[11px] font-semibold text-blue-700 bg-blue-50/80 px-2 py-0.5 rounded-md border border-blue-100/60 inline-flex">
+                          <div className="flex items-center gap-1 mt-1.5 text-[11px] font-bold text-blue-800 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200 inline-flex max-w-full">
                             <Building size={11} className="text-blue-600 shrink-0" />
-                            <span className="truncate max-w-[140px]">{emp.companyName || 'Host Establishment'}</span>
+                            <span className="truncate">{emp.companyName || 'Host Training Establishment'}</span>
                           </div>
                         </td>
 
-                        {/* 3. Hours & Progress Column (ACCURATE) */}
-                        <td className="py-3 px-4">
-                          <div className="min-w-[140px] max-w-[180px]">
-                            <div className="flex justify-between items-baseline text-xs mb-1">
-                              <span className="font-bold text-blue-700">
+                        {/* 3. Hours & Progress Column */}
+                        <td className="py-3.5 px-4 border-r border-slate-150">
+                          <div className="min-w-[150px] max-w-[200px]">
+                            <div className="flex justify-between items-baseline mb-1">
+                              <span className="font-black text-blue-700 text-sm">
                                 {allTotalHours.toFixed(1)}h{' '}
-                                <span className="text-[10px] font-normal text-gray-400">
+                                <span className="text-[10.5px] font-medium text-slate-500">
                                   ({monthTotalHours.toFixed(1)}h mo.)
                                 </span>
                               </span>
-                              <span className="font-bold text-gray-700">{pct}%</span>
+                              <span className="font-black text-slate-900 text-xs px-1.5 py-0.2 bg-slate-100 rounded border border-slate-200">
+                                {pct}%
+                              </span>
                             </div>
-                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full transition-all duration-300 ${
                                   pct >= 100
@@ -1337,64 +1394,70 @@ export function AdminReports() {
                                     ? 'bg-blue-600'
                                     : pct > 0
                                     ? 'bg-amber-500'
-                                    : 'bg-gray-300'
+                                    : 'bg-slate-300'
                                 }`}
                                 style={{ width: `${Math.min(100, Math.max(pct, pct > 0 ? 3 : 0))}%` }}
                               />
                             </div>
-                            <p className="text-[11px] text-gray-400 mt-1">
-                              {requiredHours}h required • {remainingHours.toFixed(1)}h left
+                            <p className="text-[10.5px] text-slate-500 mt-1 font-medium">
+                              {requiredHours}h required • <span className="font-bold text-slate-700">{remainingHours.toFixed(1)}h left</span>
                             </p>
                           </div>
                         </td>
 
                         {/* 4. Attendance Metrics Column */}
-                        <td className="py-3 px-4 text-center">
-                          <div className="inline-flex items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200" title="Present Check-ins">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                              {present} Present
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200" title="Late Check-ins">
-                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
-                              {late} Late
+                        <td className="py-3.5 px-4 text-center border-r border-slate-150">
+                          <div className="inline-flex flex-col gap-1 items-center">
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300" title="Present Logs this month">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                {present} Present
+                              </span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300" title="Late Logs this month">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                                {late} Late
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-semibold">
+                              All-time: {summaryItem.allPresent} Pres / {summaryItem.allLate} Late
                             </span>
                           </div>
                         </td>
 
                         {/* 5. Status Badges Column */}
-                        <td className="py-3 px-4">
+                        <td className="py-3.5 px-4 border-r border-slate-150">
                           <div className="flex flex-col gap-1 items-start">
                             {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
-                              <span className="text-[10px] font-bold flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                <FileCheck size={10} className="text-emerald-600" /> Docs: Passed
+                              <span className="text-[10.5px] font-bold flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-md">
+                                <FileCheck size={11} className="text-emerald-600" /> Docs: Passed
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                                <FileText size={10} className="text-amber-600" /> Docs: Pending
+                              <span className="text-[10.5px] font-bold flex items-center gap-1 text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-md">
+                                <FileText size={11} className="text-amber-600" /> Docs: Pending
                               </span>
                             )}
                             {emp.faceRegistered ? (
-                              <span className="text-[10px] font-medium flex items-center gap-1 text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-md">
-                                <Camera size={10} /> Face Enrolled
+                              <span className="text-[10.5px] font-bold flex items-center gap-1 text-green-700 bg-green-50 border border-green-300 px-2.5 py-0.5 rounded-md">
+                                <Camera size={11} /> Face Enrolled
                               </span>
                             ) : (
-                              <span className="text-[10px] font-medium flex items-center gap-1 text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-md">
-                                <XCircle size={10} /> Face Pending
+                              <span className="text-[10.5px] font-semibold flex items-center gap-1 text-slate-600 bg-slate-100 border border-slate-300 px-2.5 py-0.5 rounded-md">
+                                <XCircle size={11} /> Face Pending
                               </span>
                             )}
                           </div>
                         </td>
 
                         {/* 6. Action Column */}
-                        <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             onClick={() => setSelectedTraineeModal({ emp, stats: summaryItem })}
-                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all cursor-pointer"
-                            title="View Trainee Attendance & DTTR"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-blue-700 hover:text-white bg-blue-50 hover:bg-blue-600 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-2xs"
+                            title="View Full Trainee Attendance Record & DTTR"
                           >
-                            <Eye size={16} />
+                            <Eye size={13} />
+                            <span>View</span>
                           </button>
                         </td>
                       </tr>
@@ -1403,10 +1466,10 @@ export function AdminReports() {
 
                   {filteredEmployeeSummary.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-gray-400">
-                        <Users size={32} className="mx-auto mb-2 opacity-20" />
-                        <p className="font-semibold text-sm text-gray-600">No trainees found</p>
-                        <p className="text-xs text-gray-400 mt-1">Try adjusting your search query or academic year filter.</p>
+                      <td colSpan={7} className="text-center py-12 text-slate-400">
+                        <Users size={36} className="mx-auto mb-2 opacity-30 text-slate-500" />
+                        <p className="font-bold text-sm text-slate-700">No trainees found</p>
+                        <p className="text-xs text-slate-400 mt-1">Try adjusting your search keyword or filters.</p>
                       </td>
                     </tr>
                   )}
@@ -1416,13 +1479,13 @@ export function AdminReports() {
 
             {/* Data Table Pagination Footer */}
             {filteredEmployeeSummary.length > 0 && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 border-t border-gray-100 bg-gray-50/50">
-                <div className="text-xs text-gray-500 font-medium">
-                  Showing <span className="font-bold text-gray-800">{(traineePage - 1) * traineePerPage + 1}</span> to{' '}
-                  <span className="font-bold text-gray-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-t border-slate-200 bg-slate-50/80">
+                <div className="text-xs text-slate-600 font-semibold">
+                  Showing <span className="font-extrabold text-slate-900">{(traineePage - 1) * traineePerPage + 1}</span> to{' '}
+                  <span className="font-extrabold text-slate-900">
                     {Math.min(traineePage * traineePerPage, filteredEmployeeSummary.length)}
                   </span>{' '}
-                  of <span className="font-bold text-gray-800">{filteredEmployeeSummary.length}</span> trainees
+                  of <span className="font-extrabold text-slate-900">{filteredEmployeeSummary.length}</span> trainees
                 </div>
 
                 {totalTraineePages > 1 && (
@@ -1431,10 +1494,10 @@ export function AdminReports() {
                       type="button"
                       onClick={() => setTraineePage((p) => Math.max(1, p - 1))}
                       disabled={traineePage === 1}
-                      className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all font-bold text-xs cursor-pointer shadow-2xs"
                       title="Previous Page"
                     >
-                      <ChevronLeft size={15} />
+                      <ChevronLeft size={14} className="inline mr-0.5" /> Prev
                     </button>
 
                     <div className="flex items-center gap-1">
@@ -1443,10 +1506,10 @@ export function AdminReports() {
                           type="button"
                           key={page}
                           onClick={() => setTraineePage(page)}
-                          className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
                             traineePage === page
                               ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                              : 'border border-gray-200 text-gray-600 hover:bg-white'
+                              : 'border border-slate-300 text-slate-700 hover:bg-white shadow-2xs'
                           }`}
                         >
                           {page}
@@ -1458,10 +1521,10 @@ export function AdminReports() {
                       type="button"
                       onClick={() => setTraineePage((p) => Math.min(totalTraineePages, p + 1))}
                       disabled={traineePage === totalTraineePages}
-                      className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-all font-bold text-xs cursor-pointer shadow-2xs"
                       title="Next Page"
                     >
-                      <ChevronRight size={15} />
+                      Next <ChevronRight size={14} className="inline ml-0.5" />
                     </button>
                   </div>
                 )}
