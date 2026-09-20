@@ -190,7 +190,7 @@ export function EmployeeLayout() {
                 style={{ transform: 'scaleX(-1)' }}
               />
             ) : (
-              <Clock size={18} className="text-white" />
+              <User size={18} className="text-white" />
             )}
           </div>
           <div className="min-w-0">
@@ -201,9 +201,19 @@ export function EmployeeLayout() {
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
+            navigate('/app/profile');
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
+        >
+          <User size={15} />
+          Profile
+        </button>
+        <button
+          onClick={() => {
+            if (isMobile) setSidebarOpen(false);
             handleLogout();
           }}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium"
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
         >
           <LogOut size={15} />
           Logout
@@ -275,7 +285,7 @@ export function EmployeeLayout() {
             <div className="flex items-center gap-2">
               <div
                 onClick={() => navigate('/app/profile')}
-                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm"
+                className="w-8 h-8 rounded-full overflow-hidden border border-white/30 cursor-pointer shadow-sm flex items-center justify-center bg-[#0E1D35] hover:ring-2 hover:ring-[#146B4D] transition-all"
                 title="View Profile"
               >
                 {avatarUrl ? (
@@ -289,13 +299,6 @@ export function EmployeeLayout() {
                   <User size={16} className="text-white p-1" />
                 )}
               </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors text-xs py-1.5 px-2.5 rounded-lg hover:bg-[#1E3A66] font-medium cursor-pointer"
-              >
-                <LogOut size={14} />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
             </div>
           </div>
         </header>
