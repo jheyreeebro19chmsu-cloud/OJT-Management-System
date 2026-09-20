@@ -495,16 +495,16 @@ export function CHMSUEvaluationSheet({
             activeTab === 'both' ? 'print:page-break-after-always' : ''
           }`}
         >
-          <div className="p-6 sm:p-8 space-y-4 print:p-0 print:space-y-1.5">
+          <div className="p-6 sm:p-8 space-y-4 print:p-0 print:space-y-1">
             {/* Institutional Header matching official CHMSU document */}
-            <div className="border-b-2 border-emerald-800 pb-3 print:pb-1.5 text-center relative">
+            <div className="border-b-2 border-emerald-800 pb-3 print:pb-1 text-center relative">
               <div className="flex items-center justify-between gap-3">
                 {/* Left Logo */}
-                <div className="w-16 h-16 shrink-0 flex items-center justify-center print:w-12 print:h-12">
+                <div className="w-16 h-16 shrink-0 flex items-center justify-center print:w-10 print:h-10">
                   <img
                     src="/chmsu-logo.png"
                     alt="Carlos Hilado Memorial State University Logo"
-                    className="w-16 h-16 object-contain print:w-12 print:h-12"
+                    className="w-16 h-16 object-contain print:w-10 print:h-10"
                     onError={(e) => {
                       (e.currentTarget as HTMLElement).style.display = 'none';
                     }}
@@ -513,63 +513,63 @@ export function CHMSUEvaluationSheet({
 
                 {/* Center Text Header */}
                 <div className="flex-1 px-1 text-center">
-                  <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold hidden print:block">
+                  <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold hidden print:block print:text-[6.5pt] print:leading-tight">
                     Republic of the Philippines
                   </p>
-                  <h1 className="font-serif font-black text-emerald-950 text-base sm:text-xl print:text-[13pt] tracking-wide uppercase leading-tight">
+                  <h1 className="font-serif font-black text-emerald-950 text-base sm:text-xl print:text-[11pt] tracking-wide uppercase leading-tight">
                     Carlos Hilado Memorial State University
                   </h1>
-                  <p className="text-[10px] sm:text-xs print:text-[8pt] font-semibold text-slate-600 tracking-tight mt-0.5">
+                  <p className="text-[10px] sm:text-xs print:text-[7pt] font-semibold text-slate-600 tracking-tight mt-0.5 print:mt-0 print:leading-tight">
                     Alijis Campus • Binalbagan Campus • Fortune Towne Campus • Talisay (Main) Campus
                   </p>
-                  <p className="text-[9px] sm:text-[10px] print:text-[7.5pt] italic font-medium text-emerald-800 mt-0.5">
+                  <p className="text-[9px] sm:text-[10px] print:text-[6.5pt] italic font-medium text-emerald-800 mt-0.5 print:mt-0 print:leading-tight">
                     A leading GREEN institution of higher learning in the global community by 2030
                   </p>
 
                   <div className="mt-1.5 pt-1 border-t border-slate-300 print:mt-0.5 print:pt-0.5">
-                    <h2 className="font-sans font-black text-slate-900 text-xs sm:text-sm print:text-[9.5pt] tracking-wide uppercase">
+                    <h2 className="font-sans font-black text-slate-900 text-xs sm:text-sm print:text-[8pt] tracking-wide uppercase print:leading-tight">
                       College of Computer Studies
                     </h2>
-                    <h3 className="font-sans font-black text-emerald-950 text-sm sm:text-base print:text-[10.5pt] tracking-wider uppercase mt-0.5">
+                    <h3 className="font-sans font-black text-emerald-950 text-sm sm:text-base print:text-[9.5pt] tracking-wider uppercase mt-0.5 print:mt-0 print:leading-tight">
                       ON-THE-JOB TRAINING EVALUATION REPORT
                     </h3>
                   </div>
                 </div>
 
                 {/* Right Seal / Badge */}
-                <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-center print:w-12 print:h-12">
-                  <div className="w-14 h-14 rounded-full border-2 border-emerald-700 bg-emerald-50/50 flex flex-col items-center justify-center p-1 text-emerald-900 print:w-11 print:h-11">
-                    <span className="text-[8px] font-black uppercase leading-tight">GREEN</span>
-                    <span className="text-[8px] font-black uppercase leading-tight text-amber-700">CHMSU</span>
-                    <span className="text-[7.5px] font-bold text-emerald-800">CCS</span>
+                <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-center print:w-10 print:h-10">
+                  <div className="w-14 h-14 rounded-full border-2 border-emerald-700 bg-emerald-50/50 flex flex-col items-center justify-center p-1 text-emerald-900 print:w-10 print:h-10 print:p-0.5">
+                    <span className="text-[8px] print:text-[6.5pt] font-black uppercase leading-tight">GREEN</span>
+                    <span className="text-[8px] print:text-[6.5pt] font-black uppercase leading-tight text-amber-700">CHMSU</span>
+                    <span className="text-[7.5px] print:text-[6pt] font-bold text-emerald-800">CCS</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Student & HTE Details Table */}
-            <div className="border border-slate-300 rounded-xl p-3 bg-slate-50/70 print:bg-white print:border-slate-800 print:p-1.5 print:rounded-none text-xs print:text-[9pt]">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5 gap-x-6">
+            <div className="border border-slate-300 rounded-xl p-3 bg-slate-50/70 print:bg-white print:border-slate-800 print:p-1 print:rounded-none text-xs print:text-[7.5pt]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5 print:gap-y-0.5 gap-x-6">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-28">Name of Trainee:</span>
+                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-26">Name of Trainee:</span>
                   <span className="font-black text-slate-950 border-b border-dotted border-slate-600 flex-1 pb-0.5 uppercase tracking-wide">
                     {trainee.name}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-28">Company Name:</span>
-                  <span className="font-bold text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5 truncate">
+                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-26">Company Name:</span>
+                  <span className="font-bold text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                     {companyName || trainee.companyName || 'Host Training Establishment'}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-28">Course &amp; Section:</span>
+                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-26">Course &amp; Section:</span>
                   <span className="font-bold text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                     {trainee.course || 'BSIS 4A'}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-28">Academic Year:</span>
+                  <span className="font-black text-slate-800 w-32 shrink-0 print:w-26">Academic Year:</span>
                   <span className="font-semibold text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                     AY {trainee.academicYear || '2026-2027'}
                   </span>
@@ -578,14 +578,14 @@ export function CHMSUEvaluationSheet({
             </div>
 
             {/* Rating Scale Instructions Box */}
-            <div className="border border-slate-300 rounded-xl p-2.5 bg-white text-xs print:text-[8pt] print:p-1 print:border-slate-400 print:rounded-none space-y-1">
-              <p className="font-bold text-slate-900 print:text-[8pt]">
+            <div className="border border-slate-300 rounded-xl p-2.5 bg-white text-xs print:text-[6.8pt] print:p-0.5 print:border-slate-400 print:rounded-none space-y-1 print:space-y-0">
+              <p className="font-bold text-slate-900 print:text-[7pt] print:leading-tight">
                 Please rate the Student's overall practicum performance according to the rating scale below:
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5 text-[10.5px] print:text-[7.5pt] text-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5 print:gap-y-0 text-[10.5px] print:text-[6.5pt] text-slate-700">
                 {CHMSU_RATING_SCALE.map((scale) => (
                   <div key={scale.value} className="flex items-center gap-1.5 leading-tight">
-                    <span className="w-5 h-4 flex items-center justify-center font-black rounded bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0 text-[9px] print:text-[7pt] print:bg-white print:border-slate-800">
+                    <span className="w-5 h-4 print:w-4 print:h-3.5 flex items-center justify-center font-black rounded bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0 text-[9px] print:text-[6.5pt] print:bg-white print:border-slate-800">
                       {scale.value === 0 ? 'NA' : scale.value}
                     </span>
                     <span>
@@ -598,16 +598,16 @@ export function CHMSUEvaluationSheet({
 
             {/* Official Evaluation Table */}
             <div className="border-2 border-slate-900 rounded-xl overflow-hidden shadow-xs print:rounded-none">
-              <table className="w-full text-xs print:text-[8.5pt] border-collapse eval-table">
+              <table className="w-full text-xs print:text-[7pt] border-collapse eval-table">
                 <thead>
                   <tr className="bg-slate-900 text-white font-extrabold uppercase text-center border-b-2 border-slate-900">
-                    <th className="py-2 px-3 print:py-1 print:px-2 text-left w-[64%] print:w-[70%]">Criteria / Rating</th>
-                    <th className="py-2 px-1 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">1</th>
-                    <th className="py-2 px-1 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">2</th>
-                    <th className="py-2 px-1 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">3</th>
-                    <th className="py-2 px-1 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">4</th>
-                    <th className="py-2 px-1 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">5</th>
-                    <th className="py-2 px-1 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">NA</th>
+                    <th className="py-2 px-3 print:py-0.5 print:px-1.5 text-left w-[64%] print:w-[70%]">Criteria / Rating</th>
+                    <th className="py-2 px-1 print:py-0.5 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">1</th>
+                    <th className="py-2 px-1 print:py-0.5 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">2</th>
+                    <th className="py-2 px-1 print:py-0.5 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">3</th>
+                    <th className="py-2 px-1 print:py-0.5 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">4</th>
+                    <th className="py-2 px-1 print:py-0.5 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">5</th>
+                    <th className="py-2 px-1 print:py-0.5 w-[6%] border-l border-slate-700 print:border-slate-800 text-center">NA</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -621,7 +621,7 @@ export function CHMSUEvaluationSheet({
                         <tr className="bg-emerald-50 print:bg-slate-100 border-t-2 border-b border-emerald-800 print:border-slate-900">
                           <td
                             colSpan={7}
-                            className="py-1 px-3 print:py-0.5 print:px-2 font-black uppercase tracking-wider text-emerald-950 print:text-slate-900 text-xs print:text-[8.5pt]"
+                            className="py-1 px-3 print:py-0.5 print:px-1.5 font-black uppercase tracking-wider text-emerald-950 print:text-slate-900 text-xs print:text-[7pt]"
                           >
                             {category.title}
                           </td>
@@ -636,7 +636,7 @@ export function CHMSUEvaluationSheet({
                               key={item.id}
                               className="border-b border-slate-200 print:border-slate-400 hover:bg-slate-50 transition-colors"
                             >
-                              <td className="py-1 px-3 print:py-0.5 print:px-2 text-slate-800 text-xs print:text-[8.5pt]">
+                              <td className="py-1 px-3 print:py-0.5 print:px-1.5 text-slate-800 text-xs print:text-[7pt]">
                                 <span className="font-bold text-slate-900 mr-1.5">{item.number}.</span>
                                 <span>{item.text}</span>
                               </td>
@@ -677,7 +677,7 @@ export function CHMSUEvaluationSheet({
                                     </div>
 
                                     {/* Dedicated Print View Cell */}
-                                    <div className="hidden print:flex items-center justify-center font-bold text-[9pt]">
+                                    <div className="hidden print:flex items-center justify-center font-black text-[7.5pt] text-slate-950">
                                       {isChecked ? '✓' : ''}
                                     </div>
                                   </td>
@@ -689,14 +689,14 @@ export function CHMSUEvaluationSheet({
 
                         {/* Category Subtotal Row */}
                         <tr className="bg-slate-100 print:bg-slate-50 font-bold border-b border-slate-300 print:border-slate-800">
-                          <td className="py-1 px-3 print:py-0.5 print:px-2 text-right uppercase text-slate-800 text-xs print:text-[8pt]">
+                          <td className="py-1 px-3 print:py-0.5 print:px-1.5 text-right uppercase text-slate-800 text-xs print:text-[6.8pt]">
                             Total Rating ({category.title}):
                           </td>
-                          <td colSpan={6} className="py-1 px-3 print:py-0.5 print:px-2 border-l border-slate-300 print:border-slate-800 text-left">
-                            <span className="font-black text-emerald-950 print:text-slate-950 text-xs print:text-[8.5pt]">
+                          <td colSpan={6} className="py-1 px-3 print:py-0.5 print:px-1.5 border-l border-slate-300 print:border-slate-800 text-left">
+                            <span className="font-black text-emerald-950 print:text-slate-950 text-xs print:text-[7pt]">
                               {catStat.avg.toFixed(2)} / 5.00
                             </span>
-                            <span className="text-[10.5px] print:text-[7.5pt] text-slate-600 ml-2 font-medium">
+                            <span className="text-[10.5px] print:text-[6.5pt] text-slate-600 ml-2 font-medium">
                               (Subtotal Sum: {catStat.total})
                             </span>
                           </td>
@@ -704,7 +704,7 @@ export function CHMSUEvaluationSheet({
 
                         {/* Category Comments Inside the Evaluation Table */}
                         <tr className="border-b-2 border-slate-300 print:border-slate-800 bg-white">
-                          <td colSpan={7} className="p-2 sm:p-3 print:p-1 bg-slate-50/50 print:bg-white">
+                          <td colSpan={7} className="p-2 sm:p-3 print:p-0.5 bg-slate-50/50 print:bg-white">
                             <div className="space-y-1">
                               {/* Screen View */}
                               <div className="no-print space-y-1">
@@ -766,8 +766,8 @@ export function CHMSUEvaluationSheet({
                               </div>
 
                               {/* Dedicated Print View Line (Crisp, zero empty space) */}
-                              <div className="hidden print:block text-[8pt] text-slate-800 leading-tight">
-                                <strong className="text-slate-950 font-bold uppercase text-[7.5pt] mr-1">
+                              <div className="hidden print:block text-[6.8pt] text-slate-800 leading-tight">
+                                <strong className="text-slate-950 font-bold uppercase text-[6.5pt] mr-1">
                                   Remarks ({category.title}):
                                 </strong>
                                 <span className="italic">
@@ -782,19 +782,19 @@ export function CHMSUEvaluationSheet({
                   })}
 
                   {/* Overall Rating Row */}
-                  <tr className="bg-emerald-950 print:bg-slate-900 text-white font-black text-xs sm:text-sm print:text-[9.5pt] border-t-2 border-slate-900">
-                    <td className="py-2.5 px-3 print:py-1 print:px-2 text-right uppercase tracking-wider">
-                      Total Rating OVERALL RATING:
+                  <tr className="bg-emerald-950 print:bg-slate-900 text-white font-black text-xs sm:text-sm print:text-[8pt] border-t-2 border-slate-900">
+                    <td className="py-2.5 px-3 print:py-0.5 print:px-1.5 text-right uppercase tracking-wider">
+                      OVERALL RATING:
                     </td>
-                    <td colSpan={6} className="py-2.5 px-3 print:py-1 print:px-2 text-left border-l border-emerald-800 print:border-slate-800">
-                      <div className="flex flex-wrap items-center gap-2 print:gap-3">
-                        <span className="text-base sm:text-lg print:text-[11pt] font-black text-amber-300 print:text-white font-mono">
+                    <td colSpan={6} className="py-2.5 px-3 print:py-0.5 print:px-1.5 text-left border-l border-emerald-800 print:border-slate-800">
+                      <div className="flex flex-wrap items-center gap-2 print:gap-2">
+                        <span className="text-base sm:text-lg print:text-[9.5pt] font-black text-amber-300 print:text-white font-mono">
                           {overallRating.toFixed(2)} / 5.00
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10.5px] print:text-[8pt] font-black uppercase tracking-wider bg-white/10 text-white border border-white/20 print:border-none print:p-0">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10.5px] print:text-[7pt] font-black uppercase tracking-wider bg-white/10 text-white border border-white/20 print:border-none print:p-0">
                           {Math.round((overallRating / 5) * 100)}% • {grade}
                         </span>
-                        <span className="text-[10px] print:text-[7.5pt] font-normal text-emerald-200 print:text-slate-200">
+                        <span className="text-[10px] print:text-[6.5pt] font-normal text-emerald-200 print:text-slate-300">
                           ({gradeInfo.label})
                         </span>
                       </div>
@@ -805,8 +805,8 @@ export function CHMSUEvaluationSheet({
             </div>
 
             {/* Comments/Suggestions Box matching official document */}
-            <div className="border border-slate-300 print:border-slate-800 rounded-xl p-3 print:p-1.5 print:rounded-none bg-white space-y-1">
-              <h4 className="font-black text-slate-900 text-xs print:text-[8pt] uppercase tracking-wide">
+            <div className="border border-slate-300 print:border-slate-800 rounded-xl p-3 print:p-1 print:rounded-none bg-white space-y-1">
+              <h4 className="font-black text-slate-900 text-xs print:text-[7pt] uppercase tracking-wide">
                 Comments / Suggestions:
               </h4>
               {/* Screen Mode */}
@@ -829,45 +829,45 @@ export function CHMSUEvaluationSheet({
               </div>
 
               {/* Dedicated Print Mode Box */}
-              <div className="hidden print:block text-[8pt] text-slate-900 min-h-[28px] italic leading-tight">
+              <div className="hidden print:block text-[7pt] text-slate-900 min-h-[16px] italic leading-tight">
                 {commentsSuggestions ||
                   'The trainee performed assigned responsibilities diligently with commendable technical competence and professionalism.'}
               </div>
             </div>
 
             {/* Official Signatures Section */}
-            <div className="pt-4 pb-1 print:pt-2 print:pb-0 grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-6 text-xs print:text-[8.5pt] print-avoid-break">
+            <div className="pt-4 pb-1 print:pt-1 print:pb-0 grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-4 text-xs print:text-[7.5pt] print-avoid-break">
               {/* 1. HTE Supervisor */}
               <div className="text-center">
-                <div className="h-10 print:h-7 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
-                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[9.5pt] tracking-wider">
+                <div className="h-10 print:h-5 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
+                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[8pt] tracking-wider">
                     {supervisorName}
                   </span>
                 </div>
-                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[8pt]">
+                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[7pt]">
                   Supervisor's Signature over Printed Name
                 </p>
-                <p className="text-slate-600 text-[10px] print:text-[7.5pt]">Date: {displayDate}</p>
+                <p className="text-slate-600 text-[10px] print:text-[6.5pt]">Date: {displayDate}</p>
               </div>
 
               {/* 2. CHMSU OJT Instructor / Coordinator */}
               <div className="text-center">
-                <div className="h-10 print:h-7 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
-                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[9.5pt] tracking-wider">
+                <div className="h-10 print:h-5 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
+                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[8pt] tracking-wider">
                     {instructorName}
                   </span>
                 </div>
-                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[8pt]">
+                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[7pt]">
                   CHMSU OJT Coordinator / Instructor
                 </p>
-                <p className="text-slate-600 text-[10px] print:text-[7.5pt]">
+                <p className="text-slate-600 text-[10px] print:text-[6.5pt]">
                   {status === 'reviewed_by_instructor' ? 'Verified & Endorsed' : 'Noted by Office of OJT'}
                 </p>
               </div>
             </div>
 
             {/* Official University Footer */}
-            <div className="border-t border-emerald-800/60 print:border-slate-900 pt-2 print:pt-1 text-center space-y-0.5 text-[9.5px] print:text-[7pt] text-slate-600 print-avoid-break">
+            <div className="border-t border-emerald-800/60 print:border-slate-900 pt-2 print:pt-0.5 text-center space-y-0.5 print:space-y-0 text-[9.5px] print:text-[6pt] text-slate-600 print-avoid-break">
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 font-semibold">
                 <span>college.computerstudies@chmsu.edu.ph</span>
                 <span>•</span>
@@ -875,10 +875,10 @@ export function CHMSUEvaluationSheet({
                 <span>•</span>
                 <span>chmsu.edu.ph</span>
               </div>
-              <div className="font-black text-emerald-900 uppercase tracking-widest text-[10px] print:text-[7.5pt]">
+              <div className="font-black text-emerald-900 uppercase tracking-widest text-[10px] print:text-[6.5pt]">
                 GREEN CHMSU EXCELSIOR!
               </div>
-              <div className="text-[8.5px] print:text-[6.5pt] text-slate-500 tracking-tight">
+              <div className="text-[8.5px] print:text-[5.5pt] text-slate-500 tracking-tight">
                 Excellence • Compassion • Environmentalism • Love of Country • Social Responsibility • Integrity • Openness • Resilience
               </div>
             </div>
@@ -896,16 +896,16 @@ export function CHMSUEvaluationSheet({
             activeTab === 'both' ? 'print:page-break-before-always' : ''
           }`}
         >
-          <div className="p-6 sm:p-8 space-y-4 print:p-0 print:space-y-1.5">
+          <div className="p-6 sm:p-8 space-y-4 print:p-0 print:space-y-1">
             {/* Page 2 Institutional Header */}
-            <div className="border-b-2 border-emerald-800 pb-3 print:pb-1.5 text-center relative">
+            <div className="border-b-2 border-emerald-800 pb-3 print:pb-1 text-center relative">
               <div className="flex items-center justify-between gap-3">
                 {/* Left Logo */}
-                <div className="w-16 h-16 shrink-0 flex items-center justify-center print:w-12 print:h-12">
+                <div className="w-16 h-16 shrink-0 flex items-center justify-center print:w-10 print:h-10">
                   <img
                     src="/chmsu-logo.png"
                     alt="Carlos Hilado Memorial State University Logo"
-                    className="w-16 h-16 object-contain print:w-12 print:h-12"
+                    className="w-16 h-16 object-contain print:w-10 print:h-10"
                     onError={(e) => {
                       (e.currentTarget as HTMLElement).style.display = 'none';
                     }}
@@ -914,62 +914,61 @@ export function CHMSUEvaluationSheet({
 
                 {/* Center Text Header */}
                 <div className="flex-1 px-1 text-center">
-                  <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold hidden print:block">
+                  <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold hidden print:block print:text-[6.5pt] print:leading-tight">
                     Republic of the Philippines
                   </p>
-                  <h1 className="font-serif font-black text-emerald-950 text-base sm:text-xl print:text-[13pt] tracking-wide uppercase leading-tight">
+                  <h1 className="font-serif font-black text-emerald-950 text-base sm:text-xl print:text-[11pt] tracking-wide uppercase leading-tight">
                     Carlos Hilado Memorial State University
                   </h1>
-                  <p className="text-[10px] sm:text-xs print:text-[8pt] font-semibold text-slate-600 tracking-tight mt-0.5">
+                  <p className="text-[10px] sm:text-xs print:text-[7pt] font-semibold text-slate-600 tracking-tight mt-0.5 print:mt-0 print:leading-tight">
                     Alijis Campus • Binalbagan Campus • Fortune Towne Campus • Talisay (Main) Campus
                   </p>
-                  <p className="text-[9px] sm:text-[10px] print:text-[7.5pt] italic font-medium text-emerald-800 mt-0.5">
+                  <p className="text-[9px] sm:text-[10px] print:text-[6.5pt] italic font-medium text-emerald-800 mt-0.5 print:mt-0 print:leading-tight">
                     A leading GREEN institution of higher learning in the global community by 2030
                   </p>
 
                   <div className="mt-1.5 pt-1 border-t border-slate-300 print:mt-0.5 print:pt-0.5">
-                    <h2 className="font-sans font-black text-slate-900 text-xs sm:text-sm print:text-[9.5pt] tracking-wide uppercase">
+                    <h2 className="font-sans font-black text-slate-900 text-xs sm:text-sm print:text-[8pt] tracking-wide uppercase print:leading-tight">
                       College of Computer Studies
                     </h2>
-                    <h3 className="font-sans font-black text-emerald-950 text-sm sm:text-base print:text-[10.5pt] tracking-wider uppercase mt-0.5">
+                    <h3 className="font-sans font-black text-emerald-950 text-sm sm:text-base print:text-[9.5pt] tracking-wider uppercase mt-0.5 print:mt-0 print:leading-tight">
                       ON-THE-JOB TRAINING EVALUATION FORM
                     </h3>
                   </div>
                 </div>
 
                 {/* Right Seal / Badge */}
-                <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-center print:w-12 print:h-12">
-                  <div className="w-14 h-14 rounded-full border-2 border-emerald-700 bg-emerald-50/50 flex flex-col items-center justify-center p-1 text-emerald-900 print:w-11 print:h-11">
-                    <span className="text-[8px] font-black uppercase leading-tight">GREEN</span>
-                    <span className="text-[8px] font-black uppercase leading-tight text-amber-700">CHMSU</span>
-                    <span className="text-[7.5px] font-bold text-emerald-800">CCS</span>
+                <div className="w-16 h-16 shrink-0 flex flex-col items-center justify-center text-center print:w-10 print:h-10">
+                  <div className="w-14 h-14 rounded-full border-2 border-emerald-700 bg-emerald-50/50 flex flex-col items-center justify-center p-1 text-emerald-900 print:w-10 print:h-10 print:p-0.5">
+                    <span className="text-[8px] print:text-[6.5pt] font-black uppercase leading-tight">GREEN</span>
+                    <span className="text-[8px] print:text-[6.5pt] font-black uppercase leading-tight text-amber-700">CHMSU</span>
+                    <span className="text-[7.5px] print:text-[6pt] font-bold text-emerald-800">CCS</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Trainee & Training Details Upper Box */}
-            <div className="border border-slate-300 print:border-slate-800 rounded-xl p-3 print:p-1.5 print:rounded-none bg-slate-50/70 print:bg-white text-xs print:text-[8.5pt]">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5 gap-x-6">
-                {/* Name of Trainee */}
-                <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-36 shrink-0 print:w-32">Name of Trainee:</span>
+            <div className="border border-slate-300 print:border-slate-800 rounded-xl p-3 print:p-1 print:rounded-none bg-slate-50/70 print:bg-white text-xs print:text-[7.5pt]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5 print:gap-y-0.5 gap-x-4">
+                {/* Row 1: Name of Trainee & Training Company */}
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Name of Trainee:</span>
                   <span className="font-black text-slate-950 border-b border-dotted border-slate-600 flex-1 pb-0.5 uppercase tracking-wide">
                     {trainee.name}
                   </span>
                 </div>
 
-                {/* Training Company */}
-                <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-36 shrink-0 print:w-32">Training Company:</span>
-                  <span className="font-bold text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5 truncate">
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Training Company:</span>
+                  <span className="font-bold text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                     {companyName || trainee.companyName || 'Host Training Establishment'}
                   </span>
                 </div>
 
-                {/* Company Address */}
-                <div className="flex items-baseline gap-2 sm:col-span-2">
-                  <span className="font-black text-slate-800 w-36 shrink-0 print:w-32">Company Address:</span>
+                {/* Row 2: Company Address (full span) */}
+                <div className="flex items-baseline gap-1.5 sm:col-span-2 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Company Address:</span>
                   {isReadOnly ? (
                     <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                       {localQuestionnaire.companyAddress || trainee.department || 'Talisay / Bacolod, Negros Occidental'}
@@ -985,9 +984,9 @@ export function CHMSUEvaluationSheet({
                   )}
                 </div>
 
-                {/* Contact Person */}
-                <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-36 shrink-0 print:w-32">Contact Person:</span>
+                {/* Row 3: Contact Person & Inclusive Date of Training */}
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Contact Person:</span>
                   {isReadOnly ? (
                     <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                       {localQuestionnaire.contactPerson || supervisorName || 'HTE Supervisor'}
@@ -1003,13 +1002,12 @@ export function CHMSUEvaluationSheet({
                   )}
                 </div>
 
-                {/* Inclusive Date of Training */}
-                <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-44 shrink-0 print:w-40">Inclusive Date of Training:</span>
-                  <div className="flex items-center gap-1.5 flex-1 border-b border-dotted border-slate-600 pb-0.5">
-                    <span className="text-slate-600 text-xs print:text-[8pt]">From:</span>
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-28 shrink-0">Inclusive Dates:</span>
+                  <div className="flex items-center gap-1 flex-1 border-b border-dotted border-slate-600 pb-0.5 whitespace-nowrap">
+                    <span className="text-slate-600 text-xs print:text-[7pt]">From:</span>
                     {isReadOnly ? (
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-900 print:text-[7.5pt]">
                         {localQuestionnaire.trainingDateFrom || 'Start of OJT'}
                       </span>
                     ) : (
@@ -1018,12 +1016,12 @@ export function CHMSUEvaluationSheet({
                         value={localQuestionnaire.trainingDateFrom || ''}
                         onChange={(e) => updateQuestionnaireField('trainingDateFrom', e.target.value)}
                         placeholder="e.g. Jan 15, 2026"
-                        className="w-24 sm:w-28 text-xs border-b border-slate-300 focus:border-emerald-600 outline-none bg-transparent"
+                        className="w-20 sm:w-24 text-xs border-b border-slate-300 focus:border-emerald-600 outline-none bg-transparent"
                       />
                     )}
-                    <span className="text-slate-600 text-xs print:text-[8pt] ml-1">to:</span>
+                    <span className="text-slate-600 text-xs print:text-[7pt] ml-1">to:</span>
                     {isReadOnly ? (
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-900 print:text-[7.5pt]">
                         {localQuestionnaire.trainingDateTo || 'End of OJT'}
                       </span>
                     ) : (
@@ -1032,17 +1030,17 @@ export function CHMSUEvaluationSheet({
                         value={localQuestionnaire.trainingDateTo || ''}
                         onChange={(e) => updateQuestionnaireField('trainingDateTo', e.target.value)}
                         placeholder="e.g. May 30, 2026"
-                        className="w-24 sm:w-28 text-xs border-b border-slate-300 focus:border-emerald-600 outline-none bg-transparent"
+                        className="w-20 sm:w-24 text-xs border-b border-slate-300 focus:border-emerald-600 outline-none bg-transparent"
                       />
                     )}
                   </div>
                 </div>
 
-                {/* Date of Evaluation */}
-                <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-36 shrink-0 print:w-32">Date of Evaluation:</span>
+                {/* Row 4: Date of Evaluation & Date of Last Evaluation */}
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Date of Evaluation:</span>
                   {isReadOnly ? (
-                    <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
+                    <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5 whitespace-nowrap print:text-[7.5pt]">
                       {localQuestionnaire.dateOfEvaluation || displayDate}
                     </span>
                   ) : (
@@ -1056,11 +1054,10 @@ export function CHMSUEvaluationSheet({
                   )}
                 </div>
 
-                {/* Date of Last Evaluation */}
-                <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-44 shrink-0 print:w-40">Date of Last Evaluation:</span>
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="font-black text-slate-800 w-32 print:w-28 shrink-0">Date of Last Eval:</span>
                   {isReadOnly ? (
-                    <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
+                    <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5 whitespace-nowrap print:text-[7.5pt]">
                       {localQuestionnaire.dateOfLastEvaluation || 'N/A'}
                     </span>
                   ) : (
@@ -1077,19 +1074,19 @@ export function CHMSUEvaluationSheet({
             </div>
 
             {/* Employability & Compensation Box */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-slate-300 print:border-slate-800 rounded-xl p-3 print:p-1.5 print:rounded-none bg-white text-xs print:text-[8pt]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border border-slate-300 print:border-slate-800 rounded-xl p-3 print:p-1 print:rounded-none bg-white text-xs print:text-[7.5pt]">
               {/* Left Column: Employability Checkboxes */}
-              <div className="space-y-1.5 border-b md:border-b-0 md:border-r border-slate-200 print:border-slate-400 pb-2 md:pb-0 md:pr-3">
-                <span className="font-black text-slate-900 block uppercase tracking-wide print:text-[8pt]">
+              <div className="space-y-1.5 print:space-y-0.5 border-b md:border-b-0 md:border-r border-slate-200 print:border-slate-400 pb-2 md:pb-0 md:pr-3 print:pr-1">
+                <span className="font-black text-slate-900 block uppercase tracking-wide print:text-[7.5pt]">
                   Employability:
                 </span>
-                <div className="grid grid-cols-3 gap-1.5 text-xs print:text-[8pt]">
+                <div className="grid grid-cols-3 gap-1.5 print:gap-0.5 text-xs print:text-[7pt]">
                   {EMPLOYABILITY_OPTIONS.map((opt) => {
                     const isSelected = (localQuestionnaire.employabilityStatus || 'OJT Trainee') === opt;
                     return (
                       <label
                         key={opt}
-                        className={`flex items-center gap-1.5 p-1 rounded transition-colors select-none ${
+                        className={`flex items-center gap-1.5 print:gap-1 p-1 print:p-0 rounded transition-colors select-none ${
                           isSelected ? 'font-bold text-slate-950' : 'text-slate-700'
                         } ${isReadOnly ? '' : 'cursor-pointer hover:bg-slate-50'}`}
                       >
@@ -1098,20 +1095,20 @@ export function CHMSUEvaluationSheet({
                           checked={isSelected}
                           disabled={isReadOnly}
                           onChange={() => !isReadOnly && updateQuestionnaireField('employabilityStatus', opt)}
-                          className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 cursor-pointer print:text-black"
+                          className="w-3.5 h-3.5 print:w-3 print:h-3 text-emerald-600 rounded border-slate-300 cursor-pointer print:text-black"
                         />
-                        <span className="print:text-[7.5pt]">{opt}</span>
+                        <span className="print:text-[7pt]">{opt}</span>
                       </label>
                     );
                   })}
                 </div>
 
-                <div className="pt-1 flex items-baseline gap-2">
-                  <span className="text-[10px] print:text-[7.5pt] font-semibold text-slate-600 shrink-0">
+                <div className="pt-1 print:pt-0.5 flex items-baseline gap-2">
+                  <span className="text-[10px] print:text-[7pt] font-semibold text-slate-600 shrink-0">
                     If employed, company name:
                   </span>
                   {isReadOnly ? (
-                    <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-800 pb-0.5 truncate">
+                    <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-800 pb-0.5">
                       {localQuestionnaire.employedCompanyName || '—'}
                     </span>
                   ) : (
@@ -1127,9 +1124,9 @@ export function CHMSUEvaluationSheet({
               </div>
 
               {/* Right Column: Allowance/Salary & Telephone */}
-              <div className="space-y-2 pl-0 md:pl-2 flex flex-col justify-center">
+              <div className="space-y-2 print:space-y-1 pl-0 md:pl-2 print:pl-1 flex flex-col justify-center">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-28 shrink-0 print:w-24">Allowance/Salary:</span>
+                  <span className="font-black text-slate-800 w-28 shrink-0 print:w-22">Allowance/Salary:</span>
                   <span className="font-bold text-slate-600">Php</span>
                   {isReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5">
@@ -1147,7 +1144,7 @@ export function CHMSUEvaluationSheet({
                 </div>
 
                 <div className="flex items-baseline gap-2">
-                  <span className="font-black text-slate-800 w-28 shrink-0 print:w-24">Telephone No:</span>
+                  <span className="font-black text-slate-800 w-28 shrink-0 print:w-22">Telephone No:</span>
                   {isReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5">
                       {localQuestionnaire.telephoneNo || trainee.phone || 'N/A'}
@@ -1166,13 +1163,13 @@ export function CHMSUEvaluationSheet({
             </div>
 
             {/* ASSIGNMENT Section */}
-            <div className="border border-slate-300 print:border-slate-800 rounded-xl p-2.5 print:p-1 print:rounded-none bg-slate-50/50 print:bg-white space-y-1 text-xs print:text-[8pt]">
-              <h4 className="font-black text-slate-900 uppercase tracking-wide text-xs print:text-[8pt]">ASSIGNMENT</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:gap-2">
+            <div className="border border-slate-300 print:border-slate-800 rounded-xl p-2.5 print:p-0.5 print:rounded-none bg-slate-50/50 print:bg-white space-y-1 print:space-y-0 text-xs print:text-[7.5pt]">
+              <h4 className="font-black text-slate-900 uppercase tracking-wide text-xs print:text-[7pt]">ASSIGNMENT</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:gap-1.5">
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-700 shrink-0">DEPARTMENT:</span>
                   {isReadOnly ? (
-                    <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5 uppercase truncate">
+                    <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5 uppercase">
                       {localQuestionnaire.department || trainee.department || 'IT Department'}
                     </span>
                   ) : (
@@ -1188,7 +1185,7 @@ export function CHMSUEvaluationSheet({
 
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-700 shrink-0">POSITION:</span>
-                  <span className="font-black text-emerald-950 print:text-slate-950 border-b border-dotted border-slate-400 flex-1 pb-0.5 uppercase truncate">
+                  <span className="font-black text-emerald-950 print:text-slate-950 border-b border-dotted border-slate-400 flex-1 pb-0.5 uppercase">
                     {localQuestionnaire.position || 'ON - THE - JOB TRAINEE'}
                   </span>
                 </div>
@@ -1196,7 +1193,7 @@ export function CHMSUEvaluationSheet({
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-700 shrink-0">OTHER DEPT:</span>
                   {isReadOnly ? (
-                    <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5 truncate">
+                    <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5">
                       {localQuestionnaire.otherDeptAssigned || 'None'}
                     </span>
                   ) : (
@@ -1213,7 +1210,7 @@ export function CHMSUEvaluationSheet({
             </div>
 
             {/* Official 9-Question Questionnaire Table */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 print:space-y-0.5">
               <div className="flex items-center justify-between no-print">
                 <h3 className="font-black text-slate-900 uppercase tracking-wider text-xs sm:text-sm border-l-4 border-emerald-700 pl-2">
                   QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK)
@@ -1226,7 +1223,7 @@ export function CHMSUEvaluationSheet({
               </div>
 
               <div className="border-2 border-slate-900 rounded-xl overflow-hidden shadow-xs print:rounded-none">
-                <table className="w-full text-xs print:text-[8pt] border-collapse eval-table">
+                <table className="w-full text-xs print:text-[7pt] border-collapse eval-table">
                   <tbody>
                     {QUESTIONNAIRE_PROMPTS.map((q) => {
                       const currentAnswer = (localQuestionnaire[q.key] as string) || '';
@@ -1241,7 +1238,7 @@ export function CHMSUEvaluationSheet({
                           <td className="w-[38%] print:w-[35%] py-2 px-2.5 print:py-0.5 print:px-1.5 align-top bg-slate-50/70 print:bg-white border-r border-slate-300 print:border-slate-800 font-bold text-slate-900">
                             <div className="flex items-start gap-1 leading-tight">
                               <span className="text-emerald-900 print:text-slate-950 font-black shrink-0">{q.number}.</span>
-                              <span className="print:text-[7.5pt]">{q.prompt}</span>
+                              <span className="print:text-[6.8pt]">{q.prompt}</span>
                             </div>
                             {!isReadOnly && (
                               <button
@@ -1301,7 +1298,7 @@ export function CHMSUEvaluationSheet({
                             </div>
 
                             {/* Dedicated Print View (Crisp text fit) */}
-                            <div className="hidden print:block text-[7.5pt] text-slate-900 leading-tight italic">
+                            <div className="hidden print:block text-[6.8pt] text-slate-900 leading-tight italic">
                               {currentAnswer || 'Completed satisfactorily as required by the host establishment.'}
                             </div>
                           </td>
@@ -1314,34 +1311,34 @@ export function CHMSUEvaluationSheet({
             </div>
 
             {/* Page 2 Official Signatures Section */}
-            <div className="pt-3 pb-1 print:pt-1.5 print:pb-0 grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-6 text-xs print:text-[8.5pt] print-avoid-break">
+            <div className="pt-3 pb-1 print:pt-1 print:pb-0 grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-4 text-xs print:text-[7.5pt] print-avoid-break">
               <div className="text-center">
-                <div className="h-9 print:h-6 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
-                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[9.5pt] tracking-wider">
+                <div className="h-9 print:h-5 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
+                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[8pt] tracking-wider">
                     {trainee.name}
                   </span>
                 </div>
-                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[8pt]">
+                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[7pt]">
                   OJT Trainee's Signature over Printed Name
                 </p>
-                <p className="text-slate-600 text-[10px] print:text-[7.5pt]">Date: {displayDate}</p>
+                <p className="text-slate-600 text-[10px] print:text-[6.5pt]">Date: {displayDate}</p>
               </div>
 
               <div className="text-center">
-                <div className="h-9 print:h-6 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
-                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[9.5pt] tracking-wider">
+                <div className="h-9 print:h-5 border-b-2 border-slate-900 flex items-end justify-center pb-0.5">
+                  <span className="font-black text-slate-900 uppercase text-xs sm:text-sm print:text-[8pt] tracking-wider">
                     {supervisorName}
                   </span>
                 </div>
-                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[8pt]">
+                <p className="font-black text-slate-900 mt-0.5 uppercase text-[10.5px] print:text-[7pt]">
                   Immediate Supervisor / HTE Representative
                 </p>
-                <p className="text-slate-600 text-[10px] print:text-[7.5pt]">Date: {displayDate}</p>
+                <p className="text-slate-600 text-[10px] print:text-[6.5pt]">Date: {displayDate}</p>
               </div>
             </div>
 
             {/* Page 2 University Footer */}
-            <div className="border-t border-emerald-800/60 print:border-slate-900 pt-2 print:pt-1 text-center space-y-0.5 text-[9.5px] print:text-[7pt] text-slate-600 print-avoid-break">
+            <div className="border-t border-emerald-800/60 print:border-slate-900 pt-2 print:pt-0.5 text-center space-y-0.5 print:space-y-0 text-[9.5px] print:text-[6pt] text-slate-600 print-avoid-break">
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 font-semibold">
                 <span>college.computerstudies@chmsu.edu.ph</span>
                 <span>•</span>
@@ -1349,10 +1346,10 @@ export function CHMSUEvaluationSheet({
                 <span>•</span>
                 <span>chmsu.edu.ph</span>
               </div>
-              <div className="font-black text-emerald-900 uppercase tracking-widest text-[10px] print:text-[7.5pt]">
+              <div className="font-black text-emerald-900 uppercase tracking-widest text-[10px] print:text-[6.5pt]">
                 GREEN CHMSU EXCELSIOR!
               </div>
-              <div className="text-[8.5px] print:text-[6.5pt] text-slate-500 tracking-tight">
+              <div className="text-[8.5px] print:text-[5.5pt] text-slate-500 tracking-tight">
                 Excellence • Compassion • Environmentalism • Love of Country • Social Responsibility • Integrity • Openness • Resilience
               </div>
             </div>

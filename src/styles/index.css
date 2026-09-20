@@ -53,7 +53,7 @@
 
 @media print {
   @page {
-    margin: 8mm 10mm;
+    margin: 4mm 6mm !important;
     size: portrait;
   }
 
@@ -80,7 +80,7 @@
     padding: 0 !important;
     margin: 0 !important;
     color: #0f172a !important;
-    font-size: 11pt !important;
+    font-size: 9pt !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -151,6 +151,7 @@
 
   /* ─────────────────────────────────────────────────────────────────────────────
      EVALUATION REPORT SHEET PRINT RULES (EXACT 1-PAGE PER SECTION / 2-PAGE TOTAL)
+     ADAPTABLE ACROSS A4, US LETTER, AND US LEGAL
      ───────────────────────────────────────────────────────────────────────────── */
   .eval-sheet-container {
     padding: 0 !important;
@@ -159,36 +160,47 @@
     box-shadow: none !important;
     border: none !important;
     background: white !important;
+    page-break-inside: auto !important;
   }
 
   .eval-page {
     box-shadow: none !important;
     border: none !important;
     padding: 0 !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     width: 100% !important;
     max-width: 100% !important;
     background: white !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    overflow: visible !important;
   }
 
   .eval-page-1 {
     page-break-after: always !important;
     break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-bottom: 0 !important;
   }
 
   .eval-page-2 {
     page-break-before: always !important;
     break-before: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-top: 0 !important;
   }
 
   .eval-table th,
   .eval-table td {
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
-    padding-left: 4px !important;
-    padding-right: 4px !important;
-    font-size: 8.5pt !important;
-    line-height: 1.2 !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    font-size: 6.8pt !important;
+    line-height: 1.15 !important;
   }
 
   /* ─────────────────────────────────────────────────────────────────────────────
@@ -205,7 +217,7 @@
   }
 
   .dttr-sheet table {
-    font-size: 8pt !important;
+    font-size: 7.5pt !important;
     border-collapse: collapse !important;
     width: 100% !important;
   }
@@ -216,7 +228,7 @@
     padding-bottom: 1px !important;
     padding-left: 2px !important;
     padding-right: 2px !important;
-    line-height: 1.15 !important;
+    line-height: 1.1 !important;
   }
 
   .dttr-sheet tr {
