@@ -455,6 +455,22 @@ export function AdminGeofence() {
     toast.success('Geofence zone added successfully!');
   };
 
+  // Scroll to map and fly-to focus coordinates
+  const scrollToMapAndFocus = (zone: GeofenceZone) => {
+    setSelectedZoneId(zone.id);
+    setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
+
+    const mapCard = document.getElementById('geofence-map-card');
+    if (mapCard) {
+      mapCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    const mainContainer = document.querySelector('main');
+    if (mainContainer) {
+      mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleEdit = (zone: GeofenceZone) => {
     setEditId(zone.id);
     setForm({
@@ -465,8 +481,7 @@ export function AdminGeofence() {
       radius: zone.radius || GEOFENCE_RADIUS_METERS,
       active: zone.active,
     });
-    setSelectedZoneId(zone.id);
-    setFocusCoords({ lat: zone.lat, lng: zone.lng });
+    scrollToMapAndFocus(zone);
   };
 
   const handleSaveEdit = () => {
@@ -481,12 +496,7 @@ export function AdminGeofence() {
   const handleStartDrag = (zone: GeofenceZone) => {
     setDragZoneId(zone.id);
     setDragCoords({ lat: zone.lat, lng: zone.lng });
-    setSelectedZoneId(zone.id);
-    setFocusCoords({ lat: zone.lat, lng: zone.lng });
-    const mapCard = document.getElementById('geofence-map-card');
-    if (mapCard) {
-      mapCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    scrollToMapAndFocus(zone);
     toast.info(`📍 Drag mode active for "${zone.name}". Move the marker on the map to relocate perimeter.`);
   };
 
@@ -520,8 +530,7 @@ export function AdminGeofence() {
   // View zone details modal handler
   const handleViewZone = (zone: GeofenceZone) => {
     setViewModalZone(zone);
-    setSelectedZoneId(zone.id);
-    setFocusCoords({ lat: zone.lat, lng: zone.lng });
+    scrollToMapAndFocus(zone);
   };
 
   // Direct save handler from 3-dots menu
@@ -896,8 +905,7 @@ export function AdminGeofence() {
                 transition={{ delay: idx * 0.03 }}
                 onClick={() => {
                   if (editId !== zone.id) {
-                    setSelectedZoneId(zone.id);
-                    setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
+                    scrollToMapAndFocus(zone);
                   }
                 }}
                 className={`bg-white rounded-2xl shadow-sm border transition-all cursor-pointer hover:shadow-md ${
