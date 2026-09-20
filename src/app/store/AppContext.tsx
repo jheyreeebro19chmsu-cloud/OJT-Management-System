@@ -568,26 +568,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadFromStorage(STORAGE_KEYS.CURRENT_USER, null));
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    if (isSupabaseConfigured()) {
-      try {
-        localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
-      } catch {}
-      return [];
-    }
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
-    if (stored.length === 0) {
-      saveToStorage(STORAGE_KEYS.EMPLOYEES, MOCK_EMPLOYEES);
-      return MOCK_EMPLOYEES;
-    }
     return stored;
   });
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(() => {
     const stored = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
-    if (stored.length === 0) {
-      const mock = generateMockRecords();
-      saveToStorage(STORAGE_KEYS.TIME_RECORDS, mock);
-      return mock;
-    }
     return stored;
   });
   const [geofenceZones, setGeofenceZones] = useState<GeofenceZone[]>(() => {
@@ -627,17 +612,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     loadFromStorage<RequiredDocumentSubmission[]>(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, [])
   );
   const [hostSupervisors, setHostSupervisors] = useState<HostSupervisor[]>(() => {
-    if (isSupabaseConfigured()) {
-      try {
-        localStorage.removeItem(STORAGE_KEYS.HOST_SUPERVISORS);
-      } catch {}
-      return [];
-    }
     const stored = loadFromStorage<HostSupervisor[]>(STORAGE_KEYS.HOST_SUPERVISORS, []);
-    if (stored.length === 0) {
-      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, DEFAULT_HOST_SUPERVISORS);
-      return DEFAULT_HOST_SUPERVISORS;
-    }
     return stored;
   });
   const [hostFeedback, setHostFeedback] = useState<HostFeedback[]>(() => {
@@ -697,64 +672,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // ignore migration errors
           }
 
-          // Fetch all data from Supabase
-          const [
-            supabaseEmployees,
-            supabaseRecords,
-            supabaseZones,
-            supabaseSettings,
-            supabaseEvaluations,
-            supabaseAnnouncements,
-            supabaseSubmissions,
-            supabaseComments,
-            supabaseHostFeedback,
-            supabaseHostSupervisors,
-          ] = await Promise.all([
-            supabaseService.fetchEmployees(),
-            supabaseService.fetchTimeRecords(),
-            supabaseService.fetchGeofenceZones(),
-            supabaseService.fetchSettings(),
-            supabaseService.fetchEvaluations(),
-            supabaseService.fetchAnnouncements(),
-            supabaseService.fetchAnnouncementSubmissions(),
-            supabaseService.fetchAnnouncementComments(),
-            supabaseService.fetchHostFeedback(),
-            supabaseService.fetchHostSupervisors(),
-          ]);
-
-          if (localStorage.getItem('ojt_purged_all_credentials_v1') !== 'done') {
-            localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
-            localStorage.removeItem(STORAGE_KEYS.HOST_SUPERVISORS);
-            localStorage.removeItem(STORAGE_KEYS.TIME_RECORDS);
-            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-            localStorage.removeItem(STORAGE_KEYS.HOST_FEEDBACK);
-            localStorage.removeItem(STORAGE_KEYS.EVALUATIONS);
-            localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
-            localStorage.removeItem('ojt_passwords');
-            localStorage.removeItem('ojt_user');
-            localStorage.setItem('ojt_purged_all_credentials_v1', 'done');
-          }
-
-          if (!isMounted) return;
-
-          setEmployees(supabaseEmployees);
-          setTimeRecords((prev) => {
-            const merged = mergeTimeRecords(supabaseRecords, prev);
-            saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-            return merged;
+          // Fetch all data from Supabase in parallel and update state dynamically
+          Promise.allSettled([
+            supabaseService.fetchEmployees().then((emp) => {
+              if (isMounted && emp && emp.length > 0) {
+                setEmployees(emp);
+                saveToStorage(STORAGE_KEYS.EMPLOYEES, emp);
+              }
+            }),
+            supabaseService.fetchTimeRecords().then((recs) => {
+              if (isMounted && recs && recs.length > 0) {
+                setTimeRecords((prev) => {
+                  const merged = mergeTimeRecords(recs, prev);
+                  saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+                  return merged;
+                });
+              }
+            }),
+            supabaseService.fetchGeofenceZones().then((zones) => {
+              if (isMounted && zones) {
+                const sanitized = sanitizeGeofenceZones(zones);
+                if (sanitized.length > 0) {
+                  setGeofenceZones(sanitized);
+                  saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitized);
+                }
+              }
+            }),
+            supabaseService.fetchSettings().then((st) => {
+              if (isMounted && st) setSettings(st);
+            }),
+            supabaseService.fetchEvaluations().then((ev) => {
+              if (isMounted && ev && ev.length > 0) {
+                setEvaluations(ev);
+                saveToStorage(STORAGE_KEYS.EVALUATIONS, ev);
+              }
+            }),
+            supabaseService.fetchAnnouncements().then((ann) => {
+              if (isMounted && ann && ann.length > 0) {
+                setAnnouncements(ann);
+                saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, ann);
+              }
+            }),
+            supabaseService.fetchAnnouncementSubmissions().then((subs) => {
+              if (isMounted && subs && subs.length > 0) setAnnouncementSubmissions(subs);
+            }),
+            supabaseService.fetchAnnouncementComments().then((cmts) => {
+              if (isMounted && cmts && cmts.length > 0) setAnnouncementComments(cmts);
+            }),
+            supabaseService.fetchHostFeedback().then((fb) => {
+              if (isMounted && fb && fb.length > 0) setHostFeedback(fb);
+            }),
+            supabaseService.fetchHostSupervisors().then((sup) => {
+              if (isMounted && sup && sup.length > 0) {
+                setHostSupervisors(sup);
+                saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, sup);
+              }
+            }),
+          ]).finally(() => {
+            if (isMounted) {
+              setIsLoading(false);
+            }
           });
-          const sanitizedSupabaseZones = sanitizeGeofenceZones(supabaseZones);
-          if (sanitizedSupabaseZones.length > 0) setGeofenceZones(sanitizedSupabaseZones);
-          if (supabaseSettings) setSettings(supabaseSettings);
-          setEvaluations(supabaseEvaluations);
-          if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
-          if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
-          if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
-          setHostFeedback(supabaseHostFeedback);
-          setHostSupervisors(supabaseHostSupervisors);
         } catch (error) {
           console.error('Error loading data from Supabase:', error);
-        } finally {
           if (isMounted) {
             setIsLoading(false);
           }

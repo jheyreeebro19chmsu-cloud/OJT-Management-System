@@ -27,9 +27,9 @@ export default defineConfig({
   assetsInclude: ['**/*.svg', '**/*.csv'],
 
   build: {
-    minify: false,
+    minify: 'esbuild',
     sourcemap: false,
-    cssMinify: false,
+    cssMinify: true,
     rollupOptions: {
       output: {
         manualChunks: {
