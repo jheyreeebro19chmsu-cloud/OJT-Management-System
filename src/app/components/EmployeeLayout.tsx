@@ -15,11 +15,11 @@ const navItems = [
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/evaluation', label: 'HTE Evaluation', icon: Award, end: false, isEvalNav: true },
-  { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false },
+  { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false, isAnnounceNav: true },
 ];
 
 export function EmployeeLayout() {
-  const { currentUser, logout, getCurrentEmployee, settings, evaluations } = useApp();
+  const { currentUser, logout, getCurrentEmployee, settings, evaluations, getActiveAnnouncements, announcements } = useApp();
   const navigate = useNavigate();
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -68,6 +68,11 @@ export function EmployeeLayout() {
   const traineeEvaluation = evaluations.find(
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
   );
+
+  const activeAnnouncements = getActiveAnnouncements
+    ? getActiveAnnouncements('employee')
+    : announcements.filter((a) => !a.expiresAt || new Date(a.expiresAt) >= new Date());
+  const activeAnnouncementCount = activeAnnouncements.length;
 
   const renderSidebarContent = (isMobile = false) => (
     <>
@@ -159,6 +164,11 @@ export function EmployeeLayout() {
                         : 'Pending'}
                     </span>
                   )}
+                  {(item as any).isAnnounceNav && activeAnnouncementCount > 0 && (
+                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
+                      {activeAnnouncementCount}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
@@ -239,10 +249,13 @@ export function EmployeeLayout() {
               {/* Mobile Sidebar Toggle Button */}
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-xl text-blue-200 hover:text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="relative lg:hidden p-2 rounded-xl text-blue-200 hover:text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
                 aria-label="Open Navigation"
               >
                 <Menu size={22} />
+                {activeAnnouncementCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-blue-900 shadow-sm" />
+                )}
               </button>
 
               <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">

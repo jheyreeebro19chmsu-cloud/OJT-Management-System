@@ -37,11 +37,16 @@ const navItems = [
 export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, logout, getCurrentEmployee, settings } = useApp();
+  const { currentUser, logout, getCurrentEmployee, settings, announcements, getActiveAnnouncements } = useApp();
   const employee = getCurrentEmployee();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const activeHteAnnouncements = getActiveAnnouncements
+    ? getActiveAnnouncements('hte')
+    : announcements.filter((a) => !a.expiresAt || new Date(a.expiresAt) >= new Date());
+  const hteAnnounceCount = activeHteAnnouncements.length;
 
   useEffect(() => {
     if (!currentUser) {
@@ -147,6 +152,11 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                     )}
                   </div>
                   <span className="text-sm font-medium">{label}</span>
+                  {label === 'Announcements' && hteAnnounceCount > 0 && (
+                    <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
+                      {hteAnnounceCount}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
