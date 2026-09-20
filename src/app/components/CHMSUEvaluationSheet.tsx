@@ -283,6 +283,15 @@ export function CHMSUEvaluationSheet({
         day: 'numeric',
       });
 
+  // Page 1 Criteria & Ratings:
+  // ONLY editable by HTE when not in read-only mode. Trainees & Instructors can NEVER edit Page 1 scores.
+  const isCriteriaReadOnly = role === 'trainee' || role === 'instructor' || isReadOnly;
+
+  // Page 2 Questionnaire (Student Practicum Feedback):
+  // ALWAYS editable by Trainee so they can complete/update their 9 questionnaire reflections.
+  // Read-only for Instructor and when specifically set as read-only for others.
+  const isQuestionnaireReadOnly = role === 'trainee' ? false : (role === 'instructor' ? true : isReadOnly);
+
   // Calculate Subtotals per Category
   const categoryStats = React.useMemo(() => {
     const stats: Record<string, { avg: number; total: number; count: number }> = {};
@@ -461,7 +470,18 @@ export function CHMSUEvaluationSheet({
             )}
           </div>
 
-          {!isReadOnly && onSaveDraft && (
+          {role === 'trainee' && onSaveDraft && (
+            <button
+              type="button"
+              onClick={onSaveDraft}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Save size={15} />
+              <span>Save Questionnaire Answers</span>
+            </button>
+          )}
+
+          {role !== 'trainee' && !isReadOnly && onSaveDraft && (
             <button
               type="button"
               onClick={onSaveDraft}
@@ -472,7 +492,7 @@ export function CHMSUEvaluationSheet({
             </button>
           )}
 
-          {!isReadOnly && onSubmitFinal && (
+          {role !== 'trainee' && !isReadOnly && onSubmitFinal && (
             <button
               type="button"
               onClick={onSubmitFinal}
@@ -652,7 +672,7 @@ export function CHMSUEvaluationSheet({
                                   >
                                     {/* Screen View */}
                                     <div className="no-print flex items-center justify-center">
-                                      {isReadOnly ? (
+                                      {isCriteriaReadOnly ? (
                                         isChecked ? (
                                           <span className="w-5 h-5 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-[11px]">
                                             ✓
@@ -714,7 +734,7 @@ export function CHMSUEvaluationSheet({
                                     <span>Rating Remarks &amp; Observations for {category.title}:</span>
                                   </label>
 
-                                  {!isReadOnly && (
+                                  {!isCriteriaReadOnly && (
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -730,7 +750,7 @@ export function CHMSUEvaluationSheet({
                                   )}
                                 </div>
 
-                                {!isReadOnly && activePresetCategory === category.id && (
+                                {!isCriteriaReadOnly && activePresetCategory === category.id && (
                                   <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
                                     <div className="flex flex-wrap gap-1">
                                       {RATING_COMMENT_PRESETS[category.id]?.map((preset, idx) => (
@@ -747,7 +767,7 @@ export function CHMSUEvaluationSheet({
                                   </div>
                                 )}
 
-                                {isReadOnly ? (
+                                {isCriteriaReadOnly ? (
                                   <div className="p-2 bg-white border border-slate-200 rounded text-xs text-slate-700 italic">
                                     {currentCategoryComment || 'No specific rating remarks recorded for this category.'}
                                   </div>
@@ -811,7 +831,7 @@ export function CHMSUEvaluationSheet({
               </h4>
               {/* Screen Mode */}
               <div className="no-print">
-                {isReadOnly ? (
+                {isCriteriaReadOnly ? (
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 min-h-[50px] whitespace-pre-wrap">
                     {commentsSuggestions || 'No general comments or suggestions recorded.'}
                   </div>
@@ -969,7 +989,7 @@ export function CHMSUEvaluationSheet({
                 {/* Row 2: Company Address (full span) */}
                 <div className="flex items-baseline gap-1.5 sm:col-span-2 min-w-0">
                   <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Company Address:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                       {localQuestionnaire.companyAddress || trainee.department || 'Talisay / Bacolod, Negros Occidental'}
                     </span>
@@ -987,7 +1007,7 @@ export function CHMSUEvaluationSheet({
                 {/* Row 3: Contact Person & Inclusive Date of Training */}
                 <div className="flex items-baseline gap-1.5 min-w-0">
                   <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Contact Person:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5">
                       {localQuestionnaire.contactPerson || supervisorName || 'HTE Supervisor'}
                     </span>
@@ -1006,7 +1026,7 @@ export function CHMSUEvaluationSheet({
                   <span className="font-black text-slate-800 w-32 print:w-28 shrink-0">Inclusive Dates:</span>
                   <div className="flex items-center gap-1 flex-1 border-b border-dotted border-slate-600 pb-0.5 whitespace-nowrap">
                     <span className="text-slate-600 text-xs print:text-[7pt]">From:</span>
-                    {isReadOnly ? (
+                    {isQuestionnaireReadOnly ? (
                       <span className="font-semibold text-slate-900 print:text-[7.5pt]">
                         {localQuestionnaire.trainingDateFrom || 'Start of OJT'}
                       </span>
@@ -1020,7 +1040,7 @@ export function CHMSUEvaluationSheet({
                       />
                     )}
                     <span className="text-slate-600 text-xs print:text-[7pt] ml-1">to:</span>
-                    {isReadOnly ? (
+                    {isQuestionnaireReadOnly ? (
                       <span className="font-semibold text-slate-900 print:text-[7.5pt]">
                         {localQuestionnaire.trainingDateTo || 'End of OJT'}
                       </span>
@@ -1039,7 +1059,7 @@ export function CHMSUEvaluationSheet({
                 {/* Row 4: Date of Evaluation & Date of Last Evaluation */}
                 <div className="flex items-baseline gap-1.5 min-w-0">
                   <span className="font-black text-slate-800 w-32 print:w-26 shrink-0">Date of Evaluation:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5 whitespace-nowrap print:text-[7.5pt]">
                       {localQuestionnaire.dateOfEvaluation || displayDate}
                     </span>
@@ -1056,7 +1076,7 @@ export function CHMSUEvaluationSheet({
 
                 <div className="flex items-baseline gap-1.5 min-w-0">
                   <span className="font-black text-slate-800 w-32 print:w-28 shrink-0">Date of Last Eval:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="text-slate-900 border-b border-dotted border-slate-600 flex-1 pb-0.5 whitespace-nowrap print:text-[7.5pt]">
                       {localQuestionnaire.dateOfLastEvaluation || 'N/A'}
                     </span>
@@ -1088,13 +1108,13 @@ export function CHMSUEvaluationSheet({
                         key={opt}
                         className={`flex items-center gap-1.5 print:gap-1 p-1 print:p-0 rounded transition-colors select-none ${
                           isSelected ? 'font-bold text-slate-950' : 'text-slate-700'
-                        } ${isReadOnly ? '' : 'cursor-pointer hover:bg-slate-50'}`}
+                        } ${isQuestionnaireReadOnly ? '' : 'cursor-pointer hover:bg-slate-50'}`}
                       >
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          disabled={isReadOnly}
-                          onChange={() => !isReadOnly && updateQuestionnaireField('employabilityStatus', opt)}
+                          disabled={isQuestionnaireReadOnly}
+                          onChange={() => !isQuestionnaireReadOnly && updateQuestionnaireField('employabilityStatus', opt)}
                           className="w-3.5 h-3.5 print:w-3 print:h-3 text-emerald-600 rounded border-slate-300 cursor-pointer print:text-black"
                         />
                         <span className="print:text-[7pt]">{opt}</span>
@@ -1107,7 +1127,7 @@ export function CHMSUEvaluationSheet({
                   <span className="text-[10px] print:text-[7pt] font-semibold text-slate-600 shrink-0">
                     If employed, company name:
                   </span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-800 pb-0.5">
                       {localQuestionnaire.employedCompanyName || '—'}
                     </span>
@@ -1128,7 +1148,7 @@ export function CHMSUEvaluationSheet({
                 <div className="flex items-baseline gap-2">
                   <span className="font-black text-slate-800 w-28 shrink-0 print:w-22">Allowance/Salary:</span>
                   <span className="font-bold text-slate-600">Php</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5">
                       {localQuestionnaire.allowanceSalary || 'None / Stipend'}
                     </span>
@@ -1145,7 +1165,7 @@ export function CHMSUEvaluationSheet({
 
                 <div className="flex items-baseline gap-2">
                   <span className="font-black text-slate-800 w-28 shrink-0 print:w-22">Telephone No:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5">
                       {localQuestionnaire.telephoneNo || trainee.phone || 'N/A'}
                     </span>
@@ -1168,7 +1188,7 @@ export function CHMSUEvaluationSheet({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:gap-1.5">
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-700 shrink-0">DEPARTMENT:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5 uppercase">
                       {localQuestionnaire.department || trainee.department || 'IT Department'}
                     </span>
@@ -1192,7 +1212,7 @@ export function CHMSUEvaluationSheet({
 
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-700 shrink-0">OTHER DEPT:</span>
-                  {isReadOnly ? (
+                  {isQuestionnaireReadOnly ? (
                     <span className="border-b border-dotted border-slate-400 flex-1 font-semibold text-slate-900 pb-0.5">
                       {localQuestionnaire.otherDeptAssigned || 'None'}
                     </span>
@@ -1215,7 +1235,7 @@ export function CHMSUEvaluationSheet({
                 <h3 className="font-black text-slate-900 uppercase tracking-wider text-xs sm:text-sm border-l-4 border-emerald-700 pl-2">
                   QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK)
                 </h3>
-                {!isReadOnly && (
+                {!isQuestionnaireReadOnly && (
                   <span className="text-xs text-slate-500 italic">
                     Click 'Suggestions' to insert helpful responses quickly
                   </span>
@@ -1240,7 +1260,7 @@ export function CHMSUEvaluationSheet({
                               <span className="text-emerald-900 print:text-slate-950 font-black shrink-0">{q.number}.</span>
                               <span className="print:text-[6.8pt]">{q.prompt}</span>
                             </div>
-                            {!isReadOnly && (
+                            {!isQuestionnaireReadOnly && (
                               <button
                                 type="button"
                                 onClick={() => setActiveQuestionPreset(isOpenPresets ? null : q.key)}
@@ -1254,7 +1274,7 @@ export function CHMSUEvaluationSheet({
 
                           {/* Answer column */}
                           <td className="py-1.5 px-2.5 print:py-0.5 print:px-1.5 align-top bg-white">
-                            {!isReadOnly && isOpenPresets && (
+                            {!isQuestionnaireReadOnly && isOpenPresets && (
                               <div className="mb-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1 no-print">
                                 <p className="text-[10px] font-bold text-emerald-900 uppercase">
                                   Insert response suggestion:
@@ -1280,7 +1300,7 @@ export function CHMSUEvaluationSheet({
 
                             {/* Screen View */}
                             <div className="no-print">
-                              {isReadOnly ? (
+                              {isQuestionnaireReadOnly ? (
                                 <div className="min-h-[30px] py-0.5 text-slate-800 whitespace-pre-wrap leading-relaxed italic text-xs">
                                   {currentAnswer || (
                                     <span className="text-slate-400 not-italic">No response recorded</span>

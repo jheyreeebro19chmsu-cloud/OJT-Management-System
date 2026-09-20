@@ -195,6 +195,8 @@ export function TraineeEvaluation() {
           role="trainee"
           initialPageTab="both"
           onQuestionnaireChange={setTraineeQuestionnaire}
+          onSaveDraft={handleSaveQuestionnaire}
+          onSubmitFinal={handleSaveQuestionnaire}
         />
       ) : (
         /* Case 2: Awaiting HTE Evaluation Report, but Trainee can still fill Page 2 Questionnaire */
@@ -232,6 +234,8 @@ export function TraineeEvaluation() {
             role="trainee"
             initialPageTab="page2"
             onQuestionnaireChange={setTraineeQuestionnaire}
+            onSaveDraft={handleSaveQuestionnaire}
+            onSubmitFinal={handleSaveQuestionnaire}
           />
         </div>
       )}
