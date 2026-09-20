@@ -22,6 +22,7 @@ import {
   MapPin,
 } from 'lucide-react-native';
 import { mobileDb, Employee, TimeRecord } from '../lib/supabaseService';
+import { supabase } from '../lib/supabase';
 
 export default function InstructorDashboard({
   profile,
@@ -37,13 +38,28 @@ export default function InstructorDashboard({
   const [loading, setLoading] = useState(true);
   const [trainees, setTrainees] = useState<Employee[]>([]);
   const [todayRecords, setTodayRecords] = useState<TimeRecord[]>([]);
+  const [totalRenderedHours, setTotalRenderedHours] = useState<number>(0);
 
   useEffect(() => {
     loadDashboardMetrics();
+
+    // Supabase Real-time listener for live attendance & rendered hours
+    const channel = supabase
+      .channel('instructor-dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'time_records' }, () => {
+        loadDashboardMetrics();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+        loadDashboardMetrics();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [profile, activeAcademicYear]);
 
   async function loadDashboardMetrics() {
-    setLoading(true);
     try {
       const instructorId = profile?.id || profile?.employeeId || '';
       const [allTrainees, allRecords] = await Promise.all([
@@ -56,6 +72,11 @@ export default function InstructorDashboard({
       const today = new Date().toISOString().split('T')[0];
       const todayLogs = allRecords.filter((r) => r.date === today);
       setTodayRecords(todayLogs);
+
+      const traineeIds = new Set(allTrainees.map((t) => t.id).concat(allTrainees.map((t) => t.employeeId)));
+      const relevantLogs = allRecords.filter((r) => traineeIds.has(r.employeeId));
+      const totHours = relevantLogs.reduce((acc, r) => acc + (Number(r.totalHours) || 0), 0);
+      setTotalRenderedHours(Math.round(totHours * 10) / 10);
     } catch (e: any) {
       console.warn('Error loading instructor dashboard:', e);
     } finally {
@@ -88,15 +109,21 @@ export default function InstructorDashboard({
       {/* KPI Grid */}
       <View style={styles.kpiGrid}>
         <View style={[styles.kpiCard, { backgroundColor: '#eff6ff' }]}>
-          <Users size={22} color="#2563eb" />
+          <Users size={20} color="#2563eb" />
           <Text style={styles.kpiValue}>{loading ? '—' : trainees.length}</Text>
           <Text style={styles.kpiLabel}>Total Trainees</Text>
         </View>
 
         <View style={[styles.kpiCard, { backgroundColor: '#f0fdf4' }]}>
-          <Clock size={22} color="#16a34a" />
+          <Clock size={20} color="#16a34a" />
           <Text style={styles.kpiValue}>{loading ? '—' : activeTodayCount}</Text>
           <Text style={styles.kpiLabel}>Clocked-In Today</Text>
+        </View>
+
+        <View style={[styles.kpiCard, { backgroundColor: '#fef3c7' }]}>
+          <Award size={20} color="#d97706" />
+          <Text style={styles.kpiValue}>{loading ? '—' : `${totalRenderedHours}h`}</Text>
+          <Text style={styles.kpiLabel}>Rendered Hours</Text>
         </View>
       </View>
 

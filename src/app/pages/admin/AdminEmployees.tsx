@@ -222,8 +222,20 @@ export function AdminEmployees() {
   };
 
   const getEmpStats = (empId: string) => {
-    const recs = timeRecords.filter((r) => r.employeeId === empId);
-    const totalHours = recs.reduce((s, r) => s + (r.totalHours || 0), 0);
+    const targetEmp = employees.find((e) => e.id === empId || e.employeeId === empId);
+    const validIds = new Set<string>();
+    if (empId) validIds.add(empId);
+    if (targetEmp?.id) validIds.add(targetEmp.id);
+    if (targetEmp?.employeeId) validIds.add(targetEmp.employeeId);
+    if (targetEmp?.email) validIds.add(targetEmp.email.toLowerCase());
+
+    const recs = timeRecords.filter(
+      (r) =>
+        validIds.has(r.employeeId) ||
+        (r.employeeId && validIds.has(r.employeeId.toLowerCase())) ||
+        (targetEmp?.name && (r as any).employeeName === targetEmp.name)
+    );
+    const totalHours = Math.round(recs.reduce((s, r) => s + (Number(r.totalHours) || 0), 0) * 10) / 10;
     const present = recs.filter((r) => r.status === 'present' || r.status === 'overtime').length;
     const late = recs.filter((r) => r.status === 'late').length;
     return { totalHours, present, late, totalDays: recs.length };

@@ -26,6 +26,7 @@ import {
   CheckCheck,
 } from 'lucide-react-native';
 import { mobileDb, TimeRecord, Employee } from '../lib/supabaseService';
+import { supabase } from '../lib/supabase';
 
 export default function InstructorDTRScreen({
   profile,
@@ -51,6 +52,17 @@ export default function InstructorDTRScreen({
 
   useEffect(() => {
     loadData();
+
+    const channel = supabase
+      .channel('instructor-dtr-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'time_records' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [filterDate, activeAcademicYear]);
 
   async function loadData() {

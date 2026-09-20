@@ -803,6 +803,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error('Real-time employees/geofence sync error:', err);
         }
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'time_records' }, async (payload) => {
+        try {
+          if (payload.new && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
+            const transformed = supabaseService.transformSupabaseTimeRecord(payload.new);
+            setTimeRecords((prev) => {
+              const updated = [transformed, ...prev.filter((r) => r.id !== transformed.id)];
+              saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+              return updated;
+            });
+          } else if (payload.old && payload.eventType === 'DELETE') {
+            setTimeRecords((prev) => {
+              const updated = prev.filter((r) => r.id !== (payload.old as any).id);
+              saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+              return updated;
+            });
+          }
+          const supabaseRecords = await supabaseService.fetchTimeRecords();
+          if (supabaseRecords.length > 0) {
+            setTimeRecords((prev) => {
+              const merged = mergeTimeRecords(supabaseRecords, prev);
+              saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+              return merged;
+            });
+          }
+        } catch (err) {
+          console.error('Real-time time_records sync error:', err);
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
         try {
           const [

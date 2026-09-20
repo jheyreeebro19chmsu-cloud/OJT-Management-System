@@ -1524,7 +1524,7 @@ export function transformSupabaseEmployee(data: any): Employee {
   };
 }
 
-function transformSupabaseTimeRecord(data: any): TimeRecord {
+export function transformSupabaseTimeRecord(data: any): TimeRecord {
   return {
     id: data.id,
     employeeId: data.employee_id,

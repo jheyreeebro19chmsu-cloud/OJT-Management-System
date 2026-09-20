@@ -26,7 +26,8 @@ import {
   FileCheck,
   FileText,
 } from 'lucide-react-native';
-import { mobileDb, Employee } from '../lib/supabaseService';
+import { mobileDb, Employee, TimeRecord } from '../lib/supabaseService';
+import { supabase } from '../lib/supabase';
 
 export default function InstructorTraineesScreen({
   profile,
@@ -39,25 +40,64 @@ export default function InstructorTraineesScreen({
 }) {
   const [loading, setLoading] = useState(false);
   const [trainees, setTrainees] = useState<Employee[]>([]);
+  const [timeRecords, setTimeRecords] = useState<TimeRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>('all');
   const [selectedTrainee, setSelectedTrainee] = useState<Employee | null>(null);
 
   useEffect(() => {
-    fetchTrainees();
+    fetchData();
+
+    // Real-time listener for live attendance and hours rendered
+    const channel = supabase
+      .channel('instructor-trainees-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'time_records' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [profile, activeAcademicYear]);
 
-  async function fetchTrainees() {
+  async function fetchData() {
     setLoading(true);
     try {
       const instructorId = profile?.id || profile?.employeeId || '';
-      const list = await mobileDb.getTraineesByInstructor(instructorId, activeAcademicYear);
+      const [list, records] = await Promise.all([
+        mobileDb.getTraineesByInstructor(instructorId, activeAcademicYear),
+        mobileDb.getTimeRecords(undefined, activeAcademicYear),
+      ]);
       setTrainees(list);
+      setTimeRecords(records);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to load trainees');
     } finally {
       setLoading(false);
     }
+  }
+
+  function getTraineeStats(t: Employee) {
+    const ids = new Set<string>();
+    if (t.id) ids.add(t.id);
+    if (t.employeeId) ids.add(t.employeeId);
+    if (t.email) ids.add(t.email.toLowerCase());
+
+    const recs = timeRecords.filter(
+      (r) =>
+        ids.has(r.employeeId) ||
+        (r.employeeId && ids.has(r.employeeId.toLowerCase()))
+    );
+    const total = Math.round(recs.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0) * 10) / 10;
+    const req = t.requiredHours || 486;
+    const percent = Math.min(100, Math.round((total / req) * 100));
+    const today = new Date().toISOString().split('T')[0];
+    const todayRec = recs.find((r) => r.date === today);
+    return { total, req, percent, recs, todayRec };
   }
 
   async function handleApprove(trainee: Employee) {
@@ -66,7 +106,7 @@ export default function InstructorTraineesScreen({
       const ok = await mobileDb.updateEmployee(trainee.id, { applicationStatus: 'approved' });
       if (ok) {
         Alert.alert('Success', `${trainee.name}'s OJT application has been approved.`);
-        fetchTrainees();
+        fetchData();
         setSelectedTrainee(null);
       }
     } catch (err: any) {
@@ -82,7 +122,7 @@ export default function InstructorTraineesScreen({
       const ok = await mobileDb.updateEmployee(trainee.id, { applicationStatus: 'rejected' });
       if (ok) {
         Alert.alert('Rejected', `${trainee.name}'s OJT application has been marked as rejected.`);
-        fetchTrainees();
+        fetchData();
         setSelectedTrainee(null);
       }
     } catch (err: any) {
@@ -111,7 +151,7 @@ export default function InstructorTraineesScreen({
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Enrolled Trainees</Text>
-        <Text style={styles.subtitle}>Manage student approvals, hours & placement</Text>
+        <Text style={styles.subtitle}>Real-time student hours, attendance & placement</Text>
       </View>
 
       {/* Search & Status Filters */}
@@ -154,27 +194,86 @@ export default function InstructorTraineesScreen({
           data={filteredTrainees}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ paddingBottom: 40 }}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.card} onPress={() => setSelectedTrainee(item)}>
-              <View style={styles.cardLeft}>
-                <View style={styles.avatar}>
-                  {item.photo ? (
-                    <Image source={{ uri: item.photo }} style={styles.avatarImg} />
-                  ) : (
-                    <User size={20} color="#2563eb" />
-                  )}
+          renderItem={({ item }) => {
+            const stats = getTraineeStats(item);
+            return (
+              <TouchableOpacity style={styles.card} onPress={() => setSelectedTrainee(item)}>
+                <View style={styles.cardTopRow}>
+                  <View style={styles.cardLeft}>
+                    <View style={styles.avatar}>
+                      {item.photo ? (
+                        <Image source={{ uri: item.photo }} style={styles.avatarImg} />
+                      ) : (
+                        <User size={20} color="#2563eb" />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.name}>{item.name}</Text>
+                      <Text style={styles.meta}>
+                        {item.course || 'Student'} • ID: {item.employeeId}
+                      </Text>
+                      <Text style={styles.submeta}>{item.companyName || 'No HTE Assigned'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    {item.documentsPassed !== false && item.documentsStatus !== 'pending' ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ecfdf5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3, borderWidth: 1, borderColor: '#a7f3d0' }}>
+                        <FileCheck size={10} color="#059669" />
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: '#059669' }}>DOCS: PASSED</Text>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3, borderWidth: 1, borderColor: '#fde68a' }}>
+                        <FileText size={10} color="#d97706" />
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: '#d97706' }}>DOCS: PENDING</Text>
+                      </View>
+                    )}
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        item.applicationStatus === 'approved' ? styles.badgeApproved : styles.badgePending,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          item.applicationStatus === 'approved' ? styles.statusTextApproved : styles.statusTextPending,
+                        ]}
+                      >
+                        {item.applicationStatus?.toUpperCase() || 'ENROLLED'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{item.name}</Text>
-                  <Text style={styles.meta}>
-                    {item.course || 'Student'} • ID: {item.employeeId}
-                  </Text>
-                  <Text style={styles.submeta}>{item.companyName || 'No HTE Assigned'}</Text>
+
+                {/* Real-time Rendered Hours Progress Bar */}
+                <View style={styles.hoursContainer}>
+                  <View style={styles.hoursRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Clock size={12} color="#2563eb" />
+                      <Text style={styles.hoursLabel}>
+                        <Text style={styles.hoursBold}>{stats.total}</Text> / {stats.req} hrs rendered
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      {stats.todayRec?.timeIn && (
+                        <View style={[styles.liveDot, { backgroundColor: stats.todayRec?.timeOut ? '#94a3b8' : '#16a34a' }]} />
+                      )}
+                      <Text style={styles.hoursPercent}>{stats.percent}%</Text>
+                    </View>
+                  </View>
+                  <View style={styles.progressBarBg}>
+                    <View style={[styles.progressBarFill, { width: `${stats.percent}%` }]} />
+                  </View>
+                </View>
+
+                {/* GPS and Location Chips */}
+                <View style={{ marginTop: 8 }}>
                   {item.registrationLocation ? (
                     <View style={styles.geofenceChip}>
                       <MapPin size={10} color="#0284c7" />
                       <Text style={styles.geofenceChipText}>
-                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} (300m)
+                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} ({Math.max(40, Number(item.registrationLocation?.radius || 40))}m)
                       </Text>
                     </View>
                   ) : (
@@ -184,275 +283,297 @@ export default function InstructorTraineesScreen({
                     </View>
                   )}
                 </View>
-              </View>
-
-              <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                {item.documentsPassed !== false && item.documentsStatus !== 'pending' ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#ecfdf5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3, borderWidth: 1, borderColor: '#a7f3d0' }}>
-                    <FileCheck size={10} color="#059669" />
-                    <Text style={{ fontSize: 9, fontWeight: '800', color: '#059669' }}>DOCS: PASSED</Text>
-                  </View>
-                ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fffbeb', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, gap: 3, borderWidth: 1, borderColor: '#fde68a' }}>
-                    <FileText size={10} color="#d97706" />
-                    <Text style={{ fontSize: 9, fontWeight: '800', color: '#d97706' }}>DOCS: PENDING</Text>
-                  </View>
-                )}
-                <View
-                  style={[
-                    styles.statusBadge,
-                    item.applicationStatus === 'approved' ? styles.badgeApproved : styles.badgePending,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusBadgeText,
-                      item.applicationStatus === 'approved' ? styles.statusTextApproved : styles.statusTextPending,
-                    ]}
-                  >
-                    {item.applicationStatus?.toUpperCase() || 'ENROLLED'}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
 
       {/* Trainee Detail & Approval Modal */}
-      {selectedTrainee && (
-        <Modal animationType="slide" transparent visible={Boolean(selectedTrainee)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Trainee Details</Text>
-                <TouchableOpacity onPress={() => setSelectedTrainee(null)}>
-                  <Text style={styles.closeText}>Close</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.profileSummary}>
-                <View style={styles.modalAvatar}>
-                  {selectedTrainee.photo ? (
-                    <Image source={{ uri: selectedTrainee.photo }} style={styles.avatarImg} />
-                  ) : (
-                    <User size={30} color="#2563eb" />
-                  )}
-                </View>
-                <Text style={styles.modalName}>{selectedTrainee.name}</Text>
-                <Text style={styles.modalCourse}>{selectedTrainee.course}</Text>
-              </View>
-
-              <View style={styles.detailGrid}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Email:</Text>
-                  <Text style={styles.detailValue}>{selectedTrainee.email}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Required Hours:</Text>
-                  <Text style={styles.detailValue}>{selectedTrainee.requiredHours} hrs</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Host Establishment:</Text>
-                  <Text style={styles.detailValue}>{selectedTrainee.companyName || 'Not Assigned'}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Face Biometrics:</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedTrainee.faceRegistered ? 'Registered' : 'Not Registered'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* 4 Standard Required OJT Documents Monitoring Card */}
-              <View style={styles.docsMonitoringCard}>
-                <View style={styles.docsCardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.docsCardTitle}>Required OJT Documents</Text>
-                    <Text style={styles.docsCardSub}>4 Standard compliance documents</Text>
+      {selectedTrainee && (() => {
+        const modalStats = getTraineeStats(selectedTrainee);
+        const remainingHours = Math.max(0, Math.round((modalStats.req - modalStats.total) * 10) / 10);
+        return (
+          <Modal animationType="slide" transparent visible={Boolean(selectedTrainee)}>
+            <View style={styles.modalOverlay}>
+              <ScrollView contentContainerStyle={{ paddingVertical: 20 }}>
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Trainee Profile & Hours</Text>
+                    <TouchableOpacity onPress={() => setSelectedTrainee(null)}>
+                      <Text style={styles.closeText}>Close</Text>
+                    </TouchableOpacity>
                   </View>
-                  <View
-                    style={[
-                      styles.docsBadge,
-                      selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
-                        ? styles.docsBadgePassed
-                        : styles.docsBadgePending,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.docsBadgeText,
-                        selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
-                          ? styles.docsBadgeTextPassed
-                          : styles.docsBadgeTextPending,
-                      ]}
-                    >
-                      {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
-                        ? '4/4 Passed'
-                        : 'Pending Docs'}
-                    </Text>
-                  </View>
-                </View>
 
-                {/* 4 Standard Documents List */}
-                <View style={styles.docsList}>
-                  {[
-                    { id: '1', title: '1. Endorsement Letter', desc: 'Department Chair recommendation' },
-                    { id: '2', title: '2. Parental Consent Form', desc: 'Signed guardian authorization' },
-                    { id: '3', title: '3. Medical Certificate', desc: 'Physician fit-to-work clearance' },
-                    { id: '4', title: '4. Student Bio-data / Resume', desc: 'Updated CV & photo' },
-                  ].map((doc) => {
-                    const isPassed = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending';
-                    return (
-                      <View key={doc.id} style={styles.docItemRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.docItemTitle}>{doc.title}</Text>
-                          <Text style={styles.docItemDesc}>{doc.desc}</Text>
-                        </View>
-                        <View
+                  <View style={styles.profileSummary}>
+                    <View style={styles.modalAvatar}>
+                      {selectedTrainee.photo ? (
+                        <Image source={{ uri: selectedTrainee.photo }} style={styles.avatarImg} />
+                      ) : (
+                        <User size={30} color="#2563eb" />
+                      )}
+                    </View>
+                    <Text style={styles.modalName}>{selectedTrainee.name}</Text>
+                    <Text style={styles.modalCourse}>{selectedTrainee.course}</Text>
+                  </View>
+
+                  {/* Real-time OJT Rendered Hours Card */}
+                  <View style={styles.hoursModalBox}>
+                    <View style={styles.hoursModalHeader}>
+                      <Clock size={16} color="#2563eb" />
+                      <Text style={styles.hoursModalTitle}>Real-Time OJT Hours Rendered</Text>
+                      <Text style={styles.hoursModalBadge}>{modalStats.percent}% Done</Text>
+                    </View>
+                    <View style={styles.hoursStatsGrid}>
+                      <View style={styles.hoursStatCol}>
+                        <Text style={styles.hoursStatVal}>{modalStats.total}h</Text>
+                        <Text style={styles.hoursStatLbl}>Rendered</Text>
+                      </View>
+                      <View style={styles.hoursStatCol}>
+                        <Text style={styles.hoursStatVal}>{remainingHours}h</Text>
+                        <Text style={styles.hoursStatLbl}>Remaining</Text>
+                      </View>
+                      <View style={styles.hoursStatCol}>
+                        <Text style={styles.hoursStatVal}>{modalStats.req}h</Text>
+                        <Text style={styles.hoursStatLbl}>Required</Text>
+                      </View>
+                    </View>
+                    <View style={[styles.progressBarBg, { marginTop: 10, height: 8 }]}>
+                      <View style={[styles.progressBarFill, { width: `${modalStats.percent}%`, height: 8 }]} />
+                    </View>
+                    <View style={styles.todayAttendanceRow}>
+                      <View style={[styles.liveDot, { backgroundColor: modalStats.todayRec?.timeIn ? (modalStats.todayRec?.timeOut ? '#94a3b8' : '#16a34a') : '#cbd5e1' }]} />
+                      <Text style={styles.todayAttendanceText}>
+                        {modalStats.todayRec?.timeIn
+                          ? modalStats.todayRec?.timeOut
+                            ? `Clocked Out Today (${modalStats.todayRec.totalHours || 0} hrs rendered)`
+                            : `Currently Clocked In (${modalStats.todayRec.timeIn})`
+                          : 'No attendance recorded today'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.detailGrid}>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Email:</Text>
+                      <Text style={styles.detailValue}>{selectedTrainee.email}</Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Student ID:</Text>
+                      <Text style={styles.detailValue}>{selectedTrainee.employeeId}</Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Host Establishment:</Text>
+                      <Text style={styles.detailValue}>{selectedTrainee.companyName || 'Not Assigned'}</Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Face Biometrics:</Text>
+                      <Text style={styles.detailValue}>
+                        {selectedTrainee.faceRegistered ? 'Registered' : 'Not Registered'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* 4 Standard Required OJT Documents Monitoring Card */}
+                  <View style={styles.docsMonitoringCard}>
+                    <View style={styles.docsCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.docsCardTitle}>Required OJT Documents</Text>
+                        <Text style={styles.docsCardSub}>4 Standard compliance documents</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.docsBadge,
+                          selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                            ? styles.docsBadgePassed
+                            : styles.docsBadgePending,
+                        ]}
+                      >
+                        <Text
                           style={[
-                            styles.docStatusPill,
-                            isPassed ? styles.docStatusPillPassed : styles.docStatusPillPending,
+                            styles.docsBadgeText,
+                            selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                              ? styles.docsBadgeTextPassed
+                              : styles.docsBadgeTextPending,
                           ]}
                         >
-                          {isPassed ? (
-                            <FileCheck size={11} color="#059669" />
-                          ) : (
-                            <Clock size={11} color="#d97706" />
-                          )}
-                          <Text
-                            style={[
-                              styles.docStatusPillText,
-                              isPassed ? styles.docStatusPillTextPassed : styles.docStatusPillTextPending,
-                            ]}
-                          >
-                            {isPassed ? 'Verified' : 'Submitted'}
-                          </Text>
-                        </View>
+                          {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                            ? '4/4 Passed'
+                            : 'Pending Docs'}
+                        </Text>
                       </View>
-                    );
-                  })}
-                </View>
+                    </View>
 
-                {/* Toggle All Documents Approval Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.toggleDocsBtn,
-                    selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
-                      ? styles.toggleDocsBtnRevoke
-                      : styles.toggleDocsBtnApprove,
-                  ]}
-                  onPress={async () => {
-                    const newStatus = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? false : true;
-                    await mobileDb.updateEmployee(selectedTrainee.id, {
-                      documentsPassed: newStatus,
-                      documentsStatus: newStatus ? 'passed' : 'pending',
-                    });
-                    setSelectedTrainee({
-                      ...selectedTrainee,
-                      documentsPassed: newStatus,
-                      documentsStatus: newStatus ? 'passed' : 'pending',
-                    });
-                    fetchTrainees();
-                    Alert.alert(
-                      'Documents Status Updated',
-                      newStatus ? 'All 4 standard documents marked as PASSED.' : 'Documents marked as PENDING verification.'
-                    );
-                  }}
-                >
-                  <FileCheck size={14} color={selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#b91c1c' : '#15803d'} />
-                  <Text
-                    style={[
-                      styles.toggleDocsBtnText,
-                      selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
-                        ? { color: '#b91c1c' }
-                        : { color: '#15803d' },
-                    ]}
-                  >
-                    {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
-                      ? 'Revoke Document Approval'
-                      : '✓ Approve All 4 Standard Documents'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                    {/* 4 Standard Documents List */}
+                    <View style={styles.docsList}>
+                      {[
+                        { id: '1', title: '1. Endorsement Letter', desc: 'Department Chair recommendation' },
+                        { id: '2', title: '2. Parental Consent Form', desc: 'Signed guardian authorization' },
+                        { id: '3', title: '3. Medical Certificate', desc: 'Physician fit-to-work clearance' },
+                        { id: '4', title: '4. Student Bio-data / Resume', desc: 'Updated CV & photo' },
+                      ].map((doc) => {
+                        const isPassed = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending';
+                        return (
+                          <View key={doc.id} style={styles.docItemRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.docItemTitle}>{doc.title}</Text>
+                              <Text style={styles.docItemDesc}>{doc.desc}</Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.docStatusPill,
+                                isPassed ? styles.docStatusPillPassed : styles.docStatusPillPending,
+                              ]}
+                            >
+                              {isPassed ? (
+                                <FileCheck size={11} color="#059669" />
+                              ) : (
+                                <FileText size={11} color="#d97706" />
+                              )}
+                              <Text
+                                style={[
+                                  styles.docStatusPillText,
+                                  isPassed ? styles.docStatusPillTextPassed : styles.docStatusPillTextPending,
+                                ]}
+                              >
+                                {isPassed ? 'PASSED' : 'PENDING'}
+                              </Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
 
-              {/* Geofencing & Workplace Location Box */}
-              <View style={styles.geofenceBox}>
-                <View style={styles.geofenceHeader}>
-                  <MapPin size={16} color="#0284c7" />
-                  <Text style={styles.geofenceTitle}>Geofencing & Workplace Location</Text>
-                </View>
-                <View style={styles.geofenceBody}>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Workplace:</Text>
-                    <Text style={styles.detailValue}>{selectedTrainee.companyName || 'Not Assigned'}</Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Location Address:</Text>
-                    <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
-                      {selectedTrainee.registrationAddress || 'Registered Location'}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>GPS Coordinates:</Text>
-                    <Text style={[styles.detailValue, { fontFamily: 'serif', color: '#0369a1' }]}>
-                      {selectedTrainee.registrationLocation
-                        ? `${selectedTrainee.registrationLocation.lat.toFixed(6)}, ${selectedTrainee.registrationLocation.lng.toFixed(6)}`
-                        : 'Not Set'}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Geofence Radius:</Text>
-                    <Text style={styles.detailValue}>
-                      {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±40m min)
-                    </Text>
-                  </View>
-                  {selectedTrainee.registrationLocation && (
+                    {/* Quick Toggle 4/4 Passed Button */}
                     <TouchableOpacity
-                      style={styles.openMapBtn}
-                      onPress={() => {
-                        const url = `https://www.google.com/maps?q=${selectedTrainee.registrationLocation?.lat},${selectedTrainee.registrationLocation?.lng}`;
-                        Linking.openURL(url);
+                      style={[
+                        styles.toggleDocsBtn,
+                        selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                          ? styles.toggleDocsBtnRevoke
+                          : styles.toggleDocsBtnApprove,
+                      ]}
+                      onPress={async () => {
+                        const currentPassed = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending';
+                        const newStatus = currentPassed ? 'pending' : 'passed';
+                        const newPassed = !currentPassed;
+
+                        await mobileDb.updateEmployee(selectedTrainee.id, {
+                          documentsPassed: newPassed,
+                          documentsStatus: newStatus,
+                        });
+
+                        const updatedTrainee = {
+                          ...selectedTrainee,
+                          documentsPassed: newPassed,
+                          documentsStatus: newStatus,
+                        };
+                        setSelectedTrainee(updatedTrainee);
+                        setTrainees((prev) =>
+                          prev.map((t) => (t.id === selectedTrainee.id ? updatedTrainee : t))
+                        );
+                        Alert.alert(
+                          newPassed ? 'Documents Approved' : 'Approval Revoked',
+                          newPassed
+                            ? `All 4 standard documents for ${selectedTrainee.name} are marked as PASSED.`
+                            : `Document approval status for ${selectedTrainee.name} set back to PENDING.`
+                        );
                       }}
                     >
-                      <MapPin size={12} color="#0284c7" />
-                      <Text style={styles.openMapBtnText}>View Workplace Pin on Google Maps</Text>
+                      <FileCheck size={14} color={selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending' ? '#b91c1c' : '#15803d'} />
+                      <Text
+                        style={[
+                          styles.toggleDocsBtnText,
+                          selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                            ? { color: '#b91c1c' }
+                            : { color: '#15803d' },
+                        ]}
+                      >
+                        {selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending'
+                          ? 'Revoke Document Approval'
+                          : '✓ Approve All 4 Standard Documents'}
+                      </Text>
                     </TouchableOpacity>
-                  )}
-                  <View style={styles.geofenceStatusRow}>
-                    <ShieldCheck size={14} color="#059669" />
-                    <Text style={styles.geofenceStatusText}>
-                      Attendance is restricted to this {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
-                    </Text>
+                  </View>
+
+                  {/* Geofencing & Workplace Location Box */}
+                  <View style={styles.geofenceBox}>
+                    <View style={styles.geofenceHeader}>
+                      <MapPin size={16} color="#0284c7" />
+                      <Text style={styles.geofenceTitle}>Geofencing & Workplace Location</Text>
+                    </View>
+                    <View style={styles.geofenceBody}>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Workplace:</Text>
+                        <Text style={styles.detailValue}>{selectedTrainee.companyName || 'Not Assigned'}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Location Address:</Text>
+                        <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                          {selectedTrainee.registrationAddress || 'Registered Location'}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>GPS Coordinates:</Text>
+                        <Text style={[styles.detailValue, { fontFamily: 'serif', color: '#0369a1' }]}>
+                          {selectedTrainee.registrationLocation
+                            ? `${selectedTrainee.registrationLocation.lat.toFixed(6)}, ${selectedTrainee.registrationLocation.lng.toFixed(6)}`
+                            : 'Not Set'}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Geofence Radius:</Text>
+                        <Text style={styles.detailValue}>
+                          {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±40m min)
+                        </Text>
+                      </View>
+                      {selectedTrainee.registrationLocation && (
+                        <TouchableOpacity
+                          style={styles.openMapBtn}
+                          onPress={() => {
+                            const url = `https://www.google.com/maps?q=${selectedTrainee.registrationLocation?.lat},${selectedTrainee.registrationLocation?.lng}`;
+                            Linking.openURL(url);
+                          }}
+                        >
+                          <MapPin size={12} color="#0284c7" />
+                          <Text style={styles.openMapBtnText}>View Workplace Pin on Google Maps</Text>
+                        </TouchableOpacity>
+                      )}
+                      <View style={styles.geofenceStatusRow}>
+                        <ShieldCheck size={14} color="#059669" />
+                        <Text style={styles.geofenceStatusText}>
+                          Attendance is restricted to this {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Approval Actions */}
+                  <View style={styles.modalActions}>
+                    {selectedTrainee.applicationStatus !== 'approved' && (
+                      <TouchableOpacity
+                        style={[styles.modalBtn, { backgroundColor: '#16a34a' }]}
+                        onPress={() => handleApprove(selectedTrainee)}
+                      >
+                        <CheckCircle size={18} color="#fff" />
+                        <Text style={styles.modalBtnText}>Approve Application</Text>
+                      </TouchableOpacity>
+                    )}
+                    {selectedTrainee.applicationStatus !== 'rejected' && (
+                      <TouchableOpacity
+                        style={[styles.modalBtn, { backgroundColor: '#dc2626' }]}
+                        onPress={() => handleReject(selectedTrainee)}
+                      >
+                        <XCircle size={18} color="#fff" />
+                        <Text style={styles.modalBtnText}>Reject Application</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
-              </View>
-
-              {/* Approval Actions */}
-              <View style={styles.modalActions}>
-                {selectedTrainee.applicationStatus !== 'approved' && (
-                  <TouchableOpacity
-                    style={[styles.modalBtn, { backgroundColor: '#16a34a' }]}
-                    onPress={() => handleApprove(selectedTrainee)}
-                  >
-                    <CheckCircle size={18} color="#fff" />
-                    <Text style={styles.modalBtnText}>Approve Application</Text>
-                  </TouchableOpacity>
-                )}
-                {selectedTrainee.applicationStatus !== 'rejected' && (
-                  <TouchableOpacity
-                    style={[styles.modalBtn, { backgroundColor: '#dc2626' }]}
-                    onPress={() => handleReject(selectedTrainee)}
-                  >
-                    <XCircle size={18} color="#fff" />
-                    <Text style={styles.modalBtnText}>Reject Application</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+              </ScrollView>
             </View>
-          </View>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
     </View>
   );
 }
@@ -482,9 +603,6 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 11, fontWeight: '800', color: '#64748b' },
   filterChipTextActive: { color: '#ffffff' },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#fff',
     padding: 14,
     borderRadius: 16,
@@ -492,12 +610,82 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   cardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarImg: { width: '100%', height: '100%' },
   name: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
   meta: { fontSize: 12, color: '#64748b', marginTop: 1 },
   submeta: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  hoursContainer: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  hoursRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  hoursLabel: { fontSize: 11, color: '#64748b' },
+  hoursBold: { fontWeight: '800', color: '#0f172a' },
+  hoursPercent: { fontSize: 11, fontWeight: '800', color: '#2563eb' },
+  liveDot: { width: 7, height: 7, borderRadius: 4, marginRight: 2 },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: 6,
+    backgroundColor: '#2563eb',
+    borderRadius: 3,
+  },
+  hoursModalBox: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    marginBottom: 14,
+  },
+  hoursModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  hoursModalTitle: { fontSize: 13, fontWeight: '800', color: '#1e40af', flex: 1 },
+  hoursModalBadge: { fontSize: 11, fontWeight: '800', color: '#2563eb', backgroundColor: '#dbeafe', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  hoursStatsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 10,
+  },
+  hoursStatCol: { alignItems: 'center', flex: 1 },
+  hoursStatVal: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
+  hoursStatLbl: { fontSize: 10, fontWeight: '700', color: '#64748b', marginTop: 1 },
+  todayAttendanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#dbeafe',
+  },
+  todayAttendanceText: { fontSize: 11, fontWeight: '700', color: '#1e3a8a' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusBadgeText: { fontSize: 10, fontWeight: '800' },
   badgeApproved: { backgroundColor: '#dcfce7' },
