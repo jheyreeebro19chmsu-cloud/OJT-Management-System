@@ -5,6 +5,7 @@ import {
   Clock,
   Building,
   GraduationCap,
+  ChevronLeft,
   ChevronRight,
   UserCheck,
   RefreshCw,
@@ -152,6 +153,27 @@ export function HTETrainees() {
       return matchesSearch && matchesCourse;
     });
   }, [traineeData, searchTerm, selectedCourse]);
+
+  // Pagination state (9 trainees per page for 3-column grid)
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 9;
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCourse, filterScope]);
+
+  const totalPages = Math.ceil(filteredTrainees.length / ITEMS_PER_PAGE) || 1;
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedTrainees = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTrainees.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredTrainees, currentPage]);
 
   const handleManualSync = async () => {
     try {
@@ -347,7 +369,7 @@ export function HTETrainees() {
 
       {/* Trainees Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredTrainees.map((trainee) => (
+        {paginatedTrainees.map((trainee) => (
           <div
             key={trainee.id}
             className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between relative group"
@@ -423,7 +445,7 @@ export function HTETrainees() {
             <div className="flex gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={() => navigate(`/hte/evaluations?studentId=${trainee.id}`)}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
                 <Star size={14} />
                 <span>Evaluate</span>
@@ -459,6 +481,57 @@ export function HTETrainees() {
           </div>
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {filteredTrainees.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-6 py-4 rounded-3xl border border-slate-200/80 shadow-xs">
+          <div className="text-xs text-slate-500 font-medium">
+            Showing <span className="font-bold text-slate-800">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+            <span className="font-bold text-slate-800">
+              {Math.min(currentPage * ITEMS_PER_PAGE, filteredTrainees.length)}
+            </span>{' '}
+            of <span className="font-bold text-slate-800">{filteredTrainees.length}</span> trainees
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 self-center sm:self-auto">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                title="Previous Page"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      currentPage === page
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                title="Next Page"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Trainee Profile Modal */}
       {selectedProfileTrainee && (

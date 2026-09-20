@@ -9,6 +9,8 @@ import {
   FileText,
   CheckCircle,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 
@@ -86,6 +88,27 @@ export function HTERecords() {
       return matchesSearch && matchesDate;
     });
   }, [enrichedRecords, searchTerm, selectedDate]);
+
+  // Pagination state (10 records per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedDate]);
+
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedRecords = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filtered.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filtered, currentPage]);
 
   const handleExportCSV = () => {
     const headers = ['Date', 'Student Name', 'OJT Code', 'Course', 'Time In', 'Time Out', 'Hours Rendered', 'Geofence Status'];
@@ -227,7 +250,7 @@ export function HTERecords() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((r) => (
+              {paginatedRecords.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3 text-center">
                     <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
@@ -285,7 +308,7 @@ export function HTERecords() {
                             type="button"
                             onClick={() => disapproveTimeRecord(r.id)}
                             title="Change status to Disapproved"
-                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-all"
+                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-all cursor-pointer"
                           >
                             Disapprove
                           </button>
@@ -299,7 +322,7 @@ export function HTERecords() {
                             type="button"
                             onClick={() => approveTimeRecord(r.id, 'HTE Supervisor')}
                             title="Change status to Approved"
-                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all"
+                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-bold text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-md transition-all cursor-pointer"
                           >
                             Approve
                           </button>
@@ -310,7 +333,7 @@ export function HTERecords() {
                             type="button"
                             onClick={() => approveTimeRecord(r.id, 'HTE Supervisor')}
                             title="Approve DTR"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-xs transition-colors"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-xs transition-colors cursor-pointer"
                           >
                             <CheckCircle size={12} /> Approve
                           </button>
@@ -318,7 +341,7 @@ export function HTERecords() {
                             type="button"
                             onClick={() => disapproveTimeRecord(r.id)}
                             title="Disapprove DTR"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-colors"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow-xs transition-colors cursor-pointer"
                           >
                             <XCircle size={12} /> Disapprove
                           </button>
@@ -339,6 +362,57 @@ export function HTERecords() {
             </tbody>
           </table>
         </div>
+
+        {/* Records Pagination Controls */}
+        {filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-bold text-slate-800">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+              <span className="font-bold text-slate-800">
+                {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}
+              </span>{' '}
+              of <span className="font-bold text-slate-800">{filtered.length}</span> records
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        currentPage === page
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Next Page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       </>
       )}

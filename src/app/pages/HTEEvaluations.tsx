@@ -3,6 +3,7 @@ import {
   Users,
   X,
   Save,
+  ChevronLeft,
   ChevronRight,
   Award,
   Clock,
@@ -446,6 +447,27 @@ export function HTEEvaluations() {
     });
   }, [activeTrainees, searchTerm, filterCourse]);
 
+  // Pagination state (10 interns per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCourse]);
+
+  const totalPages = Math.ceil(filteredTrainees.length / ITEMS_PER_PAGE) || 1;
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedTrainees = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTrainees.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredTrainees, currentPage]);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. Official Evaluation Form Screen (Create / Edit)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -610,7 +632,7 @@ export function HTEEvaluations() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredTrainees.map((emp) => {
+              {paginatedTrainees.map((emp) => {
                 const evalData = evaluations.find((e) => e.employeeId === emp.id);
                 const stats = getEmpStats(emp.id);
                 const gradeInfo = evalData ? GRADE_CONFIG[evalData.grade] : null;
@@ -678,7 +700,7 @@ export function HTEEvaluations() {
                           <>
                             <button
                               onClick={() => viewEval(emp)}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                             >
                               View Sheet
                             </button>
@@ -688,7 +710,7 @@ export function HTEEvaluations() {
                                 setViewMode('view');
                                 setTimeout(() => window.print(), 250);
                               }}
-                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
                               title="Print Evaluation Sheet"
                             >
                               <Printer size={14} />
@@ -696,7 +718,7 @@ export function HTEEvaluations() {
                             </button>
                             <button
                               onClick={() => openNewEval(emp)}
-                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors"
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                             >
                               Edit
                             </button>
@@ -704,7 +726,7 @@ export function HTEEvaluations() {
                         ) : (
                           <button
                             onClick={() => openNewEval(emp)}
-                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-sm transition-all"
+                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-sm transition-all cursor-pointer"
                           >
                             Evaluate
                           </button>
@@ -725,6 +747,57 @@ export function HTEEvaluations() {
             </tbody>
           </table>
         </div>
+
+        {/* Evaluations Pagination Controls */}
+        {filteredTrainees.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-bold text-slate-800">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+              <span className="font-bold text-slate-800">
+                {Math.min(currentPage * ITEMS_PER_PAGE, filteredTrainees.length)}
+              </span>{' '}
+              of <span className="font-bold text-slate-800">{filteredTrainees.length}</span> interns
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        currentPage === page
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Next Page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

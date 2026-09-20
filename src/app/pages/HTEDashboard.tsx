@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   MapPin,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -121,10 +123,30 @@ export function HTEDashboard() {
     );
   }, [traineeStats, searchTerm]);
 
-  // Recent time records for trainees
-  const recentLogs = useMemo(() => {
+  // Trainees Table Pagination
+  const [traineePage, setTraineePage] = useState(1);
+  const TRAINEES_PER_PAGE = 10;
+
+  React.useEffect(() => {
+    setTraineePage(1);
+  }, [searchTerm]);
+
+  const totalTraineePages = Math.ceil(filteredTrainees.length / TRAINEES_PER_PAGE) || 1;
+
+  React.useEffect(() => {
+    if (traineePage > totalTraineePages) {
+      setTraineePage(1);
+    }
+  }, [traineePage, totalTraineePages]);
+
+  const paginatedTrainees = useMemo(() => {
+    const startIndex = (traineePage - 1) * TRAINEES_PER_PAGE;
+    return filteredTrainees.slice(startIndex, startIndex + TRAINEES_PER_PAGE);
+  }, [filteredTrainees, traineePage]);
+
+  // Recent time records for trainees with pagination
+  const allRecentLogs = useMemo(() => {
     return timeRecords
-      .slice(0, 10)
       .map((r) => {
         const emp = employees.find(
           (e) =>
@@ -164,6 +186,21 @@ export function HTEDashboard() {
         };
       });
   }, [timeRecords, employees]);
+
+  const [logPage, setLogPage] = useState(1);
+  const LOGS_PER_PAGE = 10;
+  const totalLogPages = Math.ceil(allRecentLogs.length / LOGS_PER_PAGE) || 1;
+
+  React.useEffect(() => {
+    if (logPage > totalLogPages) {
+      setLogPage(1);
+    }
+  }, [logPage, totalLogPages]);
+
+  const paginatedLogs = useMemo(() => {
+    const startIndex = (logPage - 1) * LOGS_PER_PAGE;
+    return allRecentLogs.slice(startIndex, startIndex + LOGS_PER_PAGE);
+  }, [allRecentLogs, logPage]);
 
   return (
     <div className="space-y-6 font-sans">
@@ -301,7 +338,7 @@ export function HTEDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredTrainees.slice(0, 6).map((t) => (
+              {paginatedTrainees.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
@@ -353,7 +390,7 @@ export function HTEDashboard() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => navigate(`/hte/evaluations?studentId=${t.id}`)}
-                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors"
+                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                     >
                       Evaluate
                     </button>
@@ -371,6 +408,57 @@ export function HTEDashboard() {
             </tbody>
           </table>
         </div>
+
+        {/* Trainees Pagination Controls */}
+        {filteredTrainees.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-bold text-slate-800">{(traineePage - 1) * TRAINEES_PER_PAGE + 1}</span> to{' '}
+              <span className="font-bold text-slate-800">
+                {Math.min(traineePage * TRAINEES_PER_PAGE, filteredTrainees.length)}
+              </span>{' '}
+              of <span className="font-bold text-slate-800">{filteredTrainees.length}</span> interns
+            </div>
+
+            {totalTraineePages > 1 && (
+              <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                <button
+                  onClick={() => setTraineePage((p) => Math.max(1, p - 1))}
+                  disabled={traineePage === 1}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalTraineePages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setTraineePage(page)}
+                      className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        traineePage === page
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setTraineePage((p) => Math.min(totalTraineePages, p + 1))}
+                  disabled={traineePage === totalTraineePages}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Next Page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Recent DTR Activity Logs */}
@@ -402,7 +490,7 @@ export function HTEDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {recentLogs.map((log) => (
+              {paginatedLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3 text-center">
                     <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
@@ -446,7 +534,7 @@ export function HTEDashboard() {
                   </td>
                 </tr>
               ))}
-              {recentLogs.length === 0 && (
+              {allRecentLogs.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-slate-400">
                     No recent time logs recorded yet.
@@ -456,6 +544,57 @@ export function HTEDashboard() {
             </tbody>
           </table>
         </div>
+
+        {/* Logs Pagination Controls */}
+        {allRecentLogs.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-bold text-slate-800">{(logPage - 1) * LOGS_PER_PAGE + 1}</span> to{' '}
+              <span className="font-bold text-slate-800">
+                {Math.min(logPage * LOGS_PER_PAGE, allRecentLogs.length)}
+              </span>{' '}
+              of <span className="font-bold text-slate-800">{allRecentLogs.length}</span> logs
+            </div>
+
+            {totalLogPages > 1 && (
+              <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                <button
+                  onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                  disabled={logPage === 1}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Previous Page"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalLogPages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setLogPage(page)}
+                      className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        logPage === page
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setLogPage((p) => Math.min(totalLogPages, p + 1))}
+                  disabled={logPage === totalLogPages}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+                  title="Next Page"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
