@@ -454,86 +454,41 @@ export function GeofenceMap({
       <div
         className={`absolute z-[900] right-3 ${
           isFullscreen ? 'top-16' : 'top-3'
-        } flex flex-col items-end gap-2 pointer-events-auto`}
+        } flex items-center gap-1.5 pointer-events-auto`}
       >
-        {/* Height Size Adjustment Controls (when not full screen) */}
-        {!isFullscreen && allowResize && (
-          <div className="flex items-center bg-white/95 dark:bg-slate-800/95 backdrop-blur-md p-1 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold gap-1">
-            <button
-              type="button"
-              onClick={() => handleSizePresetChange('compact')}
-              title="Minimize Map Height (Compact)"
-              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
-                sizePreset === 'compact'
-                  ? 'bg-blue-600 text-white font-bold shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              Compact
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSizePresetChange('normal')}
-              title="Normal Height (Standard)"
-              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
-                sizePreset === 'normal'
-                  ? 'bg-blue-600 text-white font-bold shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              Normal
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSizePresetChange('expanded')}
-              title="Maximize Height (Expanded)"
-              className={`px-2 py-1 rounded-lg transition-all cursor-pointer ${
-                sizePreset === 'expanded'
-                  ? 'bg-blue-600 text-white font-bold shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-            >
-              Expanded
-            </button>
-          </div>
-        )}
+        {/* Recenter Button */}
+        <button
+          type="button"
+          onClick={() => setRecenterTrigger((prev) => prev + 1)}
+          title="Recenter & Fit All Zones"
+          className="geofence-map-ctrl-btn w-8 h-8 rounded-xl"
+        >
+          <Crosshair size={15} />
+        </button>
 
-        {/* Action Button Row */}
-        <div className="flex items-center gap-1.5">
-          {/* Recenter Button */}
+        {/* Fullscreen Maximize / Minimize Button */}
+        {allowFullscreen && (
           <button
             type="button"
-            onClick={() => setRecenterTrigger((prev) => prev + 1)}
-            title="Recenter & Fit All Zones"
-            className="geofence-map-ctrl-btn w-8 h-8 rounded-xl"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Minimize / Exit Full Screen (Esc)' : 'Maximize Full Screen'}
+            className={`geofence-map-ctrl-btn px-2.5 h-8 rounded-xl flex items-center gap-1.5 font-bold text-xs ${
+              isFullscreen ? 'bg-blue-600 text-white border-blue-700' : ''
+            }`}
           >
-            <Crosshair size={15} />
+            {isFullscreen ? (
+              <>
+                <Minimize2 size={14} />
+                <span className="hidden sm:inline">Minimize</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 size={14} />
+                <span className="hidden sm:inline">Maximize</span>
+              </>
+            )}
           </button>
-
-          {/* Fullscreen Maximize / Minimize Button */}
-          {allowFullscreen && (
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              title={isFullscreen ? 'Minimize / Exit Full Screen (Esc)' : 'Maximize Full Screen'}
-              className={`geofence-map-ctrl-btn px-2.5 h-8 rounded-xl flex items-center gap-1.5 font-bold text-xs ${
-                isFullscreen ? 'bg-blue-600 text-white border-blue-700' : ''
-              }`}
-            >
-              {isFullscreen ? (
-                <>
-                  <Minimize2 size={14} />
-                  <span className="hidden sm:inline">Minimize</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 size={14} />
-                  <span className="hidden sm:inline">Maximize</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Picking status badge */}
