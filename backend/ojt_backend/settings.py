@@ -194,6 +194,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "https://chmsuojtmis.site",
+    "https://www.chmsuojtmis.site",
     "https://ojt-management-system-capstone-f35i.onrender.com",
     "https://ojt-management-system-capstone.onrender.com",
     "https://ojt-management-system-production.up.railway.app",
@@ -210,6 +212,17 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://127\.0\.0\.1:\d+$",
     r"^https://.*\.vercel\.app$",
 ]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://chmsuojtmis.site",
+    "https://www.chmsuojtmis.site",
+    "https://ojt-management-system-capstone-f35i.onrender.com",
+    "https://ojt-management-system-production.up.railway.app",
+]
+
+_csrf_origins = (os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS") or "").strip()
+if _csrf_origins:
+    CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(",") if o.strip()]
 
 CORS_ALLOW_HEADERS = [
     "accept",

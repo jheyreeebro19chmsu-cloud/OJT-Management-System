@@ -34,4 +34,4 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh", "-c", "gunicorn ojt_backend.wsgi:application --bind 0.0.0.0:${PORT:-8000}"]
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && python -m gunicorn ojt_backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout 120 --log-level info"]
