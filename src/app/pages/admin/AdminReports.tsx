@@ -58,6 +58,16 @@ export const GRADE_BADGES: Record<string, { bg: string; text: string; border: st
   Good: { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
   Satisfactory: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
   'Needs Improvement': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+  Pending: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200' },
+};
+
+export const GRADE_LABELS: Record<string, string> = {
+  Excellent: 'Outstanding / Exceeds All Expectations',
+  'Very Good': 'Above Average / Commendable',
+  Good: 'Competent & Reliable Standard',
+  Satisfactory: 'Meets Baseline Requirements',
+  'Needs Improvement': 'Below Minimum Performance Threshold',
+  Pending: 'Evaluation Awaiting Submission',
 };
 
 export function getEvaluationMetrics(ev?: Evaluation | null) {
@@ -1074,13 +1084,24 @@ export function AdminReports() {
                           {/* Actions */}
                           <td className="py-3 px-3 text-right no-print">
                             {metrics.isRated || evaluation ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedEvalModal({ emp, eval: evaluation })}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                              >
-                                <Eye size={12} /> View Scorecard
-                              </button>
+                              <div className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedEvalModal({ emp, eval: evaluation })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                  title="View HTE Performance Scorecard"
+                                >
+                                  <Eye size={12} /> Scorecard
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setOfficialSheetModal({ emp, eval: evaluation })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                                  title="Open Full 2-Page Official CHMSU Evaluation Sheet"
+                                >
+                                  <FileText size={12} /> Full Form
+                                </button>
+                              </div>
                             ) : (
                               <span className="text-[11px] text-gray-400 italic">—</span>
                             )}
@@ -1964,180 +1985,282 @@ export function AdminReports() {
       <AnimatePresence>
         {selectedEvalModal && (
           <div
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+            className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
             onClick={(e) => e.target === e.currentTarget && setSelectedEvalModal(null)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.96, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              exit={{ scale: 0.96, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto border border-slate-200"
             >
-              {/* Modal Header */}
-              <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shadow-sm">
-                    <Award size={22} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-base">HTE Performance Scorecard</h3>
-                    <p className="text-xs text-gray-400">{selectedEvalModal.emp.name} • {selectedEvalModal.emp.employeeId || 'No ID'}</p>
-                  </div>
+              {/* Modal Top Control Bar */}
+              <div className="p-4 sm:px-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-sm z-20 no-print">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Official Trainee Performance Evaluation Report
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      setOfficialSheetModal({ emp: selectedEvalModal.emp, eval: selectedEvalModal.eval });
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
-                    title="Open Full 2-Page Official CHMSU Evaluation Sheet"
-                  >
-                    <FileText size={14} /> Full CHMSU Form
-                  </button>
-                  <button
+                    type="button"
                     onClick={() => window.print()}
-                    className="p-2 text-gray-500 hover:text-gray-800 rounded-xl hover:bg-gray-100 transition-colors"
-                    title="Print Evaluation"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 text-white hover:bg-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                    title="Print Official Hard Copy"
                   >
-                    <Printer size={16} />
+                    <Printer size={14} /> Print Hard Copy
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSelectedEvalModal(null)}
-                    className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
                   >
                     <X size={18} />
                   </button>
                 </div>
               </div>
 
+              {/* Printable Document Container */}
               {(() => {
                 const evalMetrics = getEvaluationMetrics(selectedEvalModal.eval);
+                const gradeKey = evalMetrics.grade || 'Pending';
+                const gradeStyle = GRADE_BADGES[gradeKey] || GRADE_BADGES.Pending;
+                const gradeLabel = GRADE_LABELS[gradeKey] || 'Official OJT Assessment';
+                const trainee = selectedEvalModal.emp;
+                const evaluation = selectedEvalModal.eval;
+
                 return (
-                  <div className="p-6 space-y-6">
-                    {/* Hero Overall Grade */}
-                    <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-white border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
-                      <div className="text-center sm:text-left">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                          {evalMetrics.isRated ? 'Official Assessment' : 'Awaiting Assessment'}
-                        </span>
-                        <h4 className="text-2xl font-black text-emerald-950 mt-1.5 flex items-center gap-2 flex-wrap justify-center sm:justify-start">
-                          <span>{evalMetrics.grade}</span>
-                          {evalMetrics.isRated && evalMetrics.rating5 > 0 && (
-                            <span className="text-xs font-bold text-emerald-700 bg-white/90 px-2.5 py-1 rounded-lg border border-emerald-200 shadow-xs">
-                              {evalMetrics.rating5.toFixed(2)} / 5.00
+                  <div className="bg-white">
+                    {/* Institutional Header with Logo */}
+                    <div className="bg-slate-900 text-white p-6 text-center border-b border-slate-800">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <div className="w-16 h-16 bg-white rounded-full p-1 shadow-lg flex items-center justify-center shrink-0 mb-1">
+                          <img
+                            src="/chmsu-logo.png"
+                            alt="CHMSU Logo"
+                            className="w-full h-full object-contain rounded-full"
+                          />
+                        </div>
+                        <div>
+                          <h1 className="font-serif text-lg sm:text-xl font-bold tracking-wide uppercase text-slate-100">
+                            Carlos Hilado Memorial State University
+                          </h1>
+                          <p className="text-xs text-slate-300 font-medium tracking-wider uppercase">
+                            Office of On-the-Job Training & Student Internship Program
+                          </p>
+                          <div className="mt-2 inline-block px-4 py-1 bg-blue-600/40 border border-blue-400/30 rounded-full text-xs font-bold tracking-widest text-sky-200 uppercase">
+                            Official Trainee Performance Evaluation Report
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-6 sm:p-8 space-y-6">
+                      {/* Trainee & Establishment Particulars */}
+                      <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/60 space-y-3">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2 flex items-center justify-between">
+                          <span>Trainee & Establishment Particulars</span>
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            AY {evaluation?.academicYear || trainee?.academicYear || settings?.activeAcademicYear || '2026-2027'}
+                          </span>
+                        </h3>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2.5 text-xs">
+                          <div>
+                            <span className="text-slate-400 font-semibold block">Student Trainee Name:</span>
+                            <span className="font-bold text-slate-800 text-sm">{trainee?.name || 'Trainee'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">Student ID / Employee ID:</span>
+                            <span className="font-mono font-bold text-slate-800">{trainee?.employeeId || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
+                            <span className="font-bold text-slate-800">{trainee?.requiredHours || 486} Hours</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">School & Course:</span>
+                            <span className="font-medium text-slate-700">
+                              {trainee?.schoolName || 'Carlos Hilado Memorial State University'} ({trainee?.course || 'BS Information Systems'})
                             </span>
-                          )}
-                        </h4>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Evaluated by: <strong>{selectedEvalModal.eval?.evaluatorName || selectedEvalModal.emp.supervisorName || 'HTE Supervisor'}</strong>
-                        </p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">
-                          Date: {selectedEvalModal.eval?.date || selectedEvalModal.eval?.evaluatedAt || 'Official OJT Term'} • AY: {selectedEvalModal.eval?.academicYear || selectedEvalModal.emp.academicYear || settings?.activeAcademicYear}
-                        </p>
-                      </div>
-
-                      <div className="text-center px-6 py-3.5 bg-white rounded-2xl shadow-sm border border-emerald-200 min-w-[130px]">
-                        <span className="text-3xl font-black text-emerald-700 block">
-                          {evalMetrics.isRated ? `${evalMetrics.scorePercent}%` : 'Pending'}
-                        </span>
-                        <p className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mt-0.5">Overall Rating</p>
-                      </div>
-                    </div>
-
-                    {/* Trainee and Company Info */}
-                    <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/80 p-4 rounded-2xl border border-gray-200">
-                      <div>
-                        <span className="text-gray-400 font-medium block text-[11px]">Trainee Name</span>
-                        <p className="font-bold text-gray-900">{selectedEvalModal.emp.name}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 font-medium block text-[11px]">Student ID</span>
-                        <p className="font-bold text-gray-900 font-mono">{selectedEvalModal.emp.employeeId || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 font-medium block text-[11px]">HTE Establishment</span>
-                        <p className="font-bold text-gray-900">{selectedEvalModal.emp.companyName || 'Pending Assignment'}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-400 font-medium block text-[11px]">Degree Program</span>
-                        <p className="font-bold text-gray-900">{selectedEvalModal.emp.course || 'BS Information Systems'}</p>
-                      </div>
-                    </div>
-
-                    {/* Competency Scores Breakdown */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
-                          Core Competency Domain Breakdown
-                        </h5>
-                        <span className="text-[11px] text-gray-400 font-medium">CHMSU CCS Standard Criteria</span>
-                      </div>
-                      <div className="space-y-2.5">
-                        {[
-                          { title: 'Quality of Work & Technical Competence (25%)', val: evalMetrics.performanceScore },
-                          { title: 'Punctuality & Daily Attendance (20%)', val: evalMetrics.attendanceScore },
-                          { title: 'Professional Work Attitude (20%)', val: evalMetrics.attitudeScore },
-                          { title: 'Dependability & Deadline Delivery (15%)', val: evalMetrics.punctualityScore },
-                          { title: 'Interpersonal & Communication Skills (20%)', val: evalMetrics.communicationScore },
-                        ].map((domain, i) => (
-                          <div key={i} className="p-3.5 bg-white border border-gray-200/90 rounded-2xl shadow-xs">
-                            <div className="flex justify-between items-center text-xs font-semibold mb-1.5">
-                              <span className="text-gray-700">{domain.title}</span>
-                              <span className="font-mono text-emerald-800 font-black text-sm">
-                                {evalMetrics.isRated ? `${domain.val}%` : '—'}
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">Campus & Department:</span>
+                            <span className="font-medium text-slate-700">
+                              {trainee?.campus || 'Talisay Campus'} • {trainee?.department || 'College of Computer Studies'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">CHMSU OJT Instructor:</span>
+                            <span className="font-bold text-blue-900">{settings?.instructorName || currentUser?.name || 'Jhey Ree Ebro'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">Host Training Establishment (HTE):</span>
+                            <span className="font-bold text-blue-900">{trainee?.companyName || 'Host Training Establishment'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">HTE Training Supervisor:</span>
+                            <span className="font-bold text-slate-800">{evaluation?.evaluatorName || trainee?.supervisorName || 'HTE Supervisor'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold block">Evaluation Date & Status:</span>
+                            <span className="font-medium text-slate-700 flex items-center gap-1.5 mt-0.5">
+                              {evaluation?.date || evaluation?.evaluatedAt || 'Official OJT Term'}
+                              <span
+                                className={`inline-block font-bold px-2 py-0.5 rounded-full text-[10px] uppercase border ${
+                                  evalMetrics.isRated
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 border-amber-300'
+                                }`}
+                              >
+                                {evalMetrics.isRated ? '✓ Evaluated' : 'Needs Review'}
                               </span>
-                            </div>
-                            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
-                                style={{ width: `${evalMetrics.isRated ? Math.min(100, Math.max(0, domain.val)) : 0}%` }}
-                              />
-                            </div>
+                            </span>
                           </div>
-                        ))}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Qualitative Remarks */}
-                    <div className="space-y-3">
-                      <h5 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
-                        Supervisor Evaluation Remarks
-                      </h5>
-                      <div className="space-y-2.5 text-xs">
-                        {selectedEvalModal.eval?.strengths && (
-                          <div className="p-3.5 bg-emerald-50/60 border border-emerald-200 rounded-2xl">
-                            <span className="font-bold text-emerald-900 block mb-1">Key Strengths & Commendations:</span>
-                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.strengths}</p>
-                          </div>
-                        )}
-                        {selectedEvalModal.eval?.areasForImprovement && (
-                          <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-2xl">
-                            <span className="font-bold text-amber-900 block mb-1">Areas for Growth & Guidance:</span>
-                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.areasForImprovement}</p>
-                          </div>
-                        )}
-                        {selectedEvalModal.eval?.recommendations && (
-                          <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-2xl">
-                            <span className="font-bold text-blue-900 block mb-1">Future Recommendations:</span>
-                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.recommendations}</p>
-                          </div>
-                        )}
-                        {selectedEvalModal.eval?.commentsSuggestions && (
-                          <div className="p-3.5 bg-purple-50/60 border border-purple-200 rounded-2xl">
-                            <span className="font-bold text-purple-900 block mb-1">General Feedback & Notes:</span>
-                            <p className="text-gray-800 leading-relaxed">{selectedEvalModal.eval.commentsSuggestions}</p>
-                          </div>
-                        )}
-                        {!selectedEvalModal.eval?.strengths &&
-                          !selectedEvalModal.eval?.areasForImprovement &&
-                          !selectedEvalModal.eval?.recommendations &&
-                          !selectedEvalModal.eval?.commentsSuggestions && (
-                            <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-gray-500 italic text-center">
-                              {evalMetrics.isRated
-                                ? 'Overall performance and competencies verified and endorsed by HTE Supervisor.'
-                                : 'Evaluation is currently pending completion by the HTE Supervisor.'}
-                            </div>
+                      {/* Competency Assessment Breakdown Table */}
+                      <div className="space-y-3">
+                        <h3 className="font-bold text-slate-800 text-sm border-b border-slate-200 pb-2">
+                          Competency Assessment Breakdown
+                        </h3>
+                        <div className="border border-slate-200 rounded-2xl overflow-hidden text-xs">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                <th className="p-3">Evaluation Competency Domain</th>
+                                <th className="p-3 text-center w-24">Weight</th>
+                                <th className="p-3 text-center w-24">Score</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="p-3 font-medium text-slate-800">Job Performance & Technical Skills</td>
+                                <td className="p-3 text-center text-slate-500">25%</td>
+                                <td className="p-3 text-center font-bold text-slate-900 font-mono">
+                                  {evalMetrics.isRated ? `${evalMetrics.performanceScore}%` : '—'}
+                                </td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="p-3 font-medium text-slate-800">Work Habits, Conduct & Attendance</td>
+                                <td className="p-3 text-center text-slate-500">20%</td>
+                                <td className="p-3 text-center font-bold text-slate-900 font-mono">
+                                  {evalMetrics.isRated ? `${evalMetrics.attendanceScore}%` : '—'}
+                                </td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="p-3 font-medium text-slate-800">Professional Demeanor & Work Attitude</td>
+                                <td className="p-3 text-center text-slate-500">20%</td>
+                                <td className="p-3 text-center font-bold text-slate-900 font-mono">
+                                  {evalMetrics.isRated ? `${evalMetrics.attitudeScore}%` : '—'}
+                                </td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="p-3 font-medium text-slate-800">Interpersonal & Verbal/Written Communication</td>
+                                <td className="p-3 text-center text-slate-500">15%</td>
+                                <td className="p-3 text-center font-bold text-slate-900 font-mono">
+                                  {evalMetrics.isRated ? `${evalMetrics.punctualityScore}%` : '—'}
+                                </td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/50">
+                                <td className="p-3 font-medium text-slate-800">Punctuality, Teamwork & Initiative</td>
+                                <td className="p-3 text-center text-slate-500">20%</td>
+                                <td className="p-3 text-center font-bold text-slate-900 font-mono">
+                                  {evalMetrics.isRated ? `${evalMetrics.communicationScore}%` : '—'}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Overall Final Rating Card */}
+                      <div className={`rounded-2xl p-5 border-2 ${gradeStyle.bg} ${gradeStyle.border} flex items-center justify-between`}>
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Overall Final Rating</p>
+                          <p className="text-4xl font-extrabold text-slate-900 mt-1">
+                            {evalMetrics.isRated ? `${evalMetrics.scorePercent}%` : 'Pending'}
+                          </p>
+                          {evalMetrics.isRated && evalMetrics.rating5 > 0 && (
+                            <p className="text-xs font-bold text-emerald-800 mt-1">
+                              Equivalent Grade Point: {evalMetrics.rating5.toFixed(2)} / 5.00
+                            </p>
                           )}
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-2xl font-black ${gradeStyle.text}`}>{evalMetrics.grade}</p>
+                          <p className="text-xs font-semibold text-slate-600 mt-0.5">{gradeLabel}</p>
+                        </div>
+                      </div>
+
+                      {/* Written Assessment Remarks */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-1.5">
+                          <h4 className="font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                            <ThumbsUp size={13} className="text-emerald-600" />
+                            Key Strengths & Notable Commendations
+                          </h4>
+                          <p className="text-slate-700 leading-relaxed italic">
+                            {evaluation?.strengths || 'Demonstrates strong commitment, dependability, and professional performance.'}
+                          </p>
+                        </div>
+
+                        <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-1.5">
+                          <h4 className="font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                            <Star size={13} className="text-blue-600" />
+                            Areas for Continuous Development
+                          </h4>
+                          <p className="text-slate-700 leading-relaxed italic">
+                            {evaluation?.areasForImprovement || 'Continue developing technical mastery and industry skills.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Final Recommendation */}
+                      <div className="border border-slate-200 rounded-2xl p-4 bg-blue-50/40 text-xs">
+                        <span className="font-bold text-slate-700 uppercase tracking-wider block mb-1">
+                          Final Recommendation from HTE Placement:
+                        </span>
+                        <p className="font-semibold text-blue-900 text-sm">
+                          {evaluation?.recommendations || evaluation?.commentsSuggestions || 'Recommended for successful OJT completion and academic credit.'}
+                        </p>
+                      </div>
+
+                      {/* Official University Signatures */}
+                      <div className="pt-6 border-t-2 border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-8 text-center text-xs">
+                        {/* 1. Trainee */}
+                        <div className="flex flex-col justify-end">
+                          <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                            <span className="font-bold text-slate-800 text-sm uppercase">{trainee?.name}</span>
+                          </div>
+                          <p className="font-semibold text-slate-600">Student Trainee</p>
+                          <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+                        </div>
+
+                        {/* 2. HTE Supervisor */}
+                        <div className="flex flex-col justify-end">
+                          <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                            <span className="font-bold text-slate-800 text-sm uppercase">
+                              {evaluation?.evaluatorName || trainee?.supervisorName || 'HTE Supervisor'}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-slate-600">HTE Training Supervisor</p>
+                          <p className="text-slate-400 text-[10px]">{trainee?.companyName || 'Host Training Establishment'}</p>
+                          <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+                        </div>
+
+                        {/* 3. CHMSU OJT Instructor */}
+                        <div className="flex flex-col justify-end">
+                          <div className="h-12 border-b border-slate-400 mb-1 flex items-end justify-center pb-1">
+                            <span className="font-bold text-slate-800 text-sm uppercase">
+                              {settings?.instructorName || currentUser?.name || 'Jhey Ree Ebro'}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-slate-600">CHMSU OJT Coordinator / Instructor</p>
+                          <p className="text-slate-400 text-[10px]">Signature over Printed Name & Date</p>
+                          <p className="text-slate-400 text-[10px]">Office of Student Internship Program</p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2145,15 +2268,13 @@ export function AdminReports() {
               })()}
 
               {/* Modal Footer */}
-              <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2">
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2 no-print">
                 <button
                   type="button"
-                  onClick={() => {
-                    setOfficialSheetModal({ emp: selectedEvalModal.emp, eval: selectedEvalModal.eval });
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm cursor-pointer"
                 >
-                  <FileCheck size={14} /> Open Official 2-Page CHMSU Form
+                  <Printer size={14} /> Print Hard Copy
                 </button>
                 <button
                   type="button"
@@ -2171,24 +2292,31 @@ export function AdminReports() {
         {/* FULL OFFICIAL CHMSU 2-PAGE EVALUATION SHEET MODAL        */}
         {/* ========================================================= */}
         {officialSheetModal && (
-          <CHMSUEvaluationSheet
-            trainee={officialSheetModal.emp}
-            companyName={officialSheetModal.emp.companyName || 'N/A'}
-            supervisorName={officialSheetModal.eval?.evaluatorName || officialSheetModal.emp.supervisorName || 'HTE Supervisor'}
-            instructorName="OJT Instructor / Coordinator"
-            evaluationDate={officialSheetModal.eval?.date || officialSheetModal.eval?.evaluatedAt}
-            ratings={officialSheetModal.eval?.ratings || {}}
-            ratingComments={officialSheetModal.eval?.ratingComments || {}}
-            commentsSuggestions={officialSheetModal.eval?.commentsSuggestions || officialSheetModal.eval?.recommendations || ''}
-            overallRating={getEvaluationMetrics(officialSheetModal.eval).rating5}
-            grade={getEvaluationMetrics(officialSheetModal.eval).grade as any}
-            questionnaire={officialSheetModal.eval?.questionnaire}
-            isReadOnly={true}
-            status={officialSheetModal.eval?.status || 'final'}
-            role="instructor"
-            initialPageTab="both"
-            onClose={() => setOfficialSheetModal(null)}
-          />
+          <div
+            className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm overflow-y-auto p-3 sm:p-6 flex justify-center items-start"
+            onClick={(e) => e.target === e.currentTarget && setOfficialSheetModal(null)}
+          >
+            <div className="bg-slate-50 rounded-3xl shadow-2xl w-full max-w-5xl my-4 sm:my-6 p-3 sm:p-6 relative border border-slate-200">
+              <CHMSUEvaluationSheet
+                trainee={officialSheetModal.emp}
+                companyName={officialSheetModal.emp.companyName || 'N/A'}
+                supervisorName={officialSheetModal.eval?.evaluatorName || officialSheetModal.emp.supervisorName || 'HTE Supervisor'}
+                instructorName="OJT Instructor / Coordinator"
+                evaluationDate={officialSheetModal.eval?.date || officialSheetModal.eval?.evaluatedAt}
+                ratings={officialSheetModal.eval?.ratings || {}}
+                ratingComments={officialSheetModal.eval?.ratingComments || {}}
+                commentsSuggestions={officialSheetModal.eval?.commentsSuggestions || officialSheetModal.eval?.recommendations || ''}
+                overallRating={getEvaluationMetrics(officialSheetModal.eval).rating5}
+                grade={getEvaluationMetrics(officialSheetModal.eval).grade as any}
+                questionnaire={officialSheetModal.eval?.questionnaire}
+                isReadOnly={true}
+                status={officialSheetModal.eval?.status || 'final'}
+                role="instructor"
+                initialPageTab="both"
+                onClose={() => setOfficialSheetModal(null)}
+              />
+            </div>
+          </div>
         )}
 
         {/* ========================================================= */}
