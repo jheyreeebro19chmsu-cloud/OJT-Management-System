@@ -226,8 +226,15 @@ export function AdminReports() {
   };
 
   const traineeEmployees = useMemo(() => {
-    return employees.filter((e) => e.active && isTrainee(e));
-  }, [employees]);
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
+    const activeAY = settings?.activeAcademicYear || '2026-2027';
+    return employees.filter((e) => {
+      if (!e.active || !isTrainee(e)) return false;
+      if (selectedAcademicYear === 'all') return true;
+      const empAY = e.academicYear || activeAY || defaultAY;
+      return empAY === selectedAcademicYear;
+    });
+  }, [employees, selectedAcademicYear, settings?.academicYears, settings?.activeAcademicYear]);
 
   const traineeIds = useMemo(() => {
     const set = new Set<string>();
@@ -241,8 +248,17 @@ export function AdminReports() {
 
   // Attendance records filtered
   const filteredRecords = useMemo(() => {
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
+    const activeAY = settings?.activeAcademicYear || '2026-2027';
     return timeRecords.filter((r) => {
       const empIdStr = (r.employeeId || '').toLowerCase();
+      const emp = employees.find(
+        (e) =>
+          e.id === r.employeeId ||
+          e.employeeId === r.employeeId ||
+          (e.email && e.email.toLowerCase() === empIdStr)
+      );
+
       const isTraineeRec =
         traineeIds.has(r.employeeId) ||
         traineeIds.has(empIdStr) ||
@@ -252,11 +268,7 @@ export function AdminReports() {
             e.employeeId === r.employeeId ||
             (e.email && e.email.toLowerCase() === empIdStr)
         ) ||
-        !employees.some(
-          (e) =>
-            (e.id === r.employeeId || e.employeeId === r.employeeId || (e.email && e.email.toLowerCase() === empIdStr)) &&
-            !isTrainee(e)
-        );
+        (emp && isTrainee(emp));
 
       if (!isTraineeRec) return false;
 
@@ -268,11 +280,8 @@ export function AdminReports() {
         traineeEmployees.find((e) => e.id === selectedEmpId)?.employeeId === r.employeeId ||
         traineeEmployees.find((e) => e.id === selectedEmpId)?.email?.toLowerCase() === empIdStr;
 
-      const matchYear =
-        selectedAcademicYear === 'all' ||
-        !r.academicYear ||
-        r.academicYear === selectedAcademicYear ||
-        r.academicYear === settings?.activeAcademicYear;
+      const recAY = r.academicYear || emp?.academicYear || activeAY || defaultAY;
+      const matchYear = selectedAcademicYear === 'all' || recAY === selectedAcademicYear;
 
       return matchMonth && matchEmp && matchYear;
     });

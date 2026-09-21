@@ -99,14 +99,17 @@ export function Dashboard() {
   // HTE/Instructor Dashboard Metrics
   // Student trainees across the active cohort
   const studentEmployees = useMemo(() => {
+    const activeAY = settings?.activeAcademicYear;
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
     return employees.filter(
       (e) =>
         e.position !== 'OJT Instructor' &&
         e.position !== 'HTE Representative' &&
         !e.employeeId?.startsWith('ADM-') &&
-        !e.employeeId?.startsWith('HTE-')
+        !e.employeeId?.startsWith('HTE-') &&
+        (e.academicYear === activeAY || (!e.academicYear && (activeAY === defaultAY || !activeAY)))
     );
-  }, [employees]);
+  }, [employees, settings?.activeAcademicYear, settings?.academicYears]);
 
   // HTE Linked students
   const linkedStudents = useMemo(() => {
@@ -135,6 +138,24 @@ export function Dashboard() {
       }));
   }, [studentEmployees]);
 
+  // Active time records for active academic year cohort
+  const activeCohortRecords = useMemo(() => {
+    const activeAY = settings?.activeAcademicYear;
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
+    const traineeIds = new Set<string>();
+    studentEmployees.forEach((s) => {
+      if (s.id) traineeIds.add(s.id);
+      if (s.employeeId) traineeIds.add(s.employeeId);
+      if (s.email) traineeIds.add(s.email.toLowerCase());
+    });
+
+    return (contextTimeRecords || []).filter((r: any) => {
+      if (r.academicYear) return r.academicYear === activeAY;
+      if (r.employeeId && (traineeIds.has(r.employeeId) || traineeIds.has(r.employeeId.toLowerCase()))) return true;
+      return !r.academicYear && (activeAY === defaultAY || !activeAY);
+    });
+  }, [contextTimeRecords, studentEmployees, settings?.activeAcademicYear, settings?.academicYears]);
+
   // Instructor Dashboard Metrics
   const metrics = useMemo(() => {
     const totalApplications = studentEmployees.length;
@@ -145,8 +166,8 @@ export function Dashboard() {
     const cancelled = studentEmployees.filter((s) => s.applicationStatus === 'cancelled').length;
 
     let totalRenderedHours = 0;
-    if (contextTimeRecords && contextTimeRecords.length > 0) {
-      totalRenderedHours = contextTimeRecords.reduce((sum, r) => {
+    if (activeCohortRecords && activeCohortRecords.length > 0) {
+      totalRenderedHours = activeCohortRecords.reduce((sum, r) => {
         const hours = Number(r.totalHours || (r as any).total_hours || (r as any).hours_rendered) || 0;
         return sum + hours;
       }, 0);
@@ -172,12 +193,12 @@ export function Dashboard() {
       total_remaining_hours: totalRemainingHours,
       unique_students: totalApplications,
     };
-  }, [studentEmployees, contextTimeRecords]);
+  }, [studentEmployees, activeCohortRecords]);
 
   // Recent Time Records and Enrolled Trainees
   const recentRecords = useMemo(() => {
     // 1. Build records for students who have logged time records
-    const studentTimeLogs = (contextTimeRecords || []).map((r: any) => {
+    const studentTimeLogs = (activeCohortRecords || []).map((r: any) => {
       const empId = r.employeeId || r.employee_id;
       const emp = studentEmployees.find(
         (e) =>

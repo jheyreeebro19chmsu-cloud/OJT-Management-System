@@ -120,30 +120,56 @@ export function AcademicYearManagement() {
   // Helper stats per academic environment
   const getEnvStats = (year: string) => {
     const defaultYear = form.academicYears[0] || '2025-2026';
+    const activeYear = form.activeAcademicYear || '2026-2027';
+
+    // 1. Trainees belonging to this academic year
     const envTrainees = employees.filter(
       (e) =>
         e.position !== 'OJT Instructor' &&
         e.position !== 'HTE Representative' &&
-        (e.academicYear === year || (!e.academicYear && year === defaultYear))
+        !e.employeeId?.startsWith('ADM-') &&
+        !e.employeeId?.startsWith('HTE-') &&
+        (e.academicYear === year || (!e.academicYear && (activeYear === year || year === defaultYear)))
     );
+
+    // Build lookup set of trainee identifiers for this academic year
+    const traineeIds = new Set<string>();
+    envTrainees.forEach((t) => {
+      if (t.id) traineeIds.add(t.id);
+      if (t.employeeId) traineeIds.add(t.employeeId);
+      if (t.email) traineeIds.add(t.email.toLowerCase());
+    });
+
+    // 2. HTE Supervisors/Representatives belonging to this academic year
     const envHTE =
       employees.filter(
         (e) =>
-          e.position === 'HTE Representative' &&
-          (e.academicYear === year || (!e.academicYear && year === defaultYear))
+          (e.position === 'HTE Representative' || (e.position && e.position.toLowerCase().includes('hte')) || e.employeeId?.startsWith('HTE-')) &&
+          (e.academicYear === year || (!e.academicYear && (activeYear === year || year === defaultYear)))
       ).length +
       hostSupervisors.filter(
-        (h) => h.academicYear === year || (!h.academicYear && year === defaultYear)
+        (h) => h.academicYear === year || (!h.academicYear && (activeYear === year || year === defaultYear))
       ).length;
-    const envRecords = timeRecords.filter(
-      (r) => r.academicYear === year || (!r.academicYear && year === defaultYear)
-    );
-    const envEvals = evaluations.filter(
-      (ev) => ev.academicYear === year || (!ev.academicYear && year === defaultYear)
-    );
+
+    // 3. Time records belonging to this academic year (explicit AY stamp or linked trainee AY)
+    const envRecords = timeRecords.filter((r) => {
+      if (r.academicYear) return r.academicYear === year;
+      if (r.employeeId && (traineeIds.has(r.employeeId) || traineeIds.has(r.employeeId.toLowerCase()))) return true;
+      return !r.academicYear && (activeYear === year || year === defaultYear);
+    });
+
+    // 4. Evaluations belonging to this academic year (explicit AY stamp or linked trainee AY)
+    const envEvals = evaluations.filter((ev) => {
+      if (ev.academicYear) return ev.academicYear === year;
+      if (ev.employeeId && (traineeIds.has(ev.employeeId) || traineeIds.has(ev.employeeId.toLowerCase()))) return true;
+      return !ev.academicYear && (activeYear === year || year === defaultYear);
+    });
+
+    // 5. Geofences belonging to this academic year
     const envGeofences = geofenceZones.filter(
-      (z) => z.academicYear === year || (!z.academicYear && year === defaultYear)
+      (z) => z.academicYear === year || (!z.academicYear && (activeYear === year || year === defaultYear))
     );
+
     return {
       trainees: envTrainees.length,
       hte: envHTE,
@@ -154,9 +180,9 @@ export function AcademicYearManagement() {
   };
 
   const activeStats = getEnvStats(form.activeAcademicYear);
-  const totalInstructors = employees.filter((e) => e.position === 'OJT Instructor').length;
-  const totalHTE = employees.filter((e) => e.position === 'HTE Representative').length + hostSupervisors.length;
-  const totalTrainees = employees.filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative').length;
+  const totalInstructors = employees.filter((e) => e.position === 'OJT Instructor' || e.employeeId?.startsWith('ADM-')).length;
+  const totalHTE = employees.filter((e) => e.position === 'HTE Representative' || e.employeeId?.startsWith('HTE-')).length + hostSupervisors.length;
+  const totalTrainees = employees.filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative' && !e.employeeId?.startsWith('ADM-') && !e.employeeId?.startsWith('HTE-')).length;
 
   return (
     <div className="max-w-4xl space-y-6 pb-12">

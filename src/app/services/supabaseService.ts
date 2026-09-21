@@ -20,14 +20,25 @@ interface SupabaseTimeRecord extends Omit<TimeRecord, 'timeInLocation' | 'timeOu
 export async function fetchEmployees(): Promise<Employee[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
+  try {
+    let result = await supabase.from('employees').select('*').order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching employees:', error);
+    // If order by created_at timed out or failed, retry without order
+    if (result.error && (result.error.code === '57014' || (result.error as any).status === 500)) {
+      console.warn('Retrying fetchEmployees without order due to statement notice:', result.error.message);
+      result = await supabase.from('employees').select('*');
+    }
+
+    if (result.error) {
+      console.warn('Notice fetching employees from Supabase:', result.error.message || result.error);
+      return [];
+    }
+
+    return (result.data || []).map(transformSupabaseEmployee);
+  } catch (err: any) {
+    console.warn('fetchEmployees exception caught:', err?.message || err);
     return [];
   }
-
-  return (data || []).map(transformSupabaseEmployee);
 }
 
 // Helper to compress high-resolution mobile photos to lightweight JPEG (~40-80KB)
@@ -1257,8 +1268,10 @@ export async function createAnnouncementSubmission(submission: Omit<Announcement
   }
 }
 
+let announcementCommentsTableMissing = false;
+
 export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured() || announcementCommentsTableMissing) return [];
 
   try {
     const { data, error } = await supabase
@@ -1267,7 +1280,9 @@ export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.debug('Error fetching announcement comments:', error);
+      if (error.code === 'PGRST205' || (error as any).status === 404 || error.message?.includes('Could not find the table')) {
+        announcementCommentsTableMissing = true;
+      }
       return [];
     }
 
@@ -1281,13 +1296,12 @@ export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]
       createdAt: comm.created_at || new Date().toISOString(),
     }));
   } catch (err) {
-    console.debug('Comments fetch caught:', err);
     return [];
   }
 }
 
 export async function createAnnouncementComment(comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured() || announcementCommentsTableMissing) return null;
 
   try {
     const payload = {
@@ -1306,7 +1320,9 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
       .maybeSingle();
 
     if (error) {
-      console.warn('Error saving announcement comment:', error);
+      if (error.code === 'PGRST205' || (error as any).status === 404 || error.message?.includes('Could not find the table')) {
+        announcementCommentsTableMissing = true;
+      }
       return null;
     }
 

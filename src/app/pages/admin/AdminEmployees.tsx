@@ -104,8 +104,14 @@ export function AdminEmployees() {
 
   const matchesYear = (emp: Employee) => {
     if (selectedYear === 'all') return true;
-    if (!emp.academicYear) return true;
-    return emp.academicYear === selectedYear;
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
+    const activeAY = settings?.activeAcademicYear || '2026-2027';
+    // Instructors are system-wide, but trainees and HTE are scoped by academic year
+    if (emp.position === 'OJT Instructor' || emp.employeeId?.startsWith('ADM-')) {
+      return true;
+    }
+    const empAY = emp.academicYear || activeAY || defaultAY;
+    return empAY === selectedYear;
   };
 
   const filteredGroups = {

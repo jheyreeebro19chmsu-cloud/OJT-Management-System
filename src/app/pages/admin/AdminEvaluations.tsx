@@ -74,15 +74,17 @@ export function AdminEvaluations() {
   }, [selectedEmp, employees, currentUser]);
 
   const activeEmployees = useMemo(() => {
+    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
+    const activeAY = settings?.activeAcademicYear || '2026-2027';
     return employees.filter((e) => {
       if (!e.active) return false;
       const normalized = (e.position || '').toLowerCase();
       if (normalized.includes('instructor') || normalized.includes('hte') || normalized.includes('host training')) return false;
       if (selectedAcademicYear === 'all') return true;
-      if (!e.academicYear) return true;
-      return e.academicYear === selectedAcademicYear;
+      const empAY = e.academicYear || activeAY || defaultAY;
+      return empAY === selectedAcademicYear;
     });
-  }, [employees, selectedAcademicYear]);
+  }, [employees, selectedAcademicYear, settings?.academicYears, settings?.activeAcademicYear]);
 
   const categoryStats = useMemo(() => {
     const stats: Record<string, number> = { workHabits: 4, workSkills: 4, socialSkills: 4 };

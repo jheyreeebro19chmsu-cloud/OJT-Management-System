@@ -3419,17 +3419,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const activeAY = settings.activeAcademicYear;
     const defaultAY = settings.academicYears?.[0] || '2025-2026';
 
-    // 1. Ensure time records have academicYear without shifting records across years
-    const fixedRecords = timeRecords.map((r) => ({
-      ...r,
-      academicYear: r.academicYear || defaultAY,
-    }));
-    setTimeRecords(fixedRecords);
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
-    }
-
-    // 2. Ensure all employees keep their academicYear and normalized positions
+    // 1. Ensure all employees keep their academicYear and normalized positions
     const fixedEmployees = employees.map((e) => {
       const isHTE = e.position === 'HTE Representative' || e.position === 'Training Supervisor' || (e.position && e.position.toLowerCase().includes('hte'));
       const isInstructor = e.position === 'Administrator' || e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'));
@@ -3442,7 +3432,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return {
         ...e,
         position: e.position === 'Administrator' ? 'OJT Instructor' : e.position,
-        academicYear: e.academicYear || defaultAY,
+        academicYear: e.academicYear || activeAY || defaultAY,
         employeeId,
       };
     });
@@ -3451,10 +3441,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.EMPLOYEES, fixedEmployees);
     }
 
-    // 3. Ensure host supervisors preserve their academicYear
+    // 2. Ensure time records have academicYear matching their trainee or active academic year
+    const fixedRecords = timeRecords.map((r) => {
+      const emp = fixedEmployees.find(
+        (e) =>
+          e.id === r.employeeId ||
+          e.employeeId === r.employeeId ||
+          (e.email && r.employeeId && e.email.toLowerCase() === r.employeeId.toLowerCase())
+      );
+      return {
+        ...r,
+        academicYear: r.academicYear || emp?.academicYear || activeAY || defaultAY,
+      };
+    });
+    setTimeRecords(fixedRecords);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
+    }
+
+    // 3. Ensure evaluations have academicYear matching their trainee or active academic year
+    const fixedEvals = evaluations.map((ev) => {
+      const emp = fixedEmployees.find(
+        (e) =>
+          e.id === ev.employeeId ||
+          e.employeeId === ev.employeeId ||
+          (e.email && ev.employeeId && e.email.toLowerCase() === ev.employeeId.toLowerCase())
+      );
+      return {
+        ...ev,
+        academicYear: ev.academicYear || emp?.academicYear || activeAY || defaultAY,
+      };
+    });
+    setEvaluations(fixedEvals);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.EVALUATIONS, fixedEvals);
+    }
+
+    // 4. Ensure host feedback has academicYear matching their trainee or active academic year
+    const fixedFeedback = hostFeedback.map((hf) => {
+      const emp = fixedEmployees.find(
+        (e) =>
+          e.id === hf.employeeId ||
+          e.employeeId === hf.employeeId ||
+          (e.email && hf.employeeId && e.email.toLowerCase() === hf.employeeId.toLowerCase())
+      );
+      return {
+        ...hf,
+        academicYear: hf.academicYear || emp?.academicYear || activeAY || defaultAY,
+      };
+    });
+    setHostFeedback(fixedFeedback);
+    if (!useSupabase) {
+      saveToStorage(STORAGE_KEYS.HOST_FEEDBACK, fixedFeedback);
+    }
+
+    // 5. Ensure host supervisors preserve their academicYear
     const fixedHosts = hostSupervisors.map((h) => ({
       ...h,
-      academicYear: h.academicYear || defaultAY,
+      academicYear: h.academicYear || activeAY || defaultAY,
       active: true,
     }));
     setHostSupervisors(fixedHosts);
@@ -3472,7 +3516,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return {
       success: true,
-      message: 'All data, photos, records, and accounts successfully verified and saved in database.',
+      message: 'All data, photos, records, and accounts successfully verified and saved in database for Academic Year ' + activeAY + '.',
       repairedCounts: supabaseResult,
     };
   };
