@@ -64,6 +64,76 @@ export default function OAuthCallback() {
             return;
           }
         } else {
+          // Direct fallback check against database in case context state hadn't updated yet
+          const email = (authUser.email || '').trim().toLowerCase();
+          if (email) {
+            try {
+              const { data: dbEmp } = await supabase
+                .from('employees')
+                .select('*')
+                .ilike('email', email)
+                .limit(1)
+                .maybeSingle();
+
+              if (dbEmp) {
+                localStorage.removeItem('pending_oauth_role');
+                const isInstructor =
+                  dbEmp.role === 'admin' ||
+                  dbEmp.position === 'OJT Instructor' ||
+                  dbEmp.position === 'Administrator';
+                const isHte =
+                  dbEmp.role === 'hte' ||
+                  dbEmp.position === 'HTE Representative' ||
+                  dbEmp.position === 'Training Supervisor';
+
+                const role = isInstructor ? 'admin' : isHte ? 'hte' : 'employee';
+                const resolvedUser = {
+                  id: dbEmp.id,
+                  name: dbEmp.name || `${dbEmp.first_name || ''} ${dbEmp.last_name || ''}`.trim() || email,
+                  email: dbEmp.email || email,
+                  role,
+                  employeeId: dbEmp.employee_id || dbEmp.id,
+                  photo: dbEmp.photo || authUser.user_metadata?.avatar_url || '',
+                  faceRegistered: dbEmp.face_registered ?? false,
+                };
+
+                localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
+                localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
+                if (role === 'admin') navigate('/admin');
+                else if (role === 'hte') navigate('/hte');
+                else navigate('/app');
+                return;
+              }
+
+              const { data: dbHost } = await supabase
+                .from('host_supervisors')
+                .select('*')
+                .ilike('email', email)
+                .limit(1)
+                .maybeSingle();
+
+              if (dbHost) {
+                localStorage.removeItem('pending_oauth_role');
+                const resolvedHost = {
+                  id: dbHost.id,
+                  name: dbHost.name || email,
+                  email: dbHost.email || email,
+                  role: 'hte' as const,
+                  employeeId: dbHost.employee_id || dbHost.id,
+                  photo: authUser.user_metadata?.avatar_url || '',
+                  faceRegistered: false,
+                };
+                localStorage.setItem('ojt_user', JSON.stringify(resolvedHost));
+                localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedHost));
+                localStorage.setItem('ojt_current_user', JSON.stringify(resolvedHost));
+                navigate('/hte');
+                return;
+              }
+            } catch (dbCheckErr) {
+              console.warn('Direct OAuth fallback check notice:', dbCheckErr);
+            }
+          }
+
           // If the user signed in as Instructor or HTE, never route to Trainee registration
           if (pendingRole === 'admin') {
             localStorage.removeItem('pending_oauth_role');
@@ -104,7 +174,6 @@ export default function OAuthCallback() {
           }
 
           // First-time Trainee Google user — route to /register to complete trainee profile
-          const email = authUser.email || '';
           const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || '';
           const photoUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || '';
 

@@ -1325,70 +1325,82 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let matchedEmp: Employee | undefined = undefined;
     let matchedHost: HostSupervisor | undefined = undefined;
 
-    // Step 1: In-memory check
-    matchedEmp = employees.find(
+    // Step 1: Check memory + local storage cached records first
+    const cachedEmployees = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    const cachedHosts = loadFromStorage<HostSupervisor[]>(STORAGE_KEYS.HOST_SUPERVISORS, []);
+    const allEmps = employees.length > 0 ? employees : cachedEmployees;
+    const allHosts = hostSupervisors.length > 0 ? hostSupervisors : cachedHosts;
+
+    matchedEmp = allEmps.find(
       (e) =>
-        (authId && (e.userId === authId || e.id === authId)) ||
-        (authEmail && normalizeEmail(e.email) === authEmail)
+        (authEmail && e.email && normalizeEmail(e.email) === authEmail) ||
+        (authId && (e.id === authId || e.userId === authId))
     );
 
     if (!matchedEmp) {
-      matchedHost = hostSupervisors.find(
+      matchedHost = allHosts.find(
         (h) =>
-          (authId && h.id === authId) ||
-          (authEmail && normalizeEmail(h.email) === authEmail)
+          (authEmail && h.email && normalizeEmail(h.email) === authEmail) ||
+          (authId && h.id === authId)
       );
     }
 
-    // Step 2: Supabase DB check if not in memory
+    // Step 2: Supabase DB check if not found in memory/storage
     if (useSupabase && !matchedEmp && !matchedHost) {
       try {
-        const orConditions = [
-          authId ? `id.eq.${authId}` : null,
-          authId ? `user_id.eq.${authId}` : null,
-          authEmail ? `email.ilike.${authEmail}` : null,
-        ].filter(Boolean).join(',');
-
-        if (orConditions) {
-          const { data: dbEmp } = await supabase
+        if (authEmail) {
+          const { data: dbEmp, error: empErr } = await supabase
             .from('employees')
             .select('*')
-            .or(orConditions)
+            .ilike('email', authEmail)
             .limit(1)
             .maybeSingle();
 
-          if (dbEmp) {
+          if (!empErr && dbEmp) {
             matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
             setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
-          } else {
-            const hostOr = [
-              authId ? `id.eq.${authId}` : null,
-              authEmail ? `email.ilike.${authEmail}` : null,
-            ].filter(Boolean).join(',');
+            saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
+          }
+        }
 
-            const { data: dbHost } = await supabase
-              .from('host_supervisors')
-              .select('*')
-              .or(hostOr)
-              .limit(1)
-              .maybeSingle();
+        if (!matchedEmp && authId) {
+          const { data: dbEmpId, error: empIdErr } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('id', authId)
+            .limit(1)
+            .maybeSingle();
 
-            if (dbHost) {
-              matchedHost = {
-                id: dbHost.id,
-                employeeId: dbHost.employee_id,
-                name: dbHost.name,
-                email: dbHost.email,
-                companyName: dbHost.company_name,
-                companyAddress: dbHost.company_address,
-                contactPerson: dbHost.contact_person,
-                phone: dbHost.phone,
-                academicYear: dbHost.academic_year,
-                isApproved: dbHost.is_approved ?? true,
-                active: dbHost.active ?? true,
-              };
-              setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
-            }
+          if (!empIdErr && dbEmpId) {
+            matchedEmp = supabaseService.transformSupabaseEmployee(dbEmpId);
+            setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+            saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
+          }
+        }
+
+        if (!matchedEmp && authEmail) {
+          const { data: dbHost, error: hostErr } = await supabase
+            .from('host_supervisors')
+            .select('*')
+            .ilike('email', authEmail)
+            .limit(1)
+            .maybeSingle();
+
+          if (!hostErr && dbHost) {
+            matchedHost = {
+              id: dbHost.id,
+              employeeId: dbHost.employee_id,
+              name: dbHost.name,
+              email: dbHost.email,
+              companyName: dbHost.company_name,
+              companyAddress: dbHost.company_address,
+              contactPerson: dbHost.contact_person,
+              phone: dbHost.phone,
+              academicYear: dbHost.academic_year,
+              isApproved: dbHost.is_approved ?? true,
+              active: dbHost.active ?? true,
+            };
+            setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
           }
         }
       } catch (lookupErr) {
