@@ -1,0 +1,25 @@
+name: Weekly cleanup of old attendance photos
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Every Sunday at 03:00 UTC. Adjust as you like -- this just needs to run
+    # periodically, not at any exact time.
+    - cron: '0 3 * * 0'
+
+jobs:
+  cleanup-old-photos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call cleanup-old-photos Edge Function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -sS -X POST "$SUPABASE_URL/functions/v1/cleanup-old-photos" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -o response.json \
+            -w "\nHTTP status: %{http_code}\n"
+          echo "---- Response body ----"
+          cat response.json
