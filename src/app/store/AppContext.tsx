@@ -195,6 +195,7 @@ type RegisterEmployeeInput = Omit<Employee, 'id' | 'createdAt'> & {
 
 interface AppContextType {
   currentUser: User | null;
+  setCurrentUser: (user: User | null) => void;
   employees: Employee[];
   timeRecords: TimeRecord[];
   geofenceZones: GeofenceZone[];
@@ -944,17 +945,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!useSupabase && !isSupabaseConfigured()) return;
 
-    const interval = setInterval(() => {
-      refreshData();
-    }, 20000);
-
     const onFocus = () => {
       refreshData();
     };
     window.addEventListener('focus', onFocus);
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
   }, [refreshData, useSupabase]);
@@ -1128,10 +1124,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Step 3: Attempt Supabase Auth
     if (useSupabase && targetEmail.includes('@')) {
       try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        const authPromise = supabase.auth.signInWithPassword({
           email: targetEmail,
           password: password,
         });
+        const { data: authData, error: authError } = await Promise.race([
+          authPromise,
+          new Promise<any>((_, rej) => setTimeout(() => rej(new Error('Supabase login timeout')), 3500)),
+        ]);
 
         if (!authError && authData.user) {
           const userId = authData.user.id;
@@ -3531,39 +3531,81 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const saveMonthlyDttr = useCallback((record: MonthlyDttrRecord) => {
     setMonthlyDttrs((prev) => {
-      const id = record.id || `${record.employeeId}_${record.year}_${record.month}`;
-      const existingIndex = prev.findIndex(
-        (r) => r.id === id || (r.employeeId === record.employeeId && r.year === record.year && r.month === record.month)
+      const targetEmp = (record.employeeId || '').trim().toLowerCase();
+      const matchedEmp = employees.find(
+        (e) => e.id.toLowerCase() === targetEmp || (e.employeeId && e.employeeId.toLowerCase() === targetEmp)
       );
-      const updatedRecord = { ...record, id, updatedAt: new Date().toISOString() };
-      if (existingIndex >= 0) {
-        const next = [...prev];
-        next[existingIndex] = { ...next[existingIndex], ...updatedRecord };
-        return next;
+      const validIds = new Set<string>([targetEmp]);
+      if (matchedEmp) {
+        if (matchedEmp.id) validIds.add(matchedEmp.id.toLowerCase());
+        if (matchedEmp.employeeId) validIds.add(matchedEmp.employeeId.toLowerCase());
       }
-      return [...prev, updatedRecord];
+
+      const existingIndex = prev.findIndex(
+        (r) =>
+          (r.id === record.id || validIds.has((r.employeeId || '').toLowerCase())) &&
+          Number(r.year) === Number(record.year) &&
+          Number(r.month) === Number(record.month)
+      );
+      const id = record.id || `${record.employeeId}_${record.year}_${record.month}`;
+      const updatedRecord = { ...record, id, updatedAt: new Date().toISOString() };
+      let next: MonthlyDttrRecord[];
+      if (existingIndex >= 0) {
+        next = [...prev];
+        next[existingIndex] = { ...next[existingIndex], ...updatedRecord };
+      } else {
+        next = [...prev, updatedRecord];
+      }
+      saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
+      return next;
     });
-  }, []);
+  }, [employees]);
 
   const getMonthlyDttr = useCallback((employeeId: string, year: number, month: number): MonthlyDttrRecord | null => {
-    const id = `${employeeId}_${year}_${month}`;
+    if (!employeeId) return null;
+    const targetEmp = employeeId.trim().toLowerCase();
+    const matchedEmp = employees.find(
+      (e) => e.id.toLowerCase() === targetEmp || (e.employeeId && e.employeeId.toLowerCase() === targetEmp)
+    );
+    const validIds = new Set<string>([targetEmp]);
+    if (matchedEmp) {
+      if (matchedEmp.id) validIds.add(matchedEmp.id.toLowerCase());
+      if (matchedEmp.employeeId) validIds.add(matchedEmp.employeeId.toLowerCase());
+    }
+
     const found = monthlyDttrs.find(
-      (r) => r.id === id || (r.employeeId === employeeId && r.year === year && r.month === month)
+      (r) =>
+        (validIds.has((r.employeeId || '').toLowerCase()) || r.id === `${employeeId}_${year}_${month}`) &&
+        Number(r.year) === Number(year) &&
+        Number(r.month) === Number(month)
     );
     return found || null;
-  }, [monthlyDttrs]);
+  }, [monthlyDttrs, employees]);
 
   const signMonthlyDttr = useCallback((employeeId: string, year: number, month: number, supervisorName: string, supervisorTitle?: string) => {
-    const id = `${employeeId}_${year}_${month}`;
     setMonthlyDttrs((prev) => {
-      const existingIndex = prev.findIndex(
-        (r) => r.id === id || (r.employeeId === employeeId && r.year === year && r.month === month)
+      const targetEmp = (employeeId || '').trim().toLowerCase();
+      const matchedEmp = employees.find(
+        (e) => e.id.toLowerCase() === targetEmp || (e.employeeId && e.employeeId.toLowerCase() === targetEmp)
       );
+      const validIds = new Set<string>([targetEmp]);
+      if (matchedEmp) {
+        if (matchedEmp.id) validIds.add(matchedEmp.id.toLowerCase());
+        if (matchedEmp.employeeId) validIds.add(matchedEmp.employeeId.toLowerCase());
+      }
+
+      const existingIndex = prev.findIndex(
+        (r) =>
+          (validIds.has((r.employeeId || '').toLowerCase()) || r.id === `${employeeId}_${year}_${month}`) &&
+          Number(r.year) === Number(year) &&
+          Number(r.month) === Number(month)
+      );
+      const id = `${employeeId}_${year}_${month}`;
       const updated: MonthlyDttrRecord = {
         id,
         employeeId,
-        year,
-        month,
+        year: Number(year),
+        month: Number(month),
         ...(existingIndex >= 0 ? prev[existingIndex] : {}),
         hteSupervisorName: supervisorName,
         hteSupervisorTitle: supervisorTitle || 'HTE Supervisor',
@@ -3571,14 +3613,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         hteSignatureStatus: 'signed',
         updatedAt: new Date().toISOString(),
       };
+      let next: MonthlyDttrRecord[];
       if (existingIndex >= 0) {
-        const next = [...prev];
+        next = [...prev];
         next[existingIndex] = updated;
-        return next;
+      } else {
+        next = [...prev, updated];
       }
-      return [...prev, updated];
+      saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
+      return next;
     });
-  }, []);
+  }, [employees]);
 
   // Accounts are global across academic years; records retain their own academic-year metadata.
   const filteredEmployees = employees;
@@ -3592,6 +3637,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider
       value={{
         currentUser,
+        setCurrentUser,
         employees: filteredEmployees,
         timeRecords: filteredTimeRecords,
         geofenceZones: filteredGeofenceZones,

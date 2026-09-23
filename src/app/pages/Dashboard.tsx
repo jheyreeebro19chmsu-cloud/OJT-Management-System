@@ -162,8 +162,8 @@ export function Dashboard() {
     const approved = studentEmployees.filter((s) => s.applicationStatus === 'approved' || s.approvalStatus === 'approved' || s.active !== false).length;
     const pending = studentEmployees.filter((s) => s.applicationStatus === 'pending' || s.approvalStatus === 'pending' || !s.active).length;
     const rejected = studentEmployees.filter((s) => s.applicationStatus === 'rejected' || s.approvalStatus === 'rejected').length;
-    const completed = studentEmployees.filter((s) => s.applicationStatus === 'completed').length;
-    const cancelled = studentEmployees.filter((s) => s.applicationStatus === 'cancelled').length;
+    const completed = studentEmployees.filter((s: any) => s.applicationStatus === 'completed' || s.approvalStatus === 'completed').length;
+    const cancelled = studentEmployees.filter((s: any) => s.applicationStatus === 'cancelled' || s.approvalStatus === 'cancelled').length;
 
     let totalRenderedHours = 0;
     if (activeCohortRecords && activeCohortRecords.length > 0) {
@@ -216,6 +216,11 @@ export function Dashboard() {
         photo: emp?.photo || r.photo,
         course: emp?.course || emp?.department || 'OJT Trainee',
         date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+        timeIn: r.timeIn || r.time_in,
+        timeOut: r.timeOut || r.time_out,
+        totalHours,
+        timeInGeofenced: Boolean(r.timeInGeofenced ?? r.time_in_geofenced),
+        timeOutGeofenced: Boolean(r.timeOutGeofenced ?? r.time_out_geofenced),
         hours_rendered: totalHours,
         is_approved: r.approvalStatus === 'approved' || r.approval_status === 'approved' || r.is_approved || r.status === 'present',
         status: r.status === 'present' ? 'Present' : r.status === 'late' ? 'Late' : (r.approvalStatus === 'approved' || r.approval_status === 'approved' ? 'Approved' : 'Pending'),
@@ -235,6 +240,11 @@ export function Dashboard() {
         photo: s.photo,
         course: s.course || s.department || 'OJT Trainee',
         date: s.startDate || 'No clock-in yet',
+        timeIn: null,
+        timeOut: null,
+        totalHours: 0,
+        timeInGeofenced: false,
+        timeOutGeofenced: false,
         hours_rendered: 0,
         is_approved: s.active && s.approvalStatus !== 'pending',
         status: s.active && s.approvalStatus !== 'pending' ? 'Active / Enrolled' : 'Pending Approval',
@@ -1282,7 +1292,7 @@ export function Dashboard() {
                           type="button"
                           onClick={() => {
                             setSelectedStudentForModal(null);
-                            navigate(`/admin/records`);
+                            navigate(`/admin/employees`);
                           }}
                           className="text-blue-600 font-bold hover:underline cursor-pointer"
                         >
@@ -1971,17 +1981,17 @@ export function Dashboard() {
                     to="/app/evaluation"
                     className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                   >
-                    View Evaluation Report <ChevronRight size={13} />
+                    Open OJT Questionnaire <ChevronRight size={13} />
                   </Link>
                 </div>
               ) : (
                 <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-400">
-                  <span className="text-[11px]">Status is synchronized live with supervisor.</span>
+                  <span className="text-[11px]">Answer and submit your feedback.</span>
                   <Link
                     to="/app/evaluation"
                     className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                   >
-                    Check Status <ChevronRight size={13} />
+                    Fill Questionnaire <ChevronRight size={13} />
                   </Link>
                 </div>
               )}

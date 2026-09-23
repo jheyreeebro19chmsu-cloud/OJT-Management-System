@@ -162,33 +162,41 @@ export interface TypedDescriptor {
   type: 'neural' | 'perceptual';
 }
 
+const descriptorCache = new Map<string, TypedDescriptor>();
+
 export async function computeTypedDescriptorFromDataUrl(dataUrl: string): Promise<TypedDescriptor | null> {
   if (!dataUrl) return null;
+  // Check memory cache first (instant 0ms retrieval for enrolled template images)
+  const cached = descriptorCache.get(dataUrl);
+  if (cached) return cached;
+
   try {
     const ok = await loadFaceModels().catch(() => false);
     const img = await createImageElement(dataUrl);
 
+    let result: TypedDescriptor | null = null;
+
     if (ok && (window as any).faceapi) {
       const api = (window as any).faceapi;
       // Multi-detector AI pipeline:
-      // 1. TinyFaceDetector 416 (High Resolution)
+      // 1. TinyFaceDetector 320 (Fast & accurate)
       let detection = await api
-        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 416 }))
+        .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 320 }))
         .withFaceLandmarks()
         .withFaceDescriptor();
 
-      // 2. TinyFaceDetector 320 (Fast)
+      // 2. TinyFaceDetector 224 (Low-res/Close-up)
       if (!detection || !detection.descriptor) {
         detection = await api
-          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 320 }))
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 224 }))
           .withFaceLandmarks()
           .withFaceDescriptor();
       }
 
-      // 3. TinyFaceDetector 224 (Low-res/Close-up)
+      // 3. TinyFaceDetector 416 (High Resolution fallback)
       if (!detection || !detection.descriptor) {
         detection = await api
-          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 224 }))
+          .detectSingleFace(img, new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 416 }))
           .withFaceLandmarks()
           .withFaceDescriptor();
       }
@@ -202,12 +210,23 @@ export async function computeTypedDescriptorFromDataUrl(dataUrl: string): Promis
       }
 
       if (detection && detection.descriptor) {
-        return { descriptor: detection.descriptor as Float32Array, type: 'neural' };
+        result = { descriptor: detection.descriptor as Float32Array, type: 'neural' };
       }
     }
 
-    // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments)
-    return { descriptor: computePerceptualDescriptor(img), type: 'perceptual' };
+    if (!result) {
+      // High-precision 128-D perceptual feature fallback (spatial grid + gradients + color moments)
+      result = { descriptor: computePerceptualDescriptor(img), type: 'perceptual' };
+    }
+
+    // Keep cache bounded
+    if (descriptorCache.size > 200) {
+      const firstKey = descriptorCache.keys().next().value;
+      if (firstKey) descriptorCache.delete(firstKey);
+    }
+    descriptorCache.set(dataUrl, result);
+
+    return result;
   } catch (e) {
     console.warn('computeTypedDescriptorFromDataUrl error:', e);
     return null;

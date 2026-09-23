@@ -103,78 +103,92 @@ export default function GoogleAuthModal({
     };
   }, [visible]);
 
-  async function handleNavStateChange(navState: WebViewNavigation) {
-    const url = navState.url || '';
+  const processOAuthUrl = async (url: string) => {
+    if (handlingCallback) return;
+    setHandlingCallback(true);
 
-    // Check if the URL reached our callback endpoint or contains access tokens
+    try {
+      // Case 1: Implicit grant with hash fragments (#access_token=...&refresh_token=...)
+      const hashPart = url.includes('#') ? url.split('#')[1] : '';
+      const searchPart = url.includes('?') ? url.split('?')[1] : '';
+      const params = new URLSearchParams(hashPart || searchPart);
+
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (accessToken && refreshToken) {
+        const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (sessionErr) throw sessionErr;
+        if (sessionData?.session && sessionData?.user) {
+          onSuccess(sessionData.session, sessionData.user, targetRole);
+          onClose();
+          return;
+        }
+      }
+
+      // Case 2: Authorization code grant (?code=...)
+      const code = params.get('code');
+      if (code) {
+        const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeErr) throw exchangeErr;
+        if (exchangeData?.session && exchangeData?.user) {
+          onSuccess(exchangeData.session, exchangeData.user, targetRole);
+          onClose();
+          return;
+        }
+      }
+
+      // Case 3: Read current session from supabase storage
+      const { data: currentSession } = await supabase.auth.getSession();
+      if (currentSession?.session?.user) {
+        onSuccess(currentSession.session, currentSession.session.user, targetRole);
+        onClose();
+        return;
+      }
+
+      // Quick retry check if token is syncing
+      const { data: retrySession } = await supabase.auth.getSession();
+      if (retrySession?.session?.user) {
+        onSuccess(retrySession.session, retrySession.session.user, targetRole);
+        onClose();
+      } else {
+        setHandlingCallback(false);
+      }
+    } catch (err: any) {
+      console.error('Failed to parse OAuth tokens:', err);
+      setHandlingCallback(false);
+      onError(err?.message || 'Failed to complete Google authentication.');
+    }
+  };
+
+  function handleNavStateChange(navState: WebViewNavigation) {
+    const url = navState.url || '';
     if (
       url.includes('oauth-callback') ||
       url.includes('access_token=') ||
       url.includes('code=')
     ) {
-      if (handlingCallback) return;
-      setHandlingCallback(true);
-
-      try {
-        // Case 1: Implicit grant with hash fragments (#access_token=...&refresh_token=...)
-        const hashPart = url.includes('#') ? url.split('#')[1] : '';
-        const searchPart = url.includes('?') ? url.split('?')[1] : '';
-        const params = new URLSearchParams(hashPart || searchPart);
-
-        const accessToken = params.get('access_token');
-        const refreshToken = params.get('refresh_token');
-
-        if (accessToken && refreshToken) {
-          const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-
-          if (sessionErr) throw sessionErr;
-          if (sessionData?.session && sessionData?.user) {
-            onSuccess(sessionData.session, sessionData.user, targetRole);
-            onClose();
-            return;
-          }
-        }
-
-        // Case 2: Authorization code grant (?code=...)
-        const code = params.get('code');
-        if (code) {
-          const { data: exchangeData, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeErr) throw exchangeErr;
-          if (exchangeData?.session && exchangeData?.user) {
-            onSuccess(exchangeData.session, exchangeData.user, targetRole);
-            onClose();
-            return;
-          }
-        }
-
-        // Case 3: Read current session from supabase storage
-        const { data: currentSession } = await supabase.auth.getSession();
-        if (currentSession?.session?.user) {
-          onSuccess(currentSession.session, currentSession.session.user, targetRole);
-          onClose();
-          return;
-        }
-
-        // If tokens weren't parsed from URL immediately, give a brief delay for cookie session
-        setTimeout(async () => {
-          const { data: delayedSession } = await supabase.auth.getSession();
-          if (delayedSession?.session?.user) {
-            onSuccess(delayedSession.session, delayedSession.session.user, targetRole);
-            onClose();
-          } else {
-            setHandlingCallback(false);
-          }
-        }, 1200);
-      } catch (err: any) {
-        console.error('Failed to parse OAuth tokens:', err);
-        setHandlingCallback(false);
-        onError(err?.message || 'Failed to complete Google authentication.');
-      }
+      processOAuthUrl(url);
     }
   }
+
+  // Intercept before WebView attempts to load the remote redirect URI
+  const handleShouldStartLoadWithRequest = (request: { url: string }) => {
+    const url = request.url || '';
+    if (
+      url.includes('oauth-callback') ||
+      url.includes('access_token=') ||
+      url.includes('code=')
+    ) {
+      processOAuthUrl(url);
+      return false; // Cancel remote page network load immediately!
+    }
+    return true;
+  };
 
   if (!visible) return null;
 
@@ -200,7 +214,7 @@ export default function GoogleAuthModal({
           <View style={styles.loadingBanner}>
             <ActivityIndicator size="small" color="#2563eb" />
             <Text style={styles.loadingBannerText}>
-              {handlingCallback ? 'Verifying Google session...' : 'Connecting to Google Sign-In...'}
+              {handlingCallback ? 'Completing sign-in...' : 'Connecting to Google...'}
             </Text>
           </View>
         )}
@@ -211,6 +225,7 @@ export default function GoogleAuthModal({
             ref={webViewRef}
             source={{ uri: authUrl }}
             style={styles.webView}
+            onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
             onNavigationStateChange={handleNavStateChange}
             onLoadStart={() => setLoading(true)}
             onLoadEnd={() => setLoading(false)}

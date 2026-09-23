@@ -3,11 +3,11 @@ import axios, { AxiosError } from 'axios';
 import { API_BASE } from './config';
 
 const api = axios.create({
-  baseURL: API_BASE,
+  baseURL: API_BASE || undefined,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000, // 15 second timeout for all requests
+  timeout: 3500, // Quick 3.5s timeout prevents long network freezes
 });
 
 // Add token to requests
@@ -89,7 +89,12 @@ export const authAPI = {
     api.post<{ success: boolean; message: string }>('/auth/verify-otp/', { email, otp_code: otpCode }),
 
   // Authentication
-  login: (email: string, password: string) => api.post<AuthResponse>('/auth/login/', { email, password }),
+  login: (email: string, password: string) => {
+    if (!API_BASE) {
+      return Promise.reject(new Error('Backend API not configured'));
+    }
+    return api.post<AuthResponse>('/auth/login/', { email, password });
+  },
 
   // Student Registration
   registerStudent: (data: {

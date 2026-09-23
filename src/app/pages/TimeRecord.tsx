@@ -214,41 +214,16 @@ export function TimeRecord() {
     setCompletedAction(currentAction);
 
     const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    let storedImage = imageData;
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const dateStr = getDTRSessionDate(now);
 
-    if (imageData) {
-      try {
-        const uploadedUrl = await uploadFacePhoto(
-          targetEmpId,
-          imageData,
-          currentAction === 'in' ? 'time_in' : 'time_out'
-        );
-        if (uploadedUrl) {
-          storedImage = uploadedUrl;
-        }
-      } catch (uploadErr) {
-        console.warn('Face photo upload warning:', uploadErr);
-      }
-    }
-
-    // Auto-enroll face biometrics into database if trainee was not enrolled before
-    if (imageData && (!currentEmp.photo || !currentEmp.faceRegistered)) {
-      try {
-        updateEmployee(currentEmp.id, {
-          photo: storedImage || imageData,
-          faceRegistered: true,
-        });
-      } catch (e) {
-        console.warn('Auto-enroll update error:', e);
-      }
-    }
+    let createdRecordId: string | null = null;
 
     if (currentAction === 'in') {
       const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
       const newRecord = addTimeRecord({
         employeeId: targetEmpId,
-        date: getDTRSessionDate(now),
+        date: dateStr,
         timeIn: timeStr,
         timeInGeofenced: geofencePassed,
         timeOutGeofenced: false,
@@ -256,105 +231,37 @@ export function TimeRecord() {
         timeOutFaceVerified: false,
         status,
         timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-        timeInPhoto: storedImage,
+        timeInPhoto: imageData,
       });
+      createdRecordId = newRecord.id;
       setCurrentRecord(newRecord);
       setAction('out');
       userActionOverrideRef.current = false;
       setCompletedMessage(
         `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
       );
-      // Attempt server-side time-in with GPS if backend is configured
-      if (isSecurityApiConfigured()) {
-        const possibleUserId = (currentEmp as any).user_id || (currentEmp as any).userId || (currentEmp as any).id;
-        const userIdNum = Number(possibleUserId);
-        const possibleAppId = (currentEmp as any).applicationId || (currentEmp as any).application_id || (settings as any).activeApplicationId;
-        const appIdNum = possibleAppId !== undefined ? Number(possibleAppId) : undefined;
-
-        if (!Number.isNaN(userIdNum) && appIdNum && !Number.isNaN(appIdNum)) {
-          try {
-            let lat: number | undefined = geofenceCoords?.lat;
-            let lng: number | undefined = geofenceCoords?.lng;
-            let acc: number | undefined = undefined;
-            if (lat === undefined || lng === undefined) {
-              try {
-                const pos = await getCurrentLocation();
-                lat = pos.coords.latitude;
-                lng = pos.coords.longitude;
-                acc = pos.coords.accuracy;
-              } catch (err) {
-                // Ignore: we already recorded locally
-              }
-            }
-            await authAPI.timeIn(userIdNum, appIdNum, lat, lng, acc);
-          } catch (err: any) {
-            if (err?.response?.status === 403) {
-              const msg = err.response?.data?.error || 'User is outside the allowed geofence';
-              setCompletedMessage((prev) => `${prev} — Server: ${msg}`);
-            } else {
-              console.error('timeIn API error', err);
-            }
-          }
-        } else {
-          console.warn('Skipping server time-in: missing numeric user_id or application_id');
-        }
-      }
     } else if (currentRecord) {
       const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
       const updatedFields: Partial<TimeRecordType> = {
         employeeId: targetEmpId,
-        date: currentRecord.date || getDTRSessionDate(now),
+        date: currentRecord.date || dateStr,
         timeOut: timeStr,
         timeOutGeofenced: geofencePassed,
         timeOutFaceVerified: true,
         totalHours,
         timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-        timeOutPhoto: storedImage,
+        timeOutPhoto: imageData,
         status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
       };
       updateTimeRecord(currentRecord.id, updatedFields);
+      createdRecordId = currentRecord.id;
       setCurrentRecord({ ...currentRecord, ...updatedFields });
       setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)} • Total: ${totalHours.toFixed(2)} hours`);
-      // Attempt server-side time-out with GPS if backend is configured
-      if (isSecurityApiConfigured()) {
-        const possibleUserId = (currentEmp as any).user_id || (currentEmp as any).userId || (currentEmp as any).id;
-        const userIdNum = Number(possibleUserId);
-        const possibleAppId = (currentEmp as any).applicationId || (currentEmp as any).application_id || (settings as any).activeApplicationId;
-        const appIdNum = possibleAppId !== undefined ? Number(possibleAppId) : undefined;
-
-        if (!Number.isNaN(userIdNum) && appIdNum && !Number.isNaN(appIdNum)) {
-          try {
-            let lat: number | undefined = geofenceCoords?.lat;
-            let lng: number | undefined = geofenceCoords?.lng;
-            let acc: number | undefined = undefined;
-            if (lat === undefined || lng === undefined) {
-              try {
-                const pos = await getCurrentLocation();
-                lat = pos.coords.latitude;
-                lng = pos.coords.longitude;
-                acc = pos.coords.accuracy;
-              } catch (err) {
-                // Ignore
-              }
-            }
-            await authAPI.timeOut(userIdNum, appIdNum, lat, lng, acc);
-          } catch (err: any) {
-            if (err?.response?.status === 403) {
-              const msg = err.response?.data?.error || 'User is outside the allowed geofence';
-              setCompletedMessage((prev) => `${prev} — Server: ${msg}`);
-            } else {
-              console.error('timeOut API error', err);
-            }
-          }
-        } else {
-          console.warn('Skipping server time-out: missing numeric user_id or application_id');
-        }
-      }
     } else {
-      // Safe fallback: If user clocked out without a prior clock-in today, persist a record
+      // Safe fallback: If user clocked out without a prior clock-in today, persist a record immediately
       const fallbackRecord = addTimeRecord({
         employeeId: targetEmpId,
-        date: getDTRSessionDate(now),
+        date: dateStr,
         timeIn: timeStr,
         timeOut: timeStr,
         totalHours: 0,
@@ -364,12 +271,41 @@ export function TimeRecord() {
         timeOutFaceVerified: true,
         status: 'present',
         timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-        timeOutPhoto: storedImage,
+        timeOutPhoto: imageData,
       });
+      createdRecordId = fallbackRecord.id;
       setCurrentRecord(fallbackRecord);
       setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)}`);
     }
+
     setPageState('completed');
+
+    // Asynchronously upload photo and sync to backend in background (never delays timestamp saving)
+    if (imageData) {
+      uploadFacePhoto(
+        targetEmpId,
+        imageData,
+        currentAction === 'in' ? 'time_in' : 'time_out'
+      ).then((uploadedUrl) => {
+        if (uploadedUrl && createdRecordId) {
+          if (currentAction === 'in') {
+            updateTimeRecord(createdRecordId, { timeInPhoto: uploadedUrl });
+          } else {
+            updateTimeRecord(createdRecordId, { timeOutPhoto: uploadedUrl });
+          }
+        }
+      }).catch((uploadErr) => {
+        console.warn('Face photo background upload notice:', uploadErr);
+      });
+
+      // Auto-enroll face biometrics into database if trainee was not enrolled before
+      if (!currentEmp.photo || !currentEmp.faceRegistered) {
+        updateEmployee(currentEmp.id, {
+          photo: imageData,
+          faceRegistered: true,
+        });
+      }
+    }
   };
 
   const handleReset = () => {

@@ -14,6 +14,7 @@ import {
   PenTool,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { Employee, TimeRecord, MonthlyDttrRecord, MonthlyDttrDayEntry } from '../types';
 
@@ -44,6 +45,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     getMonthlyDttr,
     saveMonthlyDttr,
     signMonthlyDttr,
+    addTimeRecord,
+    updateTimeRecord,
   } = useApp();
 
   const now = new Date();
@@ -100,11 +103,51 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
   // Modal / Editing states
   const [isEditingTasks, setIsEditingTasks] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
   const [editDayEntries, setEditDayEntries] = useState<Record<number, MonthlyDttrDayEntry>>({});
+  const [editHoursRaw, setEditHoursRaw] = useState<Record<number, string>>({}); // raw string for hours input
   const [signerName, setSignerName] = useState('');
   const [signerTitle, setSignerTitle] = useState('HTE Supervisor');
   const [signNotes, setSignNotes] = useState('');
+
+  // Helper: parse "HH:MM AM/PM" or "HH:MM" into total minutes since midnight
+  const parseTimeToMinutes = (t: string): number | null => {
+    if (!t) return null;
+    t = t.trim();
+    // 12-hour format: "8:00 AM", "1:00 PM"
+    const match12 = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (match12) {
+      let h = parseInt(match12[1], 10);
+      const m = parseInt(match12[2], 10);
+      const ampm = match12[3].toUpperCase();
+      if (ampm === 'PM' && h !== 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      return h * 60 + m;
+    }
+    // 24-hour format: "08:00"
+    const match24 = t.match(/^(\d{1,2}):(\d{2})$/);
+    if (match24) {
+      return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
+    }
+    return null;
+  };
+
+  // Helper: compute hours from AM/PM time slots (subtract 1hr lunch break for full-day entries)
+  const computeHoursFromTimes = (entry: MonthlyDttrDayEntry): number => {
+    let total = 0;
+    const amIn = parseTimeToMinutes(entry.amArrival || '');
+    const amOut = parseTimeToMinutes(entry.amDeparture || '');
+    const pmIn = parseTimeToMinutes(entry.pmArrival || '');
+    const pmOut = parseTimeToMinutes(entry.pmDeparture || '');
+    if (amIn !== null && amOut !== null && amOut > amIn) {
+      total += (amOut - amIn) / 60;
+    }
+    if (pmIn !== null && pmOut !== null && pmOut > pmIn) {
+      total += (pmOut - pmIn) / 60;
+    }
+    return Math.round(total * 2) / 2; // round to nearest 0.5
+  };
 
   // Daily records map for the selected month
   const monthTimeRecordsMap = useMemo(() => {
@@ -148,23 +191,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       const custom = customEntries[day];
       const autoRec = monthTimeRecordsMap.get(day);
 
-      if (custom && (custom.amArrival || custom.pmDeparture || custom.hours || custom.tasks)) {
-        rows.push({
-          day,
-          amArrival: custom.amArrival || '',
-          amDeparture: custom.amDeparture || '',
-          pmArrival: custom.pmArrival || '',
-          pmDeparture: custom.pmDeparture || '',
-          hours: typeof custom.hours === 'number' ? custom.hours : 0,
-          tasks: custom.tasks || '',
-          source: 'custom',
-        });
-      } else if (autoRec && (autoRec.timeIn || autoRec.timeOut)) {
-        // Parse automated attendance into AM / PM slots
-        let amIn = '';
-        let amOut = '';
-        let pmIn = '';
-        let pmOut = '';
+      // Parse automated attendance into AM / PM slots
+      let autoAmIn = '';
+      let autoAmOut = '';
+      let autoPmIn = '';
+      let autoPmOut = '';
+      let autoHours = 0;
+      let autoTasks = '';
+
+      if (autoRec) {
+        autoHours = autoRec.totalHours || 0;
+        autoTasks = autoRec.notes || '';
 
         const parseH = (tStr?: string) => {
           if (!tStr) return null;
@@ -185,38 +222,48 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         if (tIn && tOut) {
           if (tIn.h < 12 && tOut.h >= 12) {
             // Full day spanning lunch break
-            amIn = format12(tIn.h, tIn.m);
-            amOut = '12:00 PM';
-            pmIn = '1:00 PM';
-            pmOut = format12(tOut.h, tOut.m);
+            autoAmIn = format12(tIn.h, tIn.m);
+            autoAmOut = '12:00 PM';
+            autoPmIn = '1:00 PM';
+            autoPmOut = format12(tOut.h, tOut.m);
           } else if (tIn.h < 12 && tOut.h < 12) {
             // Morning only
-            amIn = format12(tIn.h, tIn.m);
-            amOut = format12(tOut.h, tOut.m);
+            autoAmIn = format12(tIn.h, tIn.m);
+            autoAmOut = format12(tOut.h, tOut.m);
           } else {
             // Afternoon only
-            pmIn = format12(tIn.h, tIn.m);
-            pmOut = format12(tOut.h, tOut.m);
+            autoPmIn = format12(tIn.h, tIn.m);
+            autoPmOut = format12(tOut.h, tOut.m);
           }
         } else if (tIn) {
           if (tIn.h < 12) {
-            amIn = format12(tIn.h, tIn.m);
+            autoAmIn = format12(tIn.h, tIn.m);
           } else {
-            pmIn = format12(tIn.h, tIn.m);
+            autoPmIn = format12(tIn.h, tIn.m);
           }
         }
+      }
 
-        const autoHours = autoRec.totalHours || 0;
-        const taskText = autoRec.notes || '';
-
+      if (custom && (custom.amArrival || custom.pmDeparture || custom.pmArrival || custom.amDeparture || (typeof custom.hours === 'number' && custom.hours > 0) || custom.tasks)) {
         rows.push({
           day,
-          amArrival: amIn,
-          amDeparture: amOut,
-          pmArrival: pmIn,
-          pmDeparture: pmOut,
+          amArrival: (custom.amArrival && custom.amArrival.trim()) || autoAmIn,
+          amDeparture: (custom.amDeparture && custom.amDeparture.trim()) || autoAmOut,
+          pmArrival: (custom.pmArrival && custom.pmArrival.trim()) || autoPmIn,
+          pmDeparture: (custom.pmDeparture && custom.pmDeparture.trim()) || autoPmOut,
+          hours: typeof custom.hours === 'number' ? custom.hours : autoHours,
+          tasks: custom.tasks !== undefined ? custom.tasks : autoTasks,
+          source: 'custom',
+        });
+      } else if (autoRec && (autoRec.timeIn || autoRec.timeOut)) {
+        rows.push({
+          day,
+          amArrival: autoAmIn,
+          amDeparture: autoAmOut,
+          pmArrival: autoPmIn,
+          pmDeparture: autoPmOut,
           hours: autoHours,
-          tasks: taskText,
+          tasks: autoTasks,
           source: 'auto',
         });
       } else {
@@ -264,6 +311,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   // Start editing tasks
   const handleOpenEditTasks = () => {
     const entries: Record<number, MonthlyDttrDayEntry> = {};
+    const rawHours: Record<number, string> = {};
     dailyRows.forEach((r) => {
       entries[r.day] = {
         day: r.day,
@@ -274,26 +322,86 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         hours: r.hours,
         tasks: r.tasks,
       };
+      rawHours[r.day] = r.hours > 0 ? String(r.hours) : '';
     });
     setEditDayEntries(entries);
+    setEditHoursRaw(rawHours);
     setIsEditingTasks(true);
   };
 
   const handleSaveTasks = () => {
     if (!selectedEmployee) return;
-    const record: MonthlyDttrRecord = {
-      id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
-      employeeId: selectedEmployee.id,
-      year: selectedYear,
-      month: selectedMonth,
-      customEntries: editDayEntries,
-      hteSupervisorName: savedDttr?.hteSupervisorName,
-      hteSupervisorTitle: savedDttr?.hteSupervisorTitle,
-      hteSignedAt: savedDttr?.hteSignedAt,
-      hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
-    };
-    saveMonthlyDttr(record);
-    setIsEditingTasks(false);
+    setIsSaving(true);
+    try {
+      // Finalize entries: if hours field was left empty/0, auto-compute from time slots
+      const finalEntries: Record<number, MonthlyDttrDayEntry> = {};
+      Object.entries(editDayEntries).forEach(([dayStr, entry]) => {
+        const day = Number(dayStr);
+        const rawHrs = editHoursRaw[day];
+        let hrs = rawHrs !== undefined && rawHrs !== '' ? parseFloat(rawHrs) : entry.hours;
+        if (isNaN(hrs) || hrs < 0) hrs = 0;
+        // If hours is still 0 but time slots are filled, auto-compute
+        if (hrs === 0 && (entry.amArrival || entry.pmDeparture || entry.pmArrival || entry.amDeparture)) {
+          hrs = computeHoursFromTimes(entry);
+        }
+        finalEntries[day] = { ...entry, hours: hrs };
+
+        // Synchronize edited tasks and hours to system time_records
+        const autoRec = monthTimeRecordsMap.get(day);
+        const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+        if (autoRec) {
+          const updatedNotes = entry.tasks !== undefined ? entry.tasks : autoRec.notes;
+          const updatedHours = typeof hrs === 'number' && hrs > 0 ? hrs : autoRec.totalHours;
+          updateTimeRecord(autoRec.id, {
+            notes: updatedNotes,
+            totalHours: updatedHours,
+          });
+        } else if (hrs > 0 || (entry.tasks && entry.tasks.trim()) || entry.amArrival || entry.pmDeparture) {
+          const padTime = (t?: string) => {
+            if (!t) return '08:00';
+            const m = t.match(/(\d{1,2}):(\d{2})/);
+            if (!m) return '08:00';
+            let hh = parseInt(m[1], 10);
+            if (/pm/i.test(t) && hh < 12) hh += 12;
+            if (/am/i.test(t) && hh === 12) hh = 0;
+            return `${String(hh).padStart(2, '0')}:${m[2]}`;
+          };
+
+          addTimeRecord({
+            employeeId: selectedEmployee.id,
+            employeeName: selectedEmployee.name,
+            date: dateStr,
+            timeIn: padTime(entry.amArrival || entry.pmArrival),
+            timeOut: padTime(entry.pmDeparture || entry.amDeparture || '17:00'),
+            totalHours: hrs,
+            status: 'present',
+            notes: entry.tasks || '',
+            approvalStatus: 'approved',
+          });
+        }
+      });
+
+      const record: MonthlyDttrRecord = {
+        id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
+        employeeId: selectedEmployee.id,
+        year: selectedYear,
+        month: selectedMonth,
+        customEntries: finalEntries,
+        hteSupervisorName: savedDttr?.hteSupervisorName,
+        hteSupervisorTitle: savedDttr?.hteSupervisorTitle,
+        hteSignedAt: savedDttr?.hteSignedAt,
+        hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
+      };
+      saveMonthlyDttr(record);
+      setIsEditingTasks(false);
+      toast.success('Monthly DTTR changes and task records saved successfully!');
+    } catch (err: any) {
+      console.error('Failed to save monthly DTTR:', err);
+      toast.error('Failed to save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Open Sign Modal
@@ -850,10 +958,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         value={entry.amArrival || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditDayEntries((prev) => ({
-                            ...prev,
-                            [r.day]: { ...prev[r.day], day: r.day, amArrival: val },
-                          }));
+                          setEditDayEntries((prev) => {
+                            const base = prev[r.day] || {
+                              day: r.day,
+                              amArrival: r.amArrival,
+                              amDeparture: r.amDeparture,
+                              pmArrival: r.pmArrival,
+                              pmDeparture: r.pmDeparture,
+                              hours: r.hours,
+                              tasks: r.tasks,
+                            };
+                            return { ...prev, [r.day]: { ...base, day: r.day, amArrival: val } };
+                          });
                         }}
                         className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
                       />
@@ -863,10 +979,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         value={entry.amDeparture || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditDayEntries((prev) => ({
-                            ...prev,
-                            [r.day]: { ...prev[r.day], day: r.day, amDeparture: val },
-                          }));
+                          setEditDayEntries((prev) => {
+                            const base = prev[r.day] || {
+                              day: r.day,
+                              amArrival: r.amArrival,
+                              amDeparture: r.amDeparture,
+                              pmArrival: r.pmArrival,
+                              pmDeparture: r.pmDeparture,
+                              hours: r.hours,
+                              tasks: r.tasks,
+                            };
+                            return { ...prev, [r.day]: { ...base, day: r.day, amDeparture: val } };
+                          });
                         }}
                         className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
                       />
@@ -876,10 +1000,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         value={entry.pmArrival || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditDayEntries((prev) => ({
-                            ...prev,
-                            [r.day]: { ...prev[r.day], day: r.day, pmArrival: val },
-                          }));
+                          setEditDayEntries((prev) => {
+                            const base = prev[r.day] || {
+                              day: r.day,
+                              amArrival: r.amArrival,
+                              amDeparture: r.amDeparture,
+                              pmArrival: r.pmArrival,
+                              pmDeparture: r.pmDeparture,
+                              hours: r.hours,
+                              tasks: r.tasks,
+                            };
+                            return { ...prev, [r.day]: { ...base, day: r.day, pmArrival: val } };
+                          });
                         }}
                         className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
                       />
@@ -889,10 +1021,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         value={entry.pmDeparture || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditDayEntries((prev) => ({
-                            ...prev,
-                            [r.day]: { ...prev[r.day], day: r.day, pmDeparture: val },
-                          }));
+                          setEditDayEntries((prev) => {
+                            const base = prev[r.day] || {
+                              day: r.day,
+                              amArrival: r.amArrival,
+                              amDeparture: r.amDeparture,
+                              pmArrival: r.pmArrival,
+                              pmDeparture: r.pmDeparture,
+                              hours: r.hours,
+                              tasks: r.tasks,
+                            };
+                            return { ...prev, [r.day]: { ...base, day: r.day, pmDeparture: val } };
+                          });
                         }}
                         className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
                       />
@@ -905,13 +1045,25 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         step="0.5"
                         min="0"
                         max="24"
-                        value={entry.hours !== undefined ? entry.hours : ''}
+                        value={editHoursRaw[r.day] !== undefined ? editHoursRaw[r.day] : (entry.hours > 0 ? entry.hours : '')}
                         onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          setEditDayEntries((prev) => ({
-                            ...prev,
-                            [r.day]: { ...prev[r.day], day: r.day, hours: val },
-                          }));
+                          const raw = e.target.value;
+                          setEditHoursRaw((prev) => ({ ...prev, [r.day]: raw }));
+                          const val = raw === '' ? 0 : parseFloat(raw);
+                          if (!isNaN(val) && val >= 0) {
+                            setEditDayEntries((prev) => {
+                              const base = prev[r.day] || {
+                                day: r.day,
+                                amArrival: r.amArrival,
+                                amDeparture: r.amDeparture,
+                                pmArrival: r.pmArrival,
+                                pmDeparture: r.pmDeparture,
+                                hours: r.hours,
+                                tasks: r.tasks,
+                              };
+                              return { ...prev, [r.day]: { ...base, day: r.day, hours: val } };
+                            });
+                          }
                         }}
                         className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center"
                       />
@@ -924,10 +1076,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         value={entry.tasks || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditDayEntries((prev) => ({
-                            ...prev,
-                            [r.day]: { ...prev[r.day], day: r.day, tasks: val },
-                          }));
+                          setEditDayEntries((prev) => {
+                            const base = prev[r.day] || {
+                              day: r.day,
+                              amArrival: r.amArrival,
+                              amDeparture: r.amDeparture,
+                              pmArrival: r.pmArrival,
+                              pmDeparture: r.pmDeparture,
+                              hours: r.hours,
+                              tasks: r.tasks,
+                            };
+                            return { ...prev, [r.day]: { ...base, day: r.day, tasks: val } };
+                          });
                         }}
                         className="w-full px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs"
                       />
@@ -941,17 +1101,28 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsEditingTasks(false)}
-                className="px-4 py-2 border rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                disabled={isSaving}
+                className="px-4 py-2 border rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSaveTasks}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5"
+                disabled={isSaving}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors"
               >
-                <Save size={14} />
-                <span>Save Changes</span>
+                {isSaving ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} />
+                    <span>Save Changes</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

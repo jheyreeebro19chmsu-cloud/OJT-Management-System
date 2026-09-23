@@ -8,12 +8,42 @@ export async function signInWithGoogle(redirectTo?: string) {
 
 // Parse the OAuth callback URL and return session + user
 export async function handleOAuthCallback() {
-  // supabase v2: getSessionFromUrl
   try {
-    const { data } = await supabase.auth.getSession();
-    return { data, error: null };
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+
+      const error = searchParams.get('error') || hashParams.get('error');
+      const errorDesc = searchParams.get('error_description') || hashParams.get('error_description');
+      if (error || errorDesc) {
+        return { data: null, error: new Error(errorDesc || error || 'OAuth error') };
+      }
+
+      const code = searchParams.get('code');
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!error && data?.session) {
+          return { data, error: null };
+        }
+      }
+
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      if (accessToken && refreshToken) {
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error && data?.session) {
+          return { data, error: null };
+        }
+      }
+    }
+
+    const { data, error } = await supabase.auth.getSession();
+    return { data, error };
   } catch (err) {
-    return { error: err };
+    return { data: null, error: err };
   }
 }
 

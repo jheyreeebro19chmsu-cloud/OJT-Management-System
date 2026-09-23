@@ -544,8 +544,8 @@ const BRIDGE_HTML = `
           maskDetected,
           faceObscured,
           poorBackgroundLighting,
-          tooDark: avgLum < 38 || poorBackgroundLighting,
-          tooBright: avgLum > 240,
+          tooDark: avgLum < 22,
+          tooBright: avgLum > 248,
           brightness: avgLum,
           ear: typeof ear !== 'undefined' ? parseFloat(ear.toFixed(3)) : 0.30,
           eyesClosed: Boolean(eyesClosed)

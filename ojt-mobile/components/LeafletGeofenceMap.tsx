@@ -135,7 +135,7 @@ export default function LeafletGeofenceMap({
 
   const centerOnUser = () => {
     if (userLat && userLng && webViewRef.current) {
-      const js = `if (window.map) { window.map.flyTo([${userLat}, ${userLng}], 17, { animate: true }); }`;
+      const js = `if (window.map) { window.map.flyTo([${userLat}, ${userLng}], 18, { animate: true }); }`;
       webViewRef.current.injectJavaScript(js);
     }
   };
@@ -263,6 +263,7 @@ export default function LeafletGeofenceMap({
     let centerMarker = null;
     let userMarker = null;
     let userAccCircle = null;
+    let navLine = null;
 
     function post(data) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -270,11 +271,15 @@ export default function LeafletGeofenceMap({
       }
     }
 
-    // Initialize map
+    // Initialize map - prioritize zooming in directly where user location is
+    const hasUserCoords = ${Boolean(userLat && userLng) ? 'true' : 'false'};
+    const initCenter = hasUserCoords ? [${userLat || 0}, ${userLng || 0}] : [curLat, curLng];
+    const initZoom = hasUserCoords ? 18 : 16;
+
     const map = L.map('map', {
       zoomControl: false,
       attributionControl: false
-    }).setView([curLat, curLng], 16);
+    }).setView(initCenter, initZoom);
 
     // OpenStreetMap standard tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -375,7 +380,7 @@ export default function LeafletGeofenceMap({
     window.updateUserLocation = function(lat, lng, accuracy) {
       if (!userMarker) {
         userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
-        userMarker.bindPopup('<div class="popup-title">Your GPS Position</div><div class="popup-desc">Live Device Location</div>');
+        userMarker.bindPopup('<div class="popup-title">Your Live GPS Position</div><div class="popup-desc">Movable Device Location</div>');
       } else {
         userMarker.setLatLng([lat, lng]);
       }
@@ -393,6 +398,41 @@ export default function LeafletGeofenceMap({
           userAccCircle.setLatLng([lat, lng]);
           userAccCircle.setRadius(accuracy);
         }
+      }
+
+      // Calculate distance between movable GPS and geofence center
+      const dLat = (curLat - lat) * 111320;
+      const dLng = (curLng - lng) * (111320 * Math.cos((lat * Math.PI) / 180));
+      const dist = Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
+      const isOutside = dist > curRadius;
+
+      // When outside the premises: draw real-time navigation line pointing to workplace
+      if (isOutside) {
+        if (!navLine) {
+          navLine = L.polyline([[lat, lng], [curLat, curLng]], {
+            color: '#ef4444',
+            weight: 3,
+            dashArray: '6, 6',
+            opacity: 0.85
+          }).addTo(map);
+        } else {
+          navLine.setLatLngs([[lat, lng], [curLat, curLng]]);
+        }
+      } else if (navLine) {
+        map.removeLayer(navLine);
+        navLine = null;
+      }
+
+      // Smoothly zoom in to where their location was on first lock, then smoothly pan movable GPS
+      if (!window.__userLocationLocked) {
+        window.__userLocationLocked = true;
+        if (dist <= 650) {
+          map.fitBounds([[lat, lng], [curLat, curLng]], { padding: [40, 40], maxZoom: 18 });
+        } else {
+          map.setView([lat, lng], 18, { animate: true });
+        }
+      } else {
+        map.panTo([lat, lng], { animate: true, duration: 0.7 });
       }
     };
 

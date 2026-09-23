@@ -327,14 +327,14 @@ export function AdminLayout() {
                     setSidebarOpen(false);
                     navigate('/admin/profile');
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
                 >
                   <Users size={14} />
                   Profile
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
                 >
                   <LogOut size={14} />
                   Logout
@@ -350,11 +350,13 @@ export function AdminLayout() {
         {/* Top bar */}
         <header className="bg-white border-b border-gray-200 shadow-sm z-20 no-print">
           <div className="px-4 py-3 flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-500 hover:text-gray-700 p-1 rounded-lg">
               <Menu size={22} />
             </button>
             <div className="flex-1 flex items-center gap-3">
-              <h1 className="text-gray-800 font-semibold text-base">CHMSU OJT Management System — Instructor</h1>
+              <NavLink to="/admin" className="text-gray-800 font-semibold text-sm sm:text-base hover:text-blue-900 transition-colors">
+                CHMSU OJT System — Instructor
+              </NavLink>
             </div>
             <div className="hidden lg:flex items-center gap-2">
               <div className="flex items-center gap-3">
@@ -373,9 +375,99 @@ export function AdminLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6 pb-20 lg:pb-6">
           <Outlet />
         </main>
+
+        {/* Mobile Web Bottom Navigation for Instructor */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 py-1.5 flex items-center justify-around no-print">
+          <NavLink
+            to="/admin"
+            end
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <LayoutDashboard size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Dashboard</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/admin/employees"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Users size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Trainees</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/admin/geofence"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <MapPin size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Geofence</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/admin/reports"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <BarChart2 size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Reports</span>
+              </>
+            )}
+          </NavLink>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
+          >
+            <div className="relative p-1 rounded-xl">
+              <Menu size={19} />
+              {unreadAnn > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#DC6B2F] rounded-full" />
+              )}
+            </div>
+            <span className="text-[10px] mt-0.5">More</span>
+          </button>
+        </nav>
       </div>
 
       <LogoutConfirmModal

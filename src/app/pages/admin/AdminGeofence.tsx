@@ -467,20 +467,29 @@ export function AdminGeofence() {
     toast.success('Geofence zone added successfully!');
   };
 
-  // Scroll to map and fly-to focus coordinates
+  // Scroll directly to map and fly-to focus coordinates
   const scrollToMapAndFocus = (zone: GeofenceZone) => {
     setSelectedZoneId(zone.id);
     setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
 
     const mapCard = document.getElementById('geofence-map-card');
     if (mapCard) {
-      mapCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const navHeaderOffset = 70;
+      const elementRect = mapCard.getBoundingClientRect();
+      const absoluteElementTop = elementRect.top + window.pageYOffset;
+      const targetScrollY = Math.max(0, absoluteElementTop - navHeaderOffset);
+
+      window.scrollTo({ top: targetScrollY, behavior: 'smooth' });
+
+      const mainContainer = document.querySelector('main');
+      if (mainContainer) {
+        const containerRect = mainContainer.getBoundingClientRect();
+        const targetContainerTop = elementRect.top - containerRect.top + mainContainer.scrollTop - navHeaderOffset;
+        mainContainer.scrollTo({ top: Math.max(0, targetContainerTop), behavior: 'smooth' });
+      }
+
+      mapCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-    const mainContainer = document.querySelector('main');
-    if (mainContainer) {
-      mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleEdit = (zone: GeofenceZone) => {

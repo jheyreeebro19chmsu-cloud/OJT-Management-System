@@ -42,6 +42,7 @@ import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
+import { GeofenceMap } from '../components/GeofenceMap';
 
 
 const GRADE_CONFIG = {
@@ -841,7 +842,7 @@ export function Profile() {
                   to="/app/evaluation"
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 bg-white/80 hover:bg-white px-3 py-1.5 rounded-xl transition-all shadow-xs"
                 >
-                  <Award size={13} /> View Full HTE Performance Report →
+                  <Award size={13} /> Open OJT Questionnaire →
                 </Link>
               </div>
             </motion.div>
@@ -1311,6 +1312,40 @@ export function Profile() {
               )}
             </button>
           </div>
+
+          {employee.registrationLocation?.lat && employee.registrationLocation?.lng && (
+            <div className="mt-3 rounded-2xl overflow-hidden border border-gray-200">
+              <div className="px-3 py-2 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                  <MapPin size={13} className="text-blue-600" />
+                  Calibrated Workplace Geofence
+                </span>
+                <span className="font-mono text-slate-500 text-[11px]">
+                  {employee.registrationLocation.lat.toFixed(5)}, {employee.registrationLocation.lng.toFixed(5)}
+                </span>
+              </div>
+              <GeofenceMap
+                zones={[
+                  {
+                    id: `personal-${employee.id}`,
+                    name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
+                    address: employee.registrationAddress || 'Calibrated Workplace GPS',
+                    lat: employee.registrationLocation.lat,
+                    lng: employee.registrationLocation.lng,
+                    radius: 100,
+                    active: true,
+                  },
+                ]}
+                focusCoords={{
+                  lat: employee.registrationLocation.lat,
+                  lng: employee.registrationLocation.lng,
+                }}
+                className="h-56"
+                allowFullscreen={false}
+                allowResize={false}
+              />
+            </div>
+          )}
         </Section>
       </motion.div>
 

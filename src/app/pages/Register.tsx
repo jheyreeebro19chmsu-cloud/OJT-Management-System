@@ -327,9 +327,13 @@ export function Register() {
     }
     setGoogleLoading(true);
     try {
+      if (!isSupabaseConfigured()) {
+        toast.error('Supabase is not configured. Please check your environment configuration.');
+        setGoogleLoading(false);
+        return;
+      }
       const redirectOrigin =
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
       const { error } = await supabase.auth.signInWithOAuth({
@@ -362,7 +366,7 @@ export function Register() {
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      const h = params.get('h');
+      const h = params.get('h') || params.get('role');
       const pending = localStorage.getItem('pending_oauth_role') as UserRole;
       const oauthEmail = localStorage.getItem('oauth_email');
       const oauthName = localStorage.getItem('oauth_name');
@@ -417,7 +421,7 @@ export function Register() {
         toast.success(`Welcome, ${fullName}! Direct access granted to HTE portal.`);
         navigate('/hte');
         return;
-      } else if (pending === 'trainee') {
+      } else if (h === 'trainee' || pending === 'trainee' || (pending as any) === 'employee') {
         setRole('trainee');
       }
 
@@ -434,7 +438,7 @@ export function Register() {
           setGoogleAvatar(oauthPhoto);
           setPhoto(oauthPhoto);
         }
-        toast.info('Google profile loaded. Please choose your role below to complete registration.');
+        toast.info(`Google account connected (${oauthEmail || 'verified'}). Please complete your registration details.`);
       }
 
       // Clear pending handoff markers for trainee
@@ -2933,6 +2937,7 @@ export function Register() {
                                   picking={pickingLocation}
                                   onPick={handleMapPick}
                                   pickedCoords={registrationLocation}
+                                  focusCoords={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng } : undefined}
                                   liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
                                   className="h-56 w-full"
                                 />

@@ -6,15 +6,29 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getSchoolLogo } from '../utils/schoolLogos';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { sendOtpEmail } from '../lib/resend';
 import { resetPasswordDirect } from '../services/supabaseService';
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
 export function Login() {
-  const { login, setPasswordForEmail } = useApp();
+  const { login, setPasswordForEmail, currentUser, employees } = useApp();
   const navigate = useNavigate();
+
+  // Instant redirect if user is already logged in
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (currentUser.role === 'hte' || currentUser.role === 'host') {
+        navigate('/hte', { replace: true });
+      } else {
+        navigate('/app', { replace: true });
+      }
+    }
+  }, [currentUser, navigate]);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -24,7 +38,6 @@ export function Login() {
   const [showForgot, setShowForgot] = useState(false);
   const [faceDisabled, setFaceDisabled] = useState(false);
   const [loadingRole, setLoadingRole] = useState<'trainee' | 'admin' | 'hte' | null>(null);
-  const { employees } = useApp();
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
@@ -33,10 +46,15 @@ export function Login() {
     setGoogleLoading(true);
     setLoadingRole(targetRole);
     try {
+      if (!isSupabaseConfigured()) {
+        setError('Supabase is not configured. Please check your environment configuration.');
+        setGoogleLoading(false);
+        setLoadingRole(null);
+        return;
+      }
       localStorage.setItem('pending_oauth_role', targetRole);
       const redirectOrigin =
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -67,7 +85,6 @@ export function Login() {
     setLoading(true);
 
     // Local login
-    await new Promise((r) => setTimeout(r, 800));
     const user = (await login(email, password)) as any;
     if (user) {
       if (user.role === 'admin') {
@@ -262,7 +279,7 @@ export function Login() {
     }
   }, []);
 
-  const defaultBackgroundImage = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlW_CmtgncO5nHio9TJ4B774KYiHLGcInY7wxgBybI_DU6t8pOLsmsrkZq&s=10';
+  const defaultBackgroundImage = '/CHMSU.JPEG';
   let backgroundImage = defaultBackgroundImage;
   try {
     const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
@@ -280,6 +297,13 @@ export function Login() {
         src={backgroundImage}
         alt=""
         aria-hidden="true"
+        onError={(e) => {
+          // Fallback to high-availability CDN if local path is unavailable
+          const target = e.currentTarget;
+          if (!target.src.includes('encrypted-tbn0')) {
+            target.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlW_CmtgncO5nHio9TJ4B774KYiHLGcInY7wxgBybI_DU6t8pOLsmsrkZq&s=10';
+          }
+        }}
         className="absolute inset-0 h-full w-full object-cover scale-105 brightness-90 contrast-105"
       />
 
@@ -288,9 +312,9 @@ export function Login() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-500/15 via-transparent to-transparent pointer-events-none" />
 
       <motion.div
-        initial={{ opacity: 0, y: 25 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
         className="w-full max-w-sm relative z-10"
       >
         {/* Logo & System Header */}

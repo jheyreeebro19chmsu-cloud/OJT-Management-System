@@ -17,28 +17,64 @@ interface SupabaseTimeRecord extends Omit<TimeRecord, 'timeInLocation' | 'timeOu
 
 // ─── Employees ───────────────────────────────────────────────────────────────
 
+export const EMPLOYEE_CORE_COLUMNS = [
+  'id',
+  'name',
+  'employee_id',
+  'email',
+  'department',
+  'position',
+  'company_name',
+  'supervisor_name',
+  'school_name',
+  'campus',
+  'course',
+  'start_date',
+  'end_date',
+  'required_hours',
+  'photo',
+  'face_registered',
+  'active',
+  'academic_year',
+  'registration_lat',
+  'registration_lng',
+  'registration_address',
+  'instructor_id',
+  'hte_id',
+  'application_status',
+  'created_at',
+].join(',');
+
 export async function fetchEmployees(): Promise<Employee[]> {
   if (!isSupabaseConfigured()) return [];
 
   try {
-    let result = await supabase.from('employees').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('employees')
+      .select(EMPLOYEE_CORE_COLUMNS)
+      .order('created_at', { ascending: false });
 
-    // If order by created_at timed out or failed, retry without order
-    if (result.error && (result.error.code === '57014' || (result.error as any).status === 500)) {
-      console.warn('Retrying fetchEmployees without order due to statement notice:', result.error.message);
-      result = await supabase.from('employees').select('*');
+    if (!error && data) {
+      return data.map(transformSupabaseEmployee);
     }
 
-    if (result.error) {
-      console.warn('Notice fetching employees from Supabase:', result.error.message || result.error);
-      return [];
-    }
+    if (error) {
+      console.warn('Optimized fetchEmployees query notice, trying fallback columns:', error.message);
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('employees')
+        .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at')
+        .order('created_at', { ascending: false });
 
-    return (result.data || []).map(transformSupabaseEmployee);
-  } catch (err: any) {
-    console.warn('fetchEmployees exception caught:', err?.message || err);
-    return [];
+      if (!fallbackError && fallbackData) {
+        return fallbackData.map(transformSupabaseEmployee);
+      }
+      console.error('Error fetching employees fallback:', fallbackError);
+    }
+  } catch (err) {
+    console.error('fetchEmployees exception:', err);
   }
+
+  return [];
 }
 
 // Helper to compress high-resolution mobile photos to lightweight JPEG (~40-80KB)
@@ -156,6 +192,7 @@ export async function uploadDocumentToStorage(
         const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
           contentType,
           upsert: true,
+          cacheControl: '604800', // 7 days: documents rarely change once uploaded, so repeat views should hit cache instead of re-downloading from origin every time
         });
         if (!error && data) {
           const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
@@ -578,7 +615,15 @@ export async function uploadFacePhoto(
       try {
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from(bucketName)
-          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+          .upload(fileName, blob, {
+            contentType: 'image/jpeg',
+            upsert: true,
+            // 'profile' photos rarely change once enrolled, so cache them long.
+            // 'time_in'/'time_out' snapshots are timestamped and never overwritten
+            // anyway (each has a unique filename), so a shorter cache is fine and
+            // still meaningfully cuts repeat-view egress on attendance history pages.
+            cacheControl: type === 'profile' ? '604800' : '86400',
+          });
 
         if (!uploadError && uploadData) {
           const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
@@ -1280,7 +1325,7 @@ export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]
       .order('created_at', { ascending: true });
 
     if (error) {
-      if (error.code === 'PGRST205' || (error as any).status === 404 || error.message?.includes('Could not find the table')) {
+      if (error.code === 'PGRST205' || error.code === '42P01' || error.message?.includes('does not exist')) {
         announcementCommentsTableMissing = true;
       }
       return [];
@@ -1301,7 +1346,7 @@ export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]
 }
 
 export async function createAnnouncementComment(comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment | null> {
-  if (!isSupabaseConfigured() || announcementCommentsTableMissing) return null;
+  if (!isSupabaseConfigured()) return null;
 
   try {
     const payload = {
@@ -1320,9 +1365,7 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
       .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST205' || (error as any).status === 404 || error.message?.includes('Could not find the table')) {
-        announcementCommentsTableMissing = true;
-      }
+      console.warn('Error saving announcement comment:', error);
       return null;
     }
 
@@ -1640,7 +1683,7 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
       time_out_face_verified: rec.timeOutFaceVerified,
       time_in_photo: rec.timeInPhoto,
       time_out_photo: rec.timeOutPhoto,
-      total_hours: rec.totalHours,
+      totalHours: rec.totalHours,
       status: rec.status,
       notes: rec.notes,
     }));

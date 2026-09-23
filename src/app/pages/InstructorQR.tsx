@@ -1,8 +1,11 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 
 import { useApp } from '../store/AppContext';
 
 export default function InstructorQR() {
+  const navigate = useNavigate();
   const app = useApp();
   const emp = app?.getCurrentEmployee();
   const email = emp?.email || '';
@@ -20,8 +23,15 @@ export default function InstructorQR() {
   };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-4">Instructor QR</h1>
+    <div className="p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
+      <button
+        type="button"
+        onClick={() => navigate('/admin')}
+        className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 mb-3 cursor-pointer transition-colors"
+      >
+        <ArrowLeft size={14} /> Back to Dashboard
+      </button>
+      <h1 className="text-2xl font-bold mb-2 text-slate-900">Instructor QR</h1>
       <p className="text-sm text-slate-600 mb-4">
         This QR encodes a local instructor token used for student enrollment.
       </p>

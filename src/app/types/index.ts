@@ -115,6 +115,7 @@ export interface AppSettings {
   facialRecognitionEnabled: boolean;
   academicYears: string[];
   activeAcademicYear: string;
+  instructorName?: string;
 }
 
 export interface User {

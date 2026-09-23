@@ -13,7 +13,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
 
 import 'leaflet/dist/leaflet.css';
 import './geofence-map.css';
@@ -208,6 +208,34 @@ export function GeofenceMap({
 
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;
+
+  const nearestZone = useMemo(() => {
+    if (!safeLiveUser || safeZones.length === 0) return null;
+    let closest: GeofenceZone | null = null;
+    let minDist = Infinity;
+    safeZones.forEach((z) => {
+      const dLat = (z.lat - safeLiveUser.lat) * 111320;
+      const dLng = (z.lng - safeLiveUser.lng) * (111320 * Math.cos((safeLiveUser.lat * Math.PI) / 180));
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = z;
+      }
+    });
+    return closest;
+  }, [safeLiveUser, safeZones]);
+
+  const nearestZoneDistance = useMemo(() => {
+    if (!safeLiveUser || !nearestZone) return null;
+    const dLat = (nearestZone.lat - safeLiveUser.lat) * 111320;
+    const dLng = (nearestZone.lng - safeLiveUser.lng) * (111320 * Math.cos((safeLiveUser.lat * Math.PI) / 180));
+    return Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
+  }, [safeLiveUser, nearestZone]);
+
+  const isOutsidePremises = useMemo(() => {
+    if (nearestZoneDistance === null || !nearestZone) return false;
+    return nearestZoneDistance > (nearestZone.radius || 40);
+  }, [nearestZoneDistance, nearestZone]);
 
   const initialCenter = useMemo<[number, number]>(() => {
     if (safeLiveUser) return [safeLiveUser.lat, safeLiveUser.lng];
@@ -410,6 +438,21 @@ export function GeofenceMap({
             />
           )}
 
+        {safeLiveUser && nearestZone && isOutsidePremises && (
+          <Polyline
+            positions={[
+              [safeLiveUser.lat, safeLiveUser.lng],
+              [nearestZone.lat, nearestZone.lng],
+            ]}
+            pathOptions={{
+              color: '#ef4444',
+              weight: 3,
+              dashArray: '8, 8',
+              opacity: 0.85,
+            }}
+          />
+        )}
+
         {safeLiveUser && (
           <>
             <CircleMarker
@@ -425,11 +468,18 @@ export function GeofenceMap({
             <Marker position={[safeLiveUser.lat, safeLiveUser.lng]} icon={liveUserIcon}>
               <Popup className="leaflet-geofence-popup">
                 <div className="leaflet-popup-card">
-                  <p className="leaflet-popup-title">Your Position</p>
+                  <p className="leaflet-popup-title">Your Live GPS Location</p>
                   <p>
-                    {safeLiveUser.lat.toFixed(5)}, {safeLiveUser.lng.toFixed(5)}
+                    {safeLiveUser.lat.toFixed(6)}, {safeLiveUser.lng.toFixed(6)}
                   </p>
                   {safeLiveUser.accuracy !== undefined && <p>Accuracy: ±{Math.round(safeLiveUser.accuracy)}m</p>}
+                  {nearestZoneDistance !== null && nearestZone && (
+                    <p style={{ color: isOutsidePremises ? '#e11d48' : '#16a34a', fontWeight: 'bold', marginTop: '4px' }}>
+                      {isOutsidePremises
+                        ? `Outside: ${nearestZoneDistance}m to ${nearestZone.name}`
+                        : `Inside ${nearestZone.name}`}
+                    </p>
+                  )}
                 </div>
               </Popup>
             </Marker>
@@ -441,12 +491,19 @@ export function GeofenceMap({
         <FitMapView
           zones={safeZones}
           liveUser={safeLiveUser}
+          nearestZone={nearestZone}
           fittedZonesRef={fittedZonesRef}
           fittedLiveUserRef={fittedLiveUserRef}
           recenterTrigger={recenterTrigger}
         />
         <MapCustomControls
           onRecenter={() => setRecenterTrigger((prev) => prev + 1)}
+          onZoomUser={() => {
+            if (safeLiveUser) {
+              setRecenterTrigger((prev) => prev + 1);
+            }
+          }}
+          hasLiveUser={Boolean(safeLiveUser)}
         />
       </MapContainer>
 
@@ -519,11 +576,29 @@ export function GeofenceMap({
   );
 }
 
-function MapCustomControls({ onRecenter }: { onRecenter: () => void }) {
+function MapCustomControls({
+  onRecenter,
+  onZoomUser,
+  hasLiveUser,
+}: {
+  onRecenter: () => void;
+  onZoomUser?: () => void;
+  hasLiveUser?: boolean;
+}) {
   const map = useMap();
 
   return (
-    <div className="leaflet-bottom leaflet-right !mb-3 !mr-3 z-[800] flex flex-col gap-1 pointer-events-auto">
+    <div className="leaflet-bottom leaflet-right !mb-3 !mr-3 z-[800] flex flex-col gap-1.5 pointer-events-auto">
+      {hasLiveUser && onZoomUser && (
+        <button
+          type="button"
+          onClick={onZoomUser}
+          title="Zoom to My GPS Location"
+          className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+        >
+          <Crosshair size={16} />
+        </button>
+      )}
       <div className="flex flex-col bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
         <button
           type="button"
@@ -601,7 +676,7 @@ function MapFlyTo({ coords }: { coords?: { lat: number; lng: number } }) {
   const map = useMap();
   useEffect(() => {
     if (coords && isValidCoord(coords.lat, coords.lng)) {
-      map.flyTo([coords.lat, coords.lng], 17, { duration: 1.2 });
+      map.flyTo([coords.lat, coords.lng], 18, { duration: 1.2 });
     }
   }, [coords, map]);
   return null;
@@ -614,12 +689,14 @@ function isValidCoord(lat: number, lng: number): boolean {
 function FitMapView({
   zones,
   liveUser,
+  nearestZone,
   fittedZonesRef,
   fittedLiveUserRef,
   recenterTrigger,
 }: {
   zones: GeofenceZone[];
   liveUser: { lat: number; lng: number; accuracy?: number } | null;
+  nearestZone?: GeofenceZone | null;
   fittedZonesRef: React.MutableRefObject<boolean>;
   fittedLiveUserRef: React.MutableRefObject<boolean>;
   recenterTrigger?: number;
@@ -628,37 +705,34 @@ function FitMapView({
 
   const performFit = useCallback(() => {
     if (liveUser && isValidCoord(liveUser.lat, liveUser.lng)) {
-      if (zones.length === 0) {
-        map.setView([liveUser.lat, liveUser.lng], 16, { animate: true });
+      if (!nearestZone) {
+        map.setView([liveUser.lat, liveUser.lng], 18, { animate: true });
         map.invalidateSize();
         return;
       }
-      const points = [
-        [liveUser.lat, liveUser.lng] as [number, number],
-        ...zones.flatMap((zone) => {
-          const bounds = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getNorthEast();
-          const southWest = L.latLng(zone.lat, zone.lng).toBounds(zone.radius).getSouthWest();
-          return [
-            [bounds.lat, bounds.lng] as [number, number],
-            [southWest.lat, southWest.lng] as [number, number],
-          ];
-        }),
-      ].filter(([lat, lng]) => isValidCoord(lat, lng));
 
-      if (points.length > 0) {
+      // Check distance to nearest zone
+      const dLat = (nearestZone.lat - liveUser.lat) * 111320;
+      const dLng = (nearestZone.lng - liveUser.lng) * (111320 * Math.cos((liveUser.lat * Math.PI) / 180));
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+
+      if (dist <= 750) {
         try {
-          if (points.length === 1) {
-            map.setView(points[0], 16, { animate: true });
-          } else {
-            map.fitBounds(points, {
-              padding: [48, 48],
-              maxZoom: 16,
-            });
-          }
+          const zoneBounds = L.latLng(nearestZone.lat, nearestZone.lng).toBounds(nearestZone.radius || 40);
+          const points: [number, number][] = [
+            [liveUser.lat, liveUser.lng],
+            [zoneBounds.getNorthEast().lat, zoneBounds.getNorthEast().lng],
+            [zoneBounds.getSouthWest().lat, zoneBounds.getSouthWest().lng],
+          ];
+          map.fitBounds(points, { padding: [45, 45], maxZoom: 18 });
         } catch {
-          // fallback
+          map.setView([liveUser.lat, liveUser.lng], 18, { animate: true });
         }
+      } else {
+        // Outside or calibrating: zoom right into trainee location at zoom 18
+        map.setView([liveUser.lat, liveUser.lng], 18, { animate: true });
       }
+      map.invalidateSize();
       return;
     }
 
@@ -675,11 +749,11 @@ function FitMapView({
       if (points.length > 0) {
         try {
           if (points.length === 1) {
-            map.setView(points[0], 16, { animate: true });
+            map.setView(points[0], 17, { animate: true });
           } else {
             map.fitBounds(points, {
               padding: [60, 60],
-              maxZoom: 16,
+              maxZoom: 17,
             });
           }
         } catch {
@@ -687,16 +761,18 @@ function FitMapView({
         }
       }
     }
-  }, [liveUser, map, zones]);
+  }, [liveUser, map, zones, nearestZone]);
+
+  // Real-time movable GPS tracking: smoothly pan as user moves
+  useEffect(() => {
+    if (liveUser && isValidCoord(liveUser.lat, liveUser.lng)) {
+      map.panTo([liveUser.lat, liveUser.lng], { animate: true, duration: 0.7 });
+    }
+  }, [liveUser?.lat, liveUser?.lng, map]);
 
   // Initial fit on mount
   useEffect(() => {
     if (liveUser && isValidCoord(liveUser.lat, liveUser.lng)) {
-      if (zones.length === 0) {
-        map.setView([liveUser.lat, liveUser.lng], 16, { animate: false });
-        map.invalidateSize();
-        return;
-      }
       if (!fittedLiveUserRef.current) {
         performFit();
         fittedLiveUserRef.current = true;

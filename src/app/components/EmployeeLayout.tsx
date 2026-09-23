@@ -14,7 +14,7 @@ const navItems = [
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
-  { to: '/app/evaluation', label: 'HTE Evaluation', icon: Award, end: false, isEvalNav: true },
+  { to: '/app/evaluation', label: 'OJT Questionnaire', icon: Award, end: false, isEvalNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false, isAnnounceNav: true },
 ];
 
@@ -69,17 +69,31 @@ export function EmployeeLayout() {
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
   );
 
+  const isQuestionnaireAnswered = Boolean(
+    traineeEvaluation?.questionnaire?.q1_dutiesBriefly ||
+    traineeEvaluation?.questionnaire?.contactPerson
+  );
+
   const activeAnnouncements = getActiveAnnouncements
     ? getActiveAnnouncements('employee')
     : announcements.filter((a) => !a.expiresAt || new Date(a.expiresAt) >= new Date());
   const activeAnnouncementCount = activeAnnouncements.length;
+
+  const handleMobileNavClick = (to: string) => {
+    navigate(to);
+    setSidebarOpen(false);
+  };
 
   const renderSidebarContent = (isMobile = false) => (
     <>
       {/* Brand Header */}
       <div className="p-5 border-b border-[#0E1D35] bg-[#0E1D35]/40">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <NavLink
+            to="/app"
+            onClick={() => isMobile && setSidebarOpen(false)}
+            className="flex items-center gap-3 hover:opacity-90 transition-opacity"
+          >
             <div className="w-10 h-10 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
               <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
             </div>
@@ -87,11 +101,11 @@ export function EmployeeLayout() {
               <div className="text-white font-bold text-xs sm:text-[13px] leading-snug">CHMSU OJT Management System</div>
               <div className="text-[#D9A441] text-xs font-semibold mt-0.5">Trainee Panel</div>
             </div>
-          </div>
+          </NavLink>
           {isMobile && (
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-[#1E3A66] transition-colors"
+              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-[#1E3A66] transition-colors cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -117,7 +131,11 @@ export function EmployeeLayout() {
               key={to}
               to={to}
               end={end}
-              onClick={() => isMobile && setSidebarOpen(false)}
+              onClick={() => {
+                if (isMobile) {
+                  setSidebarOpen(false);
+                }
+              }}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
                   isActive
@@ -132,7 +150,7 @@ export function EmployeeLayout() {
                     <Icon size={18} />
                     {isActive && (
                       <motion.div
-                        layoutId="nav-indicator"
+                        layoutId={isMobile ? 'nav-indicator-mobile' : 'nav-indicator-desktop'}
                         className="absolute inset-0 bg-white/10 rounded-xl -z-10"
                       />
                     )}
@@ -152,18 +170,12 @@ export function EmployeeLayout() {
                   {(item as any).isEvalNav && (
                     <span
                       className={`ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                        traineeEvaluation?.status === 'reviewed_by_instructor'
+                        isQuestionnaireAnswered
                           ? 'bg-[#146B4D]/30 text-emerald-300 border border-[#146B4D]/50'
-                          : traineeEvaluation
-                          ? 'bg-[#1E3A66] text-blue-200 border border-blue-400/30'
-                          : 'bg-white/10 text-slate-300'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
                       }`}
                     >
-                      {traineeEvaluation?.status === 'reviewed_by_instructor'
-                        ? 'Verified'
-                        : traineeEvaluation
-                        ? 'Evaluated'
-                        : 'Pending'}
+                      {isQuestionnaireAnswered ? 'Answered' : 'Pending'}
                     </span>
                   )}
                   {(item as any).isAnnounceNav && activeAnnouncementCount > 0 && (
@@ -270,13 +282,16 @@ export function EmployeeLayout() {
                 )}
               </button>
 
-              <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-                <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
-              </div>
-              <div>
-                <div className="text-xs text-blue-200 leading-tight">CHMSU OJT Management System</div>
-                <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{displayName}</div>
-              </div>
+              <NavLink to="/app" className="flex items-center gap-2.5 hover:opacity-95 transition-opacity">
+                <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+                  <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                </div>
+                <div>
+                  <div className="text-xs text-blue-200 leading-tight">CHMSU OJT System</div>
+                  <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{displayName}</div>
+                </div>
+              </NavLink>
+
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-[#0E1D35]/60 border border-[#1E3A66] text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
                 <span className="w-1.5 h-1.5 bg-[#146B4D] rounded-full animate-pulse" />
                 <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
@@ -286,11 +301,122 @@ export function EmployeeLayout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pb-20 lg:pb-6">
           <div className="max-w-md lg:max-w-none mx-auto px-4 py-4 lg:p-6">
             <Outlet />
           </div>
         </main>
+
+        {/* Mobile Web Sticky Bottom Navigation Bar */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-xl px-2 py-1.5 flex items-center justify-around no-print">
+          <NavLink
+            to="/app"
+            end
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Home size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Home</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/app/time-record"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Clock size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Time</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/app/records"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <FileText size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Records</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/app/documents"
+            className={({ isActive }) =>
+              `relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`relative p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <FileCheck size={19} />
+                  {missingDocsCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#DC6B2F] rounded-full" />
+                  )}
+                </div>
+                <span className="text-[10px] mt-0.5">Docs</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/app/evaluation"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Award size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Questionnaire</span>
+              </>
+            )}
+          </NavLink>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
+          >
+            <div className="relative p-1 rounded-xl">
+              <Menu size={19} />
+              {activeAnnouncementCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#DC6B2F] rounded-full" />
+              )}
+            </div>
+            <span className="text-[10px] mt-0.5">More</span>
+          </button>
+        </nav>
       </div>
 
       <LogoutConfirmModal

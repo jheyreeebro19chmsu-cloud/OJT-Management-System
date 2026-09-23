@@ -386,13 +386,18 @@ export const mobileDb = {
   },
 
   async getTodayTimeRecord(employeeId: string, altId?: string): Promise<TimeRecord | null> {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localToday = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const utcToday = now.toISOString().split('T')[0];
+    const targetDates = Array.from(new Set([localToday, utcToday]));
+
     const ids = [employeeId, altId].filter(Boolean) as string[];
     const { data, error } = await supabase
       .from('time_records')
       .select('*')
       .in('employee_id', ids)
-      .eq('date', today)
+      .in('date', targetDates)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -401,23 +406,12 @@ export const mobileDb = {
   },
 
   async saveTimeRecord(record: Omit<TimeRecord, 'id'> & { id?: string }): Promise<TimeRecord | null> {
-    let timeInPhoto = record.timeInPhoto;
-    if (timeInPhoto && !timeInPhoto.startsWith('http')) {
-      try {
-        timeInPhoto = await uploadFacePhoto(record.employeeId, timeInPhoto, 'time_in');
-      } catch (e) {
-        console.warn('Time in photo storage upload notice:', e);
-      }
-    }
+    const rawInPhoto = record.timeInPhoto;
+    const rawOutPhoto = record.timeOutPhoto;
 
-    let timeOutPhoto = record.timeOutPhoto;
-    if (timeOutPhoto && !timeOutPhoto.startsWith('http')) {
-      try {
-        timeOutPhoto = await uploadFacePhoto(record.employeeId, timeOutPhoto, 'time_out');
-      } catch (e) {
-        console.warn('Time out photo storage upload notice:', e);
-      }
-    }
+    // Use existing HTTP URL if already uploaded, otherwise proceed immediately without waiting for upload
+    const initialInPhoto = rawInPhoto?.startsWith('http') ? rawInPhoto : undefined;
+    const initialOutPhoto = rawOutPhoto?.startsWith('http') ? rawOutPhoto : undefined;
 
     const payload: any = {
       employee_id: record.employeeId,
@@ -432,8 +426,8 @@ export const mobileDb = {
       time_out_geofenced: record.timeOutGeofenced,
       time_in_face_verified: record.timeInFaceVerified,
       time_out_face_verified: record.timeOutFaceVerified,
-      time_in_photo: timeInPhoto,
-      time_out_photo: timeOutPhoto,
+      ...(initialInPhoto ? { time_in_photo: initialInPhoto } : {}),
+      ...(initialOutPhoto ? { time_out_photo: initialOutPhoto } : {}),
       total_hours: record.totalHours,
       status: record.status,
       notes: record.notes,
@@ -441,8 +435,9 @@ export const mobileDb = {
       ...(record.approvalNote ? { approval_note: record.approvalNote } : {}),
       ...(record.approvedBy ? { approved_by: record.approvedBy } : {}),
       ...(record.approvedAt ? { approved_at: record.approvedAt } : {}),
-      // Note: Omit academic_year as time_records table does not have an academic_year column
     };
+
+    let savedData: any = null;
 
     if (record.id) {
       const { data, error } = await supabase
@@ -455,21 +450,41 @@ export const mobileDb = {
         console.error('Error updating time record:', error);
         return null;
       }
-      return {
-        ...transformTimeRecord(data),
-        academicYear: record.academicYear,
-      };
+      savedData = data;
     } else {
       const { data, error } = await supabase.from('time_records').insert([payload]).select().single();
       if (error) {
         console.error('Error inserting time record:', error);
         return null;
       }
-      return {
-        ...transformTimeRecord(data),
-        academicYear: record.academicYear,
-      };
+      savedData = data;
     }
+
+    const savedRecord = {
+      ...transformTimeRecord(savedData),
+      academicYear: record.academicYear,
+    };
+
+    // Asynchronously upload photo in background and update record without delaying the attendance timestamp
+    const recordId = savedRecord.id;
+    if (recordId) {
+      if (rawInPhoto && !rawInPhoto.startsWith('http')) {
+        uploadFacePhoto(record.employeeId, rawInPhoto, 'time_in')
+          .then((url) => {
+            if (url) supabase.from('time_records').update({ time_in_photo: url }).eq('id', recordId);
+          })
+          .catch((e) => console.warn('Background time_in photo upload notice:', e));
+      }
+      if (rawOutPhoto && !rawOutPhoto.startsWith('http')) {
+        uploadFacePhoto(record.employeeId, rawOutPhoto, 'time_out')
+          .then((url) => {
+            if (url) supabase.from('time_records').update({ time_out_photo: url }).eq('id', recordId);
+          })
+          .catch((e) => console.warn('Background time_out photo upload notice:', e));
+      }
+    }
+
+    return savedRecord;
   },
 
   async updateTimeRecordApproval(

@@ -155,7 +155,7 @@ export function getEvaluationMetrics(ev?: Evaluation | null) {
 }
 
 export function AdminReports() {
-  const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings } = useApp();
+  const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings, currentUser } = useApp();
 
   // Active Top Tab: 'attendance', 'monthly_dttr', or 'evaluation'
   const [activeTab, setActiveTab] = useState<'attendance' | 'monthly_dttr' | 'evaluation'>('attendance');

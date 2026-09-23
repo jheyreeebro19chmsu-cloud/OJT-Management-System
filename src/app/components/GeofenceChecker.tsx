@@ -436,10 +436,9 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
                 Please move to the designated work area: <span className="font-bold">{result.zoneName}</span>
               </p>
               {result.distance !== undefined && (
-                <p className="flex items-center gap-1 mt-1">
+                <p className="flex items-center gap-1 mt-1 font-semibold">
                   <MapPin size={11} />
-                  You are <span className="font-bold">{formatDistance(result.distance)}</span> away from the nearest
-                  zone
+                  You are <span className="font-extrabold text-red-800">{formatDistance(result.distance)}</span> away (Follow the real-time red guidance line on the map below)
                 </p>
               )}
             </div>
@@ -597,7 +596,8 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           <GeofenceMap
             zones={activeZones}
             liveUser={liveCoords || (result.coords ? { lat: result.coords.lat, lng: result.coords.lng, accuracy: result.coords.accuracy } : null)}
-            className="h-64"
+            focusCoords={liveCoords ? { lat: liveCoords.lat, lng: liveCoords.lng } : undefined}
+            className="h-72"
             title="Live Workplace Geofence Check"
           />
         </div>

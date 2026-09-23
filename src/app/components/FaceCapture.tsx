@@ -532,7 +532,7 @@ export function FaceCapture({
         frameCounter++;
         const currentFrame = captureFrame();
         if (!currentFrame) {
-          await new Promise((r) => setTimeout(r, 250));
+          await new Promise((r) => setTimeout(r, 100));
           continue;
         }
         lastCaptured = currentFrame;
@@ -581,7 +581,7 @@ export function FaceCapture({
           }
         }
 
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, 100));
       }
 
       if (detectedSuccess && lastCaptured) {

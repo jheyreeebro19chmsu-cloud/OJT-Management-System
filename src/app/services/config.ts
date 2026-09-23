@@ -17,12 +17,12 @@ export const getApiBase = (): string => {
     return `${securityKey.replace(/\/+$/, '')}/api`;
   }
 
-  // 3. If running on Vercel or similar static hosts without a Node reverse proxy,
-  // return empty string so Option A (pure Supabase + on-device biometrics) activates cleanly.
+  // 3. If running on production or static host (including chmsuojtmis.site),
+  // return empty string so pure Supabase + on-device features activate without localhost hangs.
   if (
     typeof window !== 'undefined' &&
     window.location &&
-    (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('pages.dev'))
+    (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
   ) {
     return '';
   }

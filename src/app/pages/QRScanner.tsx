@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Camera,
@@ -15,6 +16,7 @@ import {
   Link,
   ShieldCheck,
   VideoOff,
+  ArrowLeft,
 } from 'lucide-react';
 
 import { authAPI } from '../services/authApi';
@@ -22,6 +24,7 @@ import { linkTraineeToInstructor } from '../services/accountSync';
 import { useApp } from '../store/AppContext';
 
 export default function QRScanner() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'camera' | 'upload' | 'manual'>('camera');
   const [qr, setQr] = useState('');
   const [result, setResult] = useState<any>(null);
@@ -287,16 +290,25 @@ export default function QRScanner() {
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Camera className="w-6 h-6 text-blue-600" />
-          Interactive QR Scanner
-        </h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Scan enrollment QR codes, instructor badges, or student passes using your camera or file upload.
-        </p>
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto pb-24">
+      {/* Header with Back Button */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <button
+            type="button"
+            onClick={() => navigate('/app')}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 mb-2 cursor-pointer transition-colors"
+          >
+            <ArrowLeft size={14} /> Back to Dashboard
+          </button>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Camera className="w-6 h-6 text-blue-600" />
+            Interactive QR Scanner
+          </h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Scan enrollment QR codes, instructor badges, or student passes using your camera or file upload.
+          </p>
+        </div>
       </div>
 
       {/* Mode Selector Tabs */}

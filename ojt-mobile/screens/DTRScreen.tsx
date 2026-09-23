@@ -284,8 +284,9 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     setLoading(true);
     try {
       const now = new Date();
-      const today = now.toISOString().split('T')[0];
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
       const empId = profile?.id || profile?.employeeId || '';
 
       let totalHours = 0;

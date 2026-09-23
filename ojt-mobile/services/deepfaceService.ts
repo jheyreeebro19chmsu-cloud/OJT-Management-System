@@ -49,11 +49,11 @@ function resolveBackendUrls(): string[] {
   // Render cloud production URL
   urls.push('https://ojt-management-system-capstone-f35i.onrender.com');
 
-  // Local development backends (Android emulator & iOS simulator/LAN)
-  urls.push('http://10.0.2.2:5000'); // Flask emulator
-  urls.push('http://10.0.2.2:8000'); // Django emulator
-  urls.push('http://localhost:5000');
-  urls.push('http://localhost:8000');
+  // Only check localhost/emulator in development mode
+  if (__DEV__) {
+    urls.push('http://10.0.2.2:8000');
+    urls.push('http://localhost:8000');
+  }
 
   return Array.from(new Set(urls));
 }
@@ -73,14 +73,13 @@ class DeepFaceService {
   /**
    * Verify face pair using server-authoritative DeepFace AI models.
    * Compares registered template photo against live captured photo.
-   * Fails closed if the backend is unreachable (no silent bypass to spoofable local fallback).
    */
   public async verifyFace(
     registeredImageBase64: string,
     capturedImageBase64: string,
     options: DeepFaceVerifyOptions = {}
   ): Promise<DeepFaceVerifyResult> {
-    const timeout = options.timeoutMs || 7000;
+    const timeout = options.timeoutMs || 2500;
 
     if (!registeredImageBase64 || !capturedImageBase64) {
       return {

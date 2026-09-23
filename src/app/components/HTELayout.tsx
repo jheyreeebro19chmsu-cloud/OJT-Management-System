@@ -148,7 +148,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                     <Icon size={18} />
                     {isActive && (
                       <motion.div
-                        layoutId="nav-indicator-hte"
+                        layoutId={isMobile ? 'nav-indicator-hte-mobile' : 'nav-indicator-hte'}
                         className="absolute inset-0 bg-white/10 rounded-xl -z-10"
                       />
                     )}
@@ -185,6 +185,16 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="text-blue-300 text-[10px] truncate">{companyName}</div>
           </div>
         </div>
+        <button
+          onClick={() => {
+            if (isMobile) setSidebarOpen(false);
+            navigate('/hte/profile');
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
+        >
+          <User size={15} />
+          Profile
+        </button>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
@@ -244,13 +254,16 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                 <Menu size={22} />
               </button>
 
-              <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
-                <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
-              </div>
-              <div>
-                <div className="text-xs text-blue-200 leading-tight">CHMSU OJT Management System</div>
-                <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{companyName}</div>
-              </div>
+              <NavLink to="/hte" className="flex items-center gap-2.5 hover:opacity-95 transition-opacity">
+                <div className="w-8 h-8 bg-white rounded-full p-0.5 shadow flex items-center justify-center shrink-0">
+                  <img src="/chmsu-logo.png" alt="CHMSU Logo" className="w-full h-full object-contain rounded-full" />
+                </div>
+                <div>
+                  <div className="text-xs text-blue-200 leading-tight">CHMSU OJT System</div>
+                  <div className="text-sm font-bold leading-tight truncate max-w-[130px] sm:max-w-[200px]">{companyName}</div>
+                </div>
+              </NavLink>
+
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 bg-[#0E1D35]/60 border border-[#1E3A66] text-blue-100 rounded-full text-[11px] font-bold shadow-sm" title="Active Academic Environment">
                 <span className="w-1.5 h-1.5 bg-[#146B4D] rounded-full animate-pulse" />
                 <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
@@ -260,11 +273,101 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto pb-20 lg:pb-8">
           <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             {children || <Outlet />}
           </div>
         </main>
+
+        {/* Mobile Web Bottom Navigation for HTE Supervisor */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 py-1.5 flex items-center justify-around no-print">
+          <NavLink
+            to="/hte"
+            end
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <LayoutDashboard size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Dashboard</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/hte/trainees"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Users size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Trainees</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/hte/records"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Clock size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">DTR Records</span>
+              </>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/hte/evaluations"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
+                  <Star size={19} />
+                </div>
+                <span className="text-[10px] mt-0.5">Evaluations</span>
+              </>
+            )}
+          </NavLink>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
+          >
+            <div className="relative p-1 rounded-xl">
+              <Menu size={19} />
+              {hteAnnounceCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#DC6B2F] rounded-full" />
+              )}
+            </div>
+            <span className="text-[10px] mt-0.5">More</span>
+          </button>
+        </nav>
       </div>
 
       <LogoutConfirmModal

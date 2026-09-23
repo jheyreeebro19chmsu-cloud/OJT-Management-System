@@ -125,13 +125,16 @@ export function TraineeEvaluation() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-gray-900">OJT Performance Evaluation &amp; Questionnaire</h1>
+            <h1 className="text-xl font-bold text-gray-900">CHMSU OJT Trainee Questionnaire</h1>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
               CHMSU CCS Official
             </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+              Trainee Form
+            </span>
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
-            View supervisor performance ratings (Page 1) and complete your OJT questionnaire &amp; reflections (Page 2)
+          <p className="text-xs text-gray-500 mt-1">
+            Complete your training station particulars and your 9-question internship feedback &amp; recommendations questionnaire.
           </p>
         </div>
 
@@ -143,7 +146,7 @@ export function TraineeEvaluation() {
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Save size={15} />
-            <span>{isSavingQuestionnaire ? 'Saving...' : 'Save My Questionnaire Answers'}</span>
+            <span>{isSavingQuestionnaire ? 'Saving...' : 'Save Questionnaire Responses'}</span>
           </button>
 
           <button
@@ -152,93 +155,50 @@ export function TraineeEvaluation() {
             className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Printer size={15} />
-            <span>Print Official Form</span>
+            <span>Print Questionnaire</span>
           </button>
         </div>
       </div>
 
       {/* Trainee Notice Banner */}
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3 no-print">
+      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3 no-print shadow-xs">
         <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-sm">
           <ShieldCheck size={18} />
         </div>
         <div className="text-xs text-slate-700 leading-relaxed">
-          <p className="font-bold text-emerald-950 text-sm mb-0.5">Official CHMSU OJT 2-Page Evaluation System</p>
-          • <strong>Page 1 (Evaluation Report):</strong> Formally filled and submitted by your Host Training Establishment supervisor according to College of Computer Studies criteria.<br />
-          • <strong>Page 2 (Evaluation Form / Questionnaire):</strong> Contains your training station particulars and your 9-question internship feedback &amp; recommendations. You can fill out and update your questionnaire responses below anytime.
+          <p className="font-bold text-emerald-950 text-sm mb-0.5">CHMSU OJT Practicum Feedback Questionnaire</p>
+          Fill out your training establishment details, dates, and the 9 required reflection questions below. Your responses are automatically saved and submitted for academic compliance and coordinator verification.
         </div>
       </div>
 
-      {/* Case 1: Evaluation exists */}
-      {evaluation ? (
-        <CHMSUEvaluationSheet
-          trainee={employee}
-          companyName={employee.companyName || 'Host Training Establishment'}
-          supervisorName={
-            evaluation.evaluatorName ||
-            evaluation.evaluatedBy ||
-            employee.supervisorName ||
-            'HTE Supervisor'
-          }
-          instructorName={instructorName}
-          evaluationDate={evaluation.evaluatedAt}
-          ratings={evaluation.ratings || {}}
-          ratingComments={evaluation.ratingComments || {}}
-          commentsSuggestions={evaluation.commentsSuggestions || evaluation.recommendations || ''}
-          overallRating={
-            evaluation.overallRating || (evaluation.overallScore ? evaluation.overallScore / 20 : 4)
-          }
-          grade={evaluation.grade || 'Good'}
-          questionnaire={traineeQuestionnaire}
-          isReadOnly={true}
-          status={evaluation.status}
-          role="trainee"
-          initialPageTab="both"
-          onQuestionnaireChange={setTraineeQuestionnaire}
-          onSaveDraft={handleSaveQuestionnaire}
-          onSubmitFinal={handleSaveQuestionnaire}
-        />
-      ) : (
-        /* Case 2: Awaiting HTE Evaluation Report, but Trainee can still fill Page 2 Questionnaire */
-        <div className="space-y-6">
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center max-w-xl mx-auto space-y-4 no-print"
-          >
-            <div className="w-14 h-14 mx-auto rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-inner">
-              <Clock size={28} className="animate-pulse" />
-            </div>
-
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Awaiting HTE Performance Report (Page 1)</h2>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                Your HTE supervisor hasn't submitted Page 1 criteria ratings yet, but you can already fill out your <strong>Page 2 Questionnaire</strong> below and click "Save My Questionnaire Answers".
-              </p>
-            </div>
-          </motion.div>
-
-          <CHMSUEvaluationSheet
-            trainee={employee}
-            companyName={employee.companyName || 'Host Training Establishment'}
-            supervisorName={employee.supervisorName || 'HTE Supervisor'}
-            instructorName={instructorName}
-            ratings={{}}
-            ratingComments={{}}
-            commentsSuggestions=""
-            overallRating={4}
-            grade="Good"
-            questionnaire={traineeQuestionnaire}
-            isReadOnly={false}
-            status="draft"
-            role="trainee"
-            initialPageTab="page2"
-            onQuestionnaireChange={setTraineeQuestionnaire}
-            onSaveDraft={handleSaveQuestionnaire}
-            onSubmitFinal={handleSaveQuestionnaire}
-          />
-        </div>
-      )}
+      {/* OJT Questionnaire Sheet (Only questionnaire is permitted in trainee's account) */}
+      <CHMSUEvaluationSheet
+        trainee={employee}
+        companyName={employee.companyName || 'Host Training Establishment'}
+        supervisorName={
+          evaluation?.evaluatorName ||
+          evaluation?.evaluatedBy ||
+          employee.supervisorName ||
+          'HTE Supervisor'
+        }
+        instructorName={instructorName}
+        evaluationDate={evaluation?.evaluatedAt || new Date().toISOString()}
+        ratings={evaluation?.ratings || {}}
+        ratingComments={evaluation?.ratingComments || {}}
+        commentsSuggestions={evaluation?.commentsSuggestions || evaluation?.recommendations || ''}
+        overallRating={
+          evaluation?.overallRating || (evaluation?.overallScore ? evaluation.overallScore / 20 : 4)
+        }
+        grade={evaluation?.grade || 'Good'}
+        questionnaire={traineeQuestionnaire}
+        isReadOnly={false}
+        status={evaluation?.status || 'draft'}
+        role="trainee"
+        initialPageTab="page2"
+        onQuestionnaireChange={setTraineeQuestionnaire}
+        onSaveDraft={handleSaveQuestionnaire}
+        onSubmitFinal={handleSaveQuestionnaire}
+      />
     </div>
   );
 }
