@@ -609,8 +609,12 @@ export async function uploadFacePhoto(
     const cleanEmpId = (employeeId || 'unassigned').replace(/[^a-zA-Z0-9_-]/g, '_');
     const fileName = `${cleanEmpId}/${type}_${Date.now()}.jpg`;
 
-    // Try 'face-photos' bucket first, with fallback to 'avatars'
-    const bucketsToTry = ['face-photos', 'avatars'];
+    // Route by photo type: profile photos go to face-photos,
+    // time in/out photos go to time-records-photos.
+    const primaryBucket = type === 'profile' ? 'face-photos' : 'time-records-photos';
+    const bucketsToTry = [primaryBucket, 'face-photos', 'avatars'].filter(
+      (b, i, arr) => arr.indexOf(b) === i
+    );
     for (const bucketName of bucketsToTry) {
       try {
         const { data: uploadData, error: uploadError } = await supabase.storage
