@@ -273,101 +273,11 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto pb-20 lg:pb-8">
+        <main className="flex-1 overflow-y-auto pb-6 lg:pb-8">
           <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             {children || <Outlet />}
           </div>
         </main>
-
-        {/* Mobile Web Bottom Navigation for HTE Supervisor */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 py-1.5 flex items-center justify-around no-print">
-          <NavLink
-            to="/hte"
-            end
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
-                  <LayoutDashboard size={19} />
-                </div>
-                <span className="text-[10px] mt-0.5">Dashboard</span>
-              </>
-            )}
-          </NavLink>
-
-          <NavLink
-            to="/hte/trainees"
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
-                  <Users size={19} />
-                </div>
-                <span className="text-[10px] mt-0.5">Trainees</span>
-              </>
-            )}
-          </NavLink>
-
-          <NavLink
-            to="/hte/records"
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
-                  <Clock size={19} />
-                </div>
-                <span className="text-[10px] mt-0.5">DTR Records</span>
-              </>
-            )}
-          </NavLink>
-
-          <NavLink
-            to="/hte/evaluations"
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-                isActive ? 'text-[#146B4D] font-black' : 'text-slate-500 hover:text-slate-800'
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-[#146B4D]/15' : ''}`}>
-                  <Star size={19} />
-                </div>
-                <span className="text-[10px] mt-0.5">Evaluations</span>
-              </>
-            )}
-          </NavLink>
-
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
-          >
-            <div className="relative p-1 rounded-xl">
-              <Menu size={19} />
-              {hteAnnounceCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-[#DC6B2F] rounded-full" />
-              )}
-            </div>
-            <span className="text-[10px] mt-0.5">More</span>
-          </button>
-        </nav>
       </div>
 
       <LogoutConfirmModal
