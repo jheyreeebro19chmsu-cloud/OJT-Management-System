@@ -21,32 +21,31 @@ def main():
         sys.exit(2)
 
     bucket_id = 'face-photos'
-    admin_buckets = f"{supabase_url.rstrip('/')}/storage/v1/admin/buckets"
+    buckets_url = f"{supabase_url.rstrip('/')}/storage/v1/bucket"
+    bucket_url = f"{buckets_url}/{bucket_id}"
     headers = {
         'Authorization': f'Bearer {service_key}',
         'apikey': service_key,
         'Content-Type': 'application/json'
     }
 
-    # Fetch existing buckets
+    # Check if the bucket already exists (GET /storage/v1/bucket/{id})
     try:
-        r = requests.get(admin_buckets, headers=headers, timeout=15)
-        r.raise_for_status()
-        buckets = r.json()
-    except Exception as e:
-        print('Failed to fetch buckets:', e)
-        sys.exit(1)
-
-    for b in buckets:
-        if b.get('id') == bucket_id:
+        r = requests.get(bucket_url, headers=headers, timeout=15)
+        if r.status_code == 200:
             print(f"Bucket '{bucket_id}' already exists.")
             print('Public URL prefix:', f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket_id}/")
             return
+        elif r.status_code != 404:
+            r.raise_for_status()
+    except Exception as e:
+        print('Failed to check bucket:', e)
+        sys.exit(1)
 
-    # Create bucket
+    # Create bucket (POST /storage/v1/bucket)
     payload = {"id": bucket_id, "name": "face-photos", "public": True}
     try:
-        r = requests.post(admin_buckets, json=payload, headers=headers, timeout=15)
+        r = requests.post(buckets_url, json=payload, headers=headers, timeout=15)
         r.raise_for_status()
         print(f"Created bucket '{bucket_id}' and set to public.")
         print('Public URL prefix:', f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket_id}/")
