@@ -480,7 +480,9 @@ export function Dashboard() {
             .select('*, host_supervisors(*), employees!inner(*)')
             .in('status', ['pending', 'approved'])
             .order('created_at', { ascending: false });
-          if (!error && data) setHteRequests(data);
+          if (!error && data) {
+            setHteRequests(data);
+          }
         } catch {
           // Table may not yet be created in Supabase
         }
