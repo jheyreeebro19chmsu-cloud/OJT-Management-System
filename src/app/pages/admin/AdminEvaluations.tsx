@@ -1,6 +1,6 @@
-import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2, Download } from 'lucide-react';
+import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2, Download, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../../store/AppContext';
@@ -45,6 +45,7 @@ export function AdminEvaluations() {
     getEmployeeRequirementSummary,
     settings,
     currentUser,
+    refreshData,
   } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
@@ -59,6 +60,30 @@ export function AdminEvaluations() {
   const [formStatus, setFormStatus] = useState<Evaluation['status']>('draft');
   const [editEvalId, setEditEvalId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sync on mount
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await refreshData();
+      toast.success('✓ Evaluations synchronized with cloud!');
+    } catch {
+      toast.error('Sync failed. Please check internet connection.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const getEmployeeEvaluation = (emp: Employee) => {
+    return evaluations.find(
+      (e) => e.employeeId === emp.id || (emp.employeeId && e.employeeId === emp.employeeId)
+    );
+  };
 
   const instructorName = useMemo(() => {
     if (selectedEmp?.instructorId) {
@@ -116,7 +141,7 @@ export function AdminEvaluations() {
   }, [overallRating]);
 
   const openNewEval = (emp: Employee) => {
-    const existing = evaluations.find((e) => e.employeeId === emp.id);
+    const existing = getEmployeeEvaluation(emp);
     setSelectedEmp(emp);
     if (existing) {
       setViewMode('view');
@@ -156,7 +181,7 @@ export function AdminEvaluations() {
   };
 
   const viewEval = (emp: Employee) => {
-    const existing = evaluations.find((e) => e.employeeId === emp.id);
+    const existing = getEmployeeEvaluation(emp);
     setSelectedEmp(emp);
     if (existing) {
       setRatings(existing.ratings || getDefaultRatings());
@@ -262,6 +287,49 @@ export function AdminEvaluations() {
     toast.success('✓ Evaluation marked as Done Viewed! Automatically synchronized to HTE and Trainee.');
   };
 
+  const handlePassToHte = (evalId?: string, emp?: Employee) => {
+    const targetEmp = emp || selectedEmp;
+    let targetEval = evalId ? evaluations.find((e) => e.id === evalId) : (targetEmp ? getEmployeeEvaluation(targetEmp) : undefined);
+
+    if (targetEval) {
+      updateEvaluation(targetEval.id, {
+        status: 'passed_to_hte',
+      });
+      toast.success('✓ Trainee questionnaire forwarded to HTE Supervisor for rating!');
+    } else if (targetEmp) {
+      const draftData: Omit<Evaluation, 'id'> = {
+        employeeId: targetEmp.id,
+        evaluatedBy: targetEmp.supervisorName || 'HTE Supervisor',
+        evaluatorName: targetEmp.supervisorName || 'HTE Supervisor',
+        evaluatorPosition: 'HTE Supervisor',
+        date: new Date().toISOString().split('T')[0],
+        attendanceScore: 85,
+        performanceScore: 85,
+        attitudeScore: 85,
+        punctualityScore: 85,
+        communicationScore: 85,
+        overallScore: 85,
+        grade: 'Very Good',
+        strengths: 'Endorsed by instructor for HTE performance evaluation.',
+        areasForImprovement: 'Continuous technical enhancement.',
+        recommendations: 'Forwarded to HTE supervisor for formal rating.',
+        evaluatedAt: new Date().toISOString(),
+        status: 'passed_to_hte',
+        questionnaire: {
+          companyAddress: targetEmp.department || '',
+          contactPerson: targetEmp.supervisorName || 'OJT Supervisor',
+          dateOfEvaluation: new Date().toISOString().split('T')[0],
+          employabilityStatus: 'OJT Trainee',
+          telephoneNo: targetEmp.phone || '',
+          department: targetEmp.department || 'IT Department',
+          position: 'ON - THE - JOB TRAINEE',
+        },
+      };
+      addEvaluation(draftData);
+      toast.success('✓ Evaluation record created & forwarded to HTE Supervisor for rating!');
+    }
+  };
+
   const getEmpStats = (empId: string) => {
     const targetEmp = employees.find((e) => e.id === empId || e.employeeId === empId);
     const validIds = new Set<string>();
@@ -308,6 +376,7 @@ export function AdminEvaluations() {
         onQuestionnaireChange={setQuestionnaire}
         onSaveDraft={() => handleSave('draft')}
         onSubmitFinal={() => handleSave('final')}
+        onPassToHte={() => handlePassToHte(editEvalId || undefined, selectedEmp || undefined)}
         onClose={() => setViewMode('list')}
       />
     );
@@ -315,7 +384,7 @@ export function AdminEvaluations() {
 
   // ── Evaluation Form Screen (View / Printable Sheet) ─────────────────
   if (viewMode === 'view' && selectedEmp) {
-    const ev = evaluations.find((e) => e.employeeId === selectedEmp.id);
+    const ev = selectedEmp ? getEmployeeEvaluation(selectedEmp) : undefined;
     if (!ev) return null;
     const viewRatings = ev.ratings || ratings;
     const viewComments = ev.ratingComments || ratingComments;
@@ -340,6 +409,7 @@ export function AdminEvaluations() {
         isReadOnly={true}
         status={ev.status}
         role="instructor"
+        onPassToHte={() => handlePassToHte(ev.id, selectedEmp || undefined)}
         onMarkDoneViewed={() => handleMarkDoneViewed(ev.id)}
         onClose={() => setViewMode('list')}
       />
@@ -370,13 +440,24 @@ export function AdminEvaluations() {
               ))}
             </select>
           </div>
+
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="px-3.5 py-2 bg-white border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer disabled:opacity-50"
+            title="Fetch latest evaluations from Supabase"
+          >
+            <RefreshCw size={13} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+          </button>
+
           <button
             onClick={() => {
               const csvRows = [
                 ['Trainee Name', 'Employee ID', 'Company', 'Department', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
               ];
               activeEmployees.forEach((emp) => {
-                const ev = evaluations.find((e) => e.employeeId === emp.id);
+                const ev = getEmployeeEvaluation(emp);
                 csvRows.push([
                   emp.name,
                   emp.employeeId,
@@ -420,7 +501,7 @@ export function AdminEvaluations() {
 
       <div className="space-y-3">
         {activeEmployees.map((emp) => {
-          const ev = evaluations.find((e) => e.employeeId === emp.id);
+          const ev = getEmployeeEvaluation(emp);
           const stats = getEmpStats(emp.id);
           const progress = Math.min((stats.totalHours / emp.requiredHours) * 100, 100);
           const gc = ev ? GRADE_CONFIG[ev.grade] : null;
@@ -460,11 +541,19 @@ export function AdminEvaluations() {
                         <p className="text-[10px] uppercase font-bold mt-1">
                           {ev.status === 'reviewed_by_instructor' ? (
                             <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                              <CheckCircle2 size={10} /> Done Viewed
+                              <CheckCircle2 size={10} /> Done Viewed &amp; Approved
                             </span>
-                          ) : ev.status === 'final' || ev.status === 'submitted_to_instructor' ? (
-                            <span className="text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                              <Clock size={10} /> Passed by HTE
+                          ) : ev.status === 'submitted_to_instructor' || ev.status === 'final' ? (
+                            <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <Award size={10} /> Ratings Submitted by HTE
+                            </span>
+                          ) : ev.status === 'passed_to_hte' ? (
+                            <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <Clock size={10} /> Passed to HTE (Awaiting Ratings)
+                            </span>
+                          ) : ev.status === 'submitted_by_trainee' ? (
+                            <span className="text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <FileText size={10} /> Questionnaire Received — Pass to HTE
                             </span>
                           ) : (
                             <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
@@ -503,12 +592,12 @@ export function AdminEvaluations() {
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
+              <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
                 {ev ? (
                   <>
                     <button
                       onClick={() => viewEval(emp)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                      className="flex-1 min-w-[90px] flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
                     >
                       <FileText size={14} />
                       View Form
@@ -519,28 +608,50 @@ export function AdminEvaluations() {
                         setViewMode('view');
                         setTimeout(() => window.print(), 250);
                       }}
-                      className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs"
+                      className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer"
                       title="Print Official Hard Copy"
                     >
                       <Printer size={13} />
                       <span>Print</span>
                     </button>
-                    {ev.status !== 'reviewed_by_instructor' && (
+
+                    {(ev.status === 'submitted_by_trainee' || ev.status === 'draft') && (
+                      <button
+                        onClick={() => handlePassToHte(ev.id, emp)}
+                        className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-sky-600/20 cursor-pointer"
+                        title="Forward trainee's answered questionnaire to HTE Supervisor for rating"
+                      >
+                        <Building size={13} />
+                        Pass to HTE
+                      </button>
+                    )}
+
+                    {(ev.status === 'submitted_to_instructor' || ev.status === 'final') && (
                       <button
                         onClick={() => handleMarkDoneViewed(ev.id)}
-                        className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20"
-                        title="Mark as Done Viewed to sync with HTE and Trainee"
+                        className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20 cursor-pointer"
+                        title="Mark as Done Viewed & Approved to sync with HTE and Trainee"
                       >
                         <CheckCircle2 size={13} />
-                        Done Viewed
+                        Done Viewed &amp; Approved
                       </button>
                     )}
                   </>
                 ) : (
-                  <div className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold">
-                    <Clock size={14} />
-                    Awaiting HTE Evaluation
-                  </div>
+                  <>
+                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold">
+                      <Clock size={14} />
+                      Awaiting Trainee Questionnaire
+                    </div>
+                    <button
+                      onClick={() => handlePassToHte(undefined, emp)}
+                      className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      title="Initialize and pass directly to HTE for evaluation"
+                    >
+                      <Building size={13} />
+                      Pass to HTE
+                    </button>
+                  </>
                 )}
               </div>
             </motion.div>

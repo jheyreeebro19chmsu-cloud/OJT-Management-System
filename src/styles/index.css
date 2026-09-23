@@ -150,8 +150,7 @@
   }
 
   /* ─────────────────────────────────────────────────────────────────────────────
-     EVALUATION REPORT SHEET PRINT RULES (EXACT 1-PAGE PER SECTION / 2-PAGE TOTAL)
-     ADAPTABLE ACROSS A4, US LETTER, AND US LEGAL
+     EVALUATION REPORT SHEET PRINT RULES (EXACT FIT ACROSS BOND PAPERS / LETTER / A4 / FOLIO)
      ───────────────────────────────────────────────────────────────────────────── */
   .eval-sheet-container {
     padding: 0 !important;
@@ -172,31 +171,48 @@
     max-width: 100% !important;
     background: white !important;
     box-sizing: border-box !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
     overflow: visible !important;
   }
 
   .eval-page-1 {
     page-break-after: always !important;
     break-after: page !important;
+    margin-bottom: 0 !important;
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    margin-bottom: 0 !important;
   }
 
-  .eval-page-2 {
+  /* Only force page-break-before on Page 2 if Page 1 precedes it */
+  .eval-page-1 + .eval-page-2 {
     page-break-before: always !important;
     break-before: page !important;
+  }
+
+  /* Standalone Page 2 starts cleanly on first sheet and paginates without clipping */
+  .eval-page-2 {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    margin-top: 0 !important;
+    overflow: visible !important;
+  }
+
+  .eval-table {
+    page-break-inside: auto !important;
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  .eval-table tr {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    margin-top: 0 !important;
   }
 
   .eval-table th,
   .eval-table td {
-    padding-top: 1px !important;
-    padding-bottom: 1px !important;
+    padding-top: 1.5px !important;
+    padding-bottom: 1.5px !important;
     padding-left: 2px !important;
     padding-right: 2px !important;
     font-size: 6.8pt !important;

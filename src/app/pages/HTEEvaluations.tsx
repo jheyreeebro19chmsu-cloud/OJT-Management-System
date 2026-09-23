@@ -21,6 +21,8 @@ import {
   Search,
   User,
   ShieldCheck,
+  RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo } from 'react';
@@ -108,6 +110,8 @@ export function HTEEvaluations() {
     getCurrentEmployee,
     updateEmployee,
     settings,
+    refreshData,
+    hostSupervisors,
   } = useApp();
 
   const currentEmp = getCurrentEmployee();
@@ -128,6 +132,31 @@ export function HTEEvaluations() {
   const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCourse, setFilterCourse] = useState('all');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('all');
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sync latest evaluations on mount
+  React.useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await refreshData();
+      toast.success('Evaluations and trainee records synchronized with cloud.');
+    } catch {
+      toast.error('Sync failed. Please check network.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const getEmployeeEvaluation = (emp: Employee) => {
+    return evaluations.find(
+      (e) => e.employeeId === emp.id || (emp.employeeId && e.employeeId === emp.employeeId)
+    );
+  };
 
   const hteUser = React.useMemo(() => {
     try {
@@ -138,13 +167,25 @@ export function HTEEvaluations() {
     }
   }, []);
 
+  const currentHostSupervisor = useMemo(() => {
+    if (!hostSupervisors) return null;
+    return hostSupervisors.find(
+      (h) =>
+        (currentUser?.email && h.email?.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (hteUser?.email && h.email?.toLowerCase() === hteUser.email.toLowerCase()) ||
+        (currentEmp?.email && h.email?.toLowerCase() === currentEmp.email.toLowerCase())
+    );
+  }, [hostSupervisors, currentUser, hteUser, currentEmp]);
+
   const supervisorName =
     currentUser?.name ||
+    currentHostSupervisor?.name ||
     currentEmp?.name ||
     hteUser?.name ||
     'HTE Supervisor';
 
   const companyName =
+    currentHostSupervisor?.companyName ||
     currentEmp?.companyName ||
     hteUser?.companyName ||
     localStorage.getItem('ojt_hte_company') ||
@@ -160,30 +201,43 @@ export function HTEEvaluations() {
     return 'CHMSU OJT Instructor';
   }, [selectedEmp, employees]);
 
-  // Only trainees linked to the active HTE workflow should appear in evaluation queues.
+  // Trainees linked to HTE or with evaluations in progress
   const activeTrainees = useMemo(() => {
     const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
     const currentCompany = (companyName || '').trim().toLowerCase();
-    const targetAY = settings?.activeAcademicYear || '2026-2027';
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
     return employees.filter((e) => {
       if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
       const empAY = e.academicYear || defaultAY;
-      if (empAY !== targetAY) return false;
+      if (selectedAcademicYear !== 'all' && empAY !== selectedAcademicYear) return false;
+
+      const hasEvaluation = Boolean(
+        evaluations.some(
+          (evalItem) => evalItem.employeeId === e.id || (e.employeeId && evalItem.employeeId === e.employeeId)
+        )
+      );
 
       const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
       const isCompanyMatched = Boolean(
         currentCompany &&
         currentCompany !== 'host training establishment' &&
         e.companyName &&
-        e.companyName.trim().toLowerCase() === currentCompany
+        (e.companyName.trim().toLowerCase() === currentCompany ||
+         e.companyName.toLowerCase().includes(currentCompany) ||
+         currentCompany.includes(e.companyName.toLowerCase()))
       );
       const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
       const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
-      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && e.companyName !== '');
+
+      // Trainee is visible if:
+      // 1. Trainee already has an evaluation in progress (e.g. answered questionnaire or passed by instructor)
+      // 2. Trainee is assigned to this HTE ID or company name matches
+      // 3. Trainee is assigned to instructor while HTE is viewing
+      // 4. Trainee has company assigned and not yet assigned to another specific HTE ID
+      return hasEvaluation || isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && Boolean(e.companyName));
     });
-  }, [employees, currentUser, currentEmp, hteUser, companyName, settings]);
+  }, [employees, currentUser, currentEmp, hteUser, companyName, settings, selectedAcademicYear, evaluations]);
 
   // Handle preselected student from URL
   React.useEffect(() => {
@@ -225,7 +279,7 @@ export function HTEEvaluations() {
   }, [overallRating]);
 
   const openNewEval = (emp: Employee) => {
-    const existing = evaluations.find((e) => e.employeeId === emp.id);
+    const existing = getEmployeeEvaluation(emp);
     setSelectedEmp(emp);
     if (existing) {
       setEditEvalId(existing.id);
@@ -275,7 +329,7 @@ export function HTEEvaluations() {
   };
 
   const viewEval = (emp: Employee) => {
-    const existing = evaluations.find((e) => e.employeeId === emp.id);
+    const existing = getEmployeeEvaluation(emp);
     setSelectedEmp(emp);
     if (existing) {
       setRatings(existing.ratings || getDefaultRatings());
@@ -350,14 +404,14 @@ export function HTEEvaluations() {
     if (editEvalId) {
       updateEvaluation(editEvalId, data);
       if (status === 'submitted_to_instructor') {
-        toast.success('✓ Evaluation completed & passed to Instructor! Trainee will see results after Instructor reviews.');
+        toast.success('✓ Performance ratings submitted & passed to Instructor! The coordinator will review and approve.');
       } else {
         toast.success('Draft saved.');
       }
     } else {
       addEvaluation(data);
       if (status === 'submitted_to_instructor') {
-        toast.success('✓ Evaluation completed & passed to Instructor! Trainee will see results after Instructor reviews.');
+        toast.success('✓ Performance ratings submitted & passed to Instructor! The coordinator will review and approve.');
       } else {
         toast.success('Draft saved.');
       }
@@ -517,7 +571,7 @@ export function HTEEvaluations() {
   // 2. View Mode (Printable / Certificate Review)
   // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === 'view' && selectedEmp) {
-    const existing = evaluations.find((e) => e.employeeId === selectedEmp.id);
+    const existing = getEmployeeEvaluation(selectedEmp);
     const viewRatings = existing?.ratings || ratings;
     const viewComments = existing?.ratingComments || ratingComments;
     const viewSuggestions = existing?.commentsSuggestions || existing?.recommendations || commentsSuggestions;
@@ -581,13 +635,41 @@ export function HTEEvaluations() {
             <span>Trainee Performance Evaluations</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Official performance evaluation system matching university criteria with real-time coordinator sync
+            Official performance evaluation system matching university criteria with real-time cloud sync
           </p>
         </div>
 
-        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-800 rounded-2xl border border-blue-200 text-xs font-bold shadow-xs">
-          <Building size={16} />
-          <span>{companyName}</span>
+        <div className="flex items-center flex-wrap gap-2.5">
+          <div className="flex items-center gap-2 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold shadow-xs">
+            <Calendar size={14} className="text-slate-500" />
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="bg-transparent text-slate-700 text-xs font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Academic Years</option>
+              {(settings?.academicYears || ['2026-2027', '2025-2026']).map((ay) => (
+                <option key={ay} value={ay}>
+                  A.Y. {ay}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-2xl border border-blue-200 text-xs font-bold transition-all shadow-xs disabled:opacity-60 cursor-pointer"
+            title="Synchronize evaluations and trainee records with cloud"
+          >
+            <RefreshCw size={14} className={isSyncing ? 'animate-spin text-blue-600' : 'text-blue-600'} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+          </button>
+
+          <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold shadow-xs">
+            <Building size={16} />
+            <span>{companyName}</span>
+          </div>
         </div>
       </div>
 
@@ -645,7 +727,7 @@ export function HTEEvaluations() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedTrainees.map((emp) => {
-                const evalData = evaluations.find((e) => e.employeeId === emp.id);
+                const evalData = getEmployeeEvaluation(emp);
                 const stats = getEmpStats(emp.id);
                 const gradeInfo = evalData ? GRADE_CONFIG[evalData.grade] : null;
 
@@ -679,22 +761,32 @@ export function HTEEvaluations() {
                     </td>
 
                     <td className="px-4 py-3">
-                      {evalData && gradeInfo ? (
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
-                            <Award size={13} />
-                            {evalData.overallScore}% ({evalData.grade})
-                          </span>
+                      {evalData ? (
+                        <div className="flex flex-col gap-1 items-start">
+                          {gradeInfo && (evalData.status === 'submitted_to_instructor' || evalData.status === 'reviewed_by_instructor') && (
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
+                              <Award size={13} />
+                              {evalData.overallScore}% ({evalData.grade})
+                            </span>
+                          )}
                           {evalData.status === 'reviewed_by_instructor' ? (
-                            <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                              ✓ Done Viewed by Instructor
+                            <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                              <CheckCircle2 size={11} /> Approved by Instructor
                             </span>
                           ) : evalData.status === 'submitted_to_instructor' || evalData.status === 'final' ? (
-                            <span className="text-[10px] uppercase font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                              Passed to Instructor
+                            <span className="text-[10px] uppercase font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 inline-flex items-center gap-1">
+                              <Clock size={11} /> Ratings Passed to Instructor
+                            </span>
+                          ) : evalData.status === 'passed_to_hte' ? (
+                            <span className="text-[10px] uppercase font-extrabold text-sky-800 bg-sky-100 px-2.5 py-1 rounded-full border border-sky-300 inline-flex items-center gap-1 shadow-xs animate-pulse">
+                              <Sparkles size={11} className="text-sky-600" /> Ready for Rating (Passed by Instructor)
+                            </span>
+                          ) : evalData.status === 'submitted_by_trainee' ? (
+                            <span className="text-[10px] uppercase font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 inline-flex items-center gap-1">
+                              <FileText size={11} /> Questionnaire Submitted (Awaiting Instructor Pass)
                             </span>
                           ) : (
-                            <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                            <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200">
                               Draft
                             </span>
                           )}
@@ -730,9 +822,13 @@ export function HTEEvaluations() {
                             </button>
                             <button
                               onClick={() => openNewEval(emp)}
-                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                              className={`px-3.5 py-1.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-xs ${
+                                evalData.status === 'passed_to_hte'
+                                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
+                                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
+                              }`}
                             >
-                              Edit
+                              {evalData.status === 'passed_to_hte' ? 'Rate Intern' : 'Edit Ratings'}
                             </button>
                           </>
                         ) : (

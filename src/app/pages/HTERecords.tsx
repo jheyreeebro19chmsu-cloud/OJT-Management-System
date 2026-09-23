@@ -18,6 +18,27 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { MonthlyDTTRView } from '../components/MonthlyDTTRView';
 
+function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
+  const [hasError, setHasError] = useState(false);
+  const initial = name ? name.charAt(0).toUpperCase() : 'T';
+  const url = getPhotoUrl(photo);
+
+  return (
+    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
+      {url && !hasError ? (
+        <img
+          src={url}
+          alt={name}
+          className="w-full h-full object-cover"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <span className="text-blue-700 font-black text-xs">{initial}</span>
+      )}
+    </div>
+  );
+}
+
 export function HTERecords() {
   const { timeRecords, employees, approveTimeRecord, disapproveTimeRecord } = useApp();
   const [viewMode, setViewMode] = useState<'daily' | 'monthly_dttr'>('daily');
@@ -72,7 +93,7 @@ export function HTERecords() {
         ojtCode: displayCode || 'OJT-TRAINEE',
         course: emp?.course || 'OJT Trainee',
         schoolName: emp?.schoolName || 'CHMSU',
-        photo: emp?.photo || (r as any)?.timeInPhoto || (r as any)?.timeOutPhoto || '',
+        photo: emp?.photo || '',
         renderedHours,
       };
     });
@@ -253,22 +274,7 @@ export function HTERecords() {
               {paginatedRecords.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3 text-center">
-                    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
-                      {r.photo ? (
-                        <img
-                          src={getPhotoUrl(r.photo)}
-                          alt={r.studentName}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <span className="text-blue-700 font-black text-xs">
-                          {r.studentName ? r.studentName.charAt(0).toUpperCase() : 'T'}
-                        </span>
-                      )}
-                    </div>
+                    <RecordAvatar photo={r.photo} name={r.studentName} />
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{r.date}</td>
                   <td className="px-4 py-3">

@@ -25,6 +25,7 @@ import {
   Award,
   FileCheck,
   FileText,
+  Edit2,
 } from 'lucide-react-native';
 import { mobileDb, Employee, TimeRecord } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
@@ -44,6 +45,8 @@ export default function InstructorTraineesScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>('all');
   const [selectedTrainee, setSelectedTrainee] = useState<Employee | null>(null);
+  const [hteList, setHteList] = useState<any[]>([]);
+  const [showHteModal, setShowHteModal] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -68,14 +71,84 @@ export default function InstructorTraineesScreen({
     setLoading(true);
     try {
       const instructorId = profile?.id || profile?.employeeId || '';
-      const [list, records] = await Promise.all([
+      const [list, records, htesRes] = await Promise.all([
         mobileDb.getTraineesByInstructor(instructorId, activeAcademicYear),
         mobileDb.getTimeRecords(undefined, activeAcademicYear),
+        supabase.from('employees').select('*').or('role.eq.hte,position.ilike.%hte%'),
       ]);
       setTrainees(list);
       setTimeRecords(records);
+      setHteList(htesRes.data || []);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to load trainees');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleChangeHte(selectedHte: any) {
+    if (!selectedTrainee) return;
+    try {
+      setLoading(true);
+      const hteAddress =
+        selectedHte.company_address ||
+        selectedHte.companyAddress ||
+        selectedHte.registration_address ||
+        selectedHte.registrationAddress ||
+        `${selectedHte.company_name || selectedHte.companyName} Workplace Premises`;
+      const regLoc =
+        selectedHte.registration_location ||
+        selectedHte.registrationLocation ||
+        { lat: 10.7412, lng: 122.9691 };
+      const radius = Math.max(
+        40,
+        Number(selectedHte.registration_radius || selectedHte.registrationRadius || regLoc?.radius || 40)
+      );
+      const companyName = selectedHte.company_name || selectedHte.companyName;
+
+      await supabase.from('employees').update({
+        hte_id: selectedHte.id,
+        company_name: companyName,
+        company_address: hteAddress,
+        registration_address: hteAddress,
+        supervisor_name: selectedHte.name,
+        registration_location: {
+          lat: Number(regLoc.lat),
+          lng: Number(regLoc.lng),
+          radius,
+        },
+        registration_radius: radius,
+      }).eq('id', selectedTrainee.id);
+
+      const zoneId = `station-${selectedTrainee.id}`;
+      await supabase.from('geofence_zones').upsert([{
+        id: zoneId,
+        name: `${selectedTrainee.name} - Trainee Geofence (${companyName})`,
+        address: hteAddress,
+        lat: Number(regLoc.lat),
+        lng: Number(regLoc.lng),
+        radius,
+        active: true,
+        academic_year: selectedTrainee.academicYear || activeAcademicYear,
+      }]);
+
+      Alert.alert('Success', `Directly changed ${selectedTrainee.name}'s assigned workplace to ${companyName}!`);
+      setShowHteModal(false);
+      fetchData();
+      setSelectedTrainee((prev: any) => prev ? {
+        ...prev,
+        hteId: selectedHte.id,
+        companyName,
+        companyAddress: hteAddress,
+        registrationAddress: hteAddress,
+        registrationLocation: {
+          lat: Number(regLoc.lat),
+          lng: Number(regLoc.lng),
+          radius,
+        },
+      } : null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to change HTE workplace');
     } finally {
       setLoading(false);
     }
@@ -544,6 +617,19 @@ export default function InstructorTraineesScreen({
                           Attendance is restricted to this {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
                         </Text>
                       </View>
+
+                      {/* Direct HTE Workplace Assignment Button */}
+                      <TouchableOpacity
+                        style={styles.changeHteBtn}
+                        onPress={() => setShowHteModal(true)}
+                      >
+                        <Building size={14} color="#fff" />
+                        <Text style={styles.changeHteBtnText}>
+                          {selectedTrainee.companyName && !selectedTrainee.companyName.toLowerCase().includes('pending')
+                            ? 'Change Assigned HTE Workplace'
+                            : 'Assign HTE Workplace'}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
 
@@ -570,6 +656,76 @@ export default function InstructorTraineesScreen({
                   </View>
                 </View>
               </ScrollView>
+            </View>
+          </Modal>
+
+          {/* HTE Selection Modal */}
+          <Modal
+            visible={showHteModal}
+            animationType="slide"
+            transparent={true}
+            onRequestClose={() => setShowHteModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalCard, { maxHeight: '80%' }]}>
+                <View style={styles.modalHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Building size={20} color="#b45309" />
+                    <Text style={[styles.modalTitle, { fontSize: 18 }]}>Select HTE Workplace</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowHteModal(false)} style={styles.closeBtn}>
+                    <XCircle size={22} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                  Assign Host Training Establishment for {selectedTrainee?.name}. Workplace geofence coordinates and station will sync directly.
+                </Text>
+
+                <ScrollView style={{ flex: 1 }}>
+                  {hteList.map((hte) => {
+                    const cName = hte.company_name || hte.companyName;
+                    const isSelected = selectedTrainee?.companyName === cName;
+                    const loc = hte.registration_location || hte.registrationLocation;
+
+                    return (
+                      <TouchableOpacity
+                        key={hte.id}
+                        style={[
+                          styles.hteListItem,
+                          isSelected && { borderColor: '#b45309', backgroundColor: '#fffbeb' },
+                        ]}
+                        onPress={() => handleChangeHte(hte)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontWeight: '800', fontSize: 14, color: '#0f172a' }}>{cName}</Text>
+                          <Text style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>
+                            Supervisor: {hte.name}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }} numberOfLines={1}>
+                            📍 {hte.company_address || hte.registration_address || 'Workplace Premises'}
+                          </Text>
+                          {loc?.lat && loc?.lng && (
+                            <Text style={{ fontSize: 10, color: '#0284c7', marginTop: 2, fontFamily: 'serif' }}>
+                              GPS: {Number(loc.lat).toFixed(4)}, {Number(loc.lng).toFixed(4)} ({Math.max(40, Number(loc.radius || 40))}m)
+                            </Text>
+                          )}
+                        </View>
+                        <View style={[styles.hteSelectBadge, isSelected && { backgroundColor: '#b45309' }]}>
+                          <Text style={{ color: isSelected ? '#fff' : '#475569', fontSize: 11, fontWeight: '700' }}>
+                            {isSelected ? 'Assigned' : 'Select'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {hteList.length === 0 && (
+                    <Text style={{ textAlign: 'center', color: '#94a3b8', padding: 24, fontSize: 13 }}>
+                      No registered HTE establishments found.
+                    </Text>
+                  )}
+                </ScrollView>
+              </View>
             </View>
           </Modal>
         );
@@ -795,4 +951,37 @@ const styles = StyleSheet.create({
   modalActions: { gap: 10 },
   modalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, gap: 6 },
   modalBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  changeHteBtn: {
+    backgroundColor: '#b45309',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  changeHteBtnText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  hteListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    marginBottom: 8,
+  },
+  hteSelectBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+    marginLeft: 8,
+  },
 });

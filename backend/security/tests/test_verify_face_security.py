@@ -36,9 +36,10 @@ class VerifyFaceSecurityTests(TestCase):
 
     def test_constants_defined_at_module_level(self):
         """Confirm security constants exist at module level with expected values."""
-        self.assertEqual(views.SECURE_MODEL_NAME, "VGG-Face")
+        self.assertEqual(views.SECURE_MODEL_NAME, "Facenet512")
         self.assertEqual(views.SECURE_DETECTOR_BACKEND, "retinaface")
         self.assertEqual(views.SECURE_DISTANCE_METRIC, "cosine")
+        self.assertEqual(views.SECURE_STRICT_THRESHOLD, 0.28)
         self.assertEqual(views.SECURE_DLIB_TOLERANCE, 0.6)
 
     @patch('face_recognition.load_image_file')
@@ -106,7 +107,7 @@ class VerifyFaceSecurityTests(TestCase):
             # Assert verify_face_pair was called with hardcoded parameters, ignoring client values
             mock_verify_pair.assert_called_once()
             _, kwargs = mock_verify_pair.call_args
-            self.assertEqual(kwargs.get('model_name'), 'VGG-Face')
+            self.assertEqual(kwargs.get('model_name'), 'Facenet512')
             self.assertEqual(kwargs.get('detector_backend'), 'retinaface')
             self.assertEqual(kwargs.get('distance_metric'), 'cosine')
             self.assertEqual(kwargs.get('enforce_detection'), True)

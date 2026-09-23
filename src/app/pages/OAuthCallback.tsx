@@ -144,6 +144,8 @@ export default function OAuthCallback() {
           authUser.user_metadata?.name ||
           authUser.email?.split('@')[0] ||
           'User';
+        const givenName = authUser.user_metadata?.given_name || authUser.user_metadata?.first_name || '';
+        const familyName = authUser.user_metadata?.family_name || authUser.user_metadata?.last_name || '';
         const photoUrl =
           authUser.user_metadata?.avatar_url ||
           authUser.user_metadata?.picture ||
@@ -253,6 +255,8 @@ export default function OAuthCallback() {
           localStorage.removeItem('pending_oauth_role');
           localStorage.removeItem('oauth_email');
           localStorage.removeItem('oauth_name');
+          localStorage.removeItem('oauth_given_name');
+          localStorage.removeItem('oauth_family_name');
           localStorage.removeItem('oauth_photo');
           localStorage.removeItem('oauth_user_id');
 
@@ -323,6 +327,8 @@ export default function OAuthCallback() {
 
         localStorage.setItem('oauth_email', email);
         localStorage.setItem('oauth_name', fullName);
+        if (givenName) localStorage.setItem('oauth_given_name', givenName);
+        if (familyName) localStorage.setItem('oauth_family_name', familyName);
         if (photoUrl) localStorage.setItem('oauth_photo', photoUrl);
         localStorage.setItem('oauth_user_id', authUser.id);
 

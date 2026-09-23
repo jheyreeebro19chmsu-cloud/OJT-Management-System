@@ -7,6 +7,7 @@ import {
   Save,
   ShieldCheck,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
@@ -16,11 +17,11 @@ import { Evaluation, EvaluationQuestionnaire } from '../types';
 import { CHMSUEvaluationSheet } from '../components/CHMSUEvaluationSheet';
 
 export function TraineeEvaluation() {
-  const { getCurrentEmployee, evaluations, employees, updateEvaluation, addEvaluation } = useApp();
+  const { getCurrentEmployee, evaluations, employees, updateEvaluation, addEvaluation, refreshData } = useApp();
   const employee = getCurrentEmployee();
 
   const evaluation: Evaluation | undefined = evaluations.find(
-    (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
+    (e) => e.employeeId === employee?.id || (employee?.employeeId && e.employeeId === employee.employeeId)
   );
 
   const [traineeQuestionnaire, setTraineeQuestionnaire] = useState<EvaluationQuestionnaire>(() => {
@@ -51,6 +52,24 @@ export function TraineeEvaluation() {
   });
 
   const [isSavingQuestionnaire, setIsSavingQuestionnaire] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Sync latest evaluations on mount
+  React.useEffect(() => {
+    refreshData();
+  }, [refreshData]);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await refreshData();
+      toast.success('Questionnaire and evaluation synchronized with cloud.');
+    } catch {
+      toast.error('Sync failed. Please check network.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Sync when evaluation loads
   React.useEffect(() => {
@@ -83,14 +102,21 @@ export function TraineeEvaluation() {
 
     try {
       if (evaluation) {
+        const nextStatus =
+          !evaluation.status || evaluation.status === 'draft' || evaluation.status === 'submitted_by_trainee'
+            ? 'submitted_by_trainee'
+            : evaluation.status;
+
         updateEvaluation(evaluation.id, {
           questionnaire: traineeQuestionnaire,
+          status: nextStatus,
         });
-        toast.success('✓ Questionnaire answers saved successfully!');
+        toast.success('✓ Questionnaire answers submitted to Instructor! Your coordinator will review and pass to your HTE.');
       } else {
-        // Create draft evaluation entry containing questionnaire
+        // Create draft evaluation entry containing questionnaire and submitted_by_trainee status
         const draftData: Omit<Evaluation, 'id'> = {
           employeeId: employee.id,
+          academicYear: employee.academicYear || '2026-2027',
           evaluatedBy: employee.supervisorName || 'HTE Supervisor',
           evaluatorName: employee.supervisorName || 'HTE Supervisor',
           evaluatorPosition: 'HTE Supervisor',
@@ -106,11 +132,11 @@ export function TraineeEvaluation() {
           areasForImprovement: 'Continuous technical enhancement.',
           recommendations: 'Awaiting formal supervisor ratings.',
           evaluatedAt: new Date().toISOString(),
-          status: 'draft',
+          status: 'submitted_by_trainee',
           questionnaire: traineeQuestionnaire,
         };
         addEvaluation(draftData);
-        toast.success('✓ Questionnaire responses submitted! Waiting for HTE supervisor ratings.');
+        toast.success('✓ Questionnaire responses submitted to Instructor! Your coordinator will review and pass to your HTE.');
       }
     } catch (e: any) {
       toast.error('Failed to save questionnaire responses: ' + (e.message || 'Unknown error'));
@@ -141,12 +167,23 @@ export function TraineeEvaluation() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold border border-blue-200 transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
+            title="Synchronize latest questionnaire and ratings from cloud"
+          >
+            <RefreshCw size={14} className={isSyncing ? 'animate-spin text-blue-600' : 'text-blue-600'} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleSaveQuestionnaire}
             disabled={isSavingQuestionnaire}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Save size={15} />
-            <span>{isSavingQuestionnaire ? 'Saving...' : 'Save Questionnaire Responses'}</span>
+            <span>{isSavingQuestionnaire ? 'Submitting...' : 'Submit Questionnaire to Instructor'}</span>
           </button>
 
           <button
@@ -160,14 +197,37 @@ export function TraineeEvaluation() {
         </div>
       </div>
 
-      {/* Trainee Notice Banner */}
+      {/* Trainee Notice Banner & Current Workflow Status */}
       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3 no-print shadow-xs">
         <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-sm">
           <ShieldCheck size={18} />
         </div>
-        <div className="text-xs text-slate-700 leading-relaxed">
-          <p className="font-bold text-emerald-950 text-sm mb-0.5">CHMSU OJT Practicum Feedback Questionnaire</p>
-          Fill out your training establishment details, dates, and the 9 required reflection questions below. Your responses are automatically saved and submitted for academic compliance and coordinator verification.
+        <div className="text-xs text-slate-700 leading-relaxed flex-1">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+            <p className="font-bold text-emerald-950 text-sm">CHMSU OJT Practicum Feedback Questionnaire</p>
+            {evaluation?.status === 'reviewed_by_instructor' ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                ✓ Evaluation Complete &amp; Approved by Instructor
+              </span>
+            ) : evaluation?.status === 'submitted_to_instructor' ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300">
+                Ratings Done by HTE — In Review by Instructor
+              </span>
+            ) : evaluation?.status === 'passed_to_hte' ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                Passed to HTE — Awaiting Supervisor Ratings
+              </span>
+            ) : evaluation?.status === 'submitted_by_trainee' ? (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                Submitted to Instructor — Awaiting Pass to HTE
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                Questionnaire Pending Submission
+              </span>
+            )}
+          </div>
+          Fill out your training establishment details, dates, and the 9 required reflection questions below. When submitted, your instructor immediately sees your questionnaire and passes it to your HTE supervisor to complete your performance ratings.
         </div>
       </div>
 

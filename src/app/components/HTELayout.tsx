@@ -31,7 +31,6 @@ const navItems = [
   { to: '/hte/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/hte/announcements', label: 'Announcements', icon: Megaphone, end: false },
   { to: '/hte/settings', label: 'Settings', icon: Settings, end: false },
-  { to: '/hte/profile', label: 'Profile', icon: User, end: false },
 ];
 
 export function HTELayout({ children, hteCompany }: HTELayoutProps) {
@@ -185,16 +184,6 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="text-blue-300 text-[10px] truncate">{companyName}</div>
           </div>
         </div>
-        <button
-          onClick={() => {
-            if (isMobile) setSidebarOpen(false);
-            navigate('/hte/profile');
-          }}
-          className="w-full flex items-center gap-2.5 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
-        >
-          <User size={15} />
-          Profile
-        </button>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);

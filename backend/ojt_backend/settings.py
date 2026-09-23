@@ -250,9 +250,9 @@ if os.environ.get('DJANGO_FORCE_ALLOW_ALL_ORIGINS', '').lower() in ('1', 'true',
 
 DEFAULT_GEOFENCE_ZONES = [
     {
-        "name": "Main Training Center",
-        "lat": 14.5547,
-        "lng": 121.0244,
+        "name": "CHMSU Main Campus (Talisay)",
+        "lat": 10.7410,
+        "lng": 122.9702,
         "radius": 40,
         "active": True,
     }

@@ -77,6 +77,91 @@ const stepsHTE = ['Company Info', 'Contact Info'];
 type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
 
+/**
+ * Intelligently parse a full name into First Name, Middle Initial, and Last Name.
+ * Handles Filipino/Spanish compound surnames ("Dela Cruz", "De Los Santos", etc.)
+ * and compound first names ("Jhey Ree", "John Paul", "Mary Jane").
+ */
+export function parseGoogleFullName(fullName: string, givenName?: string | null, familyName?: string | null) {
+  if (givenName?.trim() && familyName?.trim()) {
+    const fnParts = familyName.trim().split(/\s+/);
+    const twoWordPrefixes = ['de la', 'de los', 'de las', 'san', 'santa', 'del', 'dela', 'von', 'van'];
+    const isPrefix = twoWordPrefixes.some((p) => familyName.trim().toLowerCase().startsWith(p));
+
+    if (fnParts.length === 2 && !isPrefix) {
+      if (fnParts[0].replace(/\./g, '').length === 1) {
+        return {
+          firstName: givenName.trim(),
+          middleInitial: fnParts[0].replace(/\./g, '').toUpperCase(),
+          lastName: fnParts[1],
+        };
+      }
+      return {
+        firstName: `${givenName.trim()} ${fnParts[0]}`,
+        middleInitial: '',
+        lastName: fnParts[1],
+      };
+    }
+
+    return {
+      firstName: givenName.trim(),
+      middleInitial: '',
+      lastName: familyName.trim(),
+    };
+  }
+
+  const raw = (fullName || '').trim();
+  if (!raw) return { firstName: '', middleInitial: '', lastName: '' };
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: '', middleInitial: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], middleInitial: '', lastName: '' };
+
+  if (parts.length === 2) {
+    return { firstName: parts[0], middleInitial: '', lastName: parts[1] };
+  }
+
+  const twoWordPrefixes = ['de la', 'de los', 'de las', 'san', 'santa', 'del', 'dela', 'von', 'van'];
+  const lastTwo = `${parts[parts.length - 2]} ${parts[parts.length - 1]}`.toLowerCase();
+  const isCompoundSurname2 = twoWordPrefixes.some((p) => lastTwo.startsWith(p));
+
+  const isCompoundSurname3 =
+    parts.length >= 4 &&
+    (`${parts[parts.length - 3]} ${parts[parts.length - 2]}`.toLowerCase() === 'de la' ||
+     `${parts[parts.length - 3]} ${parts[parts.length - 2]}`.toLowerCase() === 'de los');
+
+  let lastName = '';
+  let remainingTokens: string[] = [];
+
+  if (isCompoundSurname3) {
+    lastName = parts.slice(-3).join(' ');
+    remainingTokens = parts.slice(0, -3);
+  } else if (isCompoundSurname2 && parts.length >= 3) {
+    lastName = parts.slice(-2).join(' ');
+    remainingTokens = parts.slice(0, -2);
+  } else {
+    lastName = parts[parts.length - 1];
+    remainingTokens = parts.slice(0, -1);
+  }
+
+  let middleInitial = '';
+  let firstName = '';
+
+  if (remainingTokens.length === 1) {
+    firstName = remainingTokens[0];
+  } else if (remainingTokens.length >= 2) {
+    const lastRemaining = remainingTokens[remainingTokens.length - 1].replace(/\./g, '');
+    if (lastRemaining.length === 1) {
+      middleInitial = lastRemaining.toUpperCase();
+      firstName = remainingTokens.slice(0, -1).join(' ');
+    } else {
+      firstName = remainingTokens.join(' ');
+    }
+  }
+
+  return { firstName, middleInitial, lastName };
+}
+
 export function Register() {
   const { registerEmployee, updateEmployee, employees, hostSupervisors, settings, addGeofenceZone } = useApp();
   const navigate = useNavigate();
@@ -370,6 +455,8 @@ export function Register() {
       const pending = localStorage.getItem('pending_oauth_role') as UserRole;
       const oauthEmail = localStorage.getItem('oauth_email');
       const oauthName = localStorage.getItem('oauth_name');
+      const oauthGivenName = localStorage.getItem('oauth_given_name');
+      const oauthFamilyName = localStorage.getItem('oauth_family_name');
       const oauthPhoto = localStorage.getItem('oauth_photo');
 
       if (h === 'admin' || pending === 'admin') {
@@ -391,6 +478,8 @@ export function Register() {
         localStorage.removeItem('pending_oauth_role');
         localStorage.removeItem('oauth_email');
         localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_given_name');
+        localStorage.removeItem('oauth_family_name');
         localStorage.removeItem('oauth_photo');
         localStorage.removeItem('oauth_user_id');
         toast.success(`Welcome, Instructor ${fullName}! Direct access granted.`);
@@ -416,6 +505,8 @@ export function Register() {
         localStorage.removeItem('pending_oauth_role');
         localStorage.removeItem('oauth_email');
         localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_given_name');
+        localStorage.removeItem('oauth_family_name');
         localStorage.removeItem('oauth_photo');
         localStorage.removeItem('oauth_user_id');
         toast.success(`Welcome, ${fullName}! Direct access granted to HTE portal.`);
@@ -425,15 +516,19 @@ export function Register() {
         setRole('trainee');
       }
 
-      if (oauthEmail || oauthName) {
+      if (oauthEmail || oauthName || oauthGivenName || oauthFamilyName) {
         setOauthPending(true);
         if (oauthEmail) update('email', oauthEmail);
-        if (oauthName) {
-          update('name', oauthName);
-          const parts = oauthName.trim().split(/\s+/);
-          if (parts.length > 0) update('firstName', parts[0]);
-          if (parts.length > 1) update('lastName', parts.slice(1).join(' '));
-        }
+        
+        const parsed = parseGoogleFullName(oauthName || '', oauthGivenName, oauthFamilyName);
+        if (parsed.firstName) update('firstName', parsed.firstName);
+        if (parsed.middleInitial) update('middleInitial', parsed.middleInitial);
+        if (parsed.lastName) update('lastName', parsed.lastName);
+        update(
+          'name',
+          [parsed.firstName, parsed.middleInitial, parsed.lastName].filter(Boolean).join(' ') || (oauthName || '')
+        );
+
         if (oauthPhoto) {
           setGoogleAvatar(oauthPhoto);
           setPhoto(oauthPhoto);
@@ -445,6 +540,8 @@ export function Register() {
       localStorage.removeItem('pending_oauth_role');
       localStorage.removeItem('oauth_email');
       localStorage.removeItem('oauth_name');
+      localStorage.removeItem('oauth_given_name');
+      localStorage.removeItem('oauth_family_name');
       localStorage.removeItem('oauth_photo');
     } catch {
       // ignore
@@ -603,6 +700,11 @@ export function Register() {
       }
 
       const newForm = { ...p, [field]: formattedValue };
+
+      // Keep composite 'name' in sync when any individual name field is modified
+      if (['firstName', 'middleInitial', 'lastName'].includes(field)) {
+        newForm.name = [newForm.firstName, newForm.middleInitial, newForm.lastName].filter(Boolean).join(' ');
+      }
 
       // If user entered email and username is empty, auto-fill username with email
       if (field === 'email' && typeof value === 'string' && (!newForm.username || newForm.username.trim() === '')) {
@@ -951,6 +1053,10 @@ export function Register() {
         name: composedName,
         employeeId: empId,
         address: residentialAddress,
+        residentialAddress: residentialAddress,
+        phone: form.contactPhone || undefined,
+        telephone: form.contactPhone || undefined,
+        contactPhone: form.contactPhone || undefined,
         userId: localStorage.getItem('oauth_user_id') || undefined,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
         requiredHours: role === 'admin' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
@@ -999,6 +1105,8 @@ export function Register() {
             companyAddress: form.companyAddress,
             contactPerson: form.contactPerson,
             contactPhone: form.contactPhone,
+            phone: form.contactPhone,
+            telephone: form.contactPhone,
             schoolName: form.schoolName,
             campus: form.campus,
             course: form.course,
@@ -1006,6 +1114,7 @@ export function Register() {
             endDate: form.endDate,
             requiredHours: role === 'admin' || role === 'hte' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
             address: residentialAddress,
+            residentialAddress: residentialAddress,
             registrationLocation: registrationLocation || undefined,
             registrationAddress: computedRegistrationAddress,
             photo: photo || (existing ? existing.photo : undefined),
@@ -2119,52 +2228,33 @@ export function Register() {
                   </>
                 ) : (
                   <>
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <User size={16} className="text-blue-700" />
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <User size={16} className="text-blue-700" />
+                        </div>
+                        <h2 className="font-bold text-gray-800">Personal Information</h2>
                       </div>
-                      <h2 className="font-bold text-gray-800">Personal Information</h2>
+                      {oauthPending && (
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                          From Google
+                        </span>
+                      )}
                     </div>
 
                     <div className="space-y-3">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 flex items-center justify-between mb-1">
-                            <span>Last Name *</span>
-                            {oauthPending && (
-                              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
-                                From Google
-                              </span>
-                            )}
-                          </label>
-                          <input
-                            value={form.lastName}
-                            onChange={(e) => update('lastName', e.target.value)}
-                            placeholder="Dela Cruz"
-                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                              attemptedNext && !isLastNameValid
-                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                : 'border-gray-200 focus:ring-blue-500'
-                            }`}
-                          />
-                          {attemptedNext && !isLastNameValid && (
-                            <p className="text-xs text-red-500 mt-1 font-medium">Required</p>
-                          )}
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 flex items-center justify-between mb-1">
-                            <span>First Name *</span>
-                            {oauthPending && (
-                              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
-                                From Google
-                              </span>
-                            )}
+                      {/* Name Fields: First Name (col-span-5), Middle Initial (col-span-2), Last Name (col-span-5) */}
+                      <div className="grid grid-cols-12 gap-2.5 items-start">
+                        {/* 1. First Name */}
+                        <div className="col-span-5">
+                          <label className="text-xs font-semibold text-gray-600 block h-5 mb-1 truncate">
+                            First Name *
                           </label>
                           <input
                             value={form.firstName}
                             onChange={(e) => update('firstName', e.target.value)}
-                            placeholder="Juan"
-                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            placeholder="Jhey Ree"
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 h-11 ${
                               attemptedNext && !isFirstNameValid
                                 ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
                                 : 'border-gray-200 focus:ring-blue-500'
@@ -2174,15 +2264,39 @@ export function Register() {
                             <p className="text-xs text-red-500 mt-1 font-medium">Required</p>
                           )}
                         </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">Middle Initial</label>
+
+                        {/* 2. Middle Initial */}
+                        <div className="col-span-2">
+                          <label className="text-xs font-semibold text-gray-600 block h-5 mb-1 text-center truncate" title="Middle Initial">
+                            M.I.
+                          </label>
                           <input
                             value={form.middleInitial}
-                            onChange={(e) => update('middleInitial', e.target.value)}
+                            onChange={(e) => update('middleInitial', e.target.value.toUpperCase().slice(0, 2))}
                             placeholder="D"
-                            maxLength={1}
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            maxLength={2}
+                            className="w-full px-1.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 text-center font-bold h-11 uppercase"
                           />
+                        </div>
+
+                        {/* 3. Last Name */}
+                        <div className="col-span-5">
+                          <label className="text-xs font-semibold text-gray-600 block h-5 mb-1 truncate">
+                            Last Name *
+                          </label>
+                          <input
+                            value={form.lastName}
+                            onChange={(e) => update('lastName', e.target.value)}
+                            placeholder="Ebro"
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 h-11 ${
+                              attemptedNext && !isLastNameValid
+                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                : 'border-gray-200 focus:ring-blue-500'
+                            }`}
+                          />
+                          {attemptedNext && !isLastNameValid && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">Required</p>
+                          )}
                         </div>
                       </div>
                       <div>

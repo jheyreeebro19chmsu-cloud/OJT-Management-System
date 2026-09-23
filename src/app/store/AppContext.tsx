@@ -521,13 +521,39 @@ function saveToStorage<T>(key: string, value: T): void {
   }
 }
 
-function mergeTimeRecords(remoteRecords: TimeRecord[], currentLocalRecords: TimeRecord[]): TimeRecord[] {
-  if (!remoteRecords || remoteRecords.length === 0) {
-    return currentLocalRecords || [];
+function cleanRecordPhoto(photo?: string | null): string | undefined {
+  if (!photo || typeof photo !== 'string') return undefined;
+  const trimmed = photo.trim();
+  if (
+    !trimmed ||
+    trimmed === 'null' ||
+    trimmed === 'undefined' ||
+    trimmed === 'temp' ||
+    trimmed.includes('/face-photos/') ||
+    (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:image/'))
+  ) {
+    return undefined;
   }
-  const remoteIds = new Set(remoteRecords.map((r) => r.id));
+  return trimmed;
+}
+
+function sanitizeTimeRecords(records: TimeRecord[]): TimeRecord[] {
+  if (!Array.isArray(records)) return [];
+  return records.map((r) => ({
+    ...r,
+    timeInPhoto: cleanRecordPhoto(r.timeInPhoto),
+    timeOutPhoto: cleanRecordPhoto(r.timeOutPhoto),
+  }));
+}
+
+function mergeTimeRecords(remoteRecords: TimeRecord[], currentLocalRecords: TimeRecord[]): TimeRecord[] {
+  const sanitizedRemote = sanitizeTimeRecords(remoteRecords || []);
+  if (sanitizedRemote.length === 0) {
+    return sanitizeTimeRecords(currentLocalRecords || []);
+  }
+  const remoteIds = new Set(sanitizedRemote.map((r) => r.id));
   const remoteEmpDateMap = new Map<string, TimeRecord>();
-  remoteRecords.forEach((r) => {
+  sanitizedRemote.forEach((r) => {
     const key = `${(r.employeeId || '').toLowerCase()}_${(r.date || '').split('T')[0].split(' ')[0]}`;
     remoteEmpDateMap.set(key, r);
   });
@@ -541,23 +567,27 @@ function mergeTimeRecords(remoteRecords: TimeRecord[], currentLocalRecords: Time
       // If remote has this employee+date, merge any more recent punch data from local into remote
       if (!remoteMatch.timeOut && localR.timeOut) {
         remoteMatch.timeOut = localR.timeOut;
-        remoteMatch.timeOutPhoto = localR.timeOutPhoto || remoteMatch.timeOutPhoto;
+        remoteMatch.timeOutPhoto = cleanRecordPhoto(localR.timeOutPhoto) || cleanRecordPhoto(remoteMatch.timeOutPhoto);
         remoteMatch.timeOutFaceVerified = localR.timeOutFaceVerified ?? remoteMatch.timeOutFaceVerified;
         remoteMatch.totalHours = localR.totalHours || remoteMatch.totalHours;
         remoteMatch.timeOutGeofenced = localR.timeOutGeofenced ?? remoteMatch.timeOutGeofenced;
       }
       if (!remoteMatch.timeIn && localR.timeIn) {
         remoteMatch.timeIn = localR.timeIn;
-        remoteMatch.timeInPhoto = localR.timeInPhoto || remoteMatch.timeInPhoto;
+        remoteMatch.timeInPhoto = cleanRecordPhoto(localR.timeInPhoto) || cleanRecordPhoto(remoteMatch.timeInPhoto);
         remoteMatch.timeInFaceVerified = localR.timeInFaceVerified ?? remoteMatch.timeInFaceVerified;
         remoteMatch.timeInGeofenced = localR.timeInGeofenced ?? remoteMatch.timeInGeofenced;
       }
       return false;
     }
     return true;
-  });
+  }).map((r) => ({
+    ...r,
+    timeInPhoto: cleanRecordPhoto(r.timeInPhoto),
+    timeOutPhoto: cleanRecordPhoto(r.timeOutPhoto),
+  }));
 
-  return [...remoteRecords, ...localOnly];
+  return [...sanitizedRemote, ...localOnly];
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -574,7 +604,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(() => {
     const stored = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
-    return stored;
+    return sanitizeTimeRecords(stored);
   });
   const [geofenceZones, setGeofenceZones] = useState<GeofenceZone[]>(() => {
     const stored = loadFromStorage<unknown>(STORAGE_KEYS.GEOFENCE_ZONES, []);
@@ -812,6 +842,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error('Real-time time_records sync error:', err);
         }
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'evaluations' }, async () => {
+        try {
+          const freshEvals = await supabaseService.fetchEvaluations();
+          if (freshEvals) {
+            setEvaluations(freshEvals);
+            saveToStorage(STORAGE_KEYS.EVALUATIONS, freshEvals);
+          }
+        } catch (err) {
+          console.error('Real-time evaluations sync error:', err);
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
         try {
           const [
@@ -931,7 +972,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
       if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
       if (supabaseSettings) setSettings(supabaseSettings);
-      if (supabaseEvaluations && supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
+      if (supabaseEvaluations) {
+        setEvaluations(supabaseEvaluations);
+        saveToStorage(STORAGE_KEYS.EVALUATIONS, supabaseEvaluations);
+      }
       if (supabaseAnnouncements && supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
       if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
       if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
@@ -950,8 +994,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('focus', onFocus);
 
+    // Periodic live background sync every 6 seconds so Instructor, HTE, and Trainee accounts stay in continuous lockstep
+    const syncInterval = setInterval(() => {
+      refreshData();
+    }, 6000);
+
     return () => {
       window.removeEventListener('focus', onFocus);
+      clearInterval(syncInterval);
     };
   }, [refreshData, useSupabase]);
 
@@ -1797,6 +1847,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    const phoneVal = employeeData.contactPhone || employeeData.phone || (employeeData as any).telephone;
+    const resAddrVal = employeeData.residentialAddress || employeeData.address;
+
     const cleanData = {
       ...employeeData,
       employeeId: resolvedEmployeeId,
@@ -1804,8 +1857,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supervisorName: employeeData.supervisorName || 'N/A',
       schoolName: employeeData.schoolName || 'Carlos Hilado Memorial State University',
       campus: employeeData.campus || 'Talisay (Main Campus)',
-      contactPhone: employeeData.contactPhone || employeeData.phone,
-      phone: employeeData.contactPhone || employeeData.phone,
+      contactPhone: phoneVal,
+      phone: phoneVal,
+      telephone: phoneVal,
+      residentialAddress: resAddrVal,
+      address: resAddrVal,
       course: employeeData.course || 'N/A',
       startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
       endDate: employeeData.endDate || new Date().toISOString().split('T')[0],
@@ -2202,6 +2258,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supabaseService.updateEmployee(id, {
         ...data,
         email: updatedEmployee?.email || data.email,
+        phone: updatedEmployee?.phone || data.phone,
+        contactPhone: updatedEmployee?.contactPhone || data.contactPhone,
+        telephone: (updatedEmployee as any)?.telephone || (data as any)?.telephone,
+        residentialAddress: updatedEmployee?.residentialAddress || data.residentialAddress,
+        address: updatedEmployee?.address || data.address,
         registrationLocation: updatedEmployee?.registrationLocation,
         registrationAddress: updatedEmployee?.registrationAddress,
         submittedDocuments: updatedEmployee?.submittedDocuments,
@@ -2237,6 +2298,99 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return filtered;
     });
+
+    // AUTO-SYNC TRAINEE GEOFENCE ZONE WITH HTE WORKPLACE
+    // If the employee is a student/trainee and their HTE workplace is set/changed,
+    // automatically sync the trainee's station-${id} geofence zone directly to the HTE workplace!
+    if (updatedEmployee && (data.companyName || data.hteId || data.companyAddress || data.registrationLocation)) {
+      const isStudent =
+        !updatedEmployee.position?.toLowerCase().includes('instructor') &&
+        !updatedEmployee.position?.toLowerCase().includes('hte') &&
+        updatedEmployee.role !== 'hte' &&
+        updatedEmployee.role !== 'instructor' &&
+        updatedEmployee.role !== 'admin';
+
+      if (isStudent && updatedEmployee.companyName && !updatedEmployee.companyName.toLowerCase().includes('pending')) {
+        let hteCoords = updatedEmployee.registrationLocation;
+        let hteAddress = updatedEmployee.companyAddress || updatedEmployee.registrationAddress || `${updatedEmployee.companyName} Workplace Premises`;
+        let hteRadius = Math.max(40, Number(updatedEmployee.registrationRadius || (hteCoords as any)?.radius || 40));
+
+        if (!hteCoords || !hteCoords.lat || !hteCoords.lng) {
+          const matchedHost = hostSupervisors.find(
+            (h) => (updatedEmployee.hteId && (h.id === updatedEmployee.hteId || h.employeeId === updatedEmployee.hteId)) ||
+                   (h.companyName && h.companyName.trim().toLowerCase() === updatedEmployee.companyName?.trim().toLowerCase())
+          );
+          if (matchedHost?.registrationLocation?.lat && matchedHost?.registrationLocation?.lng) {
+            hteCoords = {
+              lat: Number(matchedHost.registrationLocation.lat),
+              lng: Number(matchedHost.registrationLocation.lng),
+            };
+            hteAddress = matchedHost.companyAddress || matchedHost.registrationAddress || hteAddress;
+            hteRadius = Math.max(40, Number(matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
+          } else {
+            const matchedHteEmp = employees.find(
+              (e) => (e.position?.toLowerCase().includes('hte') || e.role === 'hte') &&
+                     ((updatedEmployee.hteId && e.id === updatedEmployee.hteId) ||
+                      (e.companyName && e.companyName.trim().toLowerCase() === updatedEmployee.companyName?.trim().toLowerCase()))
+            );
+            if (matchedHteEmp?.registrationLocation?.lat && matchedHteEmp?.registrationLocation?.lng) {
+              hteCoords = {
+                lat: Number(matchedHteEmp.registrationLocation.lat),
+                lng: Number(matchedHteEmp.registrationLocation.lng),
+              };
+              hteAddress = matchedHteEmp.companyAddress || matchedHteEmp.registrationAddress || hteAddress;
+              hteRadius = Math.max(40, Number(matchedHteEmp.registrationRadius || (matchedHteEmp.registrationLocation as any)?.radius || 40));
+            }
+          }
+        }
+
+        if (hteCoords && hteCoords.lat && hteCoords.lng) {
+          const stationZoneId = `station-${id}`;
+          const stationZone: GeofenceZone = {
+            id: stationZoneId,
+            name: `${updatedEmployee.name} - Trainee Geofence (${updatedEmployee.companyName})`,
+            address: hteAddress,
+            lat: Number(hteCoords.lat),
+            lng: Number(hteCoords.lng),
+            radius: hteRadius,
+            active: true,
+            academicYear: updatedEmployee.academicYear || settings?.activeAcademicYear,
+          };
+
+          setGeofenceZones((prev) => {
+            const exists = prev.some((z) => z.id === stationZoneId);
+            const updated = exists
+              ? prev.map((z) => (z.id === stationZoneId ? { ...z, ...stationZone } : z))
+              : [...prev, stationZone];
+            if (!useSupabase) {
+              saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
+            }
+            return updated;
+          });
+
+          if (useSupabase) {
+            supabase
+              .from('geofence_zones')
+              .upsert([
+                {
+                  id: stationZone.id,
+                  name: stationZone.name,
+                  address: stationZone.address,
+                  lat: stationZone.lat,
+                  lng: stationZone.lng,
+                  radius: stationZone.radius,
+                  active: stationZone.active,
+                  academic_year: stationZone.academicYear,
+                },
+              ])
+              .then(() => {})
+              .catch((err: any) => {
+                console.warn('[AppContext] Auto-sync trainee geofence zone error:', err);
+              });
+          }
+        }
+      }
+    }
   };
 
   const updateHostSupervisor = (id: string, data: Partial<HostSupervisor>) => {
@@ -2405,7 +2559,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     setTimeRecords((prev) => {
-      const updated = prev.map((r) => (r.id === id ? { ...r, ...enrichedData } : r));
+      const updated = prev.map((r) => {
+        if (r.id === id) {
+          const next = { ...r, ...enrichedData };
+          if ('timeInPhoto' in data && !data.timeInPhoto) {
+            delete (next as any).timeInPhoto;
+          }
+          if ('timeOutPhoto' in data && !data.timeOutPhoto) {
+            delete (next as any).timeOutPhoto;
+          }
+          return next;
+        }
+        return r;
+      });
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
       return updated;
     });
@@ -2743,19 +2909,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const tempId = `eval-${Date.now()}`;
     const newEval: Evaluation = { ...data, id: tempId };
 
-    setEvaluations((prev) => [newEval, ...prev]);
+    setEvaluations((prev) => {
+      const updated = [newEval, ...prev];
+      saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService
         .createEvaluation(data)
         .then((created) => {
           if (created) {
-            setEvaluations((prev) => [created, ...prev.filter((e) => e.id !== tempId && e.id !== created.id)]);
+            setEvaluations((prev) => {
+              const updated = [created, ...prev.filter((e) => e.id !== tempId && e.id !== created.id)];
+              saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+              return updated;
+            });
           }
         })
         .catch((err) => {
           console.error('[AppContext] Failed to save evaluation to Supabase:', err);
-          setEvaluations((prev) => prev.filter((e) => e.id !== tempId));
+          setEvaluations((prev) => {
+            const rolledBack = prev.filter((e) => e.id !== tempId);
+            saveToStorage(STORAGE_KEYS.EVALUATIONS, rolledBack);
+            return rolledBack;
+          });
           alert('Failed to save evaluation to cloud. Please try again.');
         });
     }
@@ -2765,13 +2943,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateEvaluation = (id: string, data: Partial<Evaluation>) => {
     const previous = evaluations.find((e) => e.id === id);
-    setEvaluations((prev) => prev.map((e) => (e.id === id ? { ...e, ...data } : e)));
+    setEvaluations((prev) => {
+      const updated = prev.map((e) => (e.id === id ? { ...e, ...data } : e));
+      saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService.updateEvaluation(id, data).catch((err) => {
         console.error('[AppContext] Failed to update evaluation in Supabase:', err);
         if (previous) {
-          setEvaluations((prev) => prev.map((e) => (e.id === id ? previous : e)));
+          setEvaluations((prev) => {
+            const rolledBack = prev.map((e) => (e.id === id ? previous : e));
+            saveToStorage(STORAGE_KEYS.EVALUATIONS, rolledBack);
+            return rolledBack;
+          });
         }
         alert('Failed to save evaluation update to cloud. Changes have been rolled back.');
       });
@@ -2780,13 +2966,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteEvaluation = (id: string) => {
     const previous = evaluations.find((e) => e.id === id);
-    setEvaluations((prev) => prev.filter((e) => e.id !== id));
+    setEvaluations((prev) => {
+      const updated = prev.filter((e) => e.id !== id);
+      saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService.deleteEvaluation(id).catch((err) => {
         console.error('[AppContext] Failed to delete evaluation in Supabase:', err);
         if (previous) {
-          setEvaluations((prev) => [previous, ...prev]);
+          setEvaluations((prev) => {
+            const rolledBack = [previous, ...prev];
+            saveToStorage(STORAGE_KEYS.EVALUATIONS, rolledBack);
+            return rolledBack;
+          });
         }
         alert('Failed to delete evaluation from cloud. Item has been restored.');
       });

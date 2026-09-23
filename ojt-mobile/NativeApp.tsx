@@ -236,45 +236,60 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
   async function evaluateDashboardGeofence(location: Location.LocationObject, userProfile: any = profile) {
     if (!location) return;
     const targetCoordsList: { name: string; lat: number; lng: number; radius: number }[] = [];
+    const empId = userProfile?.id || userProfile?.employeeId || '';
 
-    // 1. Profile registration location / workplace
-    const regLoc =
-      userProfile?.registration_location ||
-      userProfile?.registrationLocation ||
-      (userProfile?.registration_lat && userProfile?.registration_lng
-        ? { lat: userProfile.registration_lat, lng: userProfile.registration_lng }
-        : null);
-    if (regLoc?.lat && regLoc?.lng) {
-      targetCoordsList.push({
-        name: userProfile?.companyName || userProfile?.company_name || 'Assigned OJT Workplace',
-        lat: Number(regLoc.lat),
-        lng: Number(regLoc.lng),
-        radius: 300,
-      });
-    }
-
-    // 2. Query geofence zones from Supabase
+    // 0. Query geofence zones from Supabase to check for instructor-assigned HTE station-${empId}
+    let stationZone: any = null;
+    let allZones: any[] = [];
     try {
-      const zones = await mobileDb.getGeofenceZones();
-      const empId = userProfile?.id || userProfile?.employeeId || '';
-      zones.forEach((z) => {
-        if (z.lat && z.lng) {
-          const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}`;
-          const isCompany =
-            userProfile?.companyName && z.name && z.name.toLowerCase().includes(userProfile.companyName.toLowerCase());
-          if (isPersonal || isCompany || !userProfile?.companyName) {
-            targetCoordsList.push({
-              name: z.name || 'OJT Geofence Zone',
-              lat: z.lat,
-              lng: z.lng,
-              radius: z.radius || 300,
-            });
-          }
-        }
-      });
+      allZones = await mobileDb.getGeofenceZones();
+      stationZone = allZones.find((z) => z.id === `station-${empId}`);
     } catch (zErr) {
       console.debug('Geofence zone fetch warning:', zErr);
     }
+
+    // 1. If assigned HTE station zone exists, strictly prioritize it
+    if (stationZone && stationZone.lat && stationZone.lng) {
+      targetCoordsList.push({
+        name: stationZone.name || userProfile?.companyName || 'Assigned HTE Workplace',
+        lat: Number(stationZone.lat),
+        lng: Number(stationZone.lng),
+        radius: Math.max(40, Number(stationZone.radius || 300)),
+      });
+    } else {
+      // Profile registration location fallback
+      const regLoc =
+        userProfile?.registration_location ||
+        userProfile?.registrationLocation ||
+        (userProfile?.registration_lat && userProfile?.registration_lng
+          ? { lat: userProfile.registration_lat, lng: userProfile.registration_lng }
+          : null);
+      if (regLoc?.lat && regLoc?.lng) {
+        targetCoordsList.push({
+          name: userProfile?.companyName || userProfile?.company_name || 'Assigned OJT Workplace',
+          lat: Number(regLoc.lat),
+          lng: Number(regLoc.lng),
+          radius: Math.max(40, Number(regLoc.radius || 300)),
+        });
+      }
+    }
+
+    // 2. Add other company matching zones
+    allZones.forEach((z) => {
+      if (z.lat && z.lng && z.id !== `station-${empId}`) {
+        const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}`;
+        const isCompany =
+          userProfile?.companyName && z.name && z.name.toLowerCase().includes(userProfile.companyName.toLowerCase());
+        if (isPersonal || isCompany) {
+          targetCoordsList.push({
+            name: z.name || 'OJT Geofence Zone',
+            lat: z.lat,
+            lng: z.lng,
+            radius: z.radius || 300,
+          });
+        }
+      }
+    });
 
     // 3. Campus default
     if (targetCoordsList.length === 0) {
@@ -1623,6 +1638,38 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                         {currentTime.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
                       </Text>
                     </View>
+
+                    {/* Live OJT Shift Proximity Notification Card */}
+                    {Boolean(dashboardRecord?.timeIn && !dashboardRecord?.timeOut) &&
+                      currentTime.getHours() * 60 + currentTime.getMinutes() >= 16 * 60 &&
+                      currentTime.getHours() * 60 + currentTime.getMinutes() < 17 * 60 && (
+                        <View style={{ backgroundColor: '#fffbeb', borderRadius: 16, borderWidth: 1.5, borderColor: '#f59e0b', padding: 12, marginBottom: 12 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Clock size={16} color="#b45309" />
+                            <Text style={{ fontFamily: 'Times New Roman', fontWeight: '800', fontSize: 13, color: '#b45309' }}>
+                              ⏰ 4:20 PM Shift End Approaching
+                            </Text>
+                          </View>
+                          <Text style={{ fontFamily: 'Times New Roman', fontSize: 11, color: '#92400e', marginTop: 4, lineHeight: 16 }}>
+                            Today's standard OJT shift concludes at 5:00 PM (~{17 * 60 - (currentTime.getHours() * 60 + currentTime.getMinutes())} mins left). Please clock out with facial & GPS verification before leaving.
+                          </Text>
+                        </View>
+                      )}
+
+                    {Boolean(dashboardRecord?.timeIn && !dashboardRecord?.timeOut) &&
+                      currentTime.getHours() * 60 + currentTime.getMinutes() >= 17 * 60 && (
+                        <View style={{ backgroundColor: '#fef2f2', borderRadius: 16, borderWidth: 1.5, borderColor: '#ef4444', padding: 12, marginBottom: 12 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <AlertTriangle size={16} color="#b91c1c" />
+                            <Text style={{ fontFamily: 'Times New Roman', fontWeight: '800', fontSize: 13, color: '#b91c1c' }}>
+                              🚨 Shift Concluded — Clock Out Pending
+                            </Text>
+                          </View>
+                          <Text style={{ fontFamily: 'Times New Roman', fontSize: 11, color: '#991b1b', marginTop: 4, lineHeight: 16 }}>
+                            It is past 5:00 PM and you are still clocked in. Please complete your Time Out now to record today's rendered hours.
+                          </Text>
+                        </View>
+                      )}
 
                     {/* Today's Shift Breakdown */}
                     <View style={styles.dashShiftGrid}>

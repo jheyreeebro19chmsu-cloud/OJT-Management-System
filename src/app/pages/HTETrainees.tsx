@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   Sparkles,
   User,
+  Phone,
+  MapPin,
   X,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
@@ -609,24 +611,63 @@ export function HTETrainees() {
                 <User size={14} className="text-blue-600" />
                 <span>Contact & Personal Details</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
                 <div>
                   <span className="text-slate-400 font-semibold block">Email Address:</span>
                   <span className="font-medium text-slate-800 break-all">{selectedProfileTrainee.email}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 font-semibold block">Contact Number:</span>
-                  <span className="font-medium text-slate-800">{selectedProfileTrainee.contactPhone || selectedProfileTrainee.phone || 'Not specified'}</span>
+                  <span className="text-slate-400 font-semibold block">Contact / Telephone Number:</span>
+                  {(() => {
+                    const phone =
+                      selectedProfileTrainee.contactPhone ||
+                      selectedProfileTrainee.phone ||
+                      selectedProfileTrainee.telephone ||
+                      (selectedProfileTrainee.registrationLocation as any)?.contactPhone ||
+                      (selectedProfileTrainee.registrationLocation as any)?.phone ||
+                      (selectedProfileTrainee.registrationLocation as any)?.telephone;
+                    return phone ? (
+                      <a
+                        href={`tel:${phone}`}
+                        className="font-semibold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1.5 mt-0.5"
+                      >
+                        <Phone size={12} className="text-blue-500 shrink-0" />
+                        <span>{phone}</span>
+                      </a>
+                    ) : (
+                      <span className="font-medium text-slate-400">Not specified</span>
+                    );
+                  })()}
                 </div>
                 <div className="sm:col-span-2">
-                  <span className="text-slate-400 font-semibold block">Residential Address:</span>
-                  <span className="font-medium text-slate-800">
-                    {selectedProfileTrainee.address ||
-                      [selectedProfileTrainee.street, selectedProfileTrainee.barangay, selectedProfileTrainee.city, selectedProfileTrainee.province]
+                  <span className="text-slate-400 font-semibold block">Residential Address (Home):</span>
+                  {(() => {
+                    const isCoordString = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
+                    const regLocAny = selectedProfileTrainee.registrationLocation as any;
+                    const resAddr =
+                      selectedProfileTrainee.residentialAddress ||
+                      regLocAny?.residentialAddress ||
+                      regLocAny?.homeAddress ||
+                      (!isCoordString(selectedProfileTrainee.address) ? selectedProfileTrainee.address : undefined) ||
+                      (!isCoordString(regLocAny?.address) ? regLocAny?.address : undefined) ||
+                      [
+                        selectedProfileTrainee.street || regLocAny?.street,
+                        selectedProfileTrainee.barangay || regLocAny?.barangay,
+                        selectedProfileTrainee.city || regLocAny?.city,
+                        selectedProfileTrainee.province || regLocAny?.province,
+                      ]
                         .filter(Boolean)
-                        .join(', ') ||
-                      'Not recorded'}
-                  </span>
+                        .join(', ');
+
+                    return resAddr ? (
+                      <div className="flex items-start gap-1.5 mt-0.5">
+                        <MapPin size={13} className="text-emerald-600 shrink-0 mt-0.5" />
+                        <span className="font-medium text-slate-800 leading-relaxed">{resAddr}</span>
+                      </div>
+                    ) : (
+                      <span className="font-medium text-slate-400">Not recorded</span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

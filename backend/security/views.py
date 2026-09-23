@@ -41,10 +41,46 @@ from django.core.cache import cache
 logger = logging.getLogger(__name__)
 
 # Security-hardened biometrics configuration
-SECURE_MODEL_NAME = "VGG-Face"
-SECURE_DETECTOR_BACKEND = "retinaface"   # was "opencv" — upgraded for occlusion/angle robustness
+SECURE_MODEL_NAME = "Facenet512"         # Upgraded to high-dimensional 512-d vector representation
+SECURE_DETECTOR_BACKEND = "retinaface"   # High accuracy landmark alignment
 SECURE_DISTANCE_METRIC = "cosine"
+SECURE_STRICT_THRESHOLD = 0.28           # Calibrated strict threshold preventing false positives
 SECURE_DLIB_TOLERANCE = 0.6              # fixed server-side, never client-supplied
+
+
+def _validate_image_bytes(image_bytes: bytes):
+    """
+    Ensure the profile image actually contains valid bytes and decodes properly.
+    Prevents silent fallback bugs when storage fails or sends 0 bytes.
+    """
+    if image_bytes is None or len(image_bytes) == 0:
+        return False, "Registered profile image could not be loaded from storage (empty buffer)."
+    try:
+        import cv2
+        import numpy as np
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None or img.size == 0:
+            return False, "Failed to decode profile picture."
+        return True, img
+    except Exception as e:
+        return False, f"Image decode error: {e}"
+
+
+def _is_valid_face_descriptor(descriptor) -> bool:
+    """
+    Verify face descriptor is not empty or filled with dummy/zero vectors.
+    """
+    if descriptor is None or len(descriptor) == 0:
+        return False
+    try:
+        import numpy as np
+        arr = np.array(descriptor, dtype=float)
+        if np.all(np.abs(arr) < 1e-6) or np.linalg.norm(arr) < 1e-6:
+            return False
+        return True
+    except Exception:
+        return False
 
 
 def _face_backend_available() -> bool:
@@ -195,10 +231,11 @@ def check_geofence(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"inside": False, "reason": "no_zones"}, status=400)
 
     radius = max(40.0, safe_float(nearest_zone.get("radius"), 40.0))
-    # Consider client-reported accuracy if provided. Be conservative: treat user as outside unless
-    # (distance + accuracy) <= radius.
-    accuracy = safe_float(data.get("accuracy"), 0.0)
-    inside = nearest_distance is not None and (nearest_distance + (accuracy or 0.0)) <= radius
+    # Consider client-reported GPS sensor accuracy (clamped to 25m) so structural building attenuation
+    # does not falsely reject legitimate employees standing within the designated workplace.
+    raw_accuracy = safe_float(data.get("accuracy"), 0.0)
+    accuracy_allowance = min(raw_accuracy, 25.0) if raw_accuracy and raw_accuracy > 0 else 0.0
+    inside = nearest_distance is not None and nearest_distance <= (radius + accuracy_allowance)
 
     return JsonResponse(
         {
@@ -554,6 +591,9 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             )
 
         if registration.image_data:
+            valid_bytes, decoded_or_err = _validate_image_bytes(registration.image_data)
+            if not valid_bytes:
+                return JsonResponse({"success": False, "message": decoded_or_err}, status=400)
             import io
             try:
                 known_image = face_recognition.load_image_file(io.BytesIO(registration.image_data))
@@ -563,13 +603,22 @@ def verify_face(request: HttpRequest) -> JsonResponse:
         if known_image is None and registration.image:
             try:
                 if hasattr(registration.image, 'path') and os.path.exists(registration.image.path):
+                    with open(registration.image.path, 'rb') as f:
+                        valid_bytes, decoded_or_err = _validate_image_bytes(f.read())
+                        if not valid_bytes:
+                            return JsonResponse({"success": False, "message": decoded_or_err}, status=400)
                     known_image = face_recognition.load_image_file(registration.image.path)
                 elif hasattr(registration.image, 'file'):
+                    registration.image.file.seek(0)
+                    valid_bytes, decoded_or_err = _validate_image_bytes(registration.image.file.read())
+                    registration.image.file.seek(0)
+                    if not valid_bytes:
+                        return JsonResponse({"success": False, "message": decoded_or_err}, status=400)
                     known_image = face_recognition.load_image_file(registration.image.file)
             except Exception:
                 known_image = None
 
-        if registration.face_encoding:
+        if registration.face_encoding and _is_valid_face_descriptor(registration.face_encoding):
             import numpy as np  # type: ignore
             known_encoding = np.array(registration.face_encoding)
         else:
@@ -709,6 +758,7 @@ def verify_face(request: HttpRequest) -> JsonResponse:
                 detector_backend=SECURE_DETECTOR_BACKEND,
                 distance_metric=SECURE_DISTANCE_METRIC,
                 enforce_detection=True,
+                strict_threshold=SECURE_STRICT_THRESHOLD,
             )
             if df_result.get("success"):
                 df_result["liveness_verified"] = liveness_verified

@@ -23,13 +23,14 @@ import {
   AlertCircle,
   RefreshCw,
   Trash2,
+  Phone,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { useApp, DEFAULT_OJT_REQUIRED_DOCUMENTS } from '../store/AppContext';
+import { useApp } from '../store/AppContext';
 import type { Employee } from '../types';
 import type { TraineeDocuments, TraineeDocumentItem } from '../types';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
@@ -103,10 +104,6 @@ export function Profile() {
     getEmployeeEvaluation,
     getLatestHostFeedback,
     changeCurrentUserPassword,
-    getEmployeeRequiredDocuments,
-    submitRequiredDocument,
-    getRequiredDocumentSubmission,
-    getRequirementStatus,
     settings,
     addGeofenceZone,
   } = useApp();
@@ -156,21 +153,6 @@ export function Profile() {
     createdAt: new Date().toISOString().split('T')[0],
   };
   const records = getEmployeeRecords(employee.id);
-  const rawRequiredDocuments = getEmployeeRequiredDocuments(employee.id);
-  const requiredDocuments =
-    rawRequiredDocuments.length > 0
-      ? rawRequiredDocuments
-      : DEFAULT_OJT_REQUIRED_DOCUMENTS.map((d, i) => ({
-          id: `std-doc-${i + 1}-${employee.id}`,
-          employeeId: employee.id,
-          title: d.title,
-          description: d.description,
-          notes: d.notes,
-          dueDate: d.dueDate,
-          required: d.required,
-          academicYear: settings.activeAcademicYear,
-          createdAt: new Date().toISOString(),
-        }));
   const evaluation = getEmployeeEvaluation(employee.id);
   const hostFeedback = getLatestHostFeedback(employee.id);
   const [editing, setEditing] = useState(false);
@@ -179,17 +161,82 @@ export function Profile() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const [faceCaptureOpen, setFaceCaptureOpen] = useState(false);
+
+  const initialRegLoc = (employee as any)?.registrationLocation;
+  const isCoordStr = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
+  const initialPhone =
+    employee.phone ||
+    employee.contactPhone ||
+    employee.telephone ||
+    initialRegLoc?.phone ||
+    initialRegLoc?.contactPhone ||
+    initialRegLoc?.telephone ||
+    '';
+  const initialResidential =
+    employee.residentialAddress ||
+    initialRegLoc?.residentialAddress ||
+    initialRegLoc?.homeAddress ||
+    (!isCoordStr(employee.address) ? employee.address : undefined) ||
+    (!isCoordStr(initialRegLoc?.address) ? initialRegLoc?.address : undefined) ||
+    [employee.street || initialRegLoc?.street, employee.barangay || initialRegLoc?.barangay, employee.city || initialRegLoc?.city, employee.province || initialRegLoc?.province]
+      .filter(Boolean)
+      .join(', ') ||
+    '';
+
   const [form, setForm] = useState({
     name: employee.name || '',
     email: employee.email || '',
+    phone: initialPhone,
+    residentialAddress: initialResidential,
+    street: employee.street || initialRegLoc?.street || '',
+    barangay: employee.barangay || initialRegLoc?.barangay || '',
+    city: employee.city || initialRegLoc?.city || '',
+    province: employee.province || initialRegLoc?.province || '',
     supervisorName: employee.supervisorName || '',
     campus: employee.campus || '',
     department: employee.department || '',
     course: employee.course || '',
   });
-  const [documentNote, setDocumentNote] = useState<Record<string, string>>({});
-  const [documentFileName, setDocumentFileName] = useState<Record<string, string>>({});
-  const [documentFileUrl, setDocumentFileUrl] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!editing && employee) {
+      const regAny = (employee as any)?.registrationLocation;
+      const isC = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
+      const ph =
+        employee.phone ||
+        employee.contactPhone ||
+        employee.telephone ||
+        regAny?.phone ||
+        regAny?.contactPhone ||
+        regAny?.telephone ||
+        '';
+      const res =
+        employee.residentialAddress ||
+        regAny?.residentialAddress ||
+        regAny?.homeAddress ||
+        (!isC(employee.address) ? employee.address : undefined) ||
+        (!isC(regAny?.address) ? regAny?.address : undefined) ||
+        [employee.street || regAny?.street, employee.barangay || regAny?.barangay, employee.city || regAny?.city, employee.province || regAny?.province]
+          .filter(Boolean)
+          .join(', ') ||
+        '';
+      setForm((prev) => ({
+        ...prev,
+        name: employee.name || prev.name,
+        email: employee.email || prev.email,
+        phone: ph || prev.phone,
+        residentialAddress: res || prev.residentialAddress,
+        street: employee.street || regAny?.street || prev.street,
+        barangay: employee.barangay || regAny?.barangay || prev.barangay,
+        city: employee.city || regAny?.city || prev.city,
+        province: employee.province || regAny?.province || prev.province,
+        supervisorName: employee.supervisorName || prev.supervisorName,
+        campus: employee.campus || prev.campus,
+        department: employee.department || prev.department,
+        course: employee.course || prev.course,
+      }));
+    }
+  }, [employee, editing]);
   const [docUploadingKey, setDocUploadingKey] = useState<string | null>(null);
   const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
 
@@ -258,127 +305,6 @@ export function Profile() {
     reader.readAsDataURL(file);
   };
 
-  const [editingReqDocId, setEditingReqDocId] = useState<string | null>(null);
-  const [submittingReqDocId, setSubmittingReqDocId] = useState<string | null>(null);
-
-  const handleReqDocFileSelect = (docId: string, file: File | null) => {
-    if (!file) return;
-
-    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
-    const ALLOWED_MIME = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
-    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-      toast.error(
-        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: PDF (.pdf), Word (.doc, .docx), and Pictures (.jpg, .jpeg, .png, .webp).`
-      );
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
-      return;
-    }
-
-    setDocumentFileName((prev) => ({ ...prev, [docId]: file.name }));
-    const reader = new FileReader();
-    reader.onload = () => {
-      setDocumentFileUrl((prev) => ({ ...prev, [docId]: String(reader.result || '') }));
-      toast.success(`Attached "${file.name}" ready for submission.`);
-    };
-    reader.onerror = () => {
-      toast.error('Failed to read file. Please try again.');
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleReqDocQuickReplace = (docId: string, file: File | null) => {
-    if (!file) return;
-
-    const ALLOWED_MIME = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
-    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-      toast.error(
-        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: PDF (.pdf), Word (.doc, .docx), and Pictures (.jpg, .jpeg, .png, .webp).`
-      );
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
-      return;
-    }
-
-    setSubmittingReqDocId(docId);
-    const existing = getRequiredDocumentSubmission(docId, employee.id);
-    const note = documentNote[docId] !== undefined ? documentNote[docId] : (existing?.note || existing?.notes || '');
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const fileUrl = String(reader.result || '');
-      setDocumentFileName((prev) => ({ ...prev, [docId]: file.name }));
-      setDocumentFileUrl((prev) => ({ ...prev, [docId]: fileUrl }));
-
-      submitRequiredDocument(docId, employee.id, {
-        note,
-        notes: note,
-        fileName: file.name,
-        fileUrl,
-      });
-      setSubmittingReqDocId(null);
-      setEditingReqDocId(null);
-      toast.success(`✓ Replaced document with "${file.name}"!`);
-    };
-    reader.onerror = () => {
-      setSubmittingReqDocId(null);
-      toast.error('Failed to read file. Please try again.');
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleReqDocSubmit = (docId: string) => {
-    const existing = getRequiredDocumentSubmission(docId, employee.id);
-    const note = documentNote[docId] !== undefined ? documentNote[docId] : (existing?.note || existing?.notes || '');
-    const fileName = documentFileName[docId] || existing?.fileName || '';
-    const fileUrl = documentFileUrl[docId] || existing?.fileUrl || '';
-
-    if (!fileUrl) {
-      toast.error('Please attach a PDF, Word document, or Image file.');
-      return;
-    }
-
-    setSubmittingReqDocId(docId);
-    try {
-      submitRequiredDocument(docId, employee.id, {
-        note,
-        notes: note,
-        fileName,
-        fileUrl,
-      });
-      setEditingReqDocId(null);
-      toast.success('✓ Document updated and submitted!');
-    } catch (err: any) {
-      toast.error('Failed to submit document: ' + (err?.message || 'Unknown error'));
-    } finally {
-      setSubmittingReqDocId(null);
-    }
-  };
-
   const handleProfileFaceSuccess = async (img?: string) => {
     if (!img || !employee) return;
     setFaceCaptureOpen(false);
@@ -407,8 +333,18 @@ export function Profile() {
   const progressPct = reqHours > 0 ? Math.min((totalHours / reqHours) * 100, 100) : 0;
 
   const handleSave = () => {
-    updateEmployee(employee.id, form);
+    const finalAddress = form.residentialAddress?.trim() || [form.street, form.barangay, form.city, form.province].filter(Boolean).join(', ');
+
+    updateEmployee(employee.id, {
+      ...form,
+      phone: form.phone,
+      contactPhone: form.phone,
+      telephone: form.phone,
+      residentialAddress: finalAddress,
+      address: finalAddress,
+    });
     setEditing(false);
+    toast.success('Personal and contact information updated!');
   };
 
   const handlePasswordChange = async () => {
@@ -549,225 +485,6 @@ export function Profile() {
           </div>
         </div>
       </motion.div>
-
-      <Section title="Required Documents / Requirements Checklist" icon={<FileCheck size={18} className="text-violet-700" />}> 
-        <div className="space-y-3">
-          {/* Institutional OJT Checklist Summary Banner */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-xl border border-violet-200">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-bold text-violet-950">Institutional OJT Requirements Checklist</p>
-                <span className="text-[10px] bg-violet-200/70 text-violet-900 font-extrabold px-2 py-0.5 rounded-full">
-                  Mandatory
-                </span>
-              </div>
-              <p className="text-[11px] text-violet-700 mt-0.5 font-medium">
-                {requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length} of {requiredDocuments.length} documents verified ({requiredDocuments.length > 0 ? Math.round((requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length / requiredDocuments.length) * 100) : 0}%)
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                requiredDocuments.length > 0 && requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length === requiredDocuments.length
-                  ? 'bg-green-100 text-green-800 border-green-300'
-                  : 'bg-amber-100 text-amber-800 border-amber-300'
-              }`}>
-                {requiredDocuments.length > 0 && requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length === requiredDocuments.length
-                  ? '✓ All Compliant'
-                  : `${requiredDocuments.length - requiredDocuments.filter((d) => getRequirementStatus(d.id, employee.id) === 'complete').length} Pending`}
-              </span>
-            </div>
-          </div>
-
-          {requiredDocuments.map((doc) => {
-            const submission = getRequiredDocumentSubmission(doc.id, employee.id);
-            const status = getRequirementStatus(doc.id, employee.id);
-            const isEditing = editingReqDocId === doc.id;
-            const isSubmitting = submittingReqDocId === doc.id;
-            const currentFileName = documentFileName[doc.id] || submission?.fileName || '';
-            const docCategory = currentFileName ? getFileCategory(currentFileName) : 'other';
-
-            return (
-              <div key={doc.id} className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3 shadow-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-violet-950">{doc.title}</p>
-                    {doc.description && <p className="text-[11px] text-violet-800 mt-0.5 leading-relaxed">{doc.description}</p>}
-                  </div>
-                  <span className={`text-[10px] rounded-full px-2.5 py-1 font-extrabold uppercase tracking-wide shrink-0 border ${
-                    status === 'complete'
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : status === 'incomplete'
-                        ? 'bg-amber-100 text-amber-800 border-amber-300'
-                        : 'bg-red-100 text-red-800 border-red-300'
-                  }`}>
-                    {status === 'complete' ? '✓ Complete' : status === 'incomplete' ? '⚠ Incomplete' : '✕ Missing'}
-                  </span>
-                </div>
-                {doc.dueDate && (
-                  <p className="text-[11px] text-slate-600 flex items-center gap-1 font-medium">
-                    <Clock size={11} className="text-slate-400" /> Due: {doc.dueDate}
-                  </p>
-                )}
-
-                {submission && !isEditing ? (
-                  <div className="rounded-xl bg-white border border-violet-100 p-3 text-[11px] text-gray-700 space-y-2 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-gray-800">Submitted Document</p>
-                      <p className="text-[10px] text-gray-400">{new Date(submission.submittedAt).toLocaleDateString()}</p>
-                    </div>
-                    {submission.note && <p className="text-gray-600">Note: {submission.note}</p>}
-                    {submission.fileName && (
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-slate-800 truncate max-w-sm">File: {submission.fileName}</p>
-                        <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 uppercase tracking-wide shrink-0">
-                          {docCategory === 'picture' ? 'Image / JPEG' : docCategory === 'doc' ? 'Word DOC' : 'PDF'}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-                      {submission.fileUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDocModal({
-                            title: doc.title,
-                            fileName: submission.fileName,
-                            fileUrl: submission.fileUrl,
-                            note: submission.note,
-                            date: new Date(submission.submittedAt).toLocaleDateString(),
-                          })}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-semibold hover:bg-violet-700 transition-all shadow-xs cursor-pointer"
-                        >
-                          <Eye size={13} /> View Document
-                        </button>
-                      )}
-                      {submission.fileUrl && (
-                        <button
-                          type="button"
-                          onClick={() => downloadDocument(submission.fileUrl!, submission.fileName || 'ojt-document')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-violet-200 text-violet-700 rounded-lg text-xs font-semibold hover:bg-violet-50 transition-all cursor-pointer shadow-xs"
-                        >
-                          <Download size={13} /> Download
-                        </button>
-                      )}
-
-                      {/* Change / Replace Button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingReqDocId(doc.id);
-                          if (documentNote[doc.id] === undefined) {
-                            setDocumentNote((prev) => ({ ...prev, [doc.id]: submission.note || submission.notes || '' }));
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs"
-                      >
-                        <RefreshCw size={12} /> Change / Replace
-                      </button>
-
-                      {/* Direct Quick Replace via file picker */}
-                      <label
-                        htmlFor={`quick-replace-${doc.id}`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer transition-colors shadow-xs"
-                        title="Upload a new file (PDF, DOCX, JPEG) to replace immediately"
-                      >
-                        <Upload size={12} className={isSubmitting ? 'animate-spin' : ''} />
-                        <span>{isSubmitting ? 'Replacing...' : 'Quick Replace File'}</span>
-                        <input
-                          type="file"
-                          id={`quick-replace-${doc.id}`}
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                          className="hidden"
-                          disabled={isSubmitting}
-                          onChange={(e) => handleReqDocQuickReplace(doc.id, e.target.files?.[0] || null)}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5 pt-1 border-t border-violet-100 bg-white p-3.5 rounded-xl border border-violet-200/80 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-violet-950">
-                        {isEditing ? 'Change / Update Document Submission' : 'Submit Required Document'}
-                      </span>
-                      {isEditing && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingReqDocId(null)}
-                          className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      )}
-                    </div>
-
-                    <textarea
-                      value={documentNote[doc.id] !== undefined ? documentNote[doc.id] : (submission?.note || '')}
-                      onChange={(e) => setDocumentNote((prev) => ({ ...prev, [doc.id]: e.target.value }))}
-                      rows={2}
-                      placeholder="Add description / notes for this document..."
-                      className="w-full px-3 py-2 border border-violet-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
-                    />
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-800 cursor-pointer transition-colors shadow-xs inline-flex items-center gap-1.5">
-                        <Upload size={13} />
-                        <span>{documentFileName[doc.id] ? 'Change Selected File' : 'Attach File (PDF, DOC, JPEG/PNG)'}</span>
-                        <input
-                          type="file"
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                          className="hidden"
-                          onChange={(e) => handleReqDocFileSelect(doc.id, e.target.files?.[0] || null)}
-                        />
-                      </label>
-
-                      {currentFileName && (
-                        <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg truncate max-w-[220px]" title={currentFileName}>
-                          📎 {currentFileName}
-                        </span>
-                      )}
-
-                      <div className="ml-auto flex items-center gap-2">
-                        {isEditing && (
-                          <button
-                            type="button"
-                            onClick={() => setEditingReqDocId(null)}
-                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-semibold transition-all cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={isSubmitting}
-                          onClick={() => handleReqDocSubmit(doc.id)}
-                          className="px-3.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 shadow-sm transition-all disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer"
-                        >
-                          {isSubmitting ? (
-                            <>
-                              <Loader2 size={13} className="animate-spin" />
-                              <span>Saving...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Check size={13} />
-                              <span>{isEditing ? 'Save & Replace' : 'Submit Document'}</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <p className="text-[10px] text-slate-400">
-                      Accepted formats: <strong>PDF (.pdf)</strong>, <strong>Word (.doc, .docx)</strong>, <strong>Images (.jpg, .jpeg, .png, .webp)</strong> · Max 10MB
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Section>
 
       {evaluation &&
         (evaluation.status === 'final' ||
@@ -1109,6 +826,26 @@ export function Profile() {
               />
             </div>
             <div>
+              <label className="text-xs text-gray-500 font-medium block mb-1">Contact / Telephone Number</label>
+              <input
+                value={form.phone}
+                onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                placeholder="e.g. +639123456789 or 09123456789"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+              <p className="text-[11px] text-gray-400 mt-0.5">Mobile phone or landline telephone number</p>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium block mb-1">Residential Address (Home)</label>
+              <input
+                value={form.residentialAddress}
+                onChange={(e) => setForm((p) => ({ ...p, residentialAddress: e.target.value }))}
+                placeholder="House No., Street, Barangay, City/Municipality, Province"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-[11px] text-gray-400 mt-0.5">Your official home residence (not the GPS / clock-in location)</p>
+            </div>
+            <div>
               <label className="text-xs text-gray-500 font-medium block mb-1">Supervisor Name</label>
               <input
                 value={form.supervisorName}
@@ -1154,6 +891,22 @@ export function Profile() {
           <div>
             <InfoRow label="Full Name" value={employee.name} />
             <InfoRow label="Email" value={employee.email} />
+            <InfoRow
+              label="Contact / Telephone"
+              value={
+                form.phone ? (
+                  <a href={`tel:${form.phone}`} className="text-blue-600 hover:underline font-semibold">
+                    {form.phone}
+                  </a>
+                ) : (
+                  <span className="text-gray-400">Not specified</span>
+                )
+              }
+            />
+            <InfoRow
+              label="Residential Address"
+              value={form.residentialAddress || <span className="text-gray-400">Not recorded</span>}
+            />
             <InfoRow label="Supervisor" value={employee.supervisorName} />
             <InfoRow label="Department" value={employee.department} />
             <InfoRow label="Campus" value={employee.campus || 'Not specified'} />
@@ -1162,7 +915,7 @@ export function Profile() {
               <div className="flex items-start gap-2 py-2 border-b border-gray-50">
                 <MapPin size={12} className="text-blue-400 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs text-gray-500">Registered From</p>
+                  <p className="text-xs text-gray-500">Registered Station (GPS)</p>
                   <p className="text-xs font-mono text-gray-700 mt-0.5">{employee.registrationAddress}</p>
                 </div>
               </div>

@@ -66,7 +66,7 @@ export const getPhotoUrl = (photoPath: string | null | undefined): string => {
   const trimmed = String(photoPath).trim();
   if (!trimmed) return '';
   // Treat common sentinel values from storage providers as missing
-  if (/^not\s*found$/i.test(trimmed) || /not\s*found/i.test(trimmed) || trimmed === 'None') return '';
+  if (/^not\s*found$/i.test(trimmed) || /not\s*found/i.test(trimmed) || trimmed === 'None' || trimmed.includes('/face-photos/')) return '';
 
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
     return trimmed;

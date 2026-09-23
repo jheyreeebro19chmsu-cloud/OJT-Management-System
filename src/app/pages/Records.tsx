@@ -26,8 +26,67 @@ const STATUS_COLORS: Record<string, string> = {
   'half-day': 'bg-yellow-100 text-yellow-700',
 };
 
+interface RecordPhotoThumbnailProps {
+  src?: string | null;
+  label: string;
+  borderClass: string;
+  onClick: (src: string, label: string) => void;
+  onFailed?: () => void;
+}
+
+function RecordPhotoThumbnail({
+  src,
+  label,
+  borderClass,
+  onClick,
+  onFailed,
+}: RecordPhotoThumbnailProps) {
+  const [hasError, setHasError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // If no source or failed to load, completely remove unseen picture
+  if (!src || hasError) return null;
+  const trimmed = src.trim();
+  if (
+    !trimmed ||
+    trimmed === 'null' ||
+    trimmed === 'undefined' ||
+    trimmed.includes('/face-photos/') ||
+    (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:image/'))
+  ) {
+    return null;
+  }
+
+  return (
+    <div className={`mt-2 w-full ${!isLoaded ? 'hidden' : 'block'}`}>
+      <button
+        type="button"
+        onClick={() => onClick(trimmed, label)}
+        className="w-full group cursor-pointer focus:outline-hidden text-left"
+      >
+        <img
+          src={trimmed}
+          alt=""
+          onLoad={() => setIsLoaded(true)}
+          onError={() => {
+            setHasError(true);
+            onFailed?.();
+          }}
+          className={`w-full h-16 object-cover rounded-lg border ${borderClass} transition-opacity duration-200`}
+          style={{ transform: 'scaleX(-1)' }}
+        />
+        {isLoaded && (
+          <p className="text-xs text-center text-gray-400 mt-1 group-hover:text-gray-600 transition-colors">
+            Tap to enlarge
+          </p>
+        )}
+      </button>
+    </div>
+  );
+}
+
 export function Records() {
-  const { getCurrentEmployee, getEmployeeRecords } = useApp();
+  const { getCurrentEmployee, getEmployeeRecords, updateTimeRecord } = useApp();
   const employee = getCurrentEmployee();
   const currentEmp = employee || getCurrentEmployee();
   const empLookupId = currentEmp?.id || currentEmp?.employeeId || '';
@@ -277,20 +336,13 @@ export function Records() {
                             </p>
                           )}
                         </div>
-                        {record.timeInPhoto && (
-                          <button
-                            onClick={() => setPhotoModal({ src: record.timeInPhoto!, label: 'Clock-In Face Capture' })}
-                            className="mt-2 w-full"
-                          >
-                            <img
-                              src={record.timeInPhoto}
-                              alt="Clock-in face"
-                              className="w-full h-16 object-cover rounded-lg border border-green-200"
-                              style={{ transform: 'scaleX(-1)' }}
-                            />
-                            <p className="text-xs text-center text-gray-400 mt-1">Tap to enlarge</p>
-                          </button>
-                        )}
+                        <RecordPhotoThumbnail
+                          src={record.timeInPhoto}
+                          label="Clock-In Face Capture"
+                          borderClass="border-green-200"
+                          onClick={(src, label) => setPhotoModal({ src, label })}
+                          onFailed={() => updateTimeRecord(record.id, { timeInPhoto: undefined })}
+                        />
                       </div>
 
                       {/* Clock Out */}
@@ -316,22 +368,13 @@ export function Records() {
                               </p>
                             ))}
                         </div>
-                        {record.timeOutPhoto && (
-                          <button
-                            onClick={() =>
-                              setPhotoModal({ src: record.timeOutPhoto!, label: 'Clock-Out Face Capture' })
-                            }
-                            className="mt-2 w-full"
-                          >
-                            <img
-                              src={record.timeOutPhoto}
-                              alt="Clock-out face"
-                              className="w-full h-16 object-cover rounded-lg border border-orange-200"
-                              style={{ transform: 'scaleX(-1)' }}
-                            />
-                            <p className="text-xs text-center text-gray-400 mt-1">Tap to enlarge</p>
-                          </button>
-                        )}
+                        <RecordPhotoThumbnail
+                          src={record.timeOutPhoto}
+                          label="Clock-Out Face Capture"
+                          borderClass="border-orange-200"
+                          onClick={(src, label) => setPhotoModal({ src, label })}
+                          onFailed={() => updateTimeRecord(record.id, { timeOutPhoto: undefined })}
+                        />
                       </div>
                     </div>
 
@@ -392,7 +435,13 @@ export function Records() {
                   Close
                 </button>
               </div>
-              <img src={photoModal.src} alt={photoModal.label} className="w-full" style={{ transform: 'scaleX(-1)' }} />
+              <img
+                src={photoModal.src}
+                alt={photoModal.label}
+                onError={() => setPhotoModal(null)}
+                className="w-full"
+                style={{ transform: 'scaleX(-1)' }}
+              />
             </motion.div>
           </motion.div>
         )}

@@ -40,6 +40,7 @@ export function AdminEmployees() {
     employees,
     timeRecords,
     geofenceZones,
+    addGeofenceZone,
     registerEmployee,
     updateEmployee,
     deleteEmployee,
@@ -61,14 +62,38 @@ export function AdminEmployees() {
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{ studentName: string; studentId: string; title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
   const [form, setForm] = useState(BLANK_FORM);
-  const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressValue, setAddressValue] = useState('');
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneValue, setPhoneValue] = useState('');
   const [docTitle, setDocTitle] = useState('');
   const [docDescription, setDocDescription] = useState('');
   const [docDueDate, setDocDueDate] = useState('');
   const [assigningHte, setAssigningHte] = useState(false);
   const [selectedHteId, setSelectedHteId] = useState('');
+
+  const resolveEmpHomeAddress = (emp: Employee | null) => {
+    if (!emp) return '';
+    const isC = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
+    const regAny = (emp as any)?.registrationLocation;
+    return (
+      emp.residentialAddress ||
+      regAny?.residentialAddress ||
+      regAny?.homeAddress ||
+      (!isC(emp.address) ? emp.address : '') ||
+      (!isC(regAny?.address) ? regAny?.address : '') ||
+      [emp.street || regAny?.street, emp.barangay || regAny?.barangay, emp.city || regAny?.city, emp.province || regAny?.province]
+        .filter(Boolean)
+        .join(', ') ||
+      ''
+    );
+  };
+
+  const resolveEmpPhone = (emp: Employee | null) => {
+    if (!emp) return '';
+    const regAny = (emp as any)?.registrationLocation;
+    return emp.contactPhone || emp.phone || emp.telephone || regAny?.contactPhone || regAny?.phone || regAny?.telephone || '';
+  };
 
   const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -176,7 +201,9 @@ export function AdminEmployees() {
     setSelectedEmp(emp);
     setFaceEnrollOpen(false);
     setEditingAddress(false);
-    setAddressValue(emp.registrationAddress || '');
+    setAddressValue(resolveEmpHomeAddress(emp));
+    setEditingPhone(false);
+    setPhoneValue(resolveEmpPhone(emp));
     setModalMode('view');
   };
   const openAdd = () => {
@@ -955,13 +982,77 @@ export function AdminEmployees() {
                             </div>
                           </div>
 
+                          {/* Contact / Telephone Number */}
                           <div className="mt-3">
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Home Address</label>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Contact / Telephone Number</label>
+                            {!editingPhone ? (
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-sm text-gray-700 font-mono">
+                                  {resolveEmpPhone(selectedEmp) || '—'}
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setPhoneValue(resolveEmpPhone(selectedEmp));
+                                    setEditingPhone(true);
+                                  }}
+                                  className="text-sm text-blue-600 hover:text-blue-800"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <input
+                                  value={phoneValue}
+                                  onChange={(e) => setPhoneValue(e.target.value)}
+                                  placeholder="+639123456789"
+                                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"
+                                />
+                                <button
+                                  onClick={async () => {
+                                    if (!selectedEmp) return;
+                                    await updateEmployee(selectedEmp.id, {
+                                      phone: phoneValue,
+                                      contactPhone: phoneValue,
+                                      telephone: phoneValue,
+                                    });
+                                    setSelectedEmp({
+                                      ...selectedEmp,
+                                      phone: phoneValue,
+                                      contactPhone: phoneValue,
+                                      telephone: phoneValue,
+                                    });
+                                    setEditingPhone(false);
+                                    toast.success('Contact number updated');
+                                  }}
+                                  className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingPhone(false);
+                                    setPhoneValue(resolveEmpPhone(selectedEmp));
+                                  }}
+                                  className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Residential Home Address */}
+                          <div className="mt-3">
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Residential Address (Home)</label>
                             {!editingAddress ? (
                               <div className="flex items-center justify-between gap-2">
-                                <div className="text-sm text-gray-700">{selectedEmp.registrationAddress || '—'}</div>
+                                <div className="text-sm text-gray-700">{resolveEmpHomeAddress(selectedEmp) || '—'}</div>
                                 <button
-                                  onClick={() => setEditingAddress(true)}
+                                  onClick={() => {
+                                    setAddressValue(resolveEmpHomeAddress(selectedEmp));
+                                    setEditingAddress(true);
+                                  }}
                                   className="text-sm text-blue-600 hover:text-blue-800"
                                 >
                                   Edit
@@ -972,22 +1063,33 @@ export function AdminEmployees() {
                                 <input
                                   value={addressValue}
                                   onChange={(e) => setAddressValue(e.target.value)}
+                                  placeholder="House No., Street, Barangay, City, Province"
                                   className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
                                 />
                                 <button
                                   onClick={async () => {
                                     if (!selectedEmp) return;
-                                    await updateEmployee(selectedEmp.id, { registrationAddress: addressValue });
-                                    setSelectedEmp({ ...selectedEmp, registrationAddress: addressValue });
+                                    await updateEmployee(selectedEmp.id, {
+                                      residentialAddress: addressValue,
+                                      address: addressValue,
+                                    });
+                                    setSelectedEmp({
+                                      ...selectedEmp,
+                                      residentialAddress: addressValue,
+                                      address: addressValue,
+                                    });
                                     setEditingAddress(false);
-                                    toast.success('Address updated');
+                                    toast.success('Residential address updated');
                                   }}
                                   className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
                                 >
                                   Save
                                 </button>
                                 <button
-                                  onClick={() => { setEditingAddress(false); setAddressValue(selectedEmp.registrationAddress || '') }}
+                                  onClick={() => {
+                                    setEditingAddress(false);
+                                    setAddressValue(resolveEmpHomeAddress(selectedEmp));
+                                  }}
                                   className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
                                 >
                                   Cancel
@@ -1108,19 +1210,44 @@ export function AdminEmployees() {
                                       onClick={() => {
                                         const matchedHost = hostSupervisors.find((h) => h.id === selectedHteId);
                                         if (!matchedHost) return;
-                                        updateEmployee(selectedEmp.id, {
+
+                                        const hteAddress = matchedHost.companyAddress || matchedHost.registrationAddress || `${matchedHost.companyName} Workplace Premises`;
+                                        const hteLocation = matchedHost.registrationLocation || { lat: 10.7412, lng: 122.9691 };
+                                        const hteRadius = Math.max(40, Number(matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
+
+                                        const updatedFields = {
                                           hteId: matchedHost.id,
                                           companyName: matchedHost.companyName,
+                                          companyAddress: hteAddress,
+                                          registrationAddress: hteAddress,
                                           supervisorName: matchedHost.name,
+                                          registrationLocation: {
+                                            lat: Number(hteLocation.lat),
+                                            lng: Number(hteLocation.lng),
+                                            radius: hteRadius,
+                                          },
+                                          registrationRadius: hteRadius,
+                                        };
+
+                                        updateEmployee(selectedEmp.id, updatedFields);
+
+                                        addGeofenceZone({
+                                          id: `station-${selectedEmp.id}`,
+                                          name: `${selectedEmp.name} - Trainee Geofence (${matchedHost.companyName})`,
+                                          address: hteAddress,
+                                          lat: Number(hteLocation.lat),
+                                          lng: Number(hteLocation.lng),
+                                          radius: hteRadius,
+                                          active: true,
+                                          academicYear: selectedEmp.academicYear || settings?.activeAcademicYear,
                                         });
+
                                         setSelectedEmp((prev) => prev ? {
                                           ...prev,
-                                          hteId: matchedHost.id,
-                                          companyName: matchedHost.companyName,
-                                          supervisorName: matchedHost.name,
+                                          ...updatedFields,
                                         } : null);
                                         setAssigningHte(false);
-                                        toast.success(`Assigned ${selectedEmp.name} to ${matchedHost.companyName}!`);
+                                        toast.success(`Assigned ${selectedEmp.name} to ${matchedHost.companyName} & synced workplace geofence!`);
                                       }}
                                       className="px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 disabled:opacity-50 cursor-pointer shadow-sm"
                                     >

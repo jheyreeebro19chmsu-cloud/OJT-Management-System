@@ -54,6 +54,7 @@ import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
+import { computeTraineeOjtNotifications } from '../utils/traineeNotifications';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -585,6 +586,11 @@ export function Dashboard() {
   }, []);
 
   const totalHoursRendered = allRecords.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+  const traineeNotifications = useMemo(() => {
+    if (isAdmin) return [];
+    return computeTraineeOjtNotifications(currentEmp, todayRecord, totalHoursRendered, currentTime);
+  }, [isAdmin, currentEmp, todayRecord, totalHoursRendered, currentTime]);
+
   const requiredHours = employee?.requiredHours ?? (isAdmin ? 0 : 486);
   const hoursProgress = requiredHours > 0 ? Math.min((totalHoursRendered / requiredHours) * 100, 100) : 0;
   const presentDays = allRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
@@ -1432,6 +1438,97 @@ export function Dashboard() {
             <Link to="/app/announcements" className="block text-xs text-center text-blue-600 font-medium">
               Open announcements, notices, and updates
             </Link>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live OJT Hours & Shift Proximity Notification Cards */}
+      <AnimatePresence>
+        {traineeNotifications.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-2.5"
+          >
+            {traineeNotifications.map((n) => {
+              const isHigh = n.urgency === 'high';
+              const isSuccess = n.urgency === 'success';
+
+              return (
+                <div
+                  key={n.id}
+                  className={`p-4 rounded-3xl border shadow-sm relative overflow-hidden transition-all ${
+                    isHigh
+                      ? 'bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border-amber-300 ring-2 ring-amber-400/20'
+                      : isSuccess
+                        ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border-emerald-300 ring-2 ring-emerald-400/20'
+                        : 'bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-500/5 border-blue-300 ring-2 ring-blue-400/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                          isHigh
+                            ? 'bg-amber-500 text-white animate-pulse'
+                            : isSuccess
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-blue-600 text-white'
+                        }`}
+                      >
+                        {isHigh ? <Clock size={20} /> : isSuccess ? <Award size={20} /> : <AlertTriangle size={20} />}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              isHigh
+                                ? 'bg-amber-200 text-amber-900'
+                                : isSuccess
+                                  ? 'bg-emerald-200 text-emerald-900'
+                                  : 'bg-blue-200 text-blue-900'
+                            }`}
+                          >
+                            {n.type === 'shift_near_end'
+                              ? '4:20 PM Daily Shift End Alert'
+                              : n.type === 'shift_overtime'
+                                ? 'Overtime Alert'
+                                : n.type === 'shift_start_soon'
+                                  ? 'Morning Shift Reminder'
+                                  : 'OJT Milestone'}
+                          </span>
+                          <span className="text-xs font-semibold text-gray-500 font-mono">
+                            {n.timeLabel}
+                          </span>
+                        </div>
+
+                        <h3 className="font-bold text-sm text-gray-900 mt-1">{n.title}</h3>
+                        <p className="text-xs text-gray-700 mt-1 leading-relaxed max-w-2xl">{n.message}</p>
+                      </div>
+                    </div>
+
+                    {n.actionRoute && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(n.actionRoute!)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer self-start sm:self-center ${
+                          isHigh
+                            ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
+                            : isSuccess
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                        }`}
+                      >
+                        <span>{n.actionText || 'Open Time Record'}</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </motion.div>
         )}
       </AnimatePresence>

@@ -399,6 +399,39 @@ export function TimeRecord() {
           <span>🔄 Daily Reset: <strong>6:00 AM</strong></span>
         </div>
 
+        {/* 4:20 PM / Shift End Proximity Alert Banner */}
+        {Boolean(currentRecord?.timeIn && !currentRecord?.timeOut) &&
+          currentTime.getHours() * 60 + currentTime.getMinutes() >= 16 * 60 &&
+          currentTime.getHours() * 60 + currentTime.getMinutes() < 17 * 60 && (
+            <div className="mt-3 bg-amber-500/25 border border-amber-300/60 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-amber-100">
+              <Clock size={16} className="text-amber-300 shrink-0 mt-0.5 animate-pulse" />
+              <div>
+                <p className="font-bold text-white text-xs">
+                  ⏰ Nearing Daily Shift End (4:20 PM Window)
+                </p>
+                <p className="mt-0.5 text-amber-100/90 leading-relaxed text-[11px]">
+                  Today's standard OJT shift concludes at 5:00 PM ({17 * 60 - (currentTime.getHours() * 60 + currentTime.getMinutes())} mins remaining). Please remember to complete your Biometric Time Out with GPS verification before departing.
+                </p>
+              </div>
+            </div>
+          )}
+
+        {/* Overtime / Past 5:00 PM Alert Banner */}
+        {Boolean(currentRecord?.timeIn && !currentRecord?.timeOut) &&
+          currentTime.getHours() * 60 + currentTime.getMinutes() >= 17 * 60 && (
+            <div className="mt-3 bg-red-500/25 border border-red-300/60 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-red-100">
+              <AlertTriangle size={16} className="text-red-300 shrink-0 mt-0.5 animate-bounce" />
+              <div>
+                <p className="font-bold text-white text-xs">
+                  🚨 Regular Shift Concluded — Clock Out Pending
+                </p>
+                <p className="mt-0.5 text-red-100/90 leading-relaxed text-[11px]">
+                  It is past 5:00 PM. Please submit your Time Out now to record and lock in today's rendered OJT hours.
+                </p>
+              </div>
+            </div>
+          )}
+
         {currentRecord?.totalHours && (
           <div className="mt-3 bg-white/15 rounded-2xl p-3 text-center">
             <p className="text-blue-200 text-xs">Total Hours</p>

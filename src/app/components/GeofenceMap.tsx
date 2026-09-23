@@ -18,6 +18,7 @@ import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, Polyline,
 import 'leaflet/dist/leaflet.css';
 import './geofence-map.css';
 import type { GeofenceZone } from '../types';
+import { calculateDistance, isWithinGeofence } from '../utils/geo';
 
 export type MapSizePreset = 'compact' | 'normal' | 'expanded';
 
@@ -128,7 +129,8 @@ export function GeofenceMap({
 
   const fittedZonesRef = useRef(false);
   const fittedLiveUserRef = useRef(false);
-  const defaultCenter = useMemo<[number, number]>(() => [14.5547, 121.0244], []);
+  // Default center: Carlos Hilado Memorial State University (CHMSU Talisay Main Campus, Negros Occidental)
+  const defaultCenter = useMemo<[number, number]>(() => [10.7410, 122.9702], []);
 
   const zoneIcon = useMemo(
     () =>
@@ -209,33 +211,31 @@ export function GeofenceMap({
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;
 
-  const nearestZone = useMemo(() => {
+  // Target zone: safeZones[0] is strictly the designated/assigned workplace zone
+  const targetZone = useMemo(() => {
     if (!safeLiveUser || safeZones.length === 0) return null;
-    let closest: GeofenceZone | null = null;
-    let minDist = Infinity;
-    safeZones.forEach((z) => {
-      const dLat = (z.lat - safeLiveUser.lat) * 111320;
-      const dLng = (z.lng - safeLiveUser.lng) * (111320 * Math.cos((safeLiveUser.lat * Math.PI) / 180));
-      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-      if (dist < minDist) {
-        minDist = dist;
-        closest = z;
-      }
-    });
-    return closest;
+    return safeZones[0];
   }, [safeLiveUser, safeZones]);
 
+  // Keep nearestZone pointing to the primary target workplace zone for complete consistency
+  const nearestZone = targetZone;
+
   const nearestZoneDistance = useMemo(() => {
-    if (!safeLiveUser || !nearestZone) return null;
-    const dLat = (nearestZone.lat - safeLiveUser.lat) * 111320;
-    const dLng = (nearestZone.lng - safeLiveUser.lng) * (111320 * Math.cos((safeLiveUser.lat * Math.PI) / 180));
-    return Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
-  }, [safeLiveUser, nearestZone]);
+    if (!safeLiveUser || !targetZone) return null;
+    return Math.round(calculateDistance(safeLiveUser.lat, safeLiveUser.lng, targetZone.lat, targetZone.lng));
+  }, [safeLiveUser, targetZone]);
 
   const isOutsidePremises = useMemo(() => {
-    if (nearestZoneDistance === null || !nearestZone) return false;
-    return nearestZoneDistance > (nearestZone.radius || 40);
-  }, [nearestZoneDistance, nearestZone]);
+    if (nearestZoneDistance === null || !targetZone || !safeLiveUser) return false;
+    return !isWithinGeofence(
+      safeLiveUser.lat,
+      safeLiveUser.lng,
+      targetZone.lat,
+      targetZone.lng,
+      targetZone.radius || 40,
+      safeLiveUser.accuracy
+    );
+  }, [nearestZoneDistance, targetZone, safeLiveUser]);
 
   const initialCenter = useMemo<[number, number]>(() => {
     if (safeLiveUser) return [safeLiveUser.lat, safeLiveUser.lng];
@@ -714,10 +714,8 @@ function FitMapView({
         return;
       }
 
-      // Check distance to nearest zone
-      const dLat = (nearestZone.lat - liveUser.lat) * 111320;
-      const dLng = (nearestZone.lng - liveUser.lng) * (111320 * Math.cos((liveUser.lat * Math.PI) / 180));
-      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+      // Check distance to designated target zone
+      const dist = calculateDistance(liveUser.lat, liveUser.lng, nearestZone.lat, nearestZone.lng);
 
       if (dist <= 750) {
         try {

@@ -21,8 +21,8 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // Allow a realistic GPS sensor variance (clamped to max 15m) to prevent false-rejections while maintaining high boundary precision
-  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 15) : 10;
+  // Allow a realistic GPS sensor variance (clamped to max 25m) to accommodate indoor building attenuation while maintaining boundary security
+  const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 25) : 10;
   const maxAllowedDistance = radiusMeters + accuracyAllowance;
   return distance <= maxAllowedDistance;
 }
@@ -38,7 +38,10 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
       {
-        headers: { 'Accept-Language': 'en' },
+        headers: {
+          'Accept-Language': 'en',
+          'User-Agent': 'OJT-Management-System/1.0',
+        },
         signal: AbortSignal.timeout(5000),
       }
     );
@@ -65,18 +68,18 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
   return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 }
 
-// Multi-tiered high-res GPS locator with instant fallback for desktop browsers & Windows Location Services
+// Multi-tiered high-res GPS locator with browser & device location services (no IP fallback)
 export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?: number; maximumAge?: number }): Promise<any> {
   const highAccuracy = options?.highAccuracy ?? true;
-  const timeoutMs = options?.timeout ?? 10000;
-  const maxAgeMs = options?.maximumAge ?? 0; // Fresh satellite fix by default
+  const timeoutMs = options?.timeout ?? 15000;
+  const maxAgeMs = options?.maximumAge ?? 5000;
 
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
-      return fallbackIpLocation().then(resolve).catch(reject);
+      return reject(new Error('Geolocation is not supported by your browser. Please use a browser that supports GPS location.'));
     }
 
-    // Step 1: Try high accuracy GPS (mobile / GPS chip)
+    // Step 1: Try high-accuracy device GPS (hardware GNSS / mobile sensor)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         try {
@@ -95,7 +98,7 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
           return reject(err1);
         }
 
-        // Step 2: Try standard network/Wi-Fi geolocation (works reliably on PC/Windows)
+        // Step 2: Try standard Wi-Fi / network geolocation (works reliably on PC/Windows Location Services)
         navigator.geolocation.getCurrentPosition(
           (pos2) => {
             try {
@@ -108,72 +111,37 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
             } catch {}
             resolve(pos2);
           },
-          async (err2) => {
+          (err2) => {
             if (err2.code === 1) return reject(err2);
 
-            // Step 3: Fall back to IP-based real-time geolocation service
+            // Step 3: Check if we have recent cached coordinates from current session (within last 2 minutes)
             try {
-              const ipPos = await fallbackIpLocation();
-              resolve(ipPos);
-            } catch {
-              // Step 4: Check if we have recent cached coordinates from current session
-              try {
-                const cached = localStorage.getItem('ojt_last_coords');
-                if (cached) {
-                  const parsed = JSON.parse(cached);
-                  if (parsed.lat && parsed.lng) {
-                    return resolve({
-                      coords: {
-                        latitude: parsed.lat,
-                        longitude: parsed.lng,
-                        accuracy: parsed.accuracy || 50,
-                      },
-                      timestamp: parsed.time || Date.now(),
-                    });
-                  }
+              const cached = localStorage.getItem('ojt_last_coords');
+              if (cached) {
+                const parsed = JSON.parse(cached);
+                const age = Date.now() - (parsed.time || 0);
+                if (parsed.lat && parsed.lng && age < 120000) {
+                  return resolve({
+                    coords: {
+                      latitude: parsed.lat,
+                      longitude: parsed.lng,
+                      accuracy: parsed.accuracy || 20,
+                    },
+                    timestamp: parsed.time || Date.now(),
+                  });
                 }
-              } catch {}
-              reject(err2);
-            }
+              }
+            } catch {}
+
+            // Strictly reject rather than faking IP coordinates in Manila (500km away from Negros Occidental)
+            reject(err2);
           },
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 15000 }
         );
       },
       { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: maxAgeMs }
     );
   });
-}
-
-// Fallback real-time IP Geolocation for desktop browsers where GPS hardware is unavailable
-async function fallbackIpLocation(): Promise<any> {
-  const providers = [
-    'https://freeipapi.com/api/json',
-    'https://ipapi.co/json/',
-  ];
-
-  for (const url of providers) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
-      if (res.ok) {
-        const data = await res.json();
-        const lat = data.latitude || data.lat;
-        const lng = data.longitude || data.lon || data.lng;
-        if (typeof lat === 'number' && typeof lng === 'number') {
-          return {
-            coords: {
-              latitude: lat,
-              longitude: lng,
-              accuracy: 100,
-            },
-            timestamp: Date.now(),
-          };
-        }
-      }
-    } catch {
-      // try next provider
-    }
-  }
-  throw new Error('IP geolocation unavailable');
 }
 
 export function isGeolocationPositionError(err: unknown): err is any {

@@ -29,6 +29,8 @@ export interface Employee {
   registrationRadius?: number;
   registrationAddress?: string;
   address?: string;
+  residentialAddress?: string;
+  telephone?: string;
   street?: string;
   barangay?: string;
   city?: string;
@@ -263,7 +265,7 @@ export interface Evaluation {
   areasForImprovement: string;
   recommendations: string;
   evaluatedAt: string;
-  status: 'draft' | 'final' | 'submitted_to_instructor' | 'reviewed_by_instructor';
+  status: 'draft' | 'final' | 'submitted_by_trainee' | 'passed_to_hte' | 'submitted_to_instructor' | 'reviewed_by_instructor';
   instructorViewedAt?: string;
   instructorViewedBy?: string;
   academicYear?: string;

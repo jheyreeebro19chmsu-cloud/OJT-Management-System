@@ -143,18 +143,26 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     }
 
     let dynamicRadius = 50; // default 50 meters small perimeter
+    let matchedHteZone: any = null;
     try {
       const zones = await mobileDb.getGeofenceZones();
       const empId = profile?.id || profile?.employeeId || '';
-      const matchedZone = zones.find(
-        (z) =>
-          z.id === `personal-${empId}` ||
+      const pName = (profile?.name || '').trim().toLowerCase();
+      const pCompany = (profile?.companyName || '').trim().toLowerCase();
+      const hasCompany = pCompany && pCompany !== 'n/a' && pCompany !== 'pending';
+
+      matchedHteZone = zones.find((z) => {
+        const zName = (z.name || '').toLowerCase();
+        return (
           z.id === `station-${empId}` ||
-          (profile?.name && z.name && z.name.toLowerCase().includes(profile.name.toLowerCase())) ||
-          (profile?.companyName && z.name && z.name.toLowerCase().includes(profile.companyName.toLowerCase()))
-      );
-      if (matchedZone?.radius) {
-        dynamicRadius = Number(matchedZone.radius);
+          z.id === profile?.assignedZoneId ||
+          z.id === profile?.hteId ||
+          (pName && zName.includes(pName) && (zName.includes('assigned workplace') || zName.includes('trainee geofence') || (hasCompany && zName.includes(pCompany)))) ||
+          (hasCompany && zName.includes(pCompany) && !zName.includes('official station'))
+        );
+      });
+      if (matchedHteZone?.radius) {
+        dynamicRadius = Number(matchedHteZone.radius);
       }
     } catch (zErr) {
       console.debug('Geofence zone fetch notice:', zErr);
@@ -164,12 +172,19 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       dynamicRadius = Number(regLoc.radius);
     }
 
-    if (regLoc?.lat && regLoc?.lng) {
+    // PRIORITY 1: Strictly use Assigned HTE Workplace Geofence
+    if (matchedHteZone && matchedHteZone.lat && matchedHteZone.lng) {
+      targetCoords.push({
+        lat: Number(matchedHteZone.lat),
+        lng: Number(matchedHteZone.lng),
+        radius: Math.max(40, Number(matchedHteZone.radius || 40)),
+      });
+    } else if (regLoc?.lat && regLoc?.lng) {
       // Strictly rely on where account was registered with instructor-configured radius
       targetCoords.push({
         lat: Number(regLoc.lat),
         lng: Number(regLoc.lng),
-        radius: dynamicRadius,
+        radius: Math.max(40, Number(regLoc.radius || dynamicRadius)),
       });
     } else {
       // 2. Geofence zones from Supabase fallback only if no registered account location
@@ -202,13 +217,15 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     if (targetCoords.length > 0) {
       let minDistance = Infinity;
       let inside = false;
+      const accuracy = location.coords.accuracy;
+      const accuracyAllowance = typeof accuracy === 'number' && accuracy > 0 ? Math.min(accuracy, 25) : 10;
 
       for (const target of targetCoords) {
         const dist = getDistance(location.coords.latitude, location.coords.longitude, target.lat, target.lng);
         if (dist < minDistance) {
           minDistance = Math.round(dist);
         }
-        if (dist <= target.radius) {
+        if (dist <= target.radius + accuracyAllowance) {
           inside = true;
           break;
         }
@@ -491,6 +508,35 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
               </TouchableOpacity>
             </View>
           ) : null}
+
+          {/* 4:20 PM / Shift End Proximity Alert Card */}
+          {Boolean(todayRecord?.timeIn && !todayRecord?.timeOut) &&
+            clockTime.getHours() * 60 + clockTime.getMinutes() >= 16 * 60 &&
+            clockTime.getHours() * 60 + clockTime.getMinutes() < 17 * 60 && (
+              <View style={styles.shiftAlertAmberCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Clock size={18} color="#b45309" />
+                  <Text style={styles.shiftAlertAmberTitle}>⏰ Nearing Daily Shift End (4:20 PM Window)</Text>
+                </View>
+                <Text style={styles.shiftAlertAmberText}>
+                  Today's standard OJT shift concludes at 5:00 PM ({17 * 60 - (clockTime.getHours() * 60 + clockTime.getMinutes())} mins remaining). Please remember to complete your Biometric Time Out before leaving your assigned HTE workplace.
+                </Text>
+              </View>
+            )}
+
+          {/* Overtime Alert Card */}
+          {Boolean(todayRecord?.timeIn && !todayRecord?.timeOut) &&
+            clockTime.getHours() * 60 + clockTime.getMinutes() >= 17 * 60 && (
+              <View style={styles.shiftAlertRedCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AlertTriangle size={18} color="#b91c1c" />
+                  <Text style={styles.shiftAlertRedTitle}>🚨 Regular Shift Concluded — Clock Out Pending</Text>
+                </View>
+                <Text style={styles.shiftAlertRedText}>
+                  It is past 5:00 PM. Please record your Time Out now to finalize and lock today's rendered hours.
+                </Text>
+              </View>
+            )}
 
           <View style={styles.geofenceCard}>
             <View style={styles.geofenceHeaderRow}>
@@ -1168,5 +1214,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  shiftAlertAmberCard: {
+    backgroundColor: '#fffbeb',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#f59e0b',
+    padding: 14,
+    marginBottom: 14,
+  },
+  shiftAlertAmberTitle: {
+    fontFamily: 'Times New Roman',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#b45309',
+  },
+  shiftAlertAmberText: {
+    fontFamily: 'Times New Roman',
+    fontSize: 12,
+    color: '#92400e',
+    lineHeight: 18,
+    marginTop: 6,
+  },
+  shiftAlertRedCard: {
+    backgroundColor: '#fef2f2',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#ef4444',
+    padding: 14,
+    marginBottom: 14,
+  },
+  shiftAlertRedTitle: {
+    fontFamily: 'Times New Roman',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#b91c1c',
+  },
+  shiftAlertRedText: {
+    fontFamily: 'Times New Roman',
+    fontSize: 12,
+    color: '#991b1b',
+    lineHeight: 18,
+    marginTop: 6,
   },
 });

@@ -22,6 +22,27 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 
+function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
+  const [hasError, setHasError] = useState(false);
+  const initial = name ? name.charAt(0).toUpperCase() : 'T';
+  const url = getPhotoUrl(photo);
+
+  return (
+    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
+      {url && !hasError ? (
+        <img
+          src={url}
+          alt={name}
+          className="w-full h-full object-cover"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <span className="text-blue-700 font-black text-xs">{initial}</span>
+      )}
+    </div>
+  );
+}
+
 export function HTEDashboard() {
   const navigate = useNavigate();
   const { employees, timeRecords, evaluations, hostFeedback, announcements, currentUser, getCurrentEmployee, settings } =
@@ -182,7 +203,7 @@ export function HTEDashboard() {
           employeeName: displayName,
           ojtCode: displayCode || 'OJT-TRAINEE',
           course: emp?.course || 'OJT Trainee',
-          photo: emp?.photo || (r as any)?.timeInPhoto || (r as any)?.timeOutPhoto || '',
+          photo: emp?.photo || '',
         };
       });
   }, [timeRecords, employees]);
@@ -493,22 +514,7 @@ export function HTEDashboard() {
               {paginatedLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3 text-center">
-                    <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 shadow-xs mx-auto">
-                      {log.photo ? (
-                        <img
-                          src={getPhotoUrl(log.photo)}
-                          alt={log.employeeName}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <span className="text-blue-700 font-black text-xs">
-                          {log.employeeName ? log.employeeName.charAt(0).toUpperCase() : 'T'}
-                        </span>
-                      )}
-                    </div>
+                    <RecordAvatar photo={log.photo} name={log.employeeName} />
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{log.date}</td>
                   <td className="px-4 py-3">

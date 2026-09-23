@@ -41,6 +41,7 @@ export interface CHMSUEvaluationSheetProps {
   status?: Evaluation['status'];
   role?: 'hte' | 'instructor' | 'trainee';
   initialPageTab?: 'page1' | 'page2' | 'both';
+  hideTopBar?: boolean;
   onRatingChange?: (criterionId: string, score: number) => void;
   onRatingCommentChange?: (categoryId: string, comment: string) => void;
   onCommentsSuggestionsChange?: (text: string) => void;
@@ -49,6 +50,7 @@ export interface CHMSUEvaluationSheetProps {
   onSubmitFinal?: () => void;
   onClose?: () => void;
   onMarkDoneViewed?: () => void;
+  onPassToHte?: () => void;
 }
 
 const RATING_COMMENT_PRESETS: Record<string, string[]> = {
@@ -222,6 +224,7 @@ export function CHMSUEvaluationSheet({
   status = 'draft',
   role = 'hte',
   initialPageTab = 'both',
+  hideTopBar = false,
   onRatingChange,
   onRatingCommentChange,
   onCommentsSuggestionsChange,
@@ -230,6 +233,7 @@ export function CHMSUEvaluationSheet({
   onSubmitFinal,
   onClose,
   onMarkDoneViewed,
+  onPassToHte,
 }: CHMSUEvaluationSheetProps) {
   const [activeTab, setActiveTab] = useState<'page1' | 'page2' | 'both'>(
     role === 'trainee' ? 'page2' : initialPageTab
@@ -297,9 +301,9 @@ export function CHMSUEvaluationSheet({
   const isCriteriaReadOnly = role === 'trainee' || role === 'instructor' || isReadOnly;
 
   // Page 2 Questionnaire (Student Practicum Feedback):
-  // ALWAYS editable by Trainee so they can complete/update their 9 questionnaire reflections.
-  // Read-only for Instructor and when specifically set as read-only for others.
-  const isQuestionnaireReadOnly = role === 'trainee' ? false : (role === 'instructor' ? true : isReadOnly);
+  // ONLY editable by Trainee so student's own reflection words cannot be overridden.
+  // Read-only for Instructor and HTE to view trainee answers.
+  const isQuestionnaireReadOnly = role === 'trainee' ? false : true;
 
   // Calculate Subtotals per Category
   const categoryStats = React.useMemo(() => {
@@ -341,196 +345,222 @@ export function CHMSUEvaluationSheet({
 
   return (
     <div className="eval-sheet-container space-y-6 max-w-5xl mx-auto pb-12 font-sans text-slate-800">
-      {/* Top Action Bar (Hidden when printing) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 no-print bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-2">
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
-            >
-              <X size={15} />
-              <span>Return to List</span>
-            </button>
-          )}
-
+      {/* Top Action Bar (Hidden when printing or when hideTopBar is true) */}
+      {!hideTopBar && (
+        <div className="flex flex-wrap items-center justify-between gap-3 no-print bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-500 uppercase">Status:</span>
-            {status === 'reviewed_by_instructor' ? (
-              <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                <CheckCircle2 size={13} />
-                Reviewed by Instructor
-              </span>
-            ) : status === 'submitted_to_instructor' || status === 'final' ? (
-              <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
-                Submitted to Instructor
-              </span>
-            ) : (
-              <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
-                Draft Mode
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Tab Navigation Buttons - Only for HTE & Instructor; Trainees are locked to Questionnaire */}
-        {role !== 'trainee' ? (
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('page1')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'page1'
-                  ? 'bg-white text-emerald-900 shadow-xs font-black'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <FileText size={14} />
-              <span>Page 1: Report</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('page2')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'page2'
-                  ? 'bg-white text-emerald-900 shadow-xs font-black'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <FileSpreadsheet size={14} />
-              <span>Page 2: Questionnaire</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('both')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'both'
-                  ? 'bg-white text-emerald-900 shadow-xs font-black'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Layers size={14} />
-              <span>Both Pages (Full)</span>
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold shadow-xs">
-            <FileSpreadsheet size={15} className="text-emerald-700" />
-            <span>OJT Trainee Questionnaire Form</span>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {role === 'instructor' && status !== 'reviewed_by_instructor' && onMarkDoneViewed && (
-            <button
-              type="button"
-              onClick={onMarkDoneViewed}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <CheckCircle2 size={15} />
-              <span>Done Viewed</span>
-            </button>
-          )}
-
-          {/* Quick Print: Trainees print questionnaire directly; HTE/Instructors get menu */}
-          {role === 'trainee' ? (
-            <button
-              type="button"
-              onClick={() => executePrint('page2')}
-              className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-              title="Print Official Questionnaire"
-            >
-              <Printer size={15} />
-              <span>Print Questionnaire</span>
-            </button>
-          ) : (
-            <div className="relative">
+            {onClose && (
               <button
                 type="button"
-                onClick={() => setShowPrintMenu(!showPrintMenu)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                title="Print Official Document"
+                onClick={onClose}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
               >
-                <Printer size={15} />
-                <span>Print Official Form</span>
-                <ChevronDown size={14} className={`transition-transform ${showPrintMenu ? 'rotate-180' : ''}`} />
+                <X size={15} />
+                <span>Return to List</span>
               </button>
+            )}
 
-              {showPrintMenu && (
-                <div className="absolute right-0 top-full mt-1 w-60 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => executePrint('both')}
-                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 rounded-xl font-bold text-slate-800 hover:text-emerald-900 flex items-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <Layers size={15} className="text-emerald-700" />
-                    <div>
-                      <div>Print Full Document</div>
-                      <span className="text-[10px] text-slate-400 font-normal">Page 1 &amp; Page 2 (2 Sheets)</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => executePrint('page1')}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl font-bold text-slate-800 flex items-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <FileText size={15} className="text-slate-600" />
-                    <div>
-                      <div>Print Page 1 Only</div>
-                      <span className="text-[10px] text-slate-400 font-normal">Criteria Evaluation Report (1 Sheet)</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => executePrint('page2')}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl font-bold text-slate-800 flex items-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <FileSpreadsheet size={15} className="text-slate-600" />
-                    <div>
-                      <div>Print Page 2 Only</div>
-                      <span className="text-[10px] text-slate-400 font-normal">9-Question Questionnaire (1 Sheet)</span>
-                    </div>
-                  </button>
-                </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 uppercase">Status:</span>
+              {status === 'reviewed_by_instructor' ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 size={13} />
+                  Reviewed &amp; Approved by Instructor
+                </span>
+              ) : status === 'submitted_to_instructor' ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200 flex items-center gap-1">
+                  <Award size={13} />
+                  Ratings Submitted by HTE (Ready to Review)
+                </span>
+              ) : status === 'passed_to_hte' ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-sky-100 text-sky-800 border border-sky-200 flex items-center gap-1">
+                  <Building2 size={13} />
+                  Passed to HTE (Awaiting Ratings)
+                </span>
+              ) : status === 'submitted_by_trainee' ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                  <Sparkles size={13} />
+                  Questionnaire Submitted by Trainee
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                  Draft Mode
+                </span>
               )}
+            </div>
+          </div>
+
+          {/* Tab Navigation Buttons - Only for HTE & Instructor; Trainees are locked to Questionnaire */}
+          {role !== 'trainee' ? (
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setActiveTab('page1')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'page1'
+                    ? 'bg-white text-emerald-900 shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileText size={14} />
+                <span>Page 1: Report</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('page2')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'page2'
+                    ? 'bg-white text-emerald-900 shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileSpreadsheet size={14} />
+                <span>Page 2: Questionnaire</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('both')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'both'
+                    ? 'bg-white text-emerald-900 shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Layers size={14} />
+                <span>Both Pages (Full)</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold shadow-xs">
+              <FileSpreadsheet size={15} className="text-emerald-700" />
+              <span>OJT Trainee Questionnaire Form</span>
             </div>
           )}
 
-          {role === 'trainee' && onSaveDraft && (
-            <button
-              type="button"
-              onClick={onSaveDraft}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <Save size={15} />
-              <span>Save Questionnaire Answers</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {role === 'instructor' && (status === 'submitted_by_trainee' || status === 'draft' || !status) && onPassToHte && (
+              <button
+                type="button"
+                onClick={onPassToHte}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Pass trainee questionnaire to HTE Supervisor for performance rating"
+              >
+                <Building2 size={15} />
+                <span>Pass to HTE for Ratings</span>
+              </button>
+            )}
 
-          {role !== 'trainee' && !isReadOnly && onSaveDraft && (
-            <button
-              type="button"
-              onClick={onSaveDraft}
-              className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <Save size={15} />
-              <span>Save Draft</span>
-            </button>
-          )}
+            {role === 'instructor' && (status === 'submitted_to_instructor' || status === 'final') && onMarkDoneViewed && (
+              <button
+                type="button"
+                onClick={onMarkDoneViewed}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Acknowledge and mark evaluation as Done Viewed"
+              >
+                <CheckCircle2 size={15} />
+                <span>Done Viewed &amp; Approved</span>
+              </button>
+            )}
 
-          {role !== 'trainee' && !isReadOnly && onSubmitFinal && (
-            <button
-              type="button"
-              onClick={onSubmitFinal}
-              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/30 cursor-pointer"
-            >
-              <Check size={15} />
-              <span>{role === 'hte' ? 'Submit & Pass to Instructor' : 'Finalize Evaluation'}</span>
-            </button>
-          )}
+            {/* Quick Print: Trainees print questionnaire directly; HTE/Instructors get menu */}
+            {role === 'trainee' ? (
+              <button
+                type="button"
+                onClick={() => executePrint('page2')}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Print Official Questionnaire"
+              >
+                <Printer size={15} />
+                <span>Print Questionnaire</span>
+              </button>
+            ) : (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintMenu(!showPrintMenu)}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  title="Print Official Document"
+                >
+                  <Printer size={15} />
+                  <span>Print Official Form</span>
+                  <ChevronDown size={14} className={`transition-transform ${showPrintMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showPrintMenu && (
+                  <div className="absolute right-0 top-full mt-1 w-60 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => executePrint('both')}
+                      className="w-full text-left px-3 py-2 hover:bg-emerald-50 rounded-xl font-bold text-slate-800 hover:text-emerald-900 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Layers size={15} className="text-emerald-700" />
+                      <div>
+                        <div>Print Full Document</div>
+                        <span className="text-[10px] text-slate-400 font-normal">Page 1 &amp; Page 2 (2 Sheets)</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => executePrint('page1')}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl font-bold text-slate-800 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <FileText size={15} className="text-slate-600" />
+                      <div>
+                        <div>Print Page 1 Only</div>
+                        <span className="text-[10px] text-slate-400 font-normal">Criteria Evaluation Report (1 Sheet)</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => executePrint('page2')}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-100 rounded-xl font-bold text-slate-800 flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <FileSpreadsheet size={15} className="text-slate-600" />
+                      <div>
+                        <div>Print Page 2 Only</div>
+                        <span className="text-[10px] text-slate-400 font-normal">9-Question Questionnaire (1 Sheet)</span>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {role === 'trainee' && onSaveDraft && (
+              <button
+                type="button"
+                onClick={onSaveDraft}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Save size={15} />
+                <span>Save Questionnaire Answers</span>
+              </button>
+            )}
+
+            {role !== 'trainee' && !isReadOnly && onSaveDraft && (
+              <button
+                type="button"
+                onClick={onSaveDraft}
+                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Save size={15} />
+                <span>Save Draft</span>
+              </button>
+            )}
+
+            {role !== 'trainee' && !isReadOnly && onSubmitFinal && (
+              <button
+                type="button"
+                onClick={onSubmitFinal}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-md shadow-blue-600/30 cursor-pointer"
+              >
+                <Check size={15} />
+                <span>{role === 'hte' ? 'Submit Ratings & Pass to Instructor' : 'Finalize Evaluation'}</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────────────────────
           PAGE 1: ON-THE-JOB TRAINING EVALUATION REPORT

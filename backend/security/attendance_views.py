@@ -111,7 +111,8 @@ def time_in(request: HttpRequest) -> JsonResponse:
         if application.gps_latitude is not None and application.gps_longitude is not None:
             dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
             effective_radius = max(40.0, float(getattr(application, 'geofence_radius', None) or GEOFENCE_RADIUS_METERS))
-            if (dist + (accuracy or 0.0)) > effective_radius:
+            accuracy_allowance = min(float(accuracy or 0.0), 25.0) if accuracy and float(accuracy) > 0 else 0.0
+            if dist > (effective_radius + accuracy_allowance):
                 geofence_passed = False
                 return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': effective_radius}, status=403)
 
@@ -194,7 +195,8 @@ def time_out(request: HttpRequest) -> JsonResponse:
         if application.gps_latitude is not None and application.gps_longitude is not None:
             dist = calculate_distance(user_lat_f, user_lng_f, float(application.gps_latitude), float(application.gps_longitude))
             effective_radius = max(40.0, float(getattr(application, 'geofence_radius', None) or GEOFENCE_RADIUS_METERS))
-            if (dist + (accuracy or 0.0)) > effective_radius:
+            accuracy_allowance = min(float(accuracy or 0.0), 25.0) if accuracy and float(accuracy) > 0 else 0.0
+            if dist > (effective_radius + accuracy_allowance):
                 geofence_passed = False
                 return JsonResponse({'error': 'User is outside the allowed geofence', 'distance_m': dist, 'radius_m': effective_radius}, status=403)
 

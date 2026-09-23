@@ -6,6 +6,8 @@ import 'leaflet/dist/leaflet.css';
 import { GeofenceMap } from './GeofenceMap';
 import { checkGeofence as checkGeofenceApi, isSecurityApiConfigured } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
+import type { GeofenceZone } from '../types';
+import { getCampusLocation } from '../utils/campusLocations';
 import {
   calculateDistance,
   formatDistance,
@@ -49,7 +51,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const employee = getCurrentEmployee();
 
   const activeZones = React.useMemo(() => {
-    const zones = [...geofenceZones].filter(
+    const validConfiguredZones = geofenceZones.filter(
       (z) =>
         Boolean(z) &&
         z.active &&
@@ -61,7 +63,68 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         z.radius > 0
     );
 
-    // Add employee's registered account geofence if it exists at the top priority
+    const isStudent =
+      !employee?.position?.toLowerCase().includes('instructor') &&
+      !employee?.position?.toLowerCase().includes('faculty') &&
+      !employee?.position?.toLowerCase().includes('admin') &&
+      employee?.role !== 'admin' &&
+      employee?.role !== 'instructor';
+
+    if (!isStudent && employee) {
+      // Instructor / Faculty / Admin: prioritize their Official Station zone
+      const instStation = validConfiguredZones.find(
+        (z) =>
+          z.id === `station-${employee.id}` ||
+          (z.name && employee.name && z.name.toLowerCase().includes(employee.name.toLowerCase()) && z.name.toLowerCase().includes('official station'))
+      );
+      if (instStation) {
+        return [instStation, ...validConfiguredZones.filter((z) => z.id !== instStation.id)];
+      }
+      return validConfiguredZones;
+    }
+
+    // Trainee / Student: strictly resolve Assigned HTE Workplace zone
+    let assignedWorkplaceZone: GeofenceZone | null = null;
+    const empId = employee?.id || '';
+    const empName = (employee?.name || '').trim().toLowerCase();
+    const companyName = (employee?.companyName || '').trim().toLowerCase();
+    const hasValidCompany = companyName && companyName !== 'n/a' && companyName !== 'pending';
+
+    // 1. Direct match by zone ID: station-${empId}, assignedZoneId, or hteId
+    if (empId) {
+      assignedWorkplaceZone =
+        validConfiguredZones.find(
+          (z) =>
+            z.id === `station-${empId}` ||
+            (employee?.assignedZoneId && z.id === employee.assignedZoneId) ||
+            (employee?.hteId && (z.id === employee.hteId || z.id === `station-${employee.hteId}`))
+        ) || null;
+    }
+
+    // 2. Match by trainee name in zone name (e.g. "Jhey Ree Ebro - Trainee Geofence (Assigned Workplace)")
+    if (!assignedWorkplaceZone && empName) {
+      assignedWorkplaceZone =
+        validConfiguredZones.find((z) => {
+          const zName = (z.name || '').toLowerCase();
+          return (
+            zName.includes(empName) &&
+            (zName.includes('assigned workplace') ||
+              zName.includes('trainee geofence') ||
+              (hasValidCompany && zName.includes(companyName)))
+          );
+        }) || null;
+    }
+
+    // 3. Match by HTE company name in zone name (e.g. "Focus", "McDonalds", "Printing Services", "Concentrix")
+    if (!assignedWorkplaceZone && hasValidCompany) {
+      assignedWorkplaceZone =
+        validConfiguredZones.find((z) => {
+          const zName = (z.name || '').toLowerCase();
+          return zName.includes(companyName) && !zName.includes('official station');
+        }) || null;
+    }
+
+    // 4. Fallback to employee profile assigned coordinates (updated by Instructor when assigning HTE)
     let regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat ?? (employee as any)?.latitude;
     let regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng ?? (employee as any)?.longitude;
     if ((regLat == null || regLng == null) && (employee?.registrationAddress || (employee as any)?.registration_address)) {
@@ -72,37 +135,60 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         regLng = parseFloat(match[2]);
       }
     }
-    if (regLat != null && regLng != null && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
-      const matchedZone = geofenceZones.find(
-        (z) =>
-          z.id === `station-${employee?.id}` ||
-          z.id === `personal-${employee?.id}` ||
-          (z.name && employee?.name && z.name.toLowerCase().includes(employee.name.toLowerCase()))
-      );
-      const dynamicRadius = Math.max(
-        40,
-        Number(
-          matchedZone?.radius ??
-          employee?.registrationLocation?.radius ??
-          employee?.registrationRadius ??
-          (employee as any)?.registration_radius ??
-          (employee as any)?.geofenceRadius ??
-          (employee as any)?.radius ??
-          GEOFENCE_RADIUS_METERS
-        ) || 40
-      );
 
-      zones.unshift({
-        id: `personal-${employee?.id || 'trainee'}`,
-        name: employee?.companyName ? `${employee.companyName} (Designated Workplace)` : 'Registered Account Geofence',
-        address: employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
+    const dynamicRadius = Math.max(
+      40,
+      Number(
+        employee?.registrationLocation?.radius ??
+        employee?.registrationRadius ??
+        (employee as any)?.registration_radius ??
+        (employee as any)?.geofenceRadius ??
+        GEOFENCE_RADIUS_METERS
+      ) || 40
+    );
+
+    if (
+      !assignedWorkplaceZone &&
+      regLat != null &&
+      regLng != null &&
+      Number.isFinite(Number(regLat)) &&
+      Number.isFinite(Number(regLng)) &&
+      isValidCoord(Number(regLat), Number(regLng))
+    ) {
+      assignedWorkplaceZone = {
+        id: `station-${empId || 'trainee'}`,
+        name: employee?.companyName
+          ? `${employee.companyName} (Assigned Workplace)`
+          : `${employee?.name || 'Trainee'} - Assigned Workplace`,
+        address: employee?.companyAddress || employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
         lat: Number(regLat),
         lng: Number(regLng),
         radius: dynamicRadius,
         active: true,
-      });
+      };
     }
-    return zones;
+
+    if (assignedWorkplaceZone) {
+      // Put assigned workplace zone strictly at index 0
+      const otherZones = validConfiguredZones.filter(
+        (z) => z.id !== assignedWorkplaceZone!.id && z.name !== assignedWorkplaceZone!.name
+      );
+      return [assignedWorkplaceZone, ...otherZones];
+    }
+
+    // 5. Default Campus Location if unassigned
+    const campusLoc = getCampusLocation(employee?.campus);
+    const campusFallbackZone: GeofenceZone = {
+      id: `campus-${employee?.campus || 'main'}`,
+      name: `${campusLoc.name} (Campus Workplace)`,
+      address: campusLoc.address,
+      lat: campusLoc.lat,
+      lng: campusLoc.lng,
+      radius: campusLoc.radius || 40,
+      active: true,
+    };
+
+    return [campusFallbackZone, ...validConfiguredZones];
   }, [geofenceZones, employee]);
 
   // Stable ref for activeZones to prevent any possible interval restart loops
@@ -115,9 +201,22 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     setResult((prev) => ({ ...prev, state: 'checking' }));
 
     try {
-      // Actively request the user's location via browser GPS (triggers browser permission prompt)
-      const position = await getCurrentLocation();
-      const { latitude, longitude, accuracy } = position.coords;
+      let latitude: number;
+      let longitude: number;
+      let accuracy: number | undefined;
+
+      // Use active stream watchCoords if available and valid
+      if (watchCoords && isValidCoord(watchCoords.lat, watchCoords.lng)) {
+        latitude = watchCoords.lat;
+        longitude = watchCoords.lng;
+        accuracy = watchCoords.accuracy;
+      } else {
+        const position = await getCurrentLocation({ highAccuracy: true, timeout: 15000, maximumAge: 5000 });
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
+        accuracy = position.coords.accuracy;
+      }
+
       const coords = { lat: latitude, lng: longitude };
 
       if (!settings.geofenceEnabled) {
@@ -144,109 +243,66 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         return;
       }
 
-      // 1. Immediate priority check: Evaluate trainee's registered account geofence
-      // Strictly rely on where they registered an account, NOT residential address or falling back to campus
-      const personalZone = currentZones.find((z) => z.id.startsWith('personal-') || z.id === `station-${employee?.id}`);
-      if (personalZone) {
-        const isInsidePersonal = isWithinGeofence(
-          latitude,
-          longitude,
-          personalZone.lat,
-          personalZone.lng,
-          personalZone.radius,
-          accuracy
-        );
-        const personalDist = calculateDistance(latitude, longitude, personalZone.lat, personalZone.lng);
-        if (isInsidePersonal) {
-          setResult({
-            state: 'inside',
-            distance: personalDist,
-            zoneName: personalZone.name,
-            coords: { ...coords, accuracy },
-            accuracy,
-            verifiedBy: 'local',
-          });
-          onResultRef.current(true, coords, 'inside');
-          return;
-        } else {
-          // STRICT REQUIREMENT: When user has a registered account geofence,
-          // attendance must strictly rely on where they registered the account.
-          setResult({
-            state: 'outside',
-            distance: personalDist,
-            zoneName: `${personalZone.name} (Outside Registered Account Geofence)`,
-            coords: { ...coords, accuracy },
-            accuracy,
-            verifiedBy: 'local',
-          });
-          onResultRef.current(false, coords, 'outside');
-          return;
-        }
-      }
-
-      let closestZone = currentZones[0];
-      let minDistance = calculateDistance(latitude, longitude, closestZone.lat, closestZone.lng);
-
-      for (const zone of currentZones.slice(1)) {
-        const dist = calculateDistance(latitude, longitude, zone.lat, zone.lng);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestZone = zone;
-        }
-      }
-
-      if (isSecurityApiConfigured()) {
-        try {
-          const apiResult = await checkGeofenceApi({
-            lat: latitude,
-            lng: longitude,
-            accuracy: accuracy,
-            zones: currentZones.map((z) => ({
-              name: z.name,
-              lat: z.lat,
-              lng: z.lng,
-              radius: z.radius,
-              active: z.active,
-            })),
-          });
-
-          const inside = apiResult.inside;
-          const distance = typeof apiResult.distance_m === 'number' ? apiResult.distance_m : minDistance;
-          const zoneName = apiResult.zone?.name || closestZone.name;
-
-          setResult({
-            state: inside ? 'inside' : 'outside',
-            distance,
-            zoneName,
-            coords: { ...coords, accuracy },
-            accuracy,
-            verifiedBy: 'server',
-          });
-          onResultRef.current(inside, coords, inside ? 'inside' : 'outside');
-          return;
-        } catch {
-          // Fall back to local calculation below
-        }
-      }
-
-      const inside = isWithinGeofence(
+      // Priority 1: Evaluate primary assigned workplace zone (currentZones[0])
+      const primaryZone = currentZones[0];
+      const isInsidePrimary = isWithinGeofence(
         latitude,
         longitude,
-        closestZone.lat,
-        closestZone.lng,
-        closestZone.radius,
+        primaryZone.lat,
+        primaryZone.lng,
+        primaryZone.radius,
         accuracy
       );
+      const primaryDist = calculateDistance(latitude, longitude, primaryZone.lat, primaryZone.lng);
 
+      if (isInsidePrimary) {
+        setResult({
+          state: 'inside',
+          distance: primaryDist,
+          zoneName: primaryZone.name,
+          coords: { ...coords, accuracy },
+          accuracy,
+          verifiedBy: 'local',
+        });
+        onResultRef.current(true, coords, 'inside');
+        return;
+      }
+
+      // Check any other active secondary authorized zones
+      let matchingInsideZone: GeofenceZone | null = null;
+      let matchingInsideDist = 0;
+      for (const zone of currentZones.slice(1)) {
+        if (isWithinGeofence(latitude, longitude, zone.lat, zone.lng, zone.radius, accuracy)) {
+          matchingInsideZone = zone;
+          matchingInsideDist = calculateDistance(latitude, longitude, zone.lat, zone.lng);
+          break;
+        }
+      }
+
+      if (matchingInsideZone) {
+        setResult({
+          state: 'inside',
+          distance: matchingInsideDist,
+          zoneName: matchingInsideZone.name,
+          coords: { ...coords, accuracy },
+          accuracy,
+          verifiedBy: 'local',
+        });
+        onResultRef.current(true, coords, 'inside');
+        return;
+      }
+
+      // Trainee is outside all permitted workplace zones:
+      // Report exact distance to the designated assigned workplace
       setResult({
-        state: inside ? 'inside' : 'outside',
-        distance: minDistance,
-        zoneName: closestZone.name,
+        state: 'outside',
+        distance: primaryDist,
+        zoneName: primaryZone.name,
         coords: { ...coords, accuracy },
         accuracy,
         verifiedBy: 'local',
       });
-      onResultRef.current(inside, coords, inside ? 'inside' : 'outside');
+      onResultRef.current(false, coords, 'outside');
     } catch (err: unknown) {
       const isPermissionDenied =
         (isGeolocationPositionError(err) && err.code === 1) ||
