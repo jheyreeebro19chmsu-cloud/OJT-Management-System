@@ -158,34 +158,76 @@ export default function OAuthCallback() {
 
         if (isSupabaseConfigured() && email) {
           try {
-            const empQuery = supabase
-              .from('employees')
-              .select('id, name, employee_id, email, position, role, photo, face_registered')
-              .ilike('email', email)
-              .limit(1)
-              .maybeSingle();
-
-            const hostQuery = supabase
-              .from('host_supervisors')
-              .select('id, name, employee_id, email, position, company_name')
-              .ilike('email', email)
-              .limit(1)
-              .maybeSingle();
-
-            const [empRes, hostRes] = await Promise.allSettled([
-              Promise.race([empQuery, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))]),
-              Promise.race([hostQuery, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))]),
+            const cleanEmail = email.trim().toLowerCase();
+            const [empByIdRes, empByEmailRes, hostByIdRes, hostByEmailRes] = await Promise.allSettled([
+              Promise.race([
+                supabase
+                  .from('employees')
+                  .select('id, name, employee_id, email, position, photo, face_registered')
+                  .eq('id', authUser.id)
+                  .maybeSingle(),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+              ]),
+              Promise.race([
+                supabase
+                  .from('employees')
+                  .select('id, name, employee_id, email, position, photo, face_registered')
+                  .ilike('email', cleanEmail)
+                  .maybeSingle(),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+              ]),
+              Promise.race([
+                supabase
+                  .from('host_supervisors')
+                  .select('id, name, email, position, company_name')
+                  .eq('id', authUser.id)
+                  .maybeSingle(),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+              ]),
+              Promise.race([
+                supabase
+                  .from('host_supervisors')
+                  .select('id, name, email, position, company_name')
+                  .ilike('email', cleanEmail)
+                  .maybeSingle(),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+              ]),
             ]);
 
-            if (empRes.status === 'fulfilled' && (empRes.value as any)?.data) {
-              dbEmp = (empRes.value as any).data;
+            if (empByIdRes.status === 'fulfilled' && (empByIdRes.value as any)?.data) {
+              dbEmp = (empByIdRes.value as any).data;
+            } else if (empByEmailRes.status === 'fulfilled' && (empByEmailRes.value as any)?.data) {
+              dbEmp = (empByEmailRes.value as any).data;
             }
-            if (hostRes.status === 'fulfilled' && (hostRes.value as any)?.data) {
-              dbHost = (hostRes.value as any).data;
+
+            if (hostByIdRes.status === 'fulfilled' && (hostByIdRes.value as any)?.data) {
+              dbHost = (hostByIdRes.value as any).data;
+            } else if (hostByEmailRes.status === 'fulfilled' && (hostByEmailRes.value as any)?.data) {
+              dbHost = (hostByEmailRes.value as any).data;
             }
           } catch (dbErr) {
             console.warn('Database user search error:', dbErr);
           }
+        }
+
+        // Fallback to authUser user_metadata if account role was already established
+        if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'admin') {
+          dbEmp = {
+            id: authUser.id,
+            name: fullName,
+            email,
+            position: 'OJT Instructor',
+            employee_id: authUser.user_metadata?.employee_id || 'ADM-INSTRUCTOR',
+            photo: photoUrl,
+          };
+        } else if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'hte') {
+          dbHost = {
+            id: authUser.id,
+            name: fullName,
+            email,
+            position: 'HTE Representative',
+            company_name: 'Host Training Establishment',
+          };
         }
 
         // Check local storage backup if DB returned null or offline
