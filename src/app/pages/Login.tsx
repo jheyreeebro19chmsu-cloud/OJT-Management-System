@@ -279,7 +279,7 @@ export function Login() {
     }
   }, []);
 
-  const defaultBackgroundImage = '/CHMSU.JPEG';
+  const defaultBackgroundImage = '/campus-bg.jpg';
   let backgroundImage = defaultBackgroundImage;
   try {
     const override = typeof window !== 'undefined' ? localStorage.getItem('loginBg') : null;
@@ -292,23 +292,22 @@ export function Login() {
     <div
       className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 selection:bg-blue-600 selection:text-white"
     >
-      {/* Background Image */}
+      {/* Background Image: CHMSU Campus View */}
       <img
         src={backgroundImage}
-        alt=""
+        alt="CHMSU Campus"
         aria-hidden="true"
         onError={(e) => {
-          // Fallback to high-availability CDN if local path is unavailable
           const target = e.currentTarget;
           if (!target.src.includes('encrypted-tbn0')) {
             target.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlW_CmtgncO5nHio9TJ4B774KYiHLGcInY7wxgBybI_DU6t8pOLsmsrkZq&s=10';
           }
         }}
-        className="absolute inset-0 h-full w-full object-cover scale-105 brightness-90 contrast-105"
+        className="absolute inset-0 h-full w-full object-cover scale-105 saturate-125 contrast-115 brightness-105 blur-[1px]"
       />
 
       {/* Enhanced Multi-Layer Gradient Scrim for Crystal Clear Contrast */}
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-blue-950/65 to-slate-950/90 backdrop-blur-[1.5px] pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-slate-900/30 to-slate-950/80 pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-500/15 via-transparent to-transparent pointer-events-none" />
 
       <motion.div
