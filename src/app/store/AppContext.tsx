@@ -489,6 +489,38 @@ function cleanupStorageQuota(): void {
   }
 }
 
+export function clearAuthStorage(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    localStorage.removeItem('ojt_user');
+    localStorage.removeItem('ojt_current_user');
+    localStorage.removeItem('ojt_hte_user');
+    localStorage.removeItem('ojt_hte_company');
+    localStorage.removeItem('ojt_jwt_access_token');
+    localStorage.removeItem('ojt_jwt_refresh_token');
+    localStorage.removeItem('sb-access-token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('pending_oauth_role');
+    localStorage.removeItem('oauth_email');
+    localStorage.removeItem('oauth_name');
+    localStorage.removeItem('oauth_given_name');
+    localStorage.removeItem('oauth_family_name');
+    localStorage.removeItem('oauth_photo');
+    localStorage.removeItem('oauth_user_id');
+
+    if (typeof window !== 'undefined') {
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('sb-') && (k.endsWith('-auth-token') || k.includes('-auth-token'))) {
+          localStorage.removeItem(k);
+        }
+      });
+      sessionStorage.clear();
+    }
+  } catch (err) {
+    console.warn('Failed to clear auth storage:', err);
+  }
+}
+
 function saveToStorage<T>(key: string, value: T): void {
   // Pure database mode: User accounts, passwords, and credentials MUST NEVER be stored in localStorage when Supabase is active
   if (
@@ -497,6 +529,13 @@ function saveToStorage<T>(key: string, value: T): void {
       key === STORAGE_KEYS.PASSWORDS ||
       key === STORAGE_KEYS.HOST_SUPERVISORS)
   ) {
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+    return;
+  }
+
+  if (value === null || value === undefined) {
     try {
       localStorage.removeItem(key);
     } catch {}
@@ -1006,6 +1045,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
             if (!stillExists) {
               console.warn('Current user account deleted in database. Forcing logout.');
+              clearAuthStorage();
               setCurrentUser(null);
               supabase.auth.signOut().catch(() => {});
               if (currentUser.email) {
@@ -1133,16 +1173,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [settings, useSupabase]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.CURRENT_USER, currentUser);
-    try {
-      if (currentUser) {
+    if (currentUser) {
+      saveToStorage(STORAGE_KEYS.CURRENT_USER, currentUser);
+      try {
         localStorage.setItem('ojt_user', JSON.stringify(currentUser));
         localStorage.setItem('ojt_current_user', JSON.stringify(currentUser));
         if (currentUser.role === 'hte' || currentUser.role === 'host') {
           localStorage.setItem('ojt_hte_user', JSON.stringify(currentUser));
         }
-      }
-    } catch {}
+      } catch {}
+    } else {
+      clearAuthStorage();
+    }
   }, [currentUser]);
 
   // Cross-synchronize photo between employees state and currentUser so avatars always resolve immediately
@@ -1910,6 +1952,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    clearAuthStorage();
     setCurrentUser(null);
     if (useSupabase) {
       supabase.auth.signOut().catch((err) => {
@@ -2640,6 +2683,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentUser.employeeId === id ||
         (targetEmail && normalizeEmail(currentUser.email || '') === normalizeEmail(targetEmail)))
     ) {
+      clearAuthStorage();
       setCurrentUser(null);
       if (useSupabase) {
         supabase.auth.signOut().catch(() => {});

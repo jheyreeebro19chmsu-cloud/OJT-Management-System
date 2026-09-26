@@ -202,6 +202,7 @@ export const router = createBrowserRouter([
       { path: 'questionnaire', element: withSuspense(TraineeEvaluation) },
       { path: 'hte-feedback', element: withSuspense(TraineeEvaluation) },
       { path: 'profile', element: withSuspense(Profile) },
+      { path: 'settings', element: withSuspense(Profile) },
       { path: 'instructor-qr', element: withSuspense(InstructorQR) },
       { path: 'scan-qr', element: withSuspense(QRScanner) },
     ],

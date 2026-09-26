@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ import { campusOptions, departmentOptions, getCoursesForDepartment } from '../..
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../../data/documentRequirements';
 import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper';
+import { isWithinNegrosOccidental } from '../../utils/geo';
 
 
 
@@ -542,6 +543,18 @@ export function AdminEmployees() {
                           <XCircle size={9} /> Face Pending
                         </span>
                       )}
+                      {(() => {
+                        const rawLat = (emp.registrationLocation as any)?.lat ?? emp.registrationLat;
+                        const rawLng = (emp.registrationLocation as any)?.lng ?? emp.registrationLng;
+                        if (rawLat != null && rawLng != null && !isWithinNegrosOccidental(rawLat, rawLng)) {
+                          return (
+                            <span className="text-[10px] flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 font-bold" title="Stored coordinates are outside Negros Occidental">
+                              <AlertTriangle size={9} className="text-rose-600" /> Out-of-Region GPS
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   ) : !isTraineeGroup ? (
                     <div>
@@ -1823,19 +1836,32 @@ export function AdminEmployees() {
 
                                 if (numLat != null && numLng != null) {
                                   const rad = Math.max(40, Number((regLoc as any)?.radius || selectedEmp.registrationRadius || 40));
+                                  const isNegrosValid = isWithinNegrosOccidental(numLat, numLng);
                                   return (
-                                    <div className="flex items-center justify-between gap-2 mt-1">
-                                      <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
-                                        📍 GPS: {numLat.toFixed(5)}, {numLng.toFixed(5)} (±{rad}m)
-                                      </p>
-                                      <a
-                                        href={`https://www.google.com/maps?q=${numLat},${numLng}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
-                                      >
-                                        <ExternalLink size={11} /> Open Map
-                                      </a>
+                                    <div className="space-y-1.5 mt-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className={`font-mono text-[11px] p-1.5 rounded-lg border inline-block ${
+                                          isNegrosValid
+                                            ? 'text-blue-700 bg-white/70 border-blue-200'
+                                            : 'text-rose-700 bg-rose-50 border-rose-200 font-bold'
+                                        }`}>
+                                          📍 GPS: {numLat.toFixed(5)}, {numLng.toFixed(5)} (±{rad}m)
+                                        </p>
+                                        <a
+                                          href={`https://www.google.com/maps?q=${numLat},${numLng}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
+                                        >
+                                          <ExternalLink size={11} /> Open Map
+                                        </a>
+                                      </div>
+                                      {!isNegrosValid && (
+                                        <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-start gap-1.5">
+                                          <AlertTriangle size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                                          <span><strong>Out-of-Region GPS Detected:</strong> This trainee's stored coordinates are outside Negros Occidental (e.g. Metro Manila or Panay Island). They will fail live geofencing checks until updated with valid premises coordinates.</span>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 }

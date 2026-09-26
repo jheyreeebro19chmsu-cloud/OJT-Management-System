@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor } from '../types';
+import { isWithinNegrosOccidental } from '../utils/geo';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
 
@@ -750,8 +751,16 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
     }));
 }
 
-export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?: string }): Promise<GeofenceZone | null> {
+export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?: string; employeeId?: string; employee_id?: string }): Promise<GeofenceZone | null> {
   if (!isSupabaseConfigured()) return null;
+
+  let empId = (zone as any).employeeId || (zone as any).employee_id;
+  if (!empId && zone.id) {
+    const rawSuffix = zone.id.replace(/^(station|personal)-/, '');
+    if (isValidUUID(rawSuffix)) {
+      empId = rawSuffix;
+    }
+  }
 
   const payload: any = {
     name: zone.name,
@@ -762,8 +771,38 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     active: zone.active !== false,
   };
 
+  if (empId && isValidUUID(empId)) {
+    payload.employee_id = empId;
+  }
   if (zone.id && isValidUUID(zone.id)) {
     payload.id = zone.id;
+  }
+
+  // Deduplicate: If an active zone for this employee_id or this exact name already exists, reuse its id to avoid duplicate rows
+  try {
+    if (payload.employee_id) {
+      const { data: existing } = await supabase
+        .from('geofence_zones')
+        .select('id')
+        .eq('employee_id', payload.employee_id)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        payload.id = existing[0].id;
+      }
+    } else if (payload.name) {
+      const { data: existingByName } = await supabase
+        .from('geofence_zones')
+        .select('id')
+        .eq('name', payload.name)
+        .limit(1);
+
+      if (existingByName && existingByName.length > 0) {
+        payload.id = existingByName[0].id;
+      }
+    }
+  } catch {
+    // Column employee_id may be pending migration; proceed safely
   }
 
   const { data, error } = await supabase
@@ -789,7 +828,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
   };
 }
 
-export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZone>): Promise<boolean> {
+export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZone> & { employeeId?: string; employee_id?: string }): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
   const supabaseUpdates: any = {};
@@ -800,16 +839,33 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
 
-  if (isValidUUID(id)) {
-    const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
-    if (error) {
-      console.error('Error updating geofence zone in Supabase:', error);
-      throw new Error(error.message || 'Failed to update geofence zone');
+  let empId = (updates as any).employeeId || (updates as any).employee_id;
+  if (!empId && id) {
+    const rawSuffix = id.replace(/^(station|personal)-/, '');
+    if (isValidUUID(rawSuffix)) {
+      empId = rawSuffix;
     }
-    return true;
+  }
+  if (empId && isValidUUID(empId)) {
+    supabaseUpdates.employee_id = empId;
   }
 
-  // Non-UUID ID (e.g. station-xxx or personal-xxx): attempt matching existing zone by name
+  if (isValidUUID(id)) {
+    const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
+    if (!error) return true;
+  }
+
+  // Non-UUID ID (e.g. station-xxx or personal-xxx): match by employee_id or name
+  if (empId) {
+    try {
+      const { data: matchedEmp } = await supabase.from('geofence_zones').select('id').eq('employee_id', empId).limit(1);
+      if (matchedEmp && matchedEmp.length > 0) {
+        const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matchedEmp[0].id);
+        if (!error) return true;
+      }
+    } catch {}
+  }
+
   if (updates.name) {
     const { data: matched } = await supabase.from('geofence_zones').select('id').eq('name', updates.name).limit(1);
     if (matched && matched.length > 0 && isValidUUID(matched[0].id)) {
@@ -821,6 +877,7 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   // If not yet present in geofence_zones table, create record
   if (updates.name && updates.lat && updates.lng) {
     await createGeofenceZone({
+      id,
       name: updates.name,
       address: updates.address || '',
       lat: Number(updates.lat),
@@ -828,7 +885,8 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
       radius: Math.max(40, Number(updates.radius) || 40),
       active: updates.active !== false,
       academicYear: updates.academicYear,
-    });
+      employeeId: empId,
+    } as any);
   }
 
   return true;
@@ -2077,10 +2135,80 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
       }
     }
 
-    return { success: true, repairedEmployees, repairedRecords: 0, migratedHTEs };
+    // 2. Audit Geofence Zones: Deduplicate redundant multi-row zones per trainee
+    let deduplicatedZones = 0;
+    try {
+      const { data: allZones } = await supabase
+        .from('geofence_zones')
+        .select('id, name, employee_id, created_at')
+        .order('created_at', { ascending: false });
+
+      if (allZones && allZones.length > 0) {
+        const seenKeys = new Set<string>();
+        const toDelete: string[] = [];
+
+        for (const z of allZones) {
+          // Identify unique key for trainee zones
+          const key = (z.employee_id || z.name || '').trim().toLowerCase();
+          if (!key) continue;
+          if (seenKeys.has(key)) {
+            toDelete.push(z.id);
+          } else {
+            seenKeys.add(key);
+          }
+        }
+
+        if (toDelete.length > 0) {
+          for (const delId of toDelete) {
+            await supabase.from('geofence_zones').delete().eq('id', delId);
+            deduplicatedZones++;
+          }
+        }
+      }
+    } catch (gzErr) {
+      console.warn('Geofence deduplication in repair notice:', gzErr);
+    }
+
+    // 3. Audit Trainees for Out-of-Region Coordinates (Outside Negros Occidental)
+    const outOfRegionTrainees: string[] = [];
+    try {
+      const { data: traineeCoords } = await supabase
+        .from('employees')
+        .select('id, name, registration_lat, registration_lng, registration_location, position');
+
+      if (traineeCoords) {
+        for (const tc of traineeCoords) {
+          const isStaff = tc.position && (tc.position.toLowerCase().includes('instructor') || tc.position.toLowerCase().includes('admin'));
+          if (isStaff) continue;
+
+          const lat = tc.registration_location?.lat ?? tc.registration_lat;
+          const lng = tc.registration_location?.lng ?? tc.registration_lng;
+
+          if (lat != null && lng != null) {
+            if (!isWithinNegrosOccidental(Number(lat), Number(lng))) {
+              outOfRegionTrainees.push(`${tc.name} (${Number(lat).toFixed(3)}, ${Number(lng).toFixed(3)})`);
+            }
+          }
+        }
+      }
+      if (outOfRegionTrainees.length > 0) {
+        console.warn(`[Audit] Found ${outOfRegionTrainees.length} trainees registered with coordinates outside Negros Occidental:`, outOfRegionTrainees);
+      }
+    } catch (auditErr) {
+      console.warn('Location audit notice:', auditErr);
+    }
+
+    return {
+      success: true,
+      repairedEmployees,
+      repairedRecords: 0,
+      migratedHTEs,
+      deduplicatedZones,
+      outOfRegionTrainees,
+    };
   } catch (e) {
     console.error('repairDatabaseData error:', e);
-    return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };
+    return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0, deduplicatedZones: 0, outOfRegionTrainees: [] };
   }
 }
 

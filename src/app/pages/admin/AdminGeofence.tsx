@@ -23,6 +23,7 @@ import {
   Move,
   Copy,
   Check,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -32,7 +33,7 @@ import { toast } from 'sonner';
 import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
 import { GeofenceZone, Employee } from '../../types';
-import { GEOFENCE_RADIUS_METERS, reverseGeocode } from '../../utils/geo';
+import { GEOFENCE_RADIUS_METERS, reverseGeocode, isWithinNegrosOccidental } from '../../utils/geo';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { getPhotoUrl } from '../../services/config';
 
@@ -45,7 +46,7 @@ const BLANK_ZONE = {
   active: true,
 };
 
-type ZoneTypeFilter = 'all' | 'trainee' | 'instructor' | 'hte' | 'institutional';
+type ZoneTypeFilter = 'all' | 'trainee' | 'instructor' | 'hte' | 'institutional' | 'out_of_region';
 
 export function AdminGeofence() {
   const { currentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, settings, hostSupervisors = [] } = useApp();
@@ -464,6 +465,10 @@ export function AdminGeofence() {
     return Array.from(zoneMap.values());
   }, [geofenceZones, employees, settings.activeAcademicYear, hostSupervisors]);
 
+  const outOfRegionCount = useMemo(() => {
+    return allCombinedZones.filter((z) => !isWithinNegrosOccidental(z.lat, z.lng)).length;
+  }, [allCombinedZones]);
+
   const filteredZones = useMemo(() => {
     return allCombinedZones.filter((zone) => {
       // Academic year filter
@@ -473,6 +478,7 @@ export function AdminGeofence() {
       }
 
       // Zone category filter
+      if (zoneTypeFilter === 'out_of_region' && isWithinNegrosOccidental(zone.lat, zone.lng)) return false;
       if (zoneTypeFilter === 'trainee' && !isTraineeZone(zone)) return false;
       if (zoneTypeFilter === 'instructor' && !isInstructorZone(zone)) return false;
       if (zoneTypeFilter === 'hte' && !isHTEZone(zone)) return false;
@@ -833,6 +839,31 @@ export function AdminGeofence() {
         </div>
       </div>
 
+      {/* Out of Region Geographic Warning Banner */}
+      {outOfRegionCount > 0 && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-rose-100 text-rose-700 rounded-xl shrink-0">
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-rose-900">
+                Geographic Accuracy Warning: {outOfRegionCount} location{outOfRegionCount > 1 ? 's' : ''} outside Negros Occidental detected
+              </p>
+              <p className="text-xs text-rose-700 mt-0.5">
+                Some registered locations resolve hundreds of kilometers away (e.g., Metro Manila or Panay Island). Trainees with these coordinates will fail live geofencing attendance checks indefinitely until updated.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setZoneTypeFilter('out_of_region')}
+            className="shrink-0 text-xs font-bold bg-rose-600 text-white px-3.5 py-2 rounded-xl hover:bg-rose-700 transition-colors shadow-xs cursor-pointer"
+          >
+            Review {outOfRegionCount} Out-of-Region Zone{outOfRegionCount > 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
+
       {/* Filter Tabs & Search */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl flex-wrap">
@@ -886,6 +917,19 @@ export function AdminGeofence() {
           >
             Campus ({totalInstitutional})
           </button>
+          {outOfRegionCount > 0 && (
+            <button
+              onClick={() => setZoneTypeFilter('out_of_region')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                zoneTypeFilter === 'out_of_region'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-rose-700 bg-rose-100 hover:bg-rose-200 border border-rose-300'
+              }`}
+            >
+              <AlertTriangle size={12} />
+              Out of Region ({outOfRegionCount})
+            </button>
+          )}
         </div>
 
         <div className="relative flex-1 sm:max-w-xs">
@@ -1180,6 +1224,12 @@ export function AdminGeofence() {
                             ) : (
                               <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-semibold">
                                 Inactive
+                              </span>
+                            )}
+
+                            {!isWithinNegrosOccidental(zone.lat, zone.lng) && (
+                              <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full flex items-center gap-1 font-bold border border-rose-300" title="Coordinates are outside Negros Occidental">
+                                <AlertTriangle size={10} /> Out of Region
                               </span>
                             )}
 

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
@@ -111,6 +111,16 @@ export function Profile() {
   const [syncingLocation, setSyncingLocation] = useState(false);
   const [resolvedGpsAddress, setResolvedGpsAddress] = useState<string>('');
   const rawEmployee = getCurrentEmployee();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname.includes('/settings') || location.hash === '#security') {
+      const el = document.getElementById('security-settings');
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+      }
+    }
+  }, [location.pathname, location.hash]);
 
   useEffect(() => {
     if (rawEmployee?.registrationLocation?.lat && rawEmployee?.registrationLocation?.lng) {
@@ -924,6 +934,7 @@ export function Profile() {
 
       {/* Security Settings */}
       <motion.div
+        id="security-settings"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.12 }}

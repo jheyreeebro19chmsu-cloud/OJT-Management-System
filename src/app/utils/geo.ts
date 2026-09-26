@@ -12,6 +12,30 @@ export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2
   return R * c;
 }
 
+/**
+ * Bounding box for Negros Occidental training area
+ * Covers Bacolod, Talisay, Silay, Bago, Murcia, Binalbagan, Cadiz, Sagay, San Carlos, Kabankalan, Hinigaran, etc.
+ */
+export const NEGROS_OCCIDENTAL_BOUNDS = {
+  minLat: 9.0,
+  maxLat: 11.2,
+  minLng: 122.3,
+  maxLng: 123.7,
+};
+
+export function isWithinNegrosOccidental(lat?: number | null, lng?: number | null): boolean {
+  if (lat == null || lng == null) return false;
+  const numLat = Number(lat);
+  const numLng = Number(lng);
+  if (!Number.isFinite(numLat) || !Number.isFinite(numLng)) return false;
+  return (
+    numLat >= NEGROS_OCCIDENTAL_BOUNDS.minLat &&
+    numLat <= NEGROS_OCCIDENTAL_BOUNDS.maxLat &&
+    numLng >= NEGROS_OCCIDENTAL_BOUNDS.minLng &&
+    numLng <= NEGROS_OCCIDENTAL_BOUNDS.maxLng
+  );
+}
+
 export function isWithinGeofence(
   userLat: number,
   userLng: number,

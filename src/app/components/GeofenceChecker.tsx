@@ -119,12 +119,14 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     const companyName = (employee?.companyName || '').trim().toLowerCase();
     const hasValidCompany = companyName && companyName !== 'n/a' && companyName !== 'pending';
 
-    // 1. Direct match by zone ID: station-${empId}, assignedZoneId, or hteId
+    // 1. Direct match by employeeId, zone ID, assignedZoneId, or hteId
     if (empId) {
       const assignedZoneId = (employee as any)?.assignedZoneId;
       assignedWorkplaceZone =
         validConfiguredZones.find(
           (z) =>
+            (z as any).employeeId === empId ||
+            (z as any).employee_id === empId ||
             z.id === `station-${empId}` ||
             (assignedZoneId && z.id === assignedZoneId) ||
             (employee?.hteId && (z.id === employee.hteId || z.id === `station-${employee.hteId}`))

@@ -13,6 +13,7 @@ import {
   Megaphone,
   MessageSquare,
   Calendar,
+  User,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -37,6 +38,7 @@ const navItems = [
   { to: '/admin/announcements', label: 'Announcements', icon: Megaphone, end: false },
   { to: '/admin/academic-years', label: 'Academic Year', icon: Calendar, end: false },
   { to: '/admin/settings', label: 'Settings', icon: Settings, end: false },
+  { to: '/admin/profile', label: 'Profile', icon: User, end: false },
 ];
 
 export function AdminLayout() {
@@ -148,7 +150,7 @@ export function AdminLayout() {
 
   const confirmLogout = () => {
     logout();
-    navigate('/');
+    navigate('/login', { replace: true });
   };
 
   const unreadAnn = announcements.filter((a) => {
@@ -207,7 +209,10 @@ export function AdminLayout() {
         </nav>
 
         <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-          <div className="flex items-center gap-2 px-3 py-2 mb-2">
+          <NavLink
+            to="/admin/profile"
+            className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+          >
             <UserAvatar
               photo={employee?.photo || currentUser?.photo}
               name={employee?.name || currentUser?.name || 'OJT Instructor'}
@@ -215,11 +220,11 @@ export function AdminLayout() {
               size="sm"
               className="border border-white/20"
             />
-            <div className="min-w-0">
-              <div className="text-white text-xs font-medium truncate">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-white text-xs font-medium truncate group-hover:text-blue-200">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
               <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
             </div>
-          </div>
+          </NavLink>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm"
@@ -297,7 +302,11 @@ export function AdminLayout() {
                 ))}
               </nav>
               <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-                <div className="flex items-center gap-2 px-3 py-2 mb-2">
+                <NavLink
+                  to="/admin/profile"
+                  onClick={() => setSidebarOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+                >
                   <UserAvatar
                     photo={employee?.photo || currentUser?.photo}
                     name={employee?.name || currentUser?.name || 'OJT Instructor'}
@@ -305,11 +314,11 @@ export function AdminLayout() {
                     size="sm"
                     className="border border-white/20"
                   />
-                  <div className="min-w-0">
-                    <div className="text-white text-xs font-medium truncate">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white text-xs font-medium truncate group-hover:text-blue-200">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
                     <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
                   </div>
-                </div>
+                </NavLink>
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"

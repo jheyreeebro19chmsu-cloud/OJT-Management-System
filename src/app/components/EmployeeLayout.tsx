@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -19,6 +19,8 @@ const navItems = [
   { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/evaluation', label: 'OJT Questionnaire', icon: Award, end: false, isEvalNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false, isAnnounceNav: true },
+  { to: '/app/settings', label: 'Settings', icon: Settings, end: false },
+  { to: '/app/profile', label: 'Profile', icon: User, end: false },
 ];
 
 export function EmployeeLayout() {
@@ -102,7 +104,7 @@ export function EmployeeLayout() {
 
   const confirmLogout = () => {
     logout();
-    navigate('/');
+    navigate('/login', { replace: true });
   };
 
   const avatarUrl = employee?.photo || currentUser?.photo || '';
@@ -243,7 +245,11 @@ export function EmployeeLayout() {
 
       {/* User Profile Footer */}
       <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-        <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
+        <NavLink
+          to="/app/profile"
+          onClick={() => isMobile && setSidebarOpen(false)}
+          className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+        >
           <UserAvatar
             photo={avatarUrl}
             name={displayName}
@@ -251,21 +257,11 @@ export function EmployeeLayout() {
             size="md"
             className="border border-white/20 shadow-inner"
           />
-          <div className="min-w-0">
-            <div className="text-white text-xs font-bold truncate">{displayName}</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-white text-xs font-bold truncate group-hover:text-blue-200">{displayName}</div>
             <div className="text-blue-300 text-[10px] truncate">{displayId}</div>
           </div>
-        </div>
-        <button
-          onClick={() => {
-            if (isMobile) setSidebarOpen(false);
-            navigate('/app/profile');
-          }}
-          className="w-full flex items-center gap-2.5 px-3 py-2 mb-1 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
-        >
-          <User size={15} />
-          Profile
-        </button>
+        </NavLink>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);

@@ -32,6 +32,7 @@ const navItems = [
   { to: '/hte/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/hte/announcements', label: 'Announcements', icon: Megaphone, end: false },
   { to: '/hte/settings', label: 'Settings', icon: Settings, end: false },
+  { to: '/hte/profile', label: 'Profile', icon: User, end: false },
 ];
 
 export function HTELayout({ children, hteCompany }: HTELayoutProps) {
@@ -83,11 +84,8 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   };
 
   const confirmLogout = () => {
-    localStorage.removeItem('ojt_jwt_access_token');
-    localStorage.removeItem('ojt_jwt_refresh_token');
-    localStorage.removeItem('ojt_hte_user');
     logout();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   const renderSidebarContent = (isMobile = false) => (
@@ -168,7 +166,11 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
 
       {/* Supervisor User Footer on Left Sidebar */}
       <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-        <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
+        <NavLink
+          to="/hte/profile"
+          onClick={() => isMobile && setSidebarOpen(false)}
+          className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+        >
           <UserAvatar
             photo={avatarSource}
             name={avatarName}
@@ -176,11 +178,11 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             size="md"
             className="border border-white/20 shadow-inner"
           />
-          <div className="min-w-0">
-            <div className="text-white text-xs font-bold truncate">{avatarName}</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-white text-xs font-bold truncate group-hover:text-blue-200">{avatarName}</div>
             <div className="text-blue-300 text-[10px] truncate">{companyName}</div>
           </div>
-        </div>
+        </NavLink>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
