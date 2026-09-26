@@ -149,6 +149,11 @@ export function AdminGeofence() {
 
   const getAccountForZone = (zone: any): Employee | null => {
     if (!zone) return null;
+    if (zone.employeeId || zone.employee_id) {
+      const targetId = zone.employeeId || zone.employee_id;
+      const found = employees.find((e) => e.id === targetId || e.employeeId === targetId);
+      if (found) return found;
+    }
     if (zone.id?.startsWith('station-')) {
       const empId = zone.id.replace('station-', '');
       const found = employees.find((e) => e.id === empId || e.employeeId === empId);
@@ -360,15 +365,21 @@ export function AdminGeofence() {
             zoneData.lat = campusInfo.lat;
             zoneData.lng = campusInfo.lng;
           }
-        } else if (account && isTraineeAccount(account) && (account.hteId || (account.companyName && !account.companyName.toLowerCase().includes('pending')))) {
-          // If zone belongs to a trainee with an assigned HTE, their assigned workplace MUST strictly be the HTE workplace!
-          const hteInfo = getHteWorkplaceInfo(account.hteId, account.companyName);
-          if (hteInfo) {
-            zoneData.name = `${account.name} - Trainee Geofence (${hteInfo.companyName})`;
-            zoneData.address = hteInfo.address;
-            zoneData.lat = hteInfo.lat;
-            zoneData.lng = hteInfo.lng;
-            zoneData.radius = Math.max(40, hteInfo.radius);
+        } else if (account && isTraineeAccount(account)) {
+          // Trainee zone: ALWAYS preserve their own registered coordinates where they registered!
+          // If the zone's lat/lng are missing or 0, retrieve directly from their registrationLocation
+          const regLoc = account.registrationLocation;
+          const regLat = regLoc?.lat ?? (account as any)?.registration_lat;
+          const regLng = regLoc?.lng ?? (account as any)?.registration_lng;
+          if ((!zoneData.lat || !zoneData.lng) && regLat && regLng) {
+            zoneData.lat = Number(regLat);
+            zoneData.lng = Number(regLng);
+          }
+          if (regLoc?.radius || (account as any)?.registrationRadius) {
+            zoneData.radius = Math.max(40, Number(regLoc?.radius || (account as any)?.registrationRadius || zoneData.radius || 40));
+          }
+          if (!zoneData.address && (account.registrationAddress || account.companyAddress)) {
+            zoneData.address = account.registrationAddress || account.companyAddress || zoneData.address;
           }
         }
 
@@ -416,18 +427,10 @@ export function AdminGeofence() {
       let stationRadius = isInst ? campusInfo.radius : ((emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || GEOFENCE_RADIUS_METERS);
       let stationAddr = isInst
         ? campusInfo.address
-        : (emp.companyAddress || emp.registrationAddress || 'Trainee GPS Locked Station');
+        : (emp.registrationAddress || emp.companyAddress || 'Trainee Registered Station');
 
-      // Trainee with assigned HTE: strictly bind to the HTE workplace!
-      if (!isInst && !isHte && (emp.hteId || (emp.companyName && !emp.companyName.toLowerCase().includes('pending')))) {
-        const hteInfo = getHteWorkplaceInfo(emp.hteId, emp.companyName);
-        if (hteInfo) {
-          regLat = hteInfo.lat;
-          regLng = hteInfo.lng;
-          stationRadius = Math.max(40, hteInfo.radius);
-          stationAddr = hteInfo.address;
-        }
-      }
+      // For Trainees: strictly use their own registered coordinates where they registered!
+      // Do NOT overwrite with a shared company workplace.
 
       if (!isInst && (regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
         const addrStr = String(emp.registrationAddress || (emp as any)?.registration_address);

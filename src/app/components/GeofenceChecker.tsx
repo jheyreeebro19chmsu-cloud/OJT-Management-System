@@ -119,7 +119,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     const companyName = (employee?.companyName || '').trim().toLowerCase();
     const hasValidCompany = companyName && companyName !== 'n/a' && companyName !== 'pending';
 
-    // 1. Direct match by employeeId, zone ID, assignedZoneId, or hteId
+    // 1. Direct match by employeeId, zone ID, or assignedZoneId
     if (empId) {
       const assignedZoneId = (employee as any)?.assignedZoneId;
       assignedWorkplaceZone =
@@ -128,35 +128,11 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             (z as any).employeeId === empId ||
             (z as any).employee_id === empId ||
             z.id === `station-${empId}` ||
-            (assignedZoneId && z.id === assignedZoneId) ||
-            (employee?.hteId && (z.id === employee.hteId || z.id === `station-${employee.hteId}`))
+            (assignedZoneId && z.id === assignedZoneId)
         ) || null;
     }
 
-    // 2. Match by trainee name in zone name (e.g. "Jhey Ree Ebro - Trainee Geofence (Assigned Workplace)")
-    if (!assignedWorkplaceZone && empName) {
-      assignedWorkplaceZone =
-        validConfiguredZones.find((z) => {
-          const zName = (z.name || '').toLowerCase();
-          return (
-            zName.includes(empName) &&
-            (zName.includes('assigned workplace') ||
-              zName.includes('trainee geofence') ||
-              (hasValidCompany && zName.includes(companyName)))
-          );
-        }) || null;
-    }
-
-    // 3. Match by HTE company name in zone name (e.g. "Focus", "McDonalds", "Printing Services", "Concentrix")
-    if (!assignedWorkplaceZone && hasValidCompany) {
-      assignedWorkplaceZone =
-        validConfiguredZones.find((z) => {
-          const zName = (z.name || '').toLowerCase();
-          return zName.includes(companyName) && !zName.includes('official station');
-        }) || null;
-    }
-
-    // 4. Fallback to employee profile assigned coordinates (updated by Instructor when assigning HTE)
+    // 2. Trainee profile registered coordinates (the basis of their attendance where they registered)
     let regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat ?? (employee as any)?.latitude;
     let regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng ?? (employee as any)?.longitude;
     if ((regLat == null || regLng == null) && (employee?.registrationAddress || (employee as any)?.registration_address)) {
@@ -181,7 +157,6 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
 
     if (
       !assignedWorkplaceZone &&
-      hasValidCompany &&
       regLat != null &&
       regLng != null &&
       Number.isFinite(Number(regLat)) &&
@@ -190,13 +165,37 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     ) {
       assignedWorkplaceZone = {
         id: `station-${empId || 'trainee'}`,
-        name: `${employee.companyName} (Assigned Workplace)`,
-        address: employee?.companyAddress || employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
+        name: employee?.name ? `${employee.name} - Registered Geofence Station` : 'Registered Geofence Station',
+        address: employee?.registrationAddress || employee?.companyAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
         lat: Number(regLat),
         lng: Number(regLng),
         radius: dynamicRadius,
         active: true,
       };
+    }
+
+    // 3. Match by trainee name in zone name (e.g. "Jhey Ree Ebro - Trainee Geofence")
+    if (!assignedWorkplaceZone && empName) {
+      assignedWorkplaceZone =
+        validConfiguredZones.find((z) => {
+          const zName = (z.name || '').toLowerCase();
+          return (
+            zName.includes(empName) &&
+            (zName.includes('assigned workplace') ||
+              zName.includes('trainee geofence') ||
+              zName.includes('registered') ||
+              (hasValidCompany && zName.includes(companyName)))
+          );
+        }) || null;
+    }
+
+    // 4. Match by HTE company name in zone name only as secondary fallback
+    if (!assignedWorkplaceZone && hasValidCompany) {
+      assignedWorkplaceZone =
+        validConfiguredZones.find((z) => {
+          const zName = (z.name || '').toLowerCase();
+          return zName.includes(companyName) && !zName.includes('official station');
+        }) || null;
     }
 
     if (assignedWorkplaceZone) {

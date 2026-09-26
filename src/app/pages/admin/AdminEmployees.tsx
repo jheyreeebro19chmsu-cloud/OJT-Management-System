@@ -1492,31 +1492,36 @@ export function AdminEmployees() {
                                         if (!matchedHost) return;
 
                                         const hteAddress = matchedHost.companyAddress || matchedHost.registrationAddress || `${matchedHost.companyName} Workplace Premises`;
-                                        const hteLocation = matchedHost.registrationLocation || { lat: 10.7410, lng: 122.9702 };
-                                        const hteRadius = Math.max(40, Number(matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
+                                        const existingLoc = selectedEmp.registrationLocation;
+                                        const hasExistingCoords = existingLoc?.lat != null && existingLoc?.lng != null && Number.isFinite(Number(existingLoc.lat)) && Number.isFinite(Number(existingLoc.lng));
+                                        const targetLoc = hasExistingCoords ? existingLoc : (matchedHost.registrationLocation || { lat: 10.7410, lng: 122.9702 });
+                                        const hteRadius = Math.max(40, Number(selectedEmp.registrationRadius || (existingLoc as any)?.radius || matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
 
-                                        const updatedFields = {
+                                        const updatedFields: any = {
                                           hteId: matchedHost.id,
                                           companyName: matchedHost.companyName,
                                           companyAddress: hteAddress,
-                                          registrationAddress: hteAddress,
                                           supervisorName: matchedHost.name,
-                                          registrationLocation: {
-                                            lat: Number(hteLocation.lat),
-                                            lng: Number(hteLocation.lng),
-                                            radius: hteRadius,
-                                          },
-                                          registrationRadius: hteRadius,
                                         };
+
+                                        if (!hasExistingCoords) {
+                                          updatedFields.registrationLocation = {
+                                            lat: Number(targetLoc.lat),
+                                            lng: Number(targetLoc.lng),
+                                            radius: hteRadius,
+                                          };
+                                          updatedFields.registrationRadius = hteRadius;
+                                          updatedFields.registrationAddress = hteAddress;
+                                        }
 
                                         updateEmployee(selectedEmp.id, updatedFields);
 
                                         addGeofenceZone({
                                           id: `station-${selectedEmp.id}`,
                                           name: `${selectedEmp.name} - Trainee Geofence (${matchedHost.companyName})`,
-                                          address: hteAddress,
-                                          lat: Number(hteLocation.lat),
-                                          lng: Number(hteLocation.lng),
+                                          address: selectedEmp.registrationAddress || hteAddress,
+                                          lat: Number(targetLoc.lat),
+                                          lng: Number(targetLoc.lng),
                                           radius: hteRadius,
                                           active: true,
                                           academicYear: selectedEmp.academicYear || settings?.activeAcademicYear,
