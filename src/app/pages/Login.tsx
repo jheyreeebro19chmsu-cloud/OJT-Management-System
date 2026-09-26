@@ -101,29 +101,35 @@ export function Login() {
       if (typeof window !== 'undefined') {
         localStorage.setItem('sb-access-token', 'mock-session-token-' + Date.now());
       }
+      const matched = employees.find(
+        (e) =>
+          e.id === user.employeeId ||
+          e.id === user.id ||
+          e.employeeId === user.employeeId ||
+          e.employeeId === user.id ||
+          (user.email && e.email ? normalizeEmail(e.email) === normalizeEmail(user.email) : false)
+      );
+      const photoCandidate = matched?.photo || user.photo || '';
+      const safePhoto = (typeof photoCandidate === 'string' && photoCandidate.startsWith('data:') && photoCandidate.length > 60000)
+        ? ''
+        : photoCandidate;
+      const enrichedUser = {
+        ...user,
+        photo: safePhoto,
+        faceRegistered: matched?.faceRegistered ?? user.faceRegistered ?? false,
+        employeeId: matched?.employeeId || user.employeeId || matched?.id || user.id,
+      };
+      localStorage.setItem('ojt_user', JSON.stringify(enrichedUser));
+      localStorage.setItem('ojt_current_user', JSON.stringify(enrichedUser));
+      if (user.role === 'hte' || user.role === 'host') {
+        localStorage.setItem('ojt_hte_user', JSON.stringify(enrichedUser));
+      }
+
       if (user.role === 'admin') {
         navigate('/admin');
       } else if (user.role === 'hte' || user.role === 'host') {
         navigate('/hte');
       } else {
-        const employee = employees.find(
-          (e) =>
-            e.id === user.employeeId ||
-            e.id === user.id ||
-            e.employeeId === user.employeeId ||
-            e.employeeId === user.id ||
-            (user.email && e.email ? normalizeEmail(e.email) === normalizeEmail(user.email) : false)
-        );
-        const photoCandidate = employee?.photo || user.photo || '';
-        const safePhoto = typeof photoCandidate === 'string' && photoCandidate.startsWith('data:') ? '' : photoCandidate;
-        const enrichedUser = {
-          ...user,
-          photo: safePhoto,
-          faceRegistered: employee?.faceRegistered ?? user.faceRegistered ?? false,
-          employeeId: employee?.employeeId || user.employeeId || employee?.id || user.id,
-        };
-        localStorage.setItem('ojt_user', JSON.stringify(enrichedUser));
-
         navigate('/app');
       }
     } else {

@@ -154,6 +154,43 @@ export function getEvaluationMetrics(ev?: Evaluation | null) {
   };
 }
 
+interface TraineeAvatarProps {
+  photo?: string | null;
+  name?: string;
+  sizeClass?: string;
+  roundedClass?: string;
+  textSizeClass?: string;
+}
+
+function TraineeAvatar({
+  photo,
+  name,
+  sizeClass = 'w-10 h-10',
+  roundedClass = 'rounded-xl',
+  textSizeClass = 'text-xs',
+}: TraineeAvatarProps) {
+  const photoUrl = getPhotoUrl(photo);
+  const initial = name?.trim()?.charAt(0)?.toUpperCase() || 'T';
+
+  return (
+    <div
+      className={`${sizeClass} ${roundedClass} bg-blue-100 overflow-hidden shrink-0 border border-slate-200 shadow-2xs relative flex items-center justify-center font-black text-blue-700 ${textSizeClass} select-none`}
+    >
+      <span>{initial}</span>
+      {photoUrl && (
+        <img
+          src={photoUrl}
+          alt=""
+          className="w-full h-full object-cover absolute inset-0 z-10"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 export function AdminReports() {
   const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings, currentUser } = useApp();
 
@@ -1012,15 +1049,13 @@ export function AdminReports() {
                           {/* Trainee Info */}
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 overflow-hidden shrink-0 border border-gray-200">
-                                {emp.photo ? (
-                                  <img src={getPhotoUrl(emp.photo)} alt={emp.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center font-bold text-blue-700 text-xs">
-                                    {emp.name.charAt(0)}
-                                  </div>
-                                )}
-                              </div>
+                              <TraineeAvatar
+                                photo={emp.photo}
+                                name={emp.name}
+                                sizeClass="w-8 h-8"
+                                roundedClass="rounded-full"
+                                textSizeClass="text-xs"
+                              />
                               <div className="min-w-0">
                                 <p className="font-bold text-gray-900 truncate">{emp.name}</p>
                                 <p className="text-[10px] text-gray-400 font-mono">{emp.employeeId || 'No ID'}</p>
@@ -1452,18 +1487,13 @@ export function AdminReports() {
                         {/* 1. Trainee Identity Column */}
                         <td className="py-3.5 px-4 border-r border-slate-150">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-blue-100 overflow-hidden shrink-0 border border-slate-200 shadow-2xs flex items-center justify-center font-black text-blue-700 text-xs">
-                              {emp.photo ? (
-                                <img
-                                  src={getPhotoUrl(emp.photo)}
-                                  alt={emp.name}
-                                  className="w-full h-full object-cover"
-                                  style={{ transform: 'scaleX(-1)' }}
-                                />
-                              ) : (
-                                emp.name?.charAt(0)?.toUpperCase() || 'T'
-                              )}
-                            </div>
+                            <TraineeAvatar
+                              photo={emp.photo}
+                              name={emp.name}
+                              sizeClass="w-10 h-10"
+                              roundedClass="rounded-xl"
+                              textSizeClass="text-xs"
+                            />
                             <div>
                               <p className="font-extrabold text-slate-900 text-xs group-hover:text-blue-700 transition-colors">
                                 {emp.name}
@@ -1867,18 +1897,13 @@ export function AdminReports() {
                           </td>
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-700 overflow-hidden shrink-0 border border-blue-200">
-                                {emp?.photo ? (
-                                  <img
-                                    src={getPhotoUrl(emp.photo)}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                    style={{ transform: 'scaleX(-1)' }}
-                                  />
-                                ) : (
-                                  <span>{(displayName || 'U').charAt(0)}</span>
-                                )}
-                              </div>
+                              <TraineeAvatar
+                                photo={emp?.photo}
+                                name={displayName}
+                                sizeClass="w-7 h-7"
+                                roundedClass="rounded-full"
+                                textSizeClass="text-[10px]"
+                              />
                               <div>
                                 <p className="font-bold text-gray-800 text-xs">{displayName}</p>
                                 <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 mt-0.5">
@@ -2345,18 +2370,13 @@ export function AdminReports() {
               {/* Modal Header */}
               <div className="p-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 overflow-hidden shrink-0 border border-blue-200 flex items-center justify-center font-bold text-blue-700 text-sm">
-                    {selectedTraineeModal.emp.photo ? (
-                      <img
-                        src={getPhotoUrl(selectedTraineeModal.emp.photo)}
-                        alt={selectedTraineeModal.emp.name}
-                        className="w-full h-full object-cover"
-                        style={{ transform: 'scaleX(-1)' }}
-                      />
-                    ) : (
-                      selectedTraineeModal.emp.name?.charAt(0)?.toUpperCase() || 'T'
-                    )}
-                  </div>
+                  <TraineeAvatar
+                    photo={selectedTraineeModal.emp.photo}
+                    name={selectedTraineeModal.emp.name}
+                    sizeClass="w-10 h-10"
+                    roundedClass="rounded-xl"
+                    textSizeClass="text-sm"
+                  />
                   <div>
                     <h3 className="font-bold text-gray-900 text-sm">{selectedTraineeModal.emp.name}</h3>
                     <p className="text-xs text-gray-400 font-mono">

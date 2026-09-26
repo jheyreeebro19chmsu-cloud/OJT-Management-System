@@ -56,8 +56,8 @@ export default function LeafletGeofenceMap({
   const webViewRef = useRef<WebView | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [currentLat, setCurrentLat] = useState(centerLat || 10.7412);
-  const [currentLng, setCurrentLng] = useState(centerLng || 122.9691);
+  const [currentLat, setCurrentLat] = useState(centerLat || 10.7410);
+  const [currentLng, setCurrentLng] = useState(centerLng || 122.9702);
 
   // Calculate distance between user and center in meters (Haversine)
   const distanceToCenter = useMemo(() => {
@@ -128,14 +128,14 @@ export default function LeafletGeofenceMap({
 
   const centerOnOffice = () => {
     if (webViewRef.current) {
-      const js = `if (window.map && window.centerMarker) { window.map.flyTo([${currentLat}, ${currentLng}], 16, { animate: true }); }`;
+      const js = `if (window.map && window.centerMarker) { window.userInteracted = false; window.__programmaticMove = true; window.map.flyTo([${currentLat}, ${currentLng}], 16, { animate: true }); setTimeout(function() { window.__programmaticMove = false; }, 1000); }`;
       webViewRef.current.injectJavaScript(js);
     }
   };
 
   const centerOnUser = () => {
     if (userLat && userLng && webViewRef.current) {
-      const js = `if (window.map) { window.map.flyTo([${userLat}, ${userLng}], 18, { animate: true }); }`;
+      const js = `if (window.map) { window.userInteracted = false; window.__programmaticMove = true; window.map.flyTo([${userLat}, ${userLng}], 18, { animate: true }); setTimeout(function() { window.__programmaticMove = false; }, 1000); }`;
       webViewRef.current.injectJavaScript(js);
     }
   };
@@ -154,9 +154,9 @@ export default function LeafletGeofenceMap({
 
   // Generate Leaflet HTML
   const leafletHtml = useMemo(() => {
-    const initLat = centerLat || 10.7412;
-    const initLng = centerLng || 122.9691;
-    const initRadius = radius || 300;
+    const initLat = centerLat || 10.7410;
+    const initLng = centerLng || 122.9702;
+    const initRadius = radius || 40;
     const safeZoneName = (zoneName || 'Workplace Geofence').replace(/['"\\]/g, '');
 
     return `
@@ -309,7 +309,7 @@ export default function LeafletGeofenceMap({
       draggable: interactive
     }).addTo(map);
 
-    centerMarker.bindPopup('<div class="popup-title">${safeZoneName}</div><div class="popup-desc">Perimeter Center (' + curLat.toFixed(4) + ', ' + curLng.toFixed(4) + ')</div>');
+    centerMarker.bindPopup('<div class="popup-title">${safeZoneName}</div><div class="popup-desc">Perimeter Center (' + curLat.toFixed(6) + ', ' + curLng.toFixed(6) + ')</div>');
 
     // Create Geofence Perimeter Circle
     geofenceCircle = L.circle([curLat, curLng], {
@@ -318,8 +318,28 @@ export default function LeafletGeofenceMap({
       weight: 2.5,
       fillColor: '#10b981',
       fillOpacity: 0.18,
-      dashArray: '6, 6'
+      dashArray: '6, 6',
+      interactive: false
     }).addTo(map);
+
+    // Track user drag/move interaction on mobile map
+    let userInteracted = false;
+    map.on('movestart', function(e) {
+      if (e.originalEvent || !window.__programmaticMove) {
+        userInteracted = true;
+      }
+    });
+    map.on('dragstart', function() {
+      userInteracted = true;
+    });
+    map.on('touchstart', function() {
+      userInteracted = true;
+    });
+    map.on('zoomstart', function(e) {
+      if (e.originalEvent || !window.__programmaticMove) {
+        userInteracted = true;
+      }
+    });
 
     // Reverse Geocoding helper via Nominatim
     async function reverseGeocode(lat, lng) {
@@ -392,7 +412,8 @@ export default function LeafletGeofenceMap({
             color: '#3b82f6',
             fillColor: '#60a5fa',
             fillOpacity: 0.12,
-            weight: 1
+            weight: 1,
+            interactive: false
           }).addTo(map);
         } else {
           userAccCircle.setLatLng([lat, lng]);
@@ -400,11 +421,17 @@ export default function LeafletGeofenceMap({
         }
       }
 
-      // Calculate distance between movable GPS and geofence center
-      const dLat = (curLat - lat) * 111320;
-      const dLng = (curLng - lng) * (111320 * Math.cos((lat * Math.PI) / 180));
-      const dist = Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
-      const isOutside = dist > curRadius;
+      // Calculate distance between movable GPS and geofence center using accurate Haversine formula
+      const R = 6371000;
+      const dLat = (curLat - lat) * (Math.PI / 180);
+      const dLon = (curLng - lng) * (Math.PI / 180);
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat * (Math.PI / 180)) * Math.cos(curLat * (Math.PI / 180)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const dist = Math.round(R * c);
+      const accuracyAllowance = typeof accuracy === 'number' && accuracy > 0 ? Math.min(accuracy, 25) : 5;
+      const isOutside = dist > (curRadius + accuracyAllowance);
 
       // When outside the premises: draw real-time navigation line pointing to workplace
       if (isOutside) {
@@ -413,7 +440,8 @@ export default function LeafletGeofenceMap({
             color: '#ef4444',
             weight: 3,
             dashArray: '6, 6',
-            opacity: 0.85
+            opacity: 0.85,
+            interactive: false
           }).addTo(map);
         } else {
           navLine.setLatLngs([[lat, lng], [curLat, curLng]]);
@@ -423,16 +451,20 @@ export default function LeafletGeofenceMap({
         navLine = null;
       }
 
-      // Smoothly zoom in to where their location was on first lock, then smoothly pan movable GPS
+      // Smoothly zoom in to where their location was on first lock, then smoothly pan movable GPS only if user hasn't moved map
       if (!window.__userLocationLocked) {
         window.__userLocationLocked = true;
-        if (dist <= 650) {
+        window.__programmaticMove = true;
+        if (dist <= 1500) {
           map.fitBounds([[lat, lng], [curLat, curLng]], { padding: [40, 40], maxZoom: 18 });
         } else {
           map.setView([lat, lng], 18, { animate: true });
         }
-      } else {
+        setTimeout(function() { window.__programmaticMove = false; }, 800);
+      } else if (!userInteracted) {
+        window.__programmaticMove = true;
         map.panTo([lat, lng], { animate: true, duration: 0.7 });
+        setTimeout(function() { window.__programmaticMove = false; }, 800);
       }
     };
 

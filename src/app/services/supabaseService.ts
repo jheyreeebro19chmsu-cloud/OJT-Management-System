@@ -63,7 +63,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
       console.warn('Optimized fetchEmployees query notice, trying fallback columns:', error.message);
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('employees')
-        .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
+        .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
         .order('created_at', { ascending: false });
 
       if (!fallbackError && fallbackData) {
@@ -487,6 +487,25 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
   if (!isSupabaseConfigured()) return null;
 
   const cleanDate = record.date ? String(record.date).split('T')[0] : new Date().toISOString().split('T')[0];
+
+  // Idempotency guard: if a "Time In" request fires twice (retry, double-tap),
+  // don't create a second open session — return the existing one instead.
+  if (record.timeIn && !record.timeOut) {
+    const { data: existingOpen } = await supabase
+      .from('time_records')
+      .select('*')
+      .eq('employee_id', record.employeeId)
+      .eq('date', cleanDate)
+      .is('time_out', null)
+      .order('time_in', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingOpen) {
+      console.warn('[Idempotency] Open time-in record already exists for today — returning existing record instead of duplicating.');
+      return transformSupabaseTimeRecord(existingOpen);
+    }
+  }
 
   const baseRecord: any = {
     employee_id: record.employeeId,
@@ -1052,7 +1071,30 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     metaPayload
   );
 
-  // Live schema has no academic_year column; send only live columns
+  // Check if evaluation already exists for this trainee (prevent duplicate key or parallel entry issues)
+  if (evaluation.employeeId) {
+    try {
+      const { data: existing } = await supabase
+        .from('evaluations')
+        .select('id, recommendations, status')
+        .eq('employee_id', evaluation.employeeId)
+        .maybeSingle();
+
+      if (existing?.id) {
+        const success = await updateEvaluation(existing.id, evaluation);
+        if (success) {
+          return {
+            ...evaluation,
+            id: existing.id,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[supabaseService] Check existing evaluation error:', e);
+    }
+  }
+
+  // Live schema columns: areas_for_improvement must be snake_case in PostgreSQL
   const supabaseEval: any = {
     employee_id: evaluation.employeeId,
     evaluated_by: evaluation.evaluatedBy,
@@ -1064,7 +1106,7 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
     overall_score: evaluation.overallScore,
     grade: evaluation.grade,
     strengths: evaluation.strengths,
-    areasForImprovement: evaluation.areasForImprovement,
+    areas_for_improvement: evaluation.areasForImprovement || (evaluation as any).areas_for_improvement || '',
     recommendations: packedRecommendations,
     evaluated_at: evaluation.evaluatedAt || new Date().toISOString(),
     status: dbStatus,
@@ -1073,6 +1115,18 @@ export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Prom
   const { data, error } = await supabase.from('evaluations').insert([supabaseEval]).select().single();
 
   if (error) {
+    // If error is duplicate key on employee_id, update instead
+    if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('unique constraint')) {
+      const { data: existing } = await supabase
+        .from('evaluations')
+        .select('id')
+        .eq('employee_id', evaluation.employeeId)
+        .maybeSingle();
+      if (existing?.id) {
+        await updateEvaluation(existing.id, evaluation);
+        return { ...evaluation, id: existing.id };
+      }
+    }
     console.error('Error creating evaluation in Supabase:', error);
     throw new Error(error.message || JSON.stringify(error));
   }
@@ -1108,15 +1162,21 @@ export async function updateEvaluation(id: string, updates: Partial<Evaluation>)
   if (!isSupabaseConfigured()) return false;
 
   let targetId = id;
-  if (id.startsWith('eval-') && updates.employeeId) {
+  const targetEmployeeId = updates.employeeId;
+
+  if (targetId.startsWith('eval-') && targetEmployeeId) {
     try {
       const { data: matched } = await supabase
         .from('evaluations')
         .select('id')
-        .eq('employee_id', updates.employeeId)
+        .eq('employee_id', targetEmployeeId)
         .maybeSingle();
       if (matched?.id) {
         targetId = matched.id;
+      } else {
+        // No row exists in Supabase yet, create it!
+        const created = await createEvaluation(updates as any);
+        return Boolean(created);
       }
     } catch {}
   }
@@ -1951,11 +2011,16 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
   if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };
 
   try {
-    // 1. Update any employee missing academic_year, legacy administrator position, or mismatched HTE/ADM employee_ids
-    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position, employee_id, name, email, company_name, registration_address');
+    // 1. Update any employee missing academic_year, legacy administrator position, mismatched HTE/ADM employee_ids, or missing photo
+    const { data: emps, error: empFetchErr } = await supabase.from('employees').select('id, academic_year, position, employee_id, name, email, company_name, registration_address, photo');
     let repairedEmployees = 0;
     let migratedHTEs = 0;
     if (!empFetchErr && emps) {
+      // Get current auth user if available to cross-fill avatar
+      const { data: authSession } = await supabase.auth.getSession();
+      const currentAuthUser = authSession?.session?.user;
+      const currentAuthAvatar = currentAuthUser?.user_metadata?.avatar_url || currentAuthUser?.user_metadata?.picture;
+
       for (const e of emps) {
         let needsUpdate = false;
         const updates: any = {};
@@ -1966,6 +2031,16 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ succ
         if (e.position === 'Administrator') {
           updates.position = 'OJT Instructor';
           needsUpdate = true;
+        }
+        // Sync photo from session user if employee has no photo
+        if ((!e.photo || e.photo === 'null' || e.photo === 'undefined') && currentAuthAvatar) {
+          if (
+            (currentAuthUser.email && e.email && currentAuthUser.email.toLowerCase() === e.email.toLowerCase()) ||
+            currentAuthUser.id === e.id
+          ) {
+            updates.photo = currentAuthAvatar;
+            needsUpdate = true;
+          }
         }
         const isHTE = e.position === 'HTE Representative' || e.position === 'Training Supervisor' || (e.position && e.position.toLowerCase().includes('hte'));
         const isInstructor = e.position === 'OJT Instructor' || (e.position && e.position.toLowerCase().includes('instructor'));

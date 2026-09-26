@@ -192,9 +192,9 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
   const [locLoading, setLocLoading] = useState<boolean>(false);
   const [showGeofenceMapModal, setShowGeofenceMapModal] = useState(false);
   const [geofenceCenter, setGeofenceCenter] = useState<{ lat: number; lng: number; radius: number }>({
-    lat: 10.7412,
-    lng: 122.9691,
-    radius: 300,
+    lat: 10.7410,
+    lng: 122.9702,
+    radius: 40,
   });
 
   // Biometric Attendance modal mode ('enroll' | 'clock_in' | 'clock_out' | 'verify_test' | null)
@@ -295,15 +295,17 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
     if (targetCoordsList.length === 0) {
       targetCoordsList.push({
         name: 'CHMSU Main Campus Station',
-        lat: 10.7412,
-        lng: 122.9691,
-        radius: 300,
+        lat: 10.7410,
+        lng: 122.9702,
+        radius: 40,
       });
     }
 
     let minDistance = Infinity;
     let isInside = false;
-    let closestName = targetCoordsList[0].name;
+    let matchedTarget = targetCoordsList[0];
+    const userAccuracy = location.coords.accuracy;
+    const accuracyAllowance = typeof userAccuracy === 'number' && userAccuracy > 0 ? Math.min(userAccuracy, 25) : 5;
 
     for (const target of targetCoordsList) {
       const dist = calculateDistance(
@@ -314,25 +316,23 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
       );
       if (dist < minDistance) {
         minDistance = Math.round(dist);
-        closestName = target.name;
+        matchedTarget = target;
       }
-      if (dist <= target.radius) {
+      if (dist <= target.radius + accuracyAllowance) {
         isInside = true;
-        closestName = target.name;
+        matchedTarget = target;
         break;
       }
     }
 
     setDistanceToSite(minDistance !== Infinity ? minDistance : null);
     setIsWithinGeofence(isInside);
-    setAssignedWorkplaceName(closestName);
-    if (targetCoordsList.length > 0) {
-      setGeofenceCenter({
-        lat: targetCoordsList[0].lat,
-        lng: targetCoordsList[0].lng,
-        radius: targetCoordsList[0].radius || 300,
-      });
-    }
+    setAssignedWorkplaceName(matchedTarget.name);
+    setGeofenceCenter({
+      lat: matchedTarget.lat,
+      lng: matchedTarget.lng,
+      radius: matchedTarget.radius || 40,
+    });
   }
 
   async function checkLiveGeofence(userProfile: any = profile) {

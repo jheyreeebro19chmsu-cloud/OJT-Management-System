@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useApp } from '../../store/AppContext';
 import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire } from '../../types';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
+import { getPhotoUrl } from '../../services/config';
 
 const GRADE_CONFIG: Record<Evaluation['grade'], { color: string; bg: string; border: string; min: number; label: string }> = {
   Excellent: { color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', min: 90, label: 'Excellent / Outstanding (90-100%)' },
@@ -514,18 +515,24 @@ export function AdminEvaluations() {
               className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:border-blue-200 transition-all"
             >
               <div className="flex items-start gap-4">
-                <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-inner">
-                  {emp.photo ? (
-                    <img
-                      src={emp.photo}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      style={{ transform: 'scaleX(-1)' }}
-                    />
-                  ) : (
-                    <span className="text-blue-700 font-bold text-xl">{emp.name.charAt(0)}</span>
-                  )}
-                </div>
+                {(() => {
+                  const photoUrl = getPhotoUrl(emp.photo);
+                  return (
+                    <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-inner relative select-none">
+                      <span className="text-blue-700 font-bold text-xl">{emp.name.charAt(0)}</span>
+                      {photoUrl && (
+                        <img
+                          src={photoUrl}
+                          alt=""
+                          className="w-full h-full object-cover absolute inset-0 z-10"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div>

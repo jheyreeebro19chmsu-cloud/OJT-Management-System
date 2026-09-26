@@ -407,6 +407,7 @@ export function Register() {
   };
 
   const handleGoogleRegister = async (targetRole?: UserRole) => {
+    if (googleLoading) return; // debounce: block re-entry while OAuth redirect is starting
     if (targetRole) {
       localStorage.setItem('pending_oauth_role', targetRole);
     }
@@ -879,6 +880,7 @@ export function Register() {
   }, []);
 
   const handleSubmit = async () => {
+    if (isSubmitting) return; // debounce: block re-entry while a submit is in flight
     setIsSubmitting(true);
     setSubmitError(null);
     const empId =
@@ -1125,8 +1127,12 @@ export function Register() {
             documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : (existing ? existing.documentsStatus : 'passed'),
           };
 
-          // Guarantee persistent write to Supabase database
-          await createEmployeeDb(updatedPayload);
+          // Write to Supabase database (with offline fallback)
+          try {
+            await createEmployeeDb(updatedPayload);
+          } catch (dbErr) {
+            console.warn('[Offline Mode] Cloud write notice during repair, saved locally:', dbErr);
+          }
           if (existing) {
             updateEmployee(existing.id, updatedPayload);
           }
@@ -1149,13 +1155,13 @@ export function Register() {
             });
           }
 
-          toast.success('Registration completed! Profile and OJT details saved in database. Please log in.');
+          toast.success('Registration completed! Profile saved. Please log in.');
           setIsSubmitting(false);
           navigate('/login');
           return;
         } catch (repairErr: any) {
           console.error('Failed to update registration record in database:', repairErr);
-          toast.error(`Database registration failed: ${repairErr?.message || 'Error'}`);
+          toast.error(`Registration notice: ${repairErr?.message || 'Error'}`);
           setIsSubmitting(false);
           return;
         }
@@ -2251,6 +2257,7 @@ export function Register() {
                             First Name *
                           </label>
                           <input
+                            name="firstName"
                             value={form.firstName}
                             onChange={(e) => update('firstName', e.target.value)}
                             placeholder="Jhey Ree"
@@ -2271,6 +2278,7 @@ export function Register() {
                             M.I.
                           </label>
                           <input
+                            name="middleInitial"
                             value={form.middleInitial}
                             onChange={(e) => update('middleInitial', e.target.value.toUpperCase().slice(0, 2))}
                             placeholder="D"
@@ -2285,6 +2293,7 @@ export function Register() {
                             Last Name *
                           </label>
                           <input
+                            name="lastName"
                             value={form.lastName}
                             onChange={(e) => update('lastName', e.target.value)}
                             placeholder="Ebro"
@@ -3553,7 +3562,6 @@ export function Register() {
                           src={photo}
                           alt="Registered Face"
                           className="w-full h-full object-cover rounded-full"
-                          style={{ transform: 'scaleX(-1)' }}
                         />
                       ) : (
                         <Check size={36} className="text-green-600" />

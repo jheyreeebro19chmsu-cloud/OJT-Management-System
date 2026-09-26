@@ -16,14 +16,16 @@ import {
   Loader2,
   RefreshCw,
   Edit3,
-  Save,
   X,
+  Camera,
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { UserAvatar } from '../components/UserAvatar';
+import AvatarEditor from '../components/AvatarEditor';
 import { getCurrentLocation, reverseGeocode } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
 import { campusOptions, departmentOptions } from '../data/academicOptions';
@@ -31,6 +33,7 @@ import { campusOptions, departmentOptions } from '../data/academicOptions';
 export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
   const { currentUser, getCurrentEmployee, employees, updateEmployee, updateHostSupervisor, addGeofenceZone, settings } = useApp();
   const [syncingLocation, setSyncingLocation] = useState(false);
+  const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const currentEmp = getCurrentEmployee();
 
   const hteUser = (() => {
@@ -306,15 +309,28 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8 space-y-6">
         {/* User Top Section */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-5 pb-6 border-b border-slate-100">
-          <div className="w-20 h-20 rounded-2xl bg-blue-50 border-2 border-blue-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
-            {employeePhoto ? (
-              <img src={getPhotoUrl(employeePhoto)} alt={name} className="w-full h-full object-cover" />
-            ) : isHte ? (
-              <Building2 className="text-blue-600" size={36} />
-            ) : (
-              <User className="text-blue-600" size={36} />
+          <div className="relative">
+            <UserAvatar
+              photo={employeePhoto}
+              name={name}
+              role={isHte ? 'hte' : 'admin'}
+              size="2xl"
+              className="rounded-2xl border-2 border-blue-200 shadow-sm"
+            />
+            {employee && (
+              <button
+                type="button"
+                onClick={() => setShowAvatarEditor(true)}
+                className="absolute -top-1 -right-1 bg-white rounded-full p-1.5 border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                title="Change photo"
+              >
+                <Camera size={14} className="text-slate-600" />
+              </button>
             )}
           </div>
+          {showAvatarEditor && employee && (
+            <AvatarEditor employeeId={String(employee.id)} onClose={() => setShowAvatarEditor(false)} />
+          )}
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-extrabold text-slate-900 leading-tight">{name}</h2>

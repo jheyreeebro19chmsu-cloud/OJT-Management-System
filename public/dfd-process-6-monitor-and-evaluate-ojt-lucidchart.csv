@@ -1,0 +1,28 @@
+ID,Name,Shape Library,Page ID,Contained By,Text Area 1,Line Source,Line Destination
+1,Page,,1,,6.0 Monitor and Evaluate OJT,,
+2,Data Store,Flowchart Shapes,1,,D2: OJT Application Records,,
+3,Process,Flowchart Shapes,1,,6.1 Retrieve OJT Records,,
+4,Data Store,Flowchart Shapes,1,,D3: Attendance Records,,
+5,Data Store,Flowchart Shapes,1,,D5: OJT Task Records,,
+6,Data Store,Flowchart Shapes,1,,D6: Student Submission Records,,
+7,Process,Flowchart Shapes,1,,6.2 Monitor OJT Progress,,
+8,Process,Flowchart Shapes,1,,6.3 Generate OJT Report,,
+9,Terminator,Flowchart Shapes,1,,HTE,,
+10,Terminator,Flowchart Shapes,1,,OJT Instructor,,
+11,Process,Flowchart Shapes,1,,6.4 Record Evaluation,,
+12,Data Store,Flowchart Shapes,1,,D8: Evaluation and Feedback Records,,
+13,Process,Flowchart Shapes,1,,6.5 Provide Feedback,,
+14,Terminator,Flowchart Shapes,1,,Student,,
+15,Line,,1,,Application information,2,3
+16,Line,,1,,Attendance information,4,3
+17,Line,,1,,Task information,5,3
+18,Line,,1,,Submission information,6,3
+19,Line,,1,,Consolidated OJT records,3,7
+20,Line,,1,,OJT progress information,7,8
+21,Line,,1,,"Student progress, attendance, rendered hours",7,9
+22,Line,,1,,"Attendance report, OJT progress report",8,10
+23,Line,,1,,Instructor evaluation and feedback,10,11
+24,Line,,1,,HTE evaluation and feedback,9,11
+25,Line,,1,,Evaluation and feedback record,11,12
+26,Line,,1,,Evaluation and feedback information,12,13
+27,Line,,1,,Evaluation result and feedback,13,14

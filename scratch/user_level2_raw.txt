@@ -1,0 +1,158 @@
+<USER_REQUEST>
+LEVEL 2
+1.0 — Authenticate Users
+1.1 — Receive Registration
+
+Student → 1.1 Receive Registration
+Data Flow: Registration information
+
+1.1 Receive Registration → D1 User Account Records
+Data Flow: New account information
+
+1.1 Receive Registration → 1.2 Request OTP
+Data Flow: Account verification request
+
+1.2 — Request OTP
+
+1.2 Request OTP → Email Service
+Data Flow: OTP request
+
+Email Service → 1.2 Request OTP
+Data Flow: OTP delivery status
+
+1.2 Request OTP → 1.3 Verify OTP
+Data Flow: OTP verification request
+
+1.3 — Verify OTP
+
+Student → 1.3 Verify OTP
+Data Flow: Entered OTP code
+
+1.3 Verify OTP → D1 User Account Records
+Data Flow: Account verification request
+
+D1 User Account Records → 1.3 Verify OTP
+Data Flow: Account information
+
+1.3 Verify OTP → 1.4 Validate Login
+Data Flow: Verified account
+
+1.4 — Validate Login
+
+Student → 1.4 Validate Login
+Data Flow: Login credentials
+
+1.4 Validate Login → D1 User Account Records
+Data Flow: Credential lookup request
+
+D1 User Account Records → 1.4 Validate Login
+Data Flow: User credentials and account role
+
+1.4 Validate Login → 1.5 Create User Session
+Data Flow: Validated login information
+
+1.5 — Create User Session
+
+1.5 Create User Session → Student
+Data Flow: Login status, session access
+
+1.5 Create User Session → OJT Instructor
+Data Flow: Login status, session access
+
+1.5 Create User Session → Host Training Establishment (HTE)
+Data Flow: Login status, session access
+
+2.0 — Process OJT Applications
+2.1 — Receive OJT Application
+
+Student → 2.1 Receive OJT Application
+Data Flow: OJT application information
+
+2.1 Receive OJT Application → 2.2 Validate Application
+Data Flow: Submitted application
+
+2.2 — Validate Application
+
+2.2 Validate Application → D2 OJT Application Records
+Data Flow: Validated application record
+
+D2 OJT Application Records → 2.3 Retrieve Application
+Data Flow: Application information
+
+2.3 — Retrieve Appl
+<truncated 3939 bytes>
+e Access Request → OJT Instructor
+Data Flow: HTE access request for review
+
+5.3 — Review Access Request
+
+OJT Instructor → 5.3 Review Access Request
+Data Flow: Approval or rejection decision
+
+5.3 Review Access Request → 5.4 Update Access Status
+Data Flow: Access decision
+
+5.4 — Update Access Status
+
+5.4 Update Access Status → D7 HTE Access Records
+Data Flow: Updated access status
+
+5.4 Update Access Status → HTE
+Data Flow: Access status
+
+6.0 — Monitor and Evaluate OJT
+6.1 — Retrieve OJT Records
+
+D2 OJT Application Records → 6.1 Retrieve OJT Records
+Data Flow: Application information
+
+D3 Attendance Records → 6.1 Retrieve OJT Records
+Data Flow: Attendance information
+
+D5 OJT Task Records → 6.1 Retrieve OJT Records
+Data Flow: Task information
+
+D6 Student Submission Records → 6.1 Retrieve OJT Records
+Data Flow: Submission information
+
+6.1 Retrieve OJT Records → 6.2 Monitor OJT Progress
+Data Flow: Consolidated OJT records
+
+6.2 — Monitor OJT Progress
+
+6.2 Monitor OJT Progress → 6.3 Generate OJT Report
+Data Flow: OJT progress information
+
+6.2 Monitor OJT Progress → HTE
+Data Flow: Student progress, attendance, rendered hours
+
+6.3 — Generate OJT Report
+
+6.3 Generate OJT Report → OJT Instructor
+Data Flow: Attendance report, OJT progress report
+
+6.4 — Record Evaluation
+
+OJT Instructor → 6.4 Record Evaluation
+Data Flow: Instructor evaluation and feedback
+
+HTE → 6.4 Record Evaluation
+Data Flow: HTE evaluation and feedback
+
+6.4 Record Evaluation → D8 Evaluation and Feedback Records
+Data Flow: Evaluation and feedback record
+
+6.5 — Provide Feedback
+
+D8 Evaluation and Feedback Records → 6.5 Provide Feedback
+Data Flow: Evaluation and feedback information
+
+6.5 Provide Feedback → Student
+Data Flow: Evaluation result and feedback
+
+
+remember I paste the dfd levle 2 here, edit this to the latest accurate one
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-25T01:57:52+08:00.
+</ADDITIONAL_METADATA>

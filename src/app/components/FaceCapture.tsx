@@ -75,11 +75,18 @@ export function FaceCapture({
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
+  const hasFiredSuccessRef = useRef(false);
 
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => {
     onSuccessRef.current = onSuccess;
   }, [onSuccess]);
+
+  const fireSuccessOnce = useCallback((img?: string) => {
+    if (hasFiredSuccessRef.current) return; // guard: only the first success wins
+    hasFiredSuccessRef.current = true;
+    onSuccessRef.current?.(img);
+  }, []);
 
   const onCancelRef = useRef(onCancel);
   useEffect(() => {
@@ -357,6 +364,7 @@ export function FaceCapture({
    */
   const startScan = useCallback(async () => {
     stopCamera();
+    hasFiredSuccessRef.current = false;
     setState('requesting');
     setMismatchError(null);
     setQualityReport(null);
@@ -487,7 +495,7 @@ export function FaceCapture({
                 setProgress(100);
                 setState('success');
                 setScanMessage('✓ Face Recognized & Enrolled!');
-                onSuccessRef.current?.(currentFrame);
+                fireSuccessOnce(currentFrame);
                 return;
               } else {
                 setProgress(35);
@@ -500,7 +508,7 @@ export function FaceCapture({
               setProgress(100);
               setState('success');
               setScanMessage('✓ Face Recognized & Enrolled!');
-              onSuccessRef.current?.(currentFrame);
+              fireSuccessOnce(currentFrame);
               return;
             }
           }
@@ -590,7 +598,7 @@ export function FaceCapture({
         setState('success');
         setScanMessage('✓ Identity Verified! Timestamp Saved.');
         stopCamera();
-        setTimeout(() => onSuccessRef.current?.(lastCaptured), 600);
+        setTimeout(() => fireSuccessOnce(lastCaptured), 600);
         return;
       }
     } catch (loopErr) {
@@ -663,7 +671,7 @@ export function FaceCapture({
       setProgress(100);
       setState('success');
       setScanMessage('✓ Face Biometrics Enrolled Successfully!');
-      onSuccessRef.current?.(img);
+      fireSuccessOnce(img);
       return;
     }
 
@@ -733,14 +741,14 @@ export function FaceCapture({
     setProgress(100);
     setState('success');
     setScanMessage('✓ Identity Verified! Attendance Time Recorded.');
-    setTimeout(() => onSuccessRef.current?.(img), 300);
+    setTimeout(() => fireSuccessOnce(img), 300);
   }, [stopCamera, captureFrame]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
     setState('success');
     setScanMessage(modeRef.current === 'register' ? '✓ Face Photo Saved for Account Profile!' : '✓ Identity Verified!');
-    onSuccessRef.current?.(capturedImage);
+    fireSuccessOnce(capturedImage);
   }, [capturedImage]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -781,7 +789,7 @@ export function FaceCapture({
         if (mode === 'register') {
           setState('success');
           setScanMessage('✓ Photo uploaded and biometrics enrolled!');
-          onSuccessRef.current?.(img);
+          fireSuccessOnce(img);
         } else {
           setCapturedImage(img);
           handleManualSnap(img);
@@ -807,6 +815,7 @@ export function FaceCapture({
     setProgress(0);
     setCapturedImage(null);
     setMismatchError(null);
+    hasFiredSuccessRef.current = false; // allow a new scan attempt to fire onSuccess again
     hasStartedRef.current = false;
     startScan();
   };
@@ -835,7 +844,6 @@ export function FaceCapture({
               src={capturedImage}
               alt="Captured Biometric Preview"
               className="w-full h-full object-cover"
-              style={{ transform: 'scaleX(-1)' }}
             />
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-emerald-500/50 text-emerald-300 text-[10px] font-bold text-center whitespace-nowrap shadow-md z-20">
               ✓ Photo Captured — Ready to Confirm

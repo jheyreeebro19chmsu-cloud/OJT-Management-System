@@ -1,0 +1,25 @@
+ID,Name,Shape Library,Page ID,Contained By,Text Area 1,Line Source,Line Destination
+1,Page,,1,,4.0 Manage OJT Activities,,
+2,Terminator,Flowchart Shapes,1,,OJT Instructor,,
+3,Process,Flowchart Shapes,1,,4.1 Create Announcement,,
+4,Data Store,Flowchart Shapes,1,,D4: Announcement Records,,
+5,Process,Flowchart Shapes,1,,4.2 Publish Announcement,,
+6,Terminator,Flowchart Shapes,1,,Student,,
+7,Process,Flowchart Shapes,1,,4.3 Create OJT Task,,
+8,Data Store,Flowchart Shapes,1,,D5: OJT Task Records,,
+9,Process,Flowchart Shapes,1,,4.4 Assign OJT Task,,
+10,Process,Flowchart Shapes,1,,4.5 Receive Task Submission,,
+11,Data Store,Flowchart Shapes,1,,D6: Student Submission Records,,
+12,Process,Flowchart Shapes,1,,4.6 Review Task Submission,,
+13,Line,,1,,Announcement information,2,3
+14,Line,,1,,Announcement record,3,4
+15,Line,,1,,Announcement information,4,5
+16,Line,,1,,Published announcement,5,6
+17,Line,,1,,Task information,2,7
+18,Line,,1,,OJT task record,7,8
+19,Line,,1,,Task information,8,9
+20,Line,,1,,Assigned OJT task,9,6
+21,Line,,1,,Task submission,6,10
+22,Line,,1,,Submission record,10,11
+23,Line,,1,,Student submission,11,12
+24,Line,,1,,Submission for review,12,2

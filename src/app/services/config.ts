@@ -63,17 +63,52 @@ export const getPhotoUrl = (photoPath: string | null | undefined): string => {
     return '';
   }
 
-  const trimmed = String(photoPath).trim();
+  const trimmed = String(photoPath).trim().replace(/^["']+|["']+$/g, '');
   if (!trimmed) return '';
   // Treat common sentinel values from storage providers as missing
-  if (/^not\s*found$/i.test(trimmed) || /not\s*found/i.test(trimmed) || trimmed === 'None' || trimmed.includes('/face-photos/')) return '';
+  if (
+    /^not\s*found$/i.test(trimmed) ||
+    /not\s*found/i.test(trimmed) ||
+    trimmed === 'None' ||
+    trimmed === 'null' ||
+    trimmed === 'undefined' ||
+    trimmed === '[object Object]' ||
+    trimmed === 'false'
+  ) {
+    return '';
+  }
 
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
     return trimmed;
   }
-  const serverRoot = API_BASE.replace(/\/api$/, '').replace(/\/+$/, '');
+
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || 'https://wooighmdckuoebsuegzz.supabase.co').replace(/\/+$/, '');
+  const supabaseStorageBase = `${supabaseUrl}/storage/v1/object/public`;
   const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  return `${serverRoot}${cleanPath}`;
+
+  // If path refers to Supabase storage buckets, route directly to public storage
+  const isSupabaseBucket =
+    cleanPath.startsWith('/face-photos/') ||
+    cleanPath.startsWith('/avatars/') ||
+    cleanPath.startsWith('/time-records-photos/') ||
+    cleanPath.startsWith('/documents/') ||
+    cleanPath.startsWith('/trainee-documents/');
+
+  if (isSupabaseBucket) {
+    return `${supabaseStorageBase}${cleanPath}`;
+  }
+
+  // Profile photo format: <identifier>/profile_<timestamp>.jpg
+  if (cleanPath.includes('/profile_') || /^\/[^/]+\/profile_/.test(cleanPath)) {
+    return `${supabaseStorageBase}/face-photos${cleanPath}`;
+  }
+
+  if (API_BASE) {
+    const serverRoot = API_BASE.replace(/\/api$/, '').replace(/\/+$/, '');
+    return `${serverRoot}${cleanPath}`;
+  }
+
+  return `${supabaseStorageBase}${cleanPath}`;
 };
 
 console.log(`[Config] Resolved API_BASE: "${API_BASE}"`);

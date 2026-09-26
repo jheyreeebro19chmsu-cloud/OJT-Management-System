@@ -38,6 +38,7 @@ export function TimeRecord() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
   const userActionOverrideRef = useRef<boolean>(false);
 
   // Comprehensive fallback resolution for registered face template
@@ -177,7 +178,23 @@ export function TimeRecord() {
     []
   );
 
+  const isStudent =
+    !employee?.position?.toLowerCase().includes('instructor') &&
+    !employee?.position?.toLowerCase().includes('faculty') &&
+    !employee?.position?.toLowerCase().includes('admin') &&
+    currentUser?.role !== 'admin';
+  const hasValidHte = Boolean(
+    employee?.companyName &&
+    employee.companyName.trim().length > 0 &&
+    employee.companyName.toLowerCase() !== 'n/a' &&
+    !employee.companyName.toLowerCase().includes('pending')
+  );
+
   const proceedToFaceScan = () => {
+    if (isStudent && !hasValidHte) {
+      toast.error('Clock-in blocked: You must be assigned to an approved Host Training Establishment (HTE) workplace by your instructor first.');
+      return;
+    }
     if (!geofencePassed) return;
     if (action === 'out' && !currentRecord?.timeIn) {
       toast.error('You must clock in first before you can clock out.');
@@ -194,117 +211,123 @@ export function TimeRecord() {
   };
 
   const handleFaceSuccess = async (imageData?: string) => {
-    const currentEmp = employee || (currentUser ? {
-      id: currentUser.id,
-      employeeId: currentUser.employeeId || currentUser.id,
-      name: currentUser.name,
-      department: 'College of Computer Studies',
-      position: 'OJT Trainee',
-    } as any : null);
-    if (!currentEmp) return;
-    const targetEmpId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    if (isProcessingAction) return;
+    setIsProcessingAction(true);
+    try {
+      const currentEmp = employee || (currentUser ? {
+        id: currentUser.id,
+        employeeId: currentUser.employeeId || currentUser.id,
+        name: currentUser.name,
+        department: 'College of Computer Studies',
+        position: 'OJT Trainee',
+      } as any : null);
+      if (!currentEmp) return;
+      const targetEmpId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '';
 
-    const currentAction = action;
-    if (currentAction === 'out' && !currentRecord?.timeIn) {
-      toast.error('Cannot record Clock Out: No prior Clock In found for today.');
-      setAction('in');
-      setPageState('check-geofence');
-      return;
-    }
-    setCompletedAction(currentAction);
-
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    const dateStr = getDTRSessionDate(now);
-
-    let createdRecordId: string | null = null;
-
-    if (currentAction === 'in') {
-      const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
-      const newRecord = addTimeRecord({
-        employeeId: targetEmpId,
-        date: dateStr,
-        timeIn: timeStr,
-        timeInGeofenced: geofencePassed,
-        timeOutGeofenced: false,
-        timeInFaceVerified: true,
-        timeOutFaceVerified: false,
-        status,
-        timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-        timeInPhoto: imageData,
-      });
-      createdRecordId = newRecord.id;
-      setCurrentRecord(newRecord);
-      setAction('out');
-      userActionOverrideRef.current = false;
-      setCompletedMessage(
-        `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
-      );
-    } else if (currentRecord) {
-      const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
-      const updatedFields: Partial<TimeRecordType> = {
-        employeeId: targetEmpId,
-        date: currentRecord.date || dateStr,
-        timeOut: timeStr,
-        timeOutGeofenced: geofencePassed,
-        timeOutFaceVerified: true,
-        totalHours,
-        timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-        timeOutPhoto: imageData,
-        status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
-      };
-      updateTimeRecord(currentRecord.id, updatedFields);
-      createdRecordId = currentRecord.id;
-      setCurrentRecord({ ...currentRecord, ...updatedFields });
-      setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)} • Total: ${totalHours.toFixed(2)} hours`);
-    } else {
-      // Safe fallback: If user clocked out without a prior clock-in today, persist a record immediately
-      const fallbackRecord = addTimeRecord({
-        employeeId: targetEmpId,
-        date: dateStr,
-        timeIn: timeStr,
-        timeOut: timeStr,
-        totalHours: 0,
-        timeInGeofenced: geofencePassed,
-        timeOutGeofenced: geofencePassed,
-        timeInFaceVerified: true,
-        timeOutFaceVerified: true,
-        status: 'present',
-        timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-        timeOutPhoto: imageData,
-      });
-      createdRecordId = fallbackRecord.id;
-      setCurrentRecord(fallbackRecord);
-      setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)}`);
-    }
-
-    setPageState('completed');
-
-    // Asynchronously upload photo and sync to backend in background (never delays timestamp saving)
-    if (imageData) {
-      uploadFacePhoto(
-        targetEmpId,
-        imageData,
-        currentAction === 'in' ? 'time_in' : 'time_out'
-      ).then((uploadedUrl) => {
-        if (uploadedUrl && createdRecordId) {
-          if (currentAction === 'in') {
-            updateTimeRecord(createdRecordId, { timeInPhoto: uploadedUrl });
-          } else {
-            updateTimeRecord(createdRecordId, { timeOutPhoto: uploadedUrl });
-          }
-        }
-      }).catch((uploadErr) => {
-        console.warn('Face photo background upload notice:', uploadErr);
-      });
-
-      // Auto-enroll face biometrics into database if trainee was not enrolled before
-      if (!currentEmp.photo || !currentEmp.faceRegistered) {
-        updateEmployee(currentEmp.id, {
-          photo: imageData,
-          faceRegistered: true,
-        });
+      const currentAction = action;
+      if (currentAction === 'out' && !currentRecord?.timeIn) {
+        toast.error('Cannot record Clock Out: No prior Clock In found for today.');
+        setAction('in');
+        setPageState('check-geofence');
+        return;
       }
+      setCompletedAction(currentAction);
+
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      const dateStr = getDTRSessionDate(now);
+
+      let createdRecordId: string | null = null;
+
+      if (currentAction === 'in') {
+        const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
+        const newRecord = addTimeRecord({
+          employeeId: targetEmpId,
+          date: dateStr,
+          timeIn: timeStr,
+          timeInGeofenced: geofencePassed,
+          timeOutGeofenced: false,
+          timeInFaceVerified: true,
+          timeOutFaceVerified: false,
+          status,
+          timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
+          timeInPhoto: imageData,
+        });
+        createdRecordId = newRecord.id;
+        setCurrentRecord(newRecord);
+        setAction('out');
+        userActionOverrideRef.current = false;
+        setCompletedMessage(
+          `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
+        );
+      } else if (currentRecord) {
+        const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
+        const updatedFields: Partial<TimeRecordType> = {
+          employeeId: targetEmpId,
+          date: currentRecord.date || dateStr,
+          timeOut: timeStr,
+          timeOutGeofenced: geofencePassed,
+          timeOutFaceVerified: true,
+          totalHours,
+          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
+          timeOutPhoto: imageData,
+          status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
+        };
+        updateTimeRecord(currentRecord.id, updatedFields);
+        createdRecordId = currentRecord.id;
+        setCurrentRecord({ ...currentRecord, ...updatedFields });
+        setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)} • Total: ${totalHours.toFixed(2)} hours`);
+      } else {
+        // Safe fallback: If user clocked out without a prior clock-in today, persist a record immediately
+        const fallbackRecord = addTimeRecord({
+          employeeId: targetEmpId,
+          date: dateStr,
+          timeIn: timeStr,
+          timeOut: timeStr,
+          totalHours: 0,
+          timeInGeofenced: geofencePassed,
+          timeOutGeofenced: geofencePassed,
+          timeInFaceVerified: true,
+          timeOutFaceVerified: true,
+          status: 'present',
+          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
+          timeOutPhoto: imageData,
+        });
+        createdRecordId = fallbackRecord.id;
+        setCurrentRecord(fallbackRecord);
+        setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)}`);
+      }
+
+      setPageState('completed');
+
+      // Asynchronously upload photo and sync to backend in background (never delays timestamp saving)
+      if (imageData) {
+        uploadFacePhoto(
+          targetEmpId,
+          imageData,
+          currentAction === 'in' ? 'time_in' : 'time_out'
+        ).then((uploadedUrl) => {
+          if (uploadedUrl && createdRecordId) {
+            if (currentAction === 'in') {
+              updateTimeRecord(createdRecordId, { timeInPhoto: uploadedUrl });
+            } else {
+              updateTimeRecord(createdRecordId, { timeOutPhoto: uploadedUrl });
+            }
+          }
+        }).catch((uploadErr) => {
+          console.warn('Face photo background upload notice:', uploadErr);
+        });
+
+        // Auto-enroll face biometrics into database if trainee was not enrolled before
+        if (!currentEmp.photo || !currentEmp.faceRegistered) {
+          updateEmployee(currentEmp.id, {
+            photo: imageData,
+            faceRegistered: true,
+          });
+        }
+      }
+    } finally {
+      setIsProcessingAction(false);
     }
   };
 
@@ -564,6 +587,18 @@ export function TimeRecord() {
               </button>
             </div>
 
+            {isStudent && !hasValidHte && (
+              <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 text-xs flex items-start gap-3">
+                <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                <div>
+                  <p className="font-bold text-sm text-amber-950">HTE Workplace Placement Required</p>
+                  <p className="mt-1 leading-relaxed">
+                    You have not been assigned to a Host Training Establishment (HTE) yet. Clock-in attendance is locked until your OJT Instructor completes your company placement.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <GeofenceChecker onResult={handleGeofenceResult} autoCheck />
 
             <div className="mt-4 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-xl p-3">
@@ -573,6 +608,10 @@ export function TimeRecord() {
 
             <button
               onClick={() => {
+                if (isStudent && !hasValidHte) {
+                  toast.error('Clock-in blocked: Awaiting HTE workplace placement from your OJT Instructor.');
+                  return;
+                }
                 if (geofenceStatus === 'denied') {
                   alert(
                     'GPS Location Permission Denied\n\nTo clock in or out, you must allow location access:\n1. Click the Lock (🔒) or Site Settings icon in your browser address bar.\n2. Change Location to "Allow".\n3. Click "Request GPS Permission / Retry".'
@@ -587,18 +626,25 @@ export function TimeRecord() {
                 }
                 proceedToFaceScan();
               }}
-              disabled={geofenceStatus === 'outside'}
+              disabled={geofenceStatus === 'outside' || (isStudent && !hasValidHte)}
               className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                geofencePassed
-                  ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
-                  : geofenceStatus === 'denied'
-                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
-                    : geofenceStatus === 'outside'
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
+                isStudent && !hasValidHte
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
+                  : geofencePassed
+                    ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
+                    : geofenceStatus === 'denied'
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
+                      : geofenceStatus === 'outside'
+                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                        : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
               }`}
             >
-              {geofenceStatus === 'denied' ? (
+              {isStudent && !hasValidHte ? (
+                <>
+                  <Lock size={16} />
+                  <span>Awaiting HTE Workplace Assignment</span>
+                </>
+              ) : geofenceStatus === 'denied' ? (
                 <>
                   <AlertTriangle size={16} className="text-amber-700" />
                   <span>GPS Permission Denied — Allow Location to Proceed</span>

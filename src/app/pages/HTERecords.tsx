@@ -11,6 +11,7 @@ import {
   XCircle,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 
@@ -298,10 +299,17 @@ export function HTERecords() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                      <ShieldCheck size={12} />
-                      Verified In Zone
-                    </span>
+                    {r.timeInGeofenced ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <ShieldCheck size={12} className="text-emerald-600" />
+                        Verified In Zone
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        <AlertTriangle size={12} className="text-rose-600" />
+                        Outside Geofence
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">

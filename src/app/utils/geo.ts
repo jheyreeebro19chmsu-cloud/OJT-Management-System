@@ -21,7 +21,18 @@ export function isWithinGeofence(
   accuracyMeters?: number
 ): boolean {
   const distance = calculateDistance(userLat, userLng, zoneLat, zoneLng);
-  // Allow a realistic GPS sensor variance (clamped to max 25m) to accommodate indoor building attenuation while maintaining boundary security
+
+  // If the measured coordinates are already within the target radius:
+  if (distance <= radiusMeters) {
+    // Reject only if reading is an excessively coarse IP-based fix (> 500m radius)
+    if (typeof accuracyMeters === 'number' && accuracyMeters > 500) {
+      return false;
+    }
+    return true;
+  }
+
+  // Account for structural building attenuation, indoor Wi-Fi/cellular triangulation, and GNSS sensor jitter
+  // Allow a realistic sensor tolerance allowance (up to 25 meters, or 10m fallback)
   const accuracyAllowance = typeof accuracyMeters === 'number' && accuracyMeters > 0 ? Math.min(accuracyMeters, 25) : 10;
   const maxAllowedDistance = radiusMeters + accuracyAllowance;
   return distance <= maxAllowedDistance;
@@ -71,8 +82,8 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
 // Multi-tiered high-res GPS locator with browser & device location services (no IP fallback)
 export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?: number; maximumAge?: number }): Promise<any> {
   const highAccuracy = options?.highAccuracy ?? true;
-  const timeoutMs = options?.timeout ?? 15000;
-  const maxAgeMs = options?.maximumAge ?? 5000;
+  const timeoutMs = options?.timeout ?? 12000;
+  const maxAgeMs = options?.maximumAge ?? 0; // Prefer fresh satellite/hardware fix
 
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
@@ -133,10 +144,9 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
               }
             } catch {}
 
-            // Strictly reject rather than faking IP coordinates in Manila (500km away from Negros Occidental)
             reject(err2);
           },
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: 15000 }
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 10000 }
         );
       },
       { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: maxAgeMs }

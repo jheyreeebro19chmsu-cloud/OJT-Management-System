@@ -11,7 +11,8 @@
     "test": "node scripts/white-box-test.mjs",
     "test:white-box": "node scripts/white-box-test.mjs",
     "cypress:open": "cypress open",
-    "cypress:run": "cypress run --spec \"cypress/e2e/ui_ux_whitebox.cy.js\"",
+    "cypress:run": "cypress run",
+    "cypress:run:all": "cypress run",
     "download-models": "node scripts/download-face-models.cjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\""

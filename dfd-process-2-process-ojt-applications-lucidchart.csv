@@ -1,0 +1,21 @@
+ID,Name,Shape Library,Page ID,Contained By,Text Area 1,Line Source,Line Destination
+1,Page,,1,,2.0 Process OJT Applications,,
+2,Terminator,Flowchart Shapes,1,,Student,,
+3,Process,Flowchart Shapes,1,,2.1 Receive OJT Application,,
+4,Process,Flowchart Shapes,1,,2.2 Validate Application,,
+5,Data Store,Flowchart Shapes,1,,D2: OJT Application Records,,
+6,Process,Flowchart Shapes,1,,2.3 Retrieve Application,,
+7,Terminator,Flowchart Shapes,1,,OJT Instructor,,
+8,Process,Flowchart Shapes,1,,2.4 Review Application,,
+9,Process,Flowchart Shapes,1,,2.5 Update Application Status,,
+10,Process,Flowchart Shapes,1,,2.6 Notify Application Result,,
+11,Line,,1,,OJT application information,2,3
+12,Line,,1,,Submitted application,3,4
+13,Line,,1,,Validated application record,4,5
+14,Line,,1,,Application information,5,6
+15,Line,,1,,OJT application for review,6,7
+16,Line,,1,,Approval or rejection decision,7,8
+17,Line,,1,,Application decision,8,9
+18,Line,,1,,Updated application status,9,5
+19,Line,,1,,Updated application information,5,10
+20,Line,,1,,Application status,10,2

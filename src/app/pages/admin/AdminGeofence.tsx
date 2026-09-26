@@ -32,7 +32,7 @@ import { toast } from 'sonner';
 import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
 import { GeofenceZone, Employee } from '../../types';
-import { GEOFENCE_RADIUS_METERS } from '../../utils/geo';
+import { GEOFENCE_RADIUS_METERS, reverseGeocode } from '../../utils/geo';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { getPhotoUrl } from '../../services/config';
 
@@ -80,11 +80,6 @@ export function AdminGeofence() {
 
   // View Zone Modal State
   const [viewModalZone, setViewModalZone] = useState<GeofenceZone | null>(null);
-
-  // Assign / Change HTE Workplace State for Trainees
-  const [assigningHteAccount, setAssigningHteAccount] = useState<Employee | null>(null);
-  const [assigningHteZone, setAssigningHteZone] = useState<GeofenceZone | null>(null);
-  const [hteModalSearch, setHteModalSearch] = useState('');
 
   // Interactive Drag on Map State
   const [dragZoneId, setDragZoneId] = useState<string | null>(null);
@@ -322,60 +317,6 @@ export function AdminGeofence() {
 
     return null;
   };
-
-  // List of all registered HTE establishments available for assignment
-  const allHteOptions = useMemo(() => {
-    const list: Array<{
-      id: string;
-      name: string;
-      companyName: string;
-      companyAddress: string;
-      lat: number;
-      lng: number;
-      radius: number;
-      email?: string;
-    }> = [];
-    const seenNames = new Set<string>();
-
-    hostSupervisors.forEach((h) => {
-      if (!h.companyName) return;
-      const key = h.companyName.trim().toLowerCase();
-      seenNames.add(key);
-      const loc = h.registrationLocation;
-      list.push({
-        id: h.id,
-        name: h.name,
-        companyName: h.companyName,
-        companyAddress: h.companyAddress || h.registrationAddress || `${h.companyName} Workplace Premises`,
-        lat: Number(loc?.lat ?? 10.7412),
-        lng: Number(loc?.lng ?? 122.9691),
-        radius: Math.max(40, Number(loc?.radius || h.registrationRadius || 40)),
-        email: h.email,
-      });
-    });
-
-    employees.forEach((e) => {
-      if ((e.position?.toLowerCase().includes('hte') || e.role === 'hte' || e.employeeId?.startsWith('HTE-')) && e.companyName) {
-        const key = e.companyName.trim().toLowerCase();
-        if (!seenNames.has(key)) {
-          seenNames.add(key);
-          const loc = e.registrationLocation;
-          list.push({
-            id: e.id,
-            name: e.name,
-            companyName: e.companyName,
-            companyAddress: e.companyAddress || e.registrationAddress || `${e.companyName} Workplace Premises`,
-            lat: Number(loc?.lat ?? 10.7412),
-            lng: Number(loc?.lng ?? 122.9691),
-            radius: Math.max(40, Number((loc as any)?.radius || 40)),
-            email: e.email,
-          });
-        }
-      }
-    });
-
-    return list;
-  }, [hostSupervisors, employees]);
 
   // Combine explicit geofenceZones with instructor, HTE, and Trainee registered stations (with strict deduplication)
   const allCombinedZones = useMemo<GeofenceZone[]>(() => {
@@ -615,47 +556,6 @@ export function AdminGeofence() {
     }
   };
 
-  // Directly assign or change the trainee's HTE workplace with instant database & geofence synchronization
-  const handleAssignHte = async (targetEmployee: Employee, selectedHte: any) => {
-    const hteAddress = selectedHte.companyAddress || selectedHte.registrationAddress || `${selectedHte.companyName} Workplace Premises`;
-    const hteCoords = {
-      lat: Number(selectedHte.lat ?? 10.7412),
-      lng: Number(selectedHte.lng ?? 122.9691),
-      radius: Math.max(40, Number(selectedHte.radius || 40)),
-    };
-
-    // 1. Directly update trainee employee in AppContext & Supabase
-    await updateEmployee(targetEmployee.id, {
-      hteId: selectedHte.id,
-      companyName: selectedHte.companyName,
-      companyAddress: hteAddress,
-      registrationAddress: hteAddress,
-      supervisorName: selectedHte.name,
-      registrationLocation: hteCoords,
-      registrationRadius: hteCoords.radius,
-    });
-
-    // 2. Directly update/upsert trainee's geofence zone in Supabase and local state
-    const zoneId = `station-${targetEmployee.id}`;
-    saveZoneCoordinates(zoneId, {
-      name: `${targetEmployee.name} - Trainee Geofence (${selectedHte.companyName})`,
-      address: hteAddress,
-      lat: hteCoords.lat,
-      lng: hteCoords.lng,
-      radius: hteCoords.radius,
-      active: true,
-      academicYear: targetEmployee.academicYear || settings?.activeAcademicYear,
-    });
-
-    // 3. Move map focus directly to the new coordinates
-    setSelectedZoneId(zoneId);
-    setFocusCoords({ lat: hteCoords.lat, lng: hteCoords.lng });
-
-    setAssigningHteAccount(null);
-    setAssigningHteZone(null);
-    toast.success(`Assigned workplace for ${targetEmployee.name} changed directly to ${selectedHte.companyName}!`);
-  };
-
   const handleAdd = () => {
     if (!form.name.trim()) {
       toast.error('Please enter a zone name.');
@@ -732,12 +632,18 @@ export function AdminGeofence() {
     setDragCoords({ lat, lng });
   };
 
-  const handleSaveDrag = () => {
+  const handleSaveDrag = async () => {
     if (dragZoneId && dragCoords) {
       const zName = draggedZone?.name || 'Geofence Zone';
+      let resolvedAddress = draggedZone?.address;
+      try {
+        const addr = await reverseGeocode(dragCoords.lat, dragCoords.lng);
+        if (addr) resolvedAddress = addr;
+      } catch {}
       saveZoneCoordinates(dragZoneId, {
-        lat: dragCoords.lat,
-        lng: dragCoords.lng,
+        lat: Number(dragCoords.lat.toFixed(6)),
+        lng: Number(dragCoords.lng.toFixed(6)),
+        address: resolvedAddress,
       });
       setDragZoneId(null);
       setDragCoords(null);
@@ -1096,9 +1002,15 @@ export function AdminGeofence() {
             setSelectedZoneId(zone.id);
             setFocusCoords({ lat: zone.lat, lng: zone.lng });
           }}
-          onPick={(lat, lng) => {
-            upd('lat', lat);
-            upd('lng', lng);
+          onPick={async (lat, lng) => {
+            const safeLat = Number(lat.toFixed(6));
+            const safeLng = Number(lng.toFixed(6));
+            upd('lat', safeLat);
+            upd('lng', safeLng);
+            try {
+              const addr = await reverseGeocode(safeLat, safeLng);
+              if (addr) upd('address', addr);
+            } catch {}
           }}
         />
       </motion.div>
@@ -1175,40 +1087,67 @@ export function AdminGeofence() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3.5">
                         {/* Zone Icon or Account Avatar */}
-                        {account?.photo ? (
-                          <div className={`w-12 h-12 rounded-2xl overflow-hidden shrink-0 border ${
-                            isTrainee ? 'bg-emerald-100 border-emerald-200' : isInstructor ? 'bg-purple-100 border-purple-200' : 'bg-amber-100 border-amber-200'
-                          }`}>
-                            <img
-                              src={getPhotoUrl(account.photo)}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              style={{ transform: 'scaleX(-1)' }}
-                            />
-                          </div>
-                        ) : (
-                          <div
-                            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-                              isTrainee
-                                ? 'bg-emerald-50 border border-emerald-200'
-                                : isInstructor
-                                ? 'bg-purple-50 border border-purple-200'
-                                : isHTE
-                                ? 'bg-amber-50 border border-amber-200'
-                                : 'bg-blue-50 border border-blue-200'
-                            }`}
-                          >
-                            {isTrainee ? (
-                              <User size={20} className="text-emerald-600" />
-                            ) : isInstructor ? (
-                              <ShieldCheck size={20} className="text-purple-600" />
-                            ) : isHTE ? (
-                              <Building size={20} className="text-amber-600" />
-                            ) : (
-                              <MapPin size={20} className="text-blue-600" />
-                            )}
-                          </div>
-                        )}
+                        {(() => {
+                          const rawPhoto = account?.photo || (account as any)?.avatar || (account as any)?.avatar_url;
+                          const photoUrl = getPhotoUrl(rawPhoto);
+                          if (photoUrl) {
+                            return (
+                              <div
+                                className={`w-12 h-12 rounded-2xl overflow-hidden shrink-0 border relative flex items-center justify-center ${
+                                  isTrainee
+                                    ? 'bg-emerald-100 border-emerald-200'
+                                    : isInstructor
+                                    ? 'bg-purple-100 border-purple-200'
+                                    : 'bg-amber-100 border-amber-200'
+                                }`}
+                              >
+                                <img
+                                  src={photoUrl}
+                                  alt={account?.name || zone.name}
+                                  className="w-full h-full object-cover relative z-10"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  {isTrainee ? (
+                                    <User size={20} className="text-emerald-600" />
+                                  ) : isInstructor ? (
+                                    <ShieldCheck size={20} className="text-purple-600" />
+                                  ) : isHTE ? (
+                                    <Building size={20} className="text-amber-600" />
+                                  ) : (
+                                    <MapPin size={20} className="text-blue-600" />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div
+                              className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                                isTrainee
+                                  ? 'bg-emerald-50 border border-emerald-200'
+                                  : isInstructor
+                                  ? 'bg-purple-50 border border-purple-200'
+                                  : isHTE
+                                  ? 'bg-amber-50 border border-amber-200'
+                                  : 'bg-blue-50 border border-blue-200'
+                              }`}
+                            >
+                              {isTrainee ? (
+                                <User size={20} className="text-emerald-600" />
+                              ) : isInstructor ? (
+                                <ShieldCheck size={20} className="text-purple-600" />
+                              ) : isHTE ? (
+                                <Building size={20} className="text-amber-600" />
+                              ) : (
+                                <MapPin size={20} className="text-blue-600" />
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1258,7 +1197,10 @@ export function AdminGeofence() {
                             <p className={`text-xs font-medium mt-1 ${isTrainee ? 'text-emerald-700' : isInstructor ? 'text-purple-700' : 'text-amber-700'}`}>
                               {isTrainee ? (
                                 <>
-                                  Trainee: <span className="font-bold">{account.name}</span> ({account.employeeId || account.email}) • {(account as any).course || account.department || 'BSIS'} • Assigned HTE: <span className="font-semibold">{account.companyName || 'Host Establishment'}</span>
+                                  Trainee: <span className="font-bold">{account.name}</span> ({account.employeeId || account.email}) • {(account as any).course || account.department || 'BSIS'} • Assigned HTE: <span className="font-semibold">{account.companyName && !account.companyName.toLowerCase().includes('pending') ? account.companyName : 'Host Establishment'}</span>
+                                  {account.supervisorName && (
+                                    <span className="text-gray-600 font-normal"> • Supervisor: <span className="font-semibold text-gray-700">{account.supervisorName}</span></span>
+                                  )}
                                 </>
                               ) : isInstructor ? (
                                 <>
@@ -1270,51 +1212,6 @@ export function AdminGeofence() {
                                 </>
                               )}
                             </p>
-                          )}
-
-                          {/* Dedicated Assigned HTE Workplace Card for Trainees */}
-                          {isTrainee && account && (
-                            <div className="mt-2.5 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                              <div className="flex items-start gap-2.5 min-w-0">
-                                <div className="w-8 h-8 rounded-xl bg-amber-200/70 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                                  <Building size={16} />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-200/70 px-2 py-0.5 rounded-md">
-                                      Assigned HTE Workplace
-                                    </span>
-                                    <span className="text-xs font-bold text-gray-900 truncate">
-                                      {account.companyName && !account.companyName.toLowerCase().includes('pending')
-                                        ? account.companyName
-                                        : 'Awaiting HTE Workplace Placement'}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-gray-600 mt-1 line-clamp-1">
-                                    📍 {zone.address || 'HTE Workplace Premises'}
-                                  </p>
-                                  {account.supervisorName && (
-                                    <p className="text-[10px] text-amber-950 font-medium mt-0.5">
-                                      Supervisor: <span className="font-semibold text-gray-800">{account.supervisorName}</span>
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setAssigningHteAccount(account);
-                                  setAssigningHteZone(zone);
-                                  setHteModalSearch('');
-                                }}
-                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold shrink-0 flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer self-start sm:self-auto"
-                                title="Change assigned HTE workplace"
-                              >
-                                <Edit2 size={12} />
-                                <span>{account.companyName && !account.companyName.toLowerCase().includes('pending') ? 'Change HTE' : 'Assign HTE'}</span>
-                              </button>
-                            </div>
                           )}
 
                           <div className="flex items-center gap-2.5 mt-2 flex-wrap text-xs text-gray-500">
@@ -1393,26 +1290,6 @@ export function AdminGeofence() {
                                 <p className="text-[10px] text-gray-400">Inspect boundary & GPS</p>
                               </div>
                             </button>
-
-                            {/* CHANGE ASSIGNED HTE WORKPLACE (For Trainees) */}
-                            {isTrainee && account && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAssigningHteAccount(account);
-                                  setAssigningHteZone(zone);
-                                  setHteModalSearch('');
-                                  setOpenMenuId(null);
-                                }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-amber-800 hover:bg-amber-50 hover:text-amber-900 transition-colors cursor-pointer"
-                              >
-                                <Building size={15} className="text-amber-600 shrink-0" />
-                                <div className="text-left">
-                                  <p className="font-semibold text-xs leading-tight">Change HTE Workplace</p>
-                                  <p className="text-[10px] text-gray-400">Directly sync host geofence</p>
-                                </div>
-                              </button>
-                            )}
 
                             {/* 2. EDIT ZONE */}
                             <button
@@ -1682,18 +1559,32 @@ export function AdminGeofence() {
                   if (!account) return null;
                   return (
                     <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-3.5">
-                      {account.photo ? (
-                        <img
-                          src={getPhotoUrl(account.photo)}
-                          alt=""
-                          className="w-12 h-12 rounded-xl object-cover border border-slate-300"
-                          style={{ transform: 'scaleX(-1)' }}
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                          <User size={22} />
-                        </div>
-                      )}
+                      {(() => {
+                        const rawModalPhoto = account.photo || (account as any)?.avatar || (account as any)?.avatar_url;
+                        const modalPhotoUrl = getPhotoUrl(rawModalPhoto);
+                        if (modalPhotoUrl) {
+                          return (
+                            <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-300 relative flex items-center justify-center bg-slate-200">
+                              <img
+                                src={modalPhotoUrl}
+                                alt={account.name}
+                                className="w-full h-full object-cover relative z-10"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center text-blue-700 font-bold">
+                                <User size={22} />
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                            <User size={22} />
+                          </div>
+                        );
+                      })()}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-gray-900 truncate">{account.name}</p>
                         <p className="text-[11px] text-gray-500 truncate">
@@ -1801,198 +1692,6 @@ export function AdminGeofence() {
                   className="px-4 py-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Close
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        {/* DIRECT HTE WORKPLACE ASSIGNMENT & SYNC MODAL */}
-        {assigningHteAccount && (
-          <motion.div
-            key="assign-hte-modal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
-            onClick={() => {
-              setAssigningHteAccount(null);
-              setAssigningHteZone(null);
-            }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-3xl shadow-2xl max-w-xl w-full border border-gray-100 overflow-hidden my-8"
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-orange-700 p-5 text-white flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
-                    <Building size={22} className="text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-lg text-white">Direct HTE Workplace Sync</h3>
-                    <p className="text-xs text-amber-100/90 mt-0.5">
-                      Assign Host Training Establishment for <span className="font-semibold underline decoration-white/40">{assigningHteAccount.name}</span>
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssigningHteAccount(null);
-                    setAssigningHteZone(null);
-                  }}
-                  className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Trainee Info & Search */}
-              <div className="p-5 space-y-4">
-                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs">
-                  <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded-md">
-                      Current Placement
-                    </span>
-                    <p className="font-bold text-gray-900 mt-1 text-sm">
-                      {assigningHteAccount.companyName && !assigningHteAccount.companyName.toLowerCase().includes('pending')
-                        ? assigningHteAccount.companyName
-                        : 'Unassigned / Pending Placement'}
-                    </p>
-                    <p className="text-gray-500 text-[11px] mt-0.5">
-                      {assigningHteAccount.companyAddress || assigningHteAccount.registrationAddress || 'No workplace address on record'}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-[10px] font-mono text-gray-500">
-                      ID: {assigningHteAccount.studentId || assigningHteAccount.employeeId || assigningHteAccount.id}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Search */}
-                <div className="relative">
-                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    value={hteModalSearch}
-                    onChange={(e) => setHteModalSearch(e.target.value)}
-                    placeholder="Search HTE establishment by name, company, or address..."
-                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
-                  />
-                  {hteModalSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setHteModalSearch('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-
-                {/* HTE Options List */}
-                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                  {allHteOptions
-                    .filter((hte) => {
-                      if (!hteModalSearch.trim()) return true;
-                      const q = hteModalSearch.toLowerCase();
-                      return (
-                        hte.companyName.toLowerCase().includes(q) ||
-                        hte.name.toLowerCase().includes(q) ||
-                        hte.companyAddress.toLowerCase().includes(q)
-                      );
-                    })
-                    .map((hte) => {
-                      const isCurrent =
-                        assigningHteAccount.companyName?.trim().toLowerCase() === hte.companyName.trim().toLowerCase();
-
-                      return (
-                        <div
-                          key={hte.id}
-                          className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                            isCurrent
-                              ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-500/20'
-                              : 'bg-white border-gray-200 hover:border-amber-300 hover:bg-amber-50/30'
-                          }`}
-                        >
-                          <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-sm text-gray-900 truncate">
-                                {hte.companyName}
-                              </span>
-                              {isCurrent && (
-                                <span className="bg-amber-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                                  Current HTE
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-600 flex items-center gap-1.5">
-                              <Building size={12} className="text-gray-400 shrink-0" />
-                              <span>Supervisor: <strong>{hte.name}</strong></span>
-                            </p>
-                            <p className="text-[11px] text-gray-500 truncate flex items-center gap-1.5">
-                              <MapPin size={12} className="text-gray-400 shrink-0" />
-                              <span>{hte.companyAddress}</span>
-                            </p>
-                            <div className="flex items-center gap-2 pt-0.5 text-[10px] text-gray-500">
-                              <span className="bg-slate-100 font-mono text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
-                                📍 {hte.lat.toFixed(5)}, {hte.lng.toFixed(5)}
-                              </span>
-                              <span className="bg-blue-50 font-bold text-blue-700 px-1.5 py-0.5 rounded border border-blue-100">
-                                {hte.radius}m radius
-                              </span>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleAssignHte(assigningHteAccount, hte)}
-                            disabled={isCurrent}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                              isCurrent
-                                ? 'bg-amber-100 text-amber-800 cursor-not-allowed border border-amber-200 opacity-80'
-                                : 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm hover:shadow active:scale-95'
-                            }`}
-                          >
-                            <CheckCircle size={14} />
-                            <span>{isCurrent ? 'Assigned' : 'Select & Sync'}</span>
-                          </button>
-                        </div>
-                      );
-                    })}
-
-                  {allHteOptions.length === 0 && (
-                    <div className="text-center py-8 text-gray-400 text-xs">
-                      No Host Training Establishments (HTEs) found. Please register an HTE supervisor first.
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100 text-[11px] text-blue-900 flex items-start gap-2">
-                  <ShieldCheck size={16} className="text-blue-600 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Direct Geofence Synchronization:</strong> Selecting an HTE workplace immediately updates the trainee's profile in Supabase cloud database, re-aligns their attendance station geofence boundary coordinates, and automatically centers the map.
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssigningHteAccount(null);
-                    setAssigningHteZone(null);
-                  }}
-                  className="px-4 py-2 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                >
-                  Cancel
                 </button>
               </div>
             </motion.div>

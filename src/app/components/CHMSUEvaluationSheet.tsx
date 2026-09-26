@@ -236,16 +236,18 @@ export function CHMSUEvaluationSheet({
   onPassToHte,
 }: CHMSUEvaluationSheetProps) {
   const [activeTab, setActiveTab] = useState<'page1' | 'page2' | 'both'>(
-    role === 'trainee' ? 'page2' : initialPageTab
+    role === 'trainee' ? 'page2' : role === 'hte' ? 'page1' : (initialPageTab || 'page1')
   );
   const [activePresetCategory, setActivePresetCategory] = useState<string | null>(null);
   const [activeQuestionPreset, setActiveQuestionPreset] = useState<string | null>(null);
   const [showPrintMenu, setShowPrintMenu] = useState(false);
 
-  // Sync tab if role is trainee
+  // Sync tab if role is trainee or hte
   useEffect(() => {
     if (role === 'trainee') {
       setActiveTab('page2');
+    } else if (role === 'hte') {
+      setActiveTab('page1');
     }
   }, [role]);
 
@@ -390,8 +392,8 @@ export function CHMSUEvaluationSheet({
             </div>
           </div>
 
-          {/* Tab Navigation Buttons - Only for HTE & Instructor; Trainees are locked to Questionnaire */}
-          {role !== 'trainee' ? (
+          {/* Tab Navigation: Instructors can switch pages; HTE locked to Page 1 Report; Trainees locked to Page 2 Questionnaire */}
+          {role === 'instructor' ? (
             <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
               <button
                 type="button"
@@ -430,6 +432,11 @@ export function CHMSUEvaluationSheet({
                 <span>Both Pages (Full)</span>
               </button>
             </div>
+          ) : role === 'hte' ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold shadow-xs">
+              <FileText size={15} className="text-emerald-700" />
+              <span>Official Trainee Performance Evaluation Report</span>
+            </div>
           ) : (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs font-bold shadow-xs">
               <FileSpreadsheet size={15} className="text-emerald-700" />
@@ -462,7 +469,7 @@ export function CHMSUEvaluationSheet({
               </button>
             )}
 
-            {/* Quick Print: Trainees print questionnaire directly; HTE/Instructors get menu */}
+            {/* Quick Print: Trainees print questionnaire; HTE prints evaluation report; Instructors get full menu */}
             {role === 'trainee' ? (
               <button
                 type="button"
@@ -472,6 +479,16 @@ export function CHMSUEvaluationSheet({
               >
                 <Printer size={15} />
                 <span>Print Questionnaire</span>
+              </button>
+            ) : role === 'hte' ? (
+              <button
+                type="button"
+                onClick={() => executePrint('page1')}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Print Official Evaluation Report"
+              >
+                <Printer size={15} />
+                <span>Print Evaluation Report</span>
               </button>
             ) : (
               <div className="relative">
@@ -526,15 +543,29 @@ export function CHMSUEvaluationSheet({
               </div>
             )}
 
-            {role === 'trainee' && onSaveDraft && (
-              <button
-                type="button"
-                onClick={onSaveDraft}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                <Save size={15} />
-                <span>Save Questionnaire Answers</span>
-              </button>
+            {role === 'trainee' && (
+              <>
+                {onSaveDraft && (
+                  <button
+                    type="button"
+                    onClick={onSaveDraft}
+                    className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Save size={15} />
+                    <span>Save Draft</span>
+                  </button>
+                )}
+                {onSubmitFinal && (
+                  <button
+                    type="button"
+                    onClick={onSubmitFinal}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/30 cursor-pointer"
+                  >
+                    <Check size={15} />
+                    <span>Submit Questionnaire to Instructor</span>
+                  </button>
+                )}
+              </>
             )}
 
             {role !== 'trainee' && !isReadOnly && onSaveDraft && (
@@ -603,6 +634,9 @@ export function CHMSUEvaluationSheet({
                   <p className="text-[9px] sm:text-[10px] print:text-[6.5pt] italic font-medium text-emerald-800 mt-0.5 print:mt-0 print:leading-tight">
                     A leading GREEN institution of higher learning in the global community by 2030
                   </p>
+                  <p className="text-[8.5px] sm:text-[9.5px] print:text-[6pt] italic font-medium text-emerald-700 mt-0.2 print:mt-0 print:leading-tight">
+                    (Good governance, Research-oriented, Extension-driven, Education for Sustainable Development, and Nation-building)
+                  </p>
 
                   <div className="mt-1.5 pt-1 border-t border-slate-300 print:mt-0.5 print:pt-0.5">
                     <h2 className="font-sans font-black text-slate-900 text-xs sm:text-sm print:text-[8pt] tracking-wide uppercase print:leading-tight">
@@ -661,7 +695,9 @@ export function CHMSUEvaluationSheet({
                 Please rate the Student's overall practicum performance according to the rating scale below:
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-0.5 print:gap-y-0 text-[10.5px] print:text-[6.5pt] text-slate-700">
-                {CHMSU_RATING_SCALE.map((scale) => (
+                {[...CHMSU_RATING_SCALE]
+                  .sort((a, b) => (a.value === 0 ? 6 : a.value) - (b.value === 0 ? 6 : b.value))
+                  .map((scale) => (
                   <div key={scale.value} className="flex items-center gap-1.5 leading-tight">
                     <span className="w-5 h-4 print:w-4 print:h-3.5 flex items-center justify-center font-black rounded bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0 text-[9px] print:text-[6.5pt] print:bg-white print:border-slate-800">
                       {scale.value === 0 ? 'NA' : scale.value}
@@ -966,8 +1002,9 @@ export function CHMSUEvaluationSheet({
 
       {/* ─────────────────────────────────────────────────────────────────────────────
           PAGE 2: ON-THE-JOB TRAINING EVALUATION FORM (QUESTIONNAIRE & DETAILS)
+          (Strictly for Trainee and Instructor. Completely removed for HTE.)
           ───────────────────────────────────────────────────────────────────────────── */}
-      {(activeTab === 'page2' || activeTab === 'both') && (
+      {role !== 'hte' && (activeTab === 'page2' || activeTab === 'both') && (
         <div
           id="chmsu-evaluation-page-2"
           className={`eval-page eval-page-2 bg-white rounded-2xl shadow-xl border border-slate-300 overflow-hidden print:border-none print:shadow-none print:m-0 print:p-0 ${
@@ -1431,6 +1468,37 @@ export function CHMSUEvaluationSheet({
                 Excellence • Compassion • Environmentalism • Love of Country • Social Responsibility • Integrity • Openness • Resilience
               </div>
             </div>
+
+            {/* Page 2 Bottom Action Bar for Trainee (Screen only) */}
+            {role === 'trainee' && !isQuestionnaireReadOnly && (
+              <div className="no-print pt-4 pb-2 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-4 rounded-2xl mt-4">
+                <div className="text-xs text-slate-600">
+                  <span className="font-bold text-slate-800">Done answering?</span> Submit your questionnaire directly to your Instructor or save your current progress as draft.
+                </div>
+                <div className="flex items-center gap-2">
+                  {onSaveDraft && (
+                    <button
+                      type="button"
+                      onClick={onSaveDraft}
+                      className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Save size={15} />
+                      <span>Save Draft</span>
+                    </button>
+                  )}
+                  {onSubmitFinal && (
+                    <button
+                      type="button"
+                      onClick={onSubmitFinal}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/30 cursor-pointer"
+                    >
+                      <Check size={15} />
+                      <span>Submit Questionnaire to Instructor</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -224,8 +224,8 @@ export default function HTEGeofenceScreen({ onBack, profile }: HTEGeofenceScreen
           <Text style={styles.mapSectionTitle}>Interactive Workplace Perimeter Map (Leaflet)</Text>
         </View>
         <LeafletGeofenceMap
-          centerLat={parseFloat(latitude) || 10.7412}
-          centerLng={parseFloat(longitude) || 122.9691}
+          centerLat={parseFloat(latitude) || 10.7410}
+          centerLng={parseFloat(longitude) || 122.9702}
           radius={radius}
           userLat={currentGps?.coords.latitude}
           userLng={currentGps?.coords.longitude}

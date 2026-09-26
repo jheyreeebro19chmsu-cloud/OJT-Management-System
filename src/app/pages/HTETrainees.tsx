@@ -379,18 +379,24 @@ export function HTETrainees() {
             <div>
               {/* Trainee Card Header */}
               <div className="flex items-start gap-3.5 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                  {trainee.photo ? (
-                    <img
-                      src={getPhotoUrl(trainee.photo)}
-                      alt={trainee.name}
-                      className="w-full h-full object-cover"
-                      style={{ transform: 'scaleX(-1)' }}
-                    />
-                  ) : (
-                    <GraduationCap size={22} className="text-blue-600" />
-                  )}
-                </div>
+                {(() => {
+                  const photoUrl = getPhotoUrl(trainee.photo);
+                  return (
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 relative select-none">
+                      <GraduationCap size={22} className="text-blue-600" />
+                      {photoUrl && (
+                        <img
+                          src={photoUrl}
+                          alt=""
+                          className="w-full h-full object-cover absolute inset-0 z-10"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="font-extrabold text-slate-900 text-base leading-tight truncate">
@@ -542,17 +548,24 @@ export function HTETrainees() {
             {/* Header */}
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
-                  {selectedProfileTrainee.photo ? (
-                    <img
-                      src={getPhotoUrl(selectedProfileTrainee.photo)}
-                      alt={selectedProfileTrainee.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User size={28} className="text-blue-600" />
-                  )}
-                </div>
+                {(() => {
+                  const photoUrl = getPhotoUrl(selectedProfileTrainee.photo);
+                  return (
+                    <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 overflow-hidden flex items-center justify-center shrink-0 shadow-sm relative select-none">
+                      <User size={28} className="text-blue-600" />
+                      {photoUrl && (
+                        <img
+                          src={photoUrl}
+                          alt=""
+                          className="w-full h-full object-cover absolute inset-0 z-10"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
                 <div>
                   <h3 className="text-base font-extrabold text-slate-900">{selectedProfileTrainee.name}</h3>
                   <div className="flex flex-wrap items-center gap-2 mt-1">

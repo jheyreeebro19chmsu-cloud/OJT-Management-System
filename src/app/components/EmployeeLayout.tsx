@@ -5,6 +5,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
@@ -53,7 +54,7 @@ export function EmployeeLayout() {
 
   const totalRenderedHours = useMemo(() => {
     return traineeRecords
-      .filter((r) => r.approvalStatus !== 'rejected')
+      .filter((r) => r.approvalStatus !== 'disapproved')
       .reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
   }, [traineeRecords]);
 
@@ -243,18 +244,13 @@ export function EmployeeLayout() {
       {/* User Profile Footer */}
       <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
         <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
-          <div className="w-9 h-9 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20 shadow-inner shrink-0">
-            {avatarUrl ? (
-              <img
-                src={getPhotoUrl(avatarUrl)}
-                alt={displayName}
-                className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
-              />
-            ) : (
-              <User size={18} className="text-white" />
-            )}
-          </div>
+          <UserAvatar
+            photo={avatarUrl}
+            name={displayName}
+            role="employee"
+            size="md"
+            className="border border-white/20 shadow-inner"
+          />
           <div className="min-w-0">
             <div className="text-white text-xs font-bold truncate">{displayName}</div>
             <div className="text-blue-300 text-[10px] truncate">{displayId}</div>
@@ -348,7 +344,7 @@ export function EmployeeLayout() {
               </div>
             </div>
 
-            {/* Right Header: Notification Bell & Quick Profile */}
+            {/* Right Header: Notification Bell */}
             <div className="flex items-center gap-2 relative">
               <button
                 type="button"
@@ -364,20 +360,6 @@ export function EmployeeLayout() {
                   </span>
                 )}
               </button>
-
-              <NavLink
-                to="/app/profile"
-                className="hidden sm:flex items-center gap-2 p-1 pl-2.5 bg-[#0E1D35]/50 hover:bg-[#0E1D35] rounded-full border border-[#1E3A66] transition-all"
-              >
-                <span className="text-xs font-semibold text-blue-100 pr-1 max-w-[100px] truncate">{displayName.split(' ')[0]}</span>
-                <div className="w-7 h-7 rounded-full bg-[#1E3A66] overflow-hidden border border-white/20 flex items-center justify-center">
-                  {avatarUrl ? (
-                    <img src={getPhotoUrl(avatarUrl)} alt={displayName} className="w-full h-full object-cover" />
-                  ) : (
-                    <User size={14} className="text-white" />
-                  )}
-                </div>
-              </NavLink>
             </div>
           </div>
         </header>

@@ -286,6 +286,10 @@ export default function OAuthCallback() {
               faceRegistered: dbEmp.face_registered ?? false,
             };
 
+            if (photoUrl && !dbEmp.photo) {
+              supabase.from('employees').update({ photo: photoUrl }).eq('id', dbEmp.id).then(() => {}).catch(console.warn);
+            }
+
             setCurrentUser(resolvedUser);
             localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
             localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));

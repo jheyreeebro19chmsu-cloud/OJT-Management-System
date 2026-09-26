@@ -1,8 +1,7 @@
 describe('White-Box UI/UX Validation', () => {
 
   beforeEach(() => {
-    // Intercept database/API endpoints to inspect data contracts
-    cy.intercept('POST', '**/rest/v1/time_records*').as('submitTimeRecord');
+    cy.clearAuthSession();
     cy.visit('/login');
   });
 
@@ -22,7 +21,8 @@ describe('White-Box UI/UX Validation', () => {
 
     // Verify user profile routing or store state directly
     cy.window().should((win) => {
-      expect(win.localStorage.getItem('sb-access-token')).to.not.be.null;
+      const user = win.localStorage.getItem('ojt_current_user');
+      expect(user).to.not.be.null;
     });
   });
 

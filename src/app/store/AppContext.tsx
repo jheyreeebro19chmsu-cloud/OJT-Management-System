@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { toast } from 'sonner';
 import { authAPI } from '../services/authApi';
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -590,6 +591,88 @@ function mergeTimeRecords(remoteRecords: TimeRecord[], currentLocalRecords: Time
   return [...sanitizedRemote, ...localOnly];
 }
 
+function mergeEvaluations(remoteEvaluations: Evaluation[], currentLocalEvaluations: Evaluation[]): Evaluation[] {
+  if (!remoteEvaluations || remoteEvaluations.length === 0) {
+    return currentLocalEvaluations || [];
+  }
+  if (!currentLocalEvaluations || currentLocalEvaluations.length === 0) {
+    return remoteEvaluations;
+  }
+
+  const remoteMapById = new Map<string, Evaluation>();
+  const remoteMapByEmp = new Map<string, Evaluation>();
+
+  remoteEvaluations.forEach((rev) => {
+    remoteMapById.set(rev.id, rev);
+    if (rev.employeeId) {
+      remoteMapByEmp.set(rev.employeeId.toLowerCase(), rev);
+    }
+  });
+
+  const merged = remoteEvaluations.map((rev) => {
+    const localMatch = currentLocalEvaluations.find(
+      (lev) =>
+        lev.id === rev.id ||
+        (lev.employeeId && rev.employeeId && lev.employeeId.toLowerCase() === rev.employeeId.toLowerCase())
+    );
+
+    if (!localMatch) return rev;
+
+    // Merge questionnaires: NEVER overwrite answered questions with blank/empty values!
+    const localQ = localMatch.questionnaire;
+    const remoteQ = rev.questionnaire;
+
+    let mergedQ = remoteQ;
+    if (localQ && remoteQ) {
+      mergedQ = { ...remoteQ };
+      (Object.keys(localQ) as (keyof EvaluationQuestionnaire)[]).forEach((key) => {
+        const localVal = String(localQ[key] || '').trim();
+        const remoteVal = String(remoteQ[key] || '').trim();
+        if (localVal && (!remoteVal || localVal.length > remoteVal.length)) {
+          mergedQ![key] = localQ[key];
+        }
+      });
+    } else if (localQ && !remoteQ) {
+      mergedQ = localQ;
+    }
+
+    // Preserve status hierarchy so trainee submission is never downgraded by a stale draft record
+    const STATUS_ORDER: Record<string, number> = {
+      draft: 1,
+      submitted_by_trainee: 2,
+      passed_to_hte: 3,
+      submitted_to_instructor: 4,
+      reviewed_by_instructor: 5,
+      final: 4,
+    };
+
+    let mergedStatus = rev.status || localMatch.status;
+    const localRank = STATUS_ORDER[localMatch.status || 'draft'] || 1;
+    const remoteRank = STATUS_ORDER[rev.status || 'draft'] || 1;
+    if (localRank > remoteRank) {
+      mergedStatus = localMatch.status;
+    }
+
+    return {
+      ...rev,
+      status: mergedStatus,
+      questionnaire: mergedQ,
+      ratings: rev.ratings && Object.keys(rev.ratings).length > 0 ? rev.ratings : (localMatch.ratings || rev.ratings),
+      ratingComments: rev.ratingComments && Object.keys(rev.ratingComments).length > 0 ? rev.ratingComments : (localMatch.ratingComments || rev.ratingComments),
+      commentsSuggestions: rev.commentsSuggestions || localMatch.commentsSuggestions,
+    };
+  });
+
+  // Preserve any local evaluations that are pending cloud creation (e.g. temporary eval- IDs)
+  const localOnly = currentLocalEvaluations.filter((lev) => {
+    if (remoteMapById.has(lev.id)) return false;
+    if (lev.employeeId && remoteMapByEmp.has(lev.employeeId.toLowerCase())) return false;
+    return true;
+  });
+
+  return [...merged, ...localOnly];
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   cleanupStorageQuota();
   migrateGeofenceStorageOnce();
@@ -597,7 +680,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [useSupabase, setUseSupabase] = useState(() => isSupabaseConfigured());
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => loadFromStorage(STORAGE_KEYS.CURRENT_USER, null));
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const primary = loadFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
+    if (primary) return primary;
+    const legacyUser = loadFromStorage<User | null>('ojt_user', null);
+    if (legacyUser) return legacyUser;
+    return loadFromStorage<User | null>('ojt_current_user', null);
+  });
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
     return stored;
@@ -845,9 +934,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'evaluations' }, async () => {
         try {
           const freshEvals = await supabaseService.fetchEvaluations();
-          if (freshEvals) {
-            setEvaluations(freshEvals);
-            saveToStorage(STORAGE_KEYS.EVALUATIONS, freshEvals);
+          if (freshEvals && freshEvals.length > 0) {
+            setEvaluations((prev) => {
+              const merged = mergeEvaluations(freshEvals, prev);
+              saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
+              return merged;
+            });
           }
         } catch (err) {
           console.error('Real-time evaluations sync error:', err);
@@ -893,7 +985,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
             saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
           }
           if (supabaseSettings) setSettings(supabaseSettings);
-          if (supabaseEvaluations.length > 0) setEvaluations(supabaseEvaluations);
+          if (supabaseEvaluations && supabaseEvaluations.length > 0) {
+            setEvaluations((prev) => {
+              const merged = mergeEvaluations(supabaseEvaluations, prev);
+              saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
+              return merged;
+            });
+          }
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
           if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
           if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
@@ -972,9 +1070,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
       if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
       if (supabaseSettings) setSettings(supabaseSettings);
-      if (supabaseEvaluations) {
-        setEvaluations(supabaseEvaluations);
-        saveToStorage(STORAGE_KEYS.EVALUATIONS, supabaseEvaluations);
+      if (supabaseEvaluations && supabaseEvaluations.length > 0) {
+        setEvaluations((prev) => {
+          const merged = mergeEvaluations(supabaseEvaluations, prev);
+          saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
+          return merged;
+        });
       }
       if (supabaseAnnouncements && supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
       if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
@@ -994,10 +1095,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('focus', onFocus);
 
-    // Periodic live background sync every 6 seconds so Instructor, HTE, and Trainee accounts stay in continuous lockstep
+    // Periodic live background sync every 45 seconds (when tab is active) so Supabase is not flooded with requests
     const syncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       refreshData();
-    }, 6000);
+    }, 45000);
 
     return () => {
       window.removeEventListener('focus', onFocus);
@@ -1032,13 +1134,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.CURRENT_USER, currentUser);
+    try {
+      if (currentUser) {
+        localStorage.setItem('ojt_user', JSON.stringify(currentUser));
+        localStorage.setItem('ojt_current_user', JSON.stringify(currentUser));
+        if (currentUser.role === 'hte' || currentUser.role === 'host') {
+          localStorage.setItem('ojt_hte_user', JSON.stringify(currentUser));
+        }
+      }
+    } catch {}
   }, [currentUser]);
 
+  // Cross-synchronize photo between employees state and currentUser so avatars always resolve immediately
   useEffect(() => {
-    if (!useSupabase && evaluations.length > 0) {
+    if (!currentUser || employees.length === 0) return;
+    const matched = employees.find(
+      (e) =>
+        e.id === currentUser.employeeId ||
+        e.id === currentUser.id ||
+        (e.employeeId && (e.employeeId === currentUser.employeeId || e.employeeId === currentUser.id)) ||
+        (currentUser.email && e.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
+    );
+    if (!matched) return;
+
+    // Case 1: Database has photo, currentUser does not -> update currentUser
+    if (matched.photo && (!currentUser.photo || currentUser.photo !== matched.photo)) {
+      setCurrentUser((prev) => (prev ? { ...prev, photo: matched.photo } : prev));
+    }
+    // Case 2: currentUser has photo (e.g. from Google OAuth), database does not -> persist to DB
+    else if (currentUser.photo && !matched.photo) {
+      matched.photo = currentUser.photo;
+      if (useSupabase) {
+        supabaseService.updateEmployee(matched.id, { photo: currentUser.photo }).catch(console.warn);
+      }
+    }
+  }, [employees, currentUser?.id, currentUser?.employeeId, currentUser?.email, currentUser?.photo, useSupabase]);
+
+  useEffect(() => {
+    if (evaluations.length > 0) {
       saveToStorage(STORAGE_KEYS.EVALUATIONS, evaluations);
     }
-  }, [evaluations, useSupabase]);
+  }, [evaluations]);
 
   useEffect(() => {
     if (!useSupabase && announcements.length > 0) {
@@ -1264,31 +1400,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const isInstructor = matchedEmp.position === 'OJT Instructor' || matchedEmp.position === 'Administrator' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
             const isHTE = matchedEmp.position === 'HTE Representative' || matchedEmp.position === 'Training Supervisor' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
             const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
+            const authAvatar = authData.user.user_metadata?.avatar_url || authData.user.user_metadata?.picture;
+            const resolvedPhoto = matchedEmp.photo || authAvatar || '';
             const user: User = {
               id: matchedEmp.id,
               name: matchedEmp.name,
               role,
               employeeId: matchedEmp.employeeId || matchedEmp.id,
               email: normalizeEmail(matchedEmp.email),
-              photo: matchedEmp.photo,
+              photo: resolvedPhoto,
               faceRegistered: matchedEmp.faceRegistered,
             };
+            if (authAvatar && !matchedEmp.photo) {
+              matchedEmp.photo = authAvatar;
+              if (useSupabase) {
+                supabaseService.updateEmployee(matchedEmp.id, { photo: authAvatar }).catch(console.warn);
+              }
+            }
             setCurrentUser(user);
+            saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+            try {
+              localStorage.setItem('ojt_user', JSON.stringify(user));
+              localStorage.setItem('ojt_current_user', JSON.stringify(user));
+              if (role === 'hte') localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+            } catch {}
             setPasswordForEmail(matchedEmp.email, password);
             return user;
           }
 
           if (matchedHost) {
+            const authAvatar = authData.user.user_metadata?.avatar_url || authData.user.user_metadata?.picture;
+            const hostPhoto = matchedHost.photo || authAvatar || '';
             const user: User = {
               id: matchedHost.id,
               name: matchedHost.name,
               role: 'hte',
               email: normalizeEmail(matchedHost.email),
               employeeId: matchedHost.employeeId || matchedHost.id,
-              photo: matchedHost.photo,
+              photo: hostPhoto,
               faceRegistered: false,
             };
             setCurrentUser(user);
+            saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+            try {
+              localStorage.setItem('ojt_user', JSON.stringify(user));
+              localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+              localStorage.setItem('ojt_current_user', JSON.stringify(user));
+            } catch {}
             setPasswordForEmail(matchedHost.email, password);
             return user;
           }
@@ -1524,6 +1682,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
+      if (oauthPhoto && !matchedEmp.photo) {
+        matchedEmp.photo = oauthPhoto;
+        if (useSupabase) {
+          supabaseService.updateEmployee(matchedEmp.id, { photo: oauthPhoto }).catch(console.warn);
+        }
+      }
       const user: User = {
         id: matchedEmp.id,
         name: matchedEmp.name,
@@ -1537,6 +1701,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
       try {
         localStorage.setItem('ojt_user', JSON.stringify(user));
+        localStorage.setItem('ojt_current_user', JSON.stringify(user));
         if (role === 'hte') {
           localStorage.setItem('ojt_hte_user', JSON.stringify(user));
         }
@@ -1546,6 +1711,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (matchedHost) {
       const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
+      if (oauthPhoto && !matchedHost.photo) {
+        matchedHost.photo = oauthPhoto;
+      }
       const user: User = {
         id: matchedHost.id,
         name: matchedHost.name,
@@ -1560,6 +1728,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         localStorage.setItem('ojt_user', JSON.stringify(user));
         localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+        localStorage.setItem('ojt_current_user', JSON.stringify(user));
       } catch {}
       return user;
     }
@@ -2024,10 +2193,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
           created = await supabaseService.createEmployee(employeePayload);
         } catch (createErr: any) {
           console.error('createEmployee failed:', createErr);
-          return {
-            success: false,
-            message: `Database registration failed: ${createErr?.message || 'Unknown error'}`,
-          };
+          const errMsg = String(createErr?.message || createErr || '').toLowerCase();
+          const isNetworkError =
+            errMsg.includes('failed to fetch') ||
+            errMsg.includes('network') ||
+            errMsg.includes('timeout') ||
+            errMsg.includes('connection') ||
+            (typeof navigator !== 'undefined' && !navigator.onLine);
+
+          if (isNetworkError) {
+            console.warn('[Offline Mode] Network unavailable or connection dropped during registration — saving trainee locally.');
+            created = {
+              ...newEmp,
+              ...employeePayload,
+              id: employeePayload.id || newEmp.id,
+            };
+          } else {
+            return {
+              success: false,
+              message: `Database registration failed: ${createErr?.message || 'Unknown error'}`,
+            };
+          }
         }
 
         if (!created) {
@@ -2038,11 +2224,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setPasswordForEmail(cleanData.email, password);
         }
 
-        // Update local React state with newly registered profile (database is the single source of truth)
+        // Update local React state and storage with newly registered profile (guarantees offline availability)
         setEmployees((prev) => [created!, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
-        if (!isCloud) {
-          saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
-        }
+        saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
 
         // Cross-role sync: If registering an HTE supervisor, persist host supervisor and auto-link matching trainees in this academic year
         if (isHTE) {
@@ -2307,7 +2491,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         !updatedEmployee.position?.toLowerCase().includes('instructor') &&
         !updatedEmployee.position?.toLowerCase().includes('hte') &&
         updatedEmployee.role !== 'hte' &&
-        updatedEmployee.role !== 'instructor' &&
         updatedEmployee.role !== 'admin';
 
       if (isStudent && updatedEmployee.companyName && !updatedEmployee.companyName.toLowerCase().includes('pending')) {
@@ -2383,10 +2566,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   academic_year: stationZone.academicYear,
                 },
               ])
-              .then(() => {})
-              .catch((err: any) => {
-                console.warn('[AppContext] Auto-sync trainee geofence zone error:', err);
-              });
+              .then(
+                () => {},
+                (err: any) => {
+                  console.warn('[AppContext] Auto-sync trainee geofence zone error:', err);
+                }
+              );
           }
         }
       }
@@ -2836,7 +3021,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (currentUser.email && e.email ? normalizeEmail(e.email) === normalizeEmail(currentUser.email) : false)
     );
 
-    if (employee) return employee;
+    if (employee) {
+      if (!employee.photo && currentUser.photo) {
+        employee = { ...employee, photo: currentUser.photo };
+      }
+      return employee;
+    }
 
     // Check host supervisors if current user is an HTE supervisor
     const host = hostSupervisors.find(
@@ -2847,6 +3037,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
 
     if (host) {
+      const fallbackHostPhoto = host.photo || currentUser.photo || (employees.find(e => e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email))?.photo) || '';
       const hostEmp: Employee = {
         id: host.id,
         employeeId: host.employeeId || host.id,
@@ -2863,7 +3054,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
         requiredHours: 0,
-        photo: host.photo || currentUser.photo || '',
+        photo: fallbackHostPhoto,
         faceRegistered: host.faceRegistered ?? false,
         registrationLocation: host.registrationLocation,
         registrationAddress: host.registrationAddress || host.companyAddress,
@@ -2876,6 +3067,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (currentUser.id === 'admin' || currentUser.role === 'admin') {
+      const fallbackAdminPhoto = currentUser.photo || (employees.find(e => e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email))?.photo) || '';
       const adminEmp: Employee = {
         id: currentUser.id,
         employeeId: currentUser.employeeId || 'ADM-2026-001',
@@ -2891,7 +3083,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
         requiredHours: 0,
-        photo: currentUser.photo || '',
+        photo: fallbackAdminPhoto,
         faceRegistered: false,
         active: true,
         academicYear: settings.activeAcademicYear,
@@ -2910,7 +3102,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const newEval: Evaluation = { ...data, id: tempId };
 
     setEvaluations((prev) => {
-      const updated = [newEval, ...prev];
+      const existingIdx = prev.findIndex(
+        (e) => (data.employeeId && e.employeeId === data.employeeId) || e.id === tempId
+      );
+      let updated: Evaluation[];
+      if (existingIdx >= 0) {
+        updated = prev.map((e, idx) => (idx === existingIdx ? { ...e, ...data } : e));
+      } else {
+        updated = [newEval, ...prev];
+      }
       saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
       return updated;
     });
@@ -2921,7 +3121,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .then((created) => {
           if (created) {
             setEvaluations((prev) => {
-              const updated = [created, ...prev.filter((e) => e.id !== tempId && e.id !== created.id)];
+              const updated = [created, ...prev.filter((e) => e.id !== tempId && e.id !== created.id && (data.employeeId ? e.employeeId !== data.employeeId : true))];
               saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
               return updated;
             });
@@ -2929,12 +3129,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })
         .catch((err) => {
           console.error('[AppContext] Failed to save evaluation to Supabase:', err);
-          setEvaluations((prev) => {
-            const rolledBack = prev.filter((e) => e.id !== tempId);
-            saveToStorage(STORAGE_KEYS.EVALUATIONS, rolledBack);
-            return rolledBack;
-          });
-          alert('Failed to save evaluation to cloud. Please try again.');
+          // Preserve local storage so user responses are NEVER lost!
+          toast.error('Cloud synchronization delayed: responses are saved locally on your device.');
         });
     }
 
@@ -2942,24 +3138,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateEvaluation = (id: string, data: Partial<Evaluation>) => {
-    const previous = evaluations.find((e) => e.id === id);
+    const previous = evaluations.find((e) => e.id === id || (data.employeeId && e.employeeId === data.employeeId));
+    const targetId = previous ? previous.id : id;
+
     setEvaluations((prev) => {
-      const updated = prev.map((e) => (e.id === id ? { ...e, ...data } : e));
+      const updated = prev.map((e) => (e.id === targetId || (data.employeeId && e.employeeId === data.employeeId) ? { ...e, ...data } : e));
       saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
       return updated;
     });
 
     if (useSupabase) {
-      supabaseService.updateEvaluation(id, data).catch((err) => {
+      const resolvedEmployeeId = data.employeeId || previous?.employeeId;
+      supabaseService.updateEvaluation(targetId, { ...data, employeeId: resolvedEmployeeId }).catch((err) => {
         console.error('[AppContext] Failed to update evaluation in Supabase:', err);
-        if (previous) {
-          setEvaluations((prev) => {
-            const rolledBack = prev.map((e) => (e.id === id ? previous : e));
-            saveToStorage(STORAGE_KEYS.EVALUATIONS, rolledBack);
-            return rolledBack;
-          });
-        }
-        alert('Failed to save evaluation update to cloud. Changes have been rolled back.');
+        // Preserve local state so responses are NEVER lost!
+        toast.error('Cloud synchronization delayed: changes are saved locally on your device.');
       });
     }
   };

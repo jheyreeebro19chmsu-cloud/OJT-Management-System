@@ -554,6 +554,7 @@ export function HTEEvaluations() {
         isReadOnly={false}
         status={formStatus}
         role="hte"
+        initialPageTab="page1"
         onRatingChange={(id, score) => setRatings((prev) => ({ ...prev, [id]: score }))}
         onRatingCommentChange={(catId, comment) =>
           setRatingComments((prev) => ({ ...prev, [catId]: comment }))
@@ -581,26 +582,7 @@ export function HTEEvaluations() {
     const viewQuestionnaire = existing?.questionnaire || questionnaire;
 
     return (
-      <div className="space-y-4 font-sans">
-        <div className="flex items-center justify-between no-print max-w-5xl mx-auto">
-          <button
-            onClick={() => setViewMode('list')}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-700 hover:text-slate-900 bg-white rounded-2xl border border-slate-200 shadow-sm transition-all cursor-pointer"
-          >
-            <X size={16} />
-            Back to Trainees List
-          </button>
-          <div className="flex gap-2">
-            <button
-              onClick={() => openNewEval(selectedEmp)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
-            >
-              <Edit2 size={15} />
-              Edit Evaluation
-            </button>
-          </div>
-        </div>
-
+      <div className="max-w-5xl mx-auto pb-12 font-sans">
         <CHMSUEvaluationSheet
           trainee={selectedEmp}
           companyName={companyName}
@@ -616,6 +598,7 @@ export function HTEEvaluations() {
           isReadOnly={true}
           status={existing?.status || 'draft'}
           role="hte"
+          initialPageTab="page1"
           onClose={() => setViewMode('list')}
         />
       </div>
@@ -778,7 +761,7 @@ export function HTEEvaluations() {
                               <Clock size={11} /> Ratings Passed to Instructor
                             </span>
                           ) : evalData.status === 'passed_to_hte' ? (
-                            <span className="text-[10px] uppercase font-extrabold text-sky-800 bg-sky-100 px-2.5 py-1 rounded-full border border-sky-300 inline-flex items-center gap-1 shadow-xs animate-pulse">
+                            <span className="text-[10px] uppercase font-extrabold text-sky-800 bg-sky-100 px-2.5 py-1 rounded-full border border-sky-300 inline-flex items-center gap-1 shadow-xs">
                               <Sparkles size={11} className="text-sky-600" /> Ready for Rating (Passed by Instructor)
                             </span>
                           ) : evalData.status === 'submitted_by_trainee' ? (
@@ -787,20 +770,20 @@ export function HTEEvaluations() {
                             </span>
                           ) : (
                             <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200">
-                              Draft
+                              Awaiting Trainee Questionnaire
                             </span>
                           )}
                         </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
-                          Not Yet Evaluated
+                          Awaiting Trainee Questionnaire
                         </span>
                       )}
                     </td>
 
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {evalData ? (
+                        {evalData && (evalData.status === 'submitted_to_instructor' || evalData.status === 'reviewed_by_instructor') ? (
                           <>
                             <button
                               onClick={() => viewEval(emp)}
@@ -822,21 +805,42 @@ export function HTEEvaluations() {
                             </button>
                             <button
                               onClick={() => openNewEval(emp)}
-                              className={`px-3.5 py-1.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-xs ${
-                                evalData.status === 'passed_to_hte'
-                                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20'
-                                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
-                              }`}
+                              className="px-3.5 py-1.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-xs bg-blue-50 hover:bg-blue-100 text-blue-700"
                             >
-                              {evalData.status === 'passed_to_hte' ? 'Rate Intern' : 'Edit Ratings'}
+                              Edit Ratings
                             </button>
                           </>
-                        ) : (
+                        ) : evalData?.status === 'passed_to_hte' ? (
                           <button
                             onClick={() => openNewEval(emp)}
-                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-sm transition-all cursor-pointer"
+                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-blue-600/20 transition-all cursor-pointer flex items-center gap-1.5"
                           >
-                            Evaluate
+                            <Sparkles size={13} />
+                            <span>Rate Intern</span>
+                          </button>
+                        ) : evalData?.status === 'submitted_by_trainee' ? (
+                          <button
+                            onClick={() =>
+                              toast.info(
+                                'The trainee has submitted their questionnaire to the Instructor. Once the Instructor passes the evaluation to HTE, you can rate the intern.'
+                              )
+                            }
+                            className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                            title="Awaiting Instructor Pass"
+                          >
+                            Awaiting Instructor Pass
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              toast.info(
+                                'The student intern must first answer and submit their questionnaire to the Instructor. Once endorsed by the Instructor, you will rate them here.'
+                              )
+                            }
+                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                            title="Awaiting trainee questionnaire submission to instructor"
+                          >
+                            Awaiting Trainee
                           </button>
                         )}
                       </div>

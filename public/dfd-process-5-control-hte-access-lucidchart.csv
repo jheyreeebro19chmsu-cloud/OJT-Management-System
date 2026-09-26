@@ -1,0 +1,17 @@
+ID,Name,Shape Library,Page ID,Contained By,Text Area 1,Line Source,Line Destination
+1,Page,,1,,5.0 Control HTE Access,,
+2,Terminator,Flowchart Shapes,1,,HTE,,
+3,Process,Flowchart Shapes,1,,5.1 Receive Access Request,,
+4,Data Store,Flowchart Shapes,1,,D7: HTE Access Records,,
+5,Process,Flowchart Shapes,1,,5.2 Retrieve Access Request,,
+6,Terminator,Flowchart Shapes,1,,OJT Instructor,,
+7,Process,Flowchart Shapes,1,,5.3 Review Access Request,,
+8,Process,Flowchart Shapes,1,,5.4 Update Access Status,,
+9,Line,,1,,HTE access request,2,3
+10,Line,,1,,Access request record,3,4
+11,Line,,1,,Pending access request,4,5
+12,Line,,1,,HTE access request for review,5,6
+13,Line,,1,,Approval or rejection decision,6,7
+14,Line,,1,,Access decision,7,8
+15,Line,,1,,Updated access status,8,4
+16,Line,,1,,Access status,8,2

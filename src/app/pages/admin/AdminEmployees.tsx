@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -16,7 +16,7 @@ import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper'
 
 
 
-type ModalMode = 'view' | 'add' | null;
+type ModalMode = 'view' | 'add' | 'edit' | 'review' | null;
 
 const BLANK_FORM = {
   name: '',
@@ -33,6 +33,12 @@ const BLANK_FORM = {
   startDate: '',
   endDate: '',
   requiredHours: 486,
+  academicYear: '2026-2027',
+  residentialAddress: '',
+  documentsPassed: true,
+  documentsStatus: 'passed' as 'passed' | 'pending' | 'partial',
+  active: true,
+  approvalStatus: 'approved' as 'pending' | 'approved' | 'rejected',
 };
 
 export function AdminEmployees() {
@@ -60,8 +66,10 @@ export function AdminEmployees() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
   const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{ studentName: string; studentId: string; title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
   const [form, setForm] = useState(BLANK_FORM);
+  const [editForm, setEditForm] = useState(BLANK_FORM);
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressValue, setAddressValue] = useState('');
   const [editingPhone, setEditingPhone] = useState(false);
@@ -119,7 +127,8 @@ export function AdminEmployees() {
     });
   }, [search, selectedYear]);
 
-  const getEmployeeGroup = (emp: Employee) => {
+  const getEmployeeGroup = (emp?: Employee | null) => {
+    if (!emp) return 'student';
     const normalized = emp.position?.toLowerCase() || '';
     const empId = emp.employeeId?.toLowerCase() || '';
     if (normalized.includes('instructor') || empId.startsWith('adm-') || empId.startsWith('instr-')) return 'instructor';
@@ -198,6 +207,7 @@ export function AdminEmployees() {
   const totalFiltered = Object.values(filteredGroups).reduce((sum, items) => sum + items.length, 0);
 
   const openView = (emp: Employee) => {
+    if (!emp) return;
     setSelectedEmp(emp);
     setFaceEnrollOpen(false);
     setEditingAddress(false);
@@ -206,6 +216,87 @@ export function AdminEmployees() {
     setPhoneValue(resolveEmpPhone(emp));
     setModalMode('view');
   };
+
+  const openReview = (emp: Employee) => {
+    if (!emp) return;
+    setSelectedEmp(emp);
+    setFaceEnrollOpen(false);
+    setEditingAddress(false);
+    setEditingPhone(false);
+    setModalMode('review');
+  };
+
+  const openEdit = (emp: Employee) => {
+    if (!emp) return;
+    setSelectedEmp(emp);
+    setFaceEnrollOpen(false);
+    setEditingAddress(false);
+    setEditingPhone(false);
+    setEditForm({
+      name: emp.name || '',
+      email: emp.email || '',
+      contactPhone: resolveEmpPhone(emp) || '',
+      employeeId: emp.employeeId || '',
+      department: emp.department || '',
+      position: emp.position || 'OJT Trainee',
+      companyName: emp.companyName || '',
+      supervisorName: emp.supervisorName || '',
+      schoolName: emp.schoolName || 'Carlos Hilado Memorial State University',
+      campus: emp.campus || '',
+      course: emp.course || '',
+      startDate: emp.startDate || '',
+      endDate: emp.endDate || '',
+      requiredHours: emp.requiredHours ?? 486,
+      academicYear: emp.academicYear || settings?.activeAcademicYear || '2026-2027',
+      residentialAddress: resolveEmpHomeAddress(emp) || '',
+      documentsPassed: emp.documentsPassed !== false && emp.documentsStatus !== 'pending',
+      documentsStatus: (emp.documentsStatus as any) || (emp.documentsPassed !== false ? 'passed' : 'pending'),
+      active: emp.active !== false,
+      approvalStatus: emp.approvalStatus || 'approved',
+    });
+    setModalMode('edit');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedEmp) return;
+    if (!editForm.name.trim()) {
+      toast.error('Full Name is required');
+      return;
+    }
+    const updatedFields: Partial<Employee> = {
+      name: editForm.name.trim(),
+      email: editForm.email.trim(),
+      contactPhone: editForm.contactPhone.trim(),
+      phone: editForm.contactPhone.trim(),
+      telephone: editForm.contactPhone.trim(),
+      employeeId: editForm.employeeId.trim(),
+      department: editForm.department,
+      position: editForm.position,
+      companyName: editForm.companyName.trim(),
+      supervisorName: editForm.supervisorName.trim(),
+      schoolName: editForm.schoolName,
+      campus: editForm.campus,
+      course: editForm.course,
+      startDate: editForm.startDate,
+      endDate: editForm.endDate,
+      requiredHours: Number(editForm.requiredHours) || 486,
+      academicYear: editForm.academicYear,
+      residentialAddress: editForm.residentialAddress.trim(),
+      address: editForm.residentialAddress.trim(),
+      documentsPassed: editForm.documentsPassed,
+      documentsStatus: editForm.documentsPassed ? 'passed' : 'pending',
+      active: editForm.active,
+      approvalStatus: editForm.approvalStatus,
+    };
+
+    await updateEmployee(selectedEmp.id, updatedFields);
+    setSelectedEmp((prev) => (prev ? { ...prev, ...updatedFields } : null));
+    toast.success(`Account for ${editForm.name} updated successfully!`);
+    setModalMode('view');
+  };
+
+  const updEdit = (field: string, val: any) => setEditForm((prev) => ({ ...prev, [field]: val }));
+
   const openAdd = () => {
     setForm(BLANK_FORM);
     setModalMode('add');
@@ -350,18 +441,24 @@ export function AdminEmployees() {
                   className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[2fr_1.5fr_1.5fr_auto]' : 'grid-cols-[2fr_1fr_1fr_1fr_auto]'} gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
-                      {emp.photo ? (
-                        <img
-                          src={getPhotoUrl(emp.photo)}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          style={{ transform: 'scaleX(-1)' }}
-                        />
-                      ) : (
-                        <span className="text-blue-700 font-bold text-sm">{emp.name.charAt(0)}</span>
-                      )}
-                    </div>
+                    {(() => {
+                      const photoUrl = getPhotoUrl(emp.photo);
+                      return (
+                        <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none">
+                          <span className="text-blue-700 font-bold text-sm">{emp.name.charAt(0)}</span>
+                          {photoUrl && (
+                            <img
+                              src={photoUrl}
+                              alt=""
+                              className="w-full h-full object-cover absolute inset-0 z-10"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div>
                       <p className="font-semibold text-gray-800 text-sm hover:text-blue-700 transition-colors">{emp.name}</p>
                       <p className="text-xs text-gray-400">
@@ -413,15 +510,29 @@ export function AdminEmployees() {
                   )}
                   {isTraineeGroup && !isPendingGroup ? (
                     <div className="flex flex-col gap-1 items-start">
-                      {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
-                        <span className="text-[11px] font-bold flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                          <FileCheck size={11} className="text-emerald-600" /> Docs: Passed
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-bold flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                          <FileText size={11} className="text-amber-600" /> Docs: Pending
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openReview(emp);
+                        }}
+                        className={`text-[11px] font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer shadow-2xs ${
+                          emp.documentsPassed !== false && emp.documentsStatus !== 'pending'
+                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300'
+                            : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300 ring-1 ring-amber-300/60'
+                        }`}
+                        title="Click to Review Trainee Compliance Documents"
+                      >
+                        {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
+                          <>
+                            <FileCheck size={12} className="text-emerald-600" /> Docs: Passed
+                          </>
+                        ) : (
+                          <>
+                            <FileText size={12} className="text-amber-600 animate-pulse" /> Docs: Pending
+                          </>
+                        )}
+                      </button>
                       {emp.faceRegistered ? (
                         <span className="text-[10px] flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
                           <Camera size={9} /> Face Enrolled
@@ -447,7 +558,7 @@ export function AdminEmployees() {
                             e.stopPropagation();
                             handleApprove(emp);
                           }}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                           title="Accept & Enroll Trainee"
                         >
                           <CheckCircle size={13} />
@@ -458,7 +569,7 @@ export function AdminEmployees() {
                             e.stopPropagation();
                             handleReject(emp);
                           }}
-                          className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all"
+                          className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
                           title="Decline Request"
                         >
                           <XCircle size={13} />
@@ -467,25 +578,56 @@ export function AdminEmployees() {
                       </>
                     ) : (
                       <>
+                        {/* View Profile Button */}
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             openView(emp);
                           }}
-                          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                          title={isInstructorGroup ? "View Instructor Profile" : "View Profile"}
+                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+                          title={isInstructorGroup ? "View Instructor Profile" : "View Trainee Profile"}
                         >
-                          <Eye size={15} />
+                          <Eye size={16} />
+                        </button>
+
+                        {/* Review Documents Button (Trainees Only) */}
+                        {isTraineeGroup && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openReview(emp);
+                            }}
+                            className="p-1.5 text-violet-600 hover:text-violet-800 hover:bg-violet-50 rounded-lg transition-all cursor-pointer"
+                            title="Review Compliance Documents"
+                          >
+                            <FileCheck size={16} />
+                          </button>
+                        )}
+
+                        {/* Edit Trainee/Account Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEdit(emp);
+                          }}
+                          className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-all cursor-pointer"
+                          title={isInstructorGroup ? "Edit Instructor Account" : "Edit Trainee Account"}
+                        >
+                          <Edit3 size={16} />
                         </button>
 
                         {/* 3-Dots Dropdown Menu */}
                         <div className="relative">
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setOpenMenuId(openMenuId === emp.id ? null : emp.id);
                             }}
-                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all"
+                            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all cursor-pointer"
                             title="More actions"
                           >
                             <MoreVertical size={16} />
@@ -493,7 +635,7 @@ export function AdminEmployees() {
 
                           {openMenuId === emp.id && (
                             <div
-                              className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 w-48 text-left"
+                              className="absolute right-0 top-8 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 w-52 text-left"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <button
@@ -501,9 +643,31 @@ export function AdminEmployees() {
                                   setOpenMenuId(null);
                                   openView(emp);
                                 }}
-                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer"
                               >
                                 <Eye size={14} className="text-blue-600" /> View Details
+                              </button>
+
+                              {isTraineeGroup && (
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    openReview(emp);
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
+                                >
+                                  <FileCheck size={14} className="text-violet-600" /> Review Documents
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  openEdit(emp);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-colors cursor-pointer"
+                              >
+                                <Edit3 size={14} className="text-amber-600" /> Edit Account Details
                               </button>
 
                               {isTraineeGroup && (
@@ -517,9 +681,9 @@ export function AdminEmployees() {
                                     });
                                     toast.success(newStatus ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
                                   }}
-                                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
                                 >
-                                  <FileCheck size={14} className="text-emerald-600" />
+                                  <CheckCircle2 size={14} className="text-emerald-600" />
                                   {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? 'Set Docs as Pending' : 'Approve All Documents'}
                                 </button>
                               )}
@@ -531,7 +695,7 @@ export function AdminEmployees() {
                                   setOpenMenuId(null);
                                   handleDelete(emp.id);
                                 }}
-                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                               >
                                 <Trash2 size={14} /> {isInstructorGroup ? 'Delete Instructor' : 'Delete Trainee'}
                               </button>
@@ -548,18 +712,24 @@ export function AdminEmployees() {
                   className="lg:hidden p-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
-                      {emp.photo ? (
-                        <img
-                          src={getPhotoUrl(emp.photo)}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          style={{ transform: 'scaleX(-1)' }}
-                        />
-                      ) : (
-                        <span className="text-blue-700 font-bold">{emp.name.charAt(0)}</span>
-                      )}
-                    </div>
+                    {(() => {
+                      const photoUrl = getPhotoUrl(emp.photo);
+                      return (
+                        <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none">
+                          <span className="text-blue-700 font-bold">{emp.name.charAt(0)}</span>
+                          {photoUrl && (
+                            <img
+                              src={photoUrl}
+                              alt=""
+                              className="w-full h-full object-cover absolute inset-0 z-10"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="flex-1">
                       <div className="flex items-start justify-between">
                         <div>
@@ -621,17 +791,39 @@ export function AdminEmployees() {
                                   e.stopPropagation();
                                   openView(emp);
                                 }}
-                                className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
-                                title={isInstructorGroup ? "View Instructor Profile" : "View Profile"}
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer"
+                                title={isInstructorGroup ? "View Instructor Profile" : "View Trainee Profile"}
                               >
                                 <Eye size={15} />
+                              </button>
+                              {isTraineeGroup && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openReview(emp);
+                                  }}
+                                  className="p-1.5 text-violet-600 hover:bg-violet-50 rounded-lg cursor-pointer"
+                                  title="Review Documents"
+                                >
+                                  <FileCheck size={15} />
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEdit(emp);
+                                }}
+                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg cursor-pointer"
+                                title={isInstructorGroup ? "Edit Instructor" : "Edit Trainee"}
+                              >
+                                <Edit3 size={15} />
                               </button>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDelete(emp.id);
                                 }}
-                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"
+                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg cursor-pointer"
                                 title={isInstructorGroup ? "Delete Instructor" : "Delete Trainee"}
                               >
                                 <Trash2 size={15} />
@@ -808,37 +1000,82 @@ export function AdminEmployees() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             >
-              <div className="flex items-center justify-between p-5 border-b border-gray-100">
-                <h3 className="font-bold text-gray-800">
-                  {modalMode === 'view'
-                    ? selectedEmp && getEmployeeGroup(selectedEmp) === 'instructor'
-                      ? `${selectedEmp.name} (Instructor)`
-                      : selectedEmp && getEmployeeGroup(selectedEmp) === 'hte'
-                      ? `${selectedEmp.name} (HTE Supervisor)`
-                      : `${selectedEmp?.name}`
-                    : 'Add New Trainee'}
-                </h3>
-                <div className="flex items-center gap-2">
-                  {modalMode === 'view' && selectedEmp && (
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(selectedEmp.id)}
-                      className="p-2 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                      title={
-                        getEmployeeGroup(selectedEmp) === 'instructor'
-                          ? 'Permanently Delete Instructor'
-                          : getEmployeeGroup(selectedEmp) === 'hte'
-                          ? 'Permanently Delete HTE Supervisor'
-                          : 'Permanently Delete Trainee'
-                      }
-                    >
-                      <Trash2 size={18} />
-                    </button>
+              <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur-sm z-20">
+                <div>
+                  <h3 className="font-bold text-gray-800 text-base">
+                    {modalMode === 'view'
+                      ? selectedEmp && getEmployeeGroup(selectedEmp) === 'instructor'
+                        ? `${selectedEmp.name} (Instructor)`
+                        : selectedEmp && getEmployeeGroup(selectedEmp) === 'hte'
+                        ? `${selectedEmp.name} (HTE Supervisor)`
+                        : `${selectedEmp?.name}`
+                      : modalMode === 'edit'
+                      ? `Edit Account: ${editForm.name || selectedEmp?.name || 'Trainee'}`
+                      : modalMode === 'review'
+                      ? `Document Compliance: ${selectedEmp?.name || 'Trainee'}`
+                      : 'Add New Trainee'}
+                  </h3>
+                  {selectedEmp && modalMode !== 'add' && (
+                    <p className="text-xs text-gray-400 font-mono mt-0.5">
+                      {selectedEmp.employeeId || 'ID Pending'} • {selectedEmp.course || selectedEmp.department || 'CHMSU'}
+                    </p>
                   )}
-                  <button onClick={closeModal} className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100">
-                    <X size={20} />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {selectedEmp && (
+                    <>
+                      {getEmployeeGroup(selectedEmp) === 'student' && modalMode !== 'review' && (
+                        <button
+                          type="button"
+                          onClick={() => openReview(selectedEmp)}
+                          className="px-2.5 py-1.5 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Review Trainee Compliance Documents"
+                        >
+                          <FileCheck size={14} />
+                          <span className="hidden sm:inline">Review Docs</span>
+                        </button>
+                      )}
+                      {modalMode !== 'edit' ? (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(selectedEmp)}
+                          className="px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Edit Account Details"
+                        >
+                          <Edit3 size={14} />
+                          <span className="hidden sm:inline">Edit</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openView(selectedEmp)}
+                          className="px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          title="View Profile Details"
+                        >
+                          <Eye size={14} />
+                          <span className="hidden sm:inline">View Profile</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(selectedEmp.id)}
+                        className="p-1.5 rounded-xl text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        title={
+                          getEmployeeGroup(selectedEmp) === 'instructor'
+                            ? 'Permanently Delete Instructor'
+                            : getEmployeeGroup(selectedEmp) === 'hte'
+                            ? 'Permanently Delete HTE Supervisor'
+                            : 'Permanently Delete Trainee'
+                        }
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </>
+                  )}
+                  <button onClick={closeModal} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 cursor-pointer">
+                    <X size={18} />
                   </button>
                 </div>
               </div>
@@ -904,18 +1141,24 @@ export function AdminEmployees() {
                         <div className="space-y-4">
                           {/* Profile header */}
                           <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl">
-                            <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden shrink-0">
-                              {selectedEmp.photo ? (
-                                <img
-                                  src={getPhotoUrl(selectedEmp.photo)}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                  style={{ transform: 'scaleX(-1)' }}
-                                />
-                              ) : (
-                                <User size={28} className="text-blue-700" />
-                              )}
-                            </div>
+                            {(() => {
+                              const photoUrl = getPhotoUrl(selectedEmp.photo);
+                              return (
+                                <div className="w-16 h-16 bg-blue-200 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 relative select-none">
+                                  <User size={28} className="text-blue-700" />
+                                  {photoUrl && (
+                                    <img
+                                      src={photoUrl}
+                                      alt=""
+                                      className="w-full h-full object-cover absolute inset-0 z-10"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })()}
                             <div className="flex-1">
                               <p className="font-bold text-blue-900">{selectedEmp.name}</p>
                               <p className="text-blue-600 text-sm">{selectedEmp.employeeId}</p>
@@ -979,6 +1222,26 @@ export function AdminEmployees() {
                                   )}
                                 </div>
                               )}
+
+                              {/* Quick Action Buttons */}
+                              <div className="flex flex-wrap items-center gap-2 mt-3 pt-2.5 border-t border-blue-200/60">
+                                {isTrainee && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openReview(selectedEmp)}
+                                    className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                                  >
+                                    <FileCheck size={13} /> Review Documents
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(selectedEmp)}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                                >
+                                  <Edit3 size={13} /> Edit Account Info
+                                </button>
+                              </div>
                             </div>
                           </div>
 
@@ -1141,21 +1404,25 @@ export function AdminEmployees() {
                                 { label: 'Position', val: selectedEmp.position || 'HTE Representative' },
                               ]
                             : [
-                                { label: 'Email', val: selectedEmp.email },
-                                { label: 'Contact Phone', val: selectedEmp.contactPhone || selectedEmp.phone || 'Not specified' },
-                                { label: 'Department', val: selectedEmp.department },
-                                { label: 'Company', val: selectedEmp.companyName },
-                                { label: 'Supervisor', val: selectedEmp.supervisorName },
-                                { label: 'School', val: selectedEmp.schoolName },
+                                { label: 'Email', val: selectedEmp.email || 'Not specified' },
+                                { label: 'Contact Phone', val: resolveEmpPhone(selectedEmp) || 'Not specified' },
+                                { label: 'Department', val: selectedEmp.department || 'Not specified' },
+                                { label: 'Company', val: selectedEmp.companyName || 'Not specified' },
+                                { label: 'Supervisor', val: selectedEmp.supervisorName || 'Not specified' },
+                                { label: 'School', val: selectedEmp.schoolName || 'Carlos Hilado Memorial State University' },
                                 { label: 'Campus', val: selectedEmp.campus || 'Not specified' },
-                                { label: 'Course', val: selectedEmp.course },
-                                { label: 'OJT Period', val: `${selectedEmp.startDate} → ${selectedEmp.endDate}` },
-                                { label: 'Required Hours', val: `${selectedEmp.requiredHours} hrs` },
+                                { label: 'Course', val: selectedEmp.course || 'Not specified' },
+                                { label: 'OJT Period', val: `${selectedEmp.startDate || '—'} → ${selectedEmp.endDate || '—'}` },
+                                { label: 'Required Hours', val: `${selectedEmp.requiredHours ?? 486} hrs` },
                                 {
                                   label: 'Requirements',
                                   val: (() => {
-                                    const summary = getEmployeeRequirementSummary(selectedEmp.id);
-                                    return `${summary.complete} complete, ${summary.incomplete} incomplete, ${summary.missing} missing`;
+                                    try {
+                                      const summary = getEmployeeRequirementSummary(selectedEmp.id);
+                                      return `${summary?.complete ?? 0} complete, ${summary?.incomplete ?? 0} incomplete, ${summary?.missing ?? 0} missing`;
+                                    } catch {
+                                      return 'Credentials active';
+                                    }
                                   })(),
                                 },
                               ]
@@ -1212,7 +1479,7 @@ export function AdminEmployees() {
                                         if (!matchedHost) return;
 
                                         const hteAddress = matchedHost.companyAddress || matchedHost.registrationAddress || `${matchedHost.companyName} Workplace Premises`;
-                                        const hteLocation = matchedHost.registrationLocation || { lat: 10.7412, lng: 122.9691 };
+                                        const hteLocation = matchedHost.registrationLocation || { lat: 10.7410, lng: 122.9702 };
                                         const hteRadius = Math.max(40, Number(matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
 
                                         const updatedFields = {
@@ -1532,7 +1799,7 @@ export function AdminEmployees() {
                                     const matchingZone = geofenceZones.find((z) =>
                                       z.id === selectedEmp.id ||
                                       z.id === `personal-${selectedEmp.id}` ||
-                                      (selectedEmp.name && z.name.toLowerCase().includes(selectedEmp.name.toLowerCase()))
+                                      Boolean(selectedEmp.name && z?.name && String(z.name).toLowerCase().includes(String(selectedEmp.name).toLowerCase()))
                                     );
                                     const rawZoneAddr = matchingZone?.address || '';
                                     const isResidential =
@@ -1547,25 +1814,38 @@ export function AdminEmployees() {
                                   })()}
                                 </>
                               )}
-                              {selectedEmp.registrationLocation ? (
-                                <div className="flex items-center justify-between gap-2 mt-1">
-                                  <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
-                                    📍 GPS: {selectedEmp.registrationLocation.lat.toFixed(5)}, {selectedEmp.registrationLocation.lng.toFixed(5)} (±{Math.max(40, Number(selectedEmp.registrationLocation.radius || selectedEmp.registrationRadius || 40))}m)
+                              {(() => {
+                                const regLoc = selectedEmp.registrationLocation;
+                                const rawLat = regLoc && typeof regLoc === 'object' ? (regLoc as any).lat : null;
+                                const rawLng = regLoc && typeof regLoc === 'object' ? (regLoc as any).lng : null;
+                                const numLat = rawLat != null && !isNaN(Number(rawLat)) ? Number(rawLat) : null;
+                                const numLng = rawLng != null && !isNaN(Number(rawLng)) ? Number(rawLng) : null;
+
+                                if (numLat != null && numLng != null) {
+                                  const rad = Math.max(40, Number((regLoc as any)?.radius || selectedEmp.registrationRadius || 40));
+                                  return (
+                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                      <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block">
+                                        📍 GPS: {numLat.toFixed(5)}, {numLng.toFixed(5)} (±{rad}m)
+                                      </p>
+                                      <a
+                                        href={`https://www.google.com/maps?q=${numLat},${numLng}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
+                                      >
+                                        <ExternalLink size={11} /> Open Map
+                                      </a>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
+                                    📍 Campus Geofence Boundary: Institutional Campus Zone (40m)
                                   </p>
-                                  <a
-                                    href={`https://www.google.com/maps?q=${selectedEmp.registrationLocation.lat},${selectedEmp.registrationLocation.lng}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg transition-all"
-                                  >
-                                    <ExternalLink size={11} /> Open Map
-                                  </a>
-                                </div>
-                              ) : (
-                                <p className="font-mono text-[11px] text-blue-700 bg-white/70 p-1.5 rounded-lg border border-blue-200 inline-block mt-1">
-                                  📍 Campus Geofence Boundary: Institutional Campus Zone (40m)
-                                </p>
-                              )}
+                                );
+                              })()}
                             </div>
                           </div>
 
@@ -1608,10 +1888,603 @@ export function AdminEmployees() {
                               </p>
                             )
                           )}
+
+                          {/* Profile modal footer quick actions */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                              {isTrainee && (
+                                <button
+                                  type="button"
+                                  onClick={() => openReview(selectedEmp)}
+                                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <FileCheck size={14} /> Review Documents
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => openEdit(selectedEmp)}
+                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              >
+                                <Edit3 size={14} /> Edit Account
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={closeModal}
+                              className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                            >
+                              Close
+                            </button>
+                          </div>
                         </div>
                       );
                     })()
                   )
+                ) : modalMode === 'edit' && selectedEmp ? (
+                  <div className="space-y-4">
+                    {/* Banner */}
+                    <div className="flex items-center gap-3 p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                        <Edit3 size={20} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-amber-950">Editing Account: {selectedEmp.name}</p>
+                        <p className="text-xs text-amber-700">Update trainee records, contact info, academic details, or placement credentials.</p>
+                      </div>
+                    </div>
+
+                    {/* Form Inputs Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Full Name */}
+                      <div className="sm:col-span-2">
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Full Name *</label>
+                        <input
+                          type="text"
+                          value={editForm.name}
+                          onChange={(e) => updEdit('name', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="Juan Dela Cruz"
+                        />
+                      </div>
+
+                      {/* Student / Employee ID */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Student / Employee ID</label>
+                        <input
+                          type="text"
+                          value={editForm.employeeId}
+                          onChange={(e) => updEdit('employeeId', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50 font-mono"
+                          placeholder="20231342 or OJT-2026-XXX"
+                        />
+                      </div>
+
+                      {/* Email */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Email Address</label>
+                        <input
+                          type="email"
+                          value={editForm.email}
+                          onChange={(e) => updEdit('email', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="student@chmsu.edu.ph"
+                        />
+                      </div>
+
+                      {/* Contact Phone */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Contact Phone</label>
+                        <input
+                          type="text"
+                          value={editForm.contactPhone}
+                          onChange={(e) => {
+                            let val = e.target.value.replace(/[^\d+]/g, '');
+                            if (val.startsWith('09')) val = '+639' + val.slice(2);
+                            else if (val.startsWith('9')) val = '+639' + val.slice(1);
+                            else if (val.startsWith('639')) val = '+639' + val.slice(3);
+                            if (!val.startsWith('+639') && val.length > 0) {
+                              if (val.startsWith('+')) val = '+639' + val.slice(1).replace(/^639?/, '');
+                              else val = '+639' + val;
+                            }
+                            updEdit('contactPhone', val.slice(0, 13));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50 font-mono"
+                          placeholder="+639123456789"
+                        />
+                      </div>
+
+                      {/* Academic Year */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Academic Year</label>
+                        <select
+                          value={editForm.academicYear}
+                          onChange={(e) => updEdit('academicYear', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        >
+                          {(settings?.academicYears && settings.academicYears.length > 0) ? (
+                            settings.academicYears.map((ay) => (
+                              <option key={ay} value={ay}>
+                                A.Y. {ay}
+                              </option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="2026-2027">A.Y. 2026-2027</option>
+                              <option value="2025-2026">A.Y. 2025-2026</option>
+                              <option value="2024-2025">A.Y. 2024-2025</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+
+                      {/* Residential Address */}
+                      <div className="sm:col-span-2">
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Residential Address (Home)</label>
+                        <input
+                          type="text"
+                          value={editForm.residentialAddress}
+                          onChange={(e) => updEdit('residentialAddress', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="House No., Street, Barangay, City, Province"
+                        />
+                      </div>
+
+                      {/* Campus */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Campus</label>
+                        <select
+                          value={editForm.campus}
+                          onChange={(e) => updEdit('campus', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        >
+                          <option value="">Select Campus</option>
+                          {campusOptions.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* College / Department */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">College / Department</label>
+                        <select
+                          value={editForm.department}
+                          onChange={(e) => {
+                            updEdit('department', e.target.value);
+                            updEdit('course', '');
+                          }}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        >
+                          <option value="">Select Department</option>
+                          {departmentOptions.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Course */}
+                      <div className="sm:col-span-2">
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Course / Degree Program</label>
+                        <select
+                          value={editForm.course}
+                          onChange={(e) => updEdit('course', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                        >
+                          <option value="">Select Course</option>
+                          {getCoursesForDepartment(editForm.department, editForm.campus).map((course) => (
+                            <option key={course} value={course}>
+                              {course}
+                            </option>
+                          ))}
+                          {editForm.course && !getCoursesForDepartment(editForm.department, editForm.campus).includes(editForm.course) && (
+                            <option value={editForm.course}>{editForm.course}</option>
+                          )}
+                        </select>
+                      </div>
+
+                      {/* Company Name / HTE */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Host Company / HTE</label>
+                        <input
+                          type="text"
+                          value={editForm.companyName}
+                          onChange={(e) => updEdit('companyName', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="Host Training Establishment"
+                        />
+                      </div>
+
+                      {/* Supervisor Name */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">HTE Supervisor</label>
+                        <input
+                          type="text"
+                          value={editForm.supervisorName}
+                          onChange={(e) => updEdit('supervisorName', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="Supervisor Full Name"
+                        />
+                      </div>
+
+                      {/* Required Hours */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Required OJT Hours</label>
+                        <input
+                          type="number"
+                          value={editForm.requiredHours}
+                          onChange={(e) => updEdit('requiredHours', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="486"
+                        />
+                      </div>
+
+                      {/* Position */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Role / Position</label>
+                        <input
+                          type="text"
+                          value={editForm.position}
+                          onChange={(e) => updEdit('position', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          placeholder="OJT Trainee"
+                        />
+                      </div>
+
+                      {/* Start Date & End Date */}
+                      <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-700 block mb-1">OJT Start Date</label>
+                          <input
+                            type="date"
+                            value={editForm.startDate}
+                            onChange={(e) => updEdit('startDate', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-700 block mb-1">OJT End Date</label>
+                          <input
+                            type="date"
+                            value={editForm.endDate}
+                            onChange={(e) => updEdit('endDate', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Document Status & Enrollment Status */}
+                      <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-gray-800">Documents Status</p>
+                          <p className="text-[11px] text-gray-500">{editForm.documentsPassed ? 'All documents approved' : 'Pending verification'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextVal = !editForm.documentsPassed;
+                            updEdit('documentsPassed', nextVal);
+                            updEdit('documentsStatus', nextVal ? 'passed' : 'pending');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            editForm.documentsPassed ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          }`}
+                        >
+                          {editForm.documentsPassed ? '✓ Passed' : 'Pending'}
+                        </button>
+                      </div>
+
+                      <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-gray-800">Account Enrolled</p>
+                          <p className="text-[11px] text-gray-500">{editForm.active ? 'Active & Approved' : 'Inactive / Pending'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextActive = !editForm.active;
+                            updEdit('active', nextActive);
+                            updEdit('approvalStatus', nextActive ? 'approved' : 'pending');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            editForm.active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {editForm.active ? 'Active' : 'Pending'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Footer Buttons */}
+                    <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => setModalMode('view')}
+                        className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveEdit}
+                        className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-all cursor-pointer"
+                      >
+                        <Check size={14} />
+                        Save Changes
+                      </button>
+                    </div>
+                  </div>
+                ) : modalMode === 'review' && selectedEmp ? (
+                  <div className="space-y-4">
+                    {/* Trainee Review Banner */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-violet-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+                          {selectedEmp.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 text-base">{selectedEmp.name}</p>
+                          <p className="text-xs text-gray-500 font-mono">{selectedEmp.employeeId} • {selectedEmp.course || selectedEmp.department}</p>
+                          <p className="text-[11px] text-violet-700 font-medium mt-0.5">
+                            A.Y. {selectedEmp.academicYear || settings.activeAcademicYear} • {selectedEmp.companyName || 'Host Establishment Pending'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(selectedEmp)}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-violet-200 text-violet-800 hover:bg-violet-50 text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                        >
+                          <Edit3 size={13} /> Edit Account
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openView(selectedEmp)}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                        >
+                          <Eye size={13} /> Full Profile
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Compliance Overview Card & Bulk Approval */}
+                    {(() => {
+                      const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                      const passedCount = docKeys.filter((k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed').length;
+                      const isFullyPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length;
+
+                      return (
+                        <div className={`p-4 rounded-2xl border transition-all ${
+                          isFullyPassed ? 'bg-emerald-50/70 border-emerald-200' : 'bg-amber-50/70 border-amber-200'
+                        }`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <FileCheck size={18} className={isFullyPassed ? 'text-emerald-700' : 'text-amber-700'} />
+                                <h4 className="font-bold text-sm text-gray-900">
+                                  Required OJT Document Compliance ({passedCount}/{REQUIRED_TRAINEE_DOCUMENTS.length} Certified)
+                                </h4>
+                              </div>
+                              <p className="text-xs text-gray-600 mt-1">
+                                {isFullyPassed
+                                  ? 'All 9 compliance credentials verified. Trainee is certified for deployment.'
+                                  : 'Review submitted attachments below. Mark individual documents as passed or approve all.'}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const willPass = !isFullyPassed;
+                                const targetStatus: 'passed' | 'pending' = willPass ? 'passed' : 'pending';
+                                const currentDocs = selectedEmp.submittedDocuments || {};
+                                const updatedDocs: TraineeDocuments = { ...currentDocs };
+                                docKeys.forEach((k) => {
+                                  updatedDocs[k] = {
+                                    ...(currentDocs[k] || {
+                                      name: `${k}.pdf`,
+                                      fileType: 'application/pdf',
+                                      size: 0,
+                                      uploadedAt: new Date().toISOString(),
+                                    }),
+                                    status: targetStatus,
+                                  };
+                                });
+
+                                await updateEmployee(selectedEmp.id, {
+                                  submittedDocuments: updatedDocs,
+                                  documentsPassed: willPass,
+                                  documentsStatus: willPass ? 'passed' : 'pending',
+                                });
+                                setSelectedEmp({
+                                  ...selectedEmp,
+                                  submittedDocuments: updatedDocs,
+                                  documentsPassed: willPass,
+                                  documentsStatus: willPass ? 'passed' : 'pending',
+                                });
+                                toast.success(
+                                  willPass
+                                    ? `All 9 documents marked as PASSED for ${selectedEmp.name}!`
+                                    : `Documents marked as PENDING for ${selectedEmp.name}`
+                                );
+                              }}
+                              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer ${
+                                isFullyPassed
+                                  ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                  : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                              }`}
+                            >
+                              {isFullyPassed ? 'Mark All as Pending' : '✓ Approve All 9 Documents'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* The 9 Standard Documents Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
+                        const doc = selectedEmp.submittedDocuments?.[docItem.key];
+                        const isPassed = doc
+                          ? doc.status === 'passed'
+                          : selectedEmp.submittedDocuments
+                          ? false
+                          : selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                        const hasFile = Boolean(doc?.dataUrl);
+
+                        return (
+                          <div
+                            key={docItem.id}
+                            className={`rounded-2xl bg-white p-3.5 border transition-all ${
+                              isPassed
+                                ? 'border-emerald-200 bg-emerald-50/20 shadow-2xs'
+                                : 'border-amber-200 bg-amber-50/20 shadow-2xs'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div
+                                  className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                                    isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  {docItem.num}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-gray-900 truncate" title={docItem.title}>{docItem.title}</p>
+                                  {doc?.name ? (
+                                    <p className="text-[10px] text-blue-600 truncate font-mono" title={doc.name}>
+                                      📁 {doc.name} {doc.size ? `(${(Number(doc.size) / 1024).toFixed(0)} KB)` : ''}
+                                    </p>
+                                  ) : (
+                                    <p className="text-[10px] text-gray-400 italic">No custom file uploaded</p>
+                                  )}
+                                </div>
+                              </div>
+                              <span
+                                className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                                  isPassed
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                    : 'bg-amber-100 text-amber-800 border-amber-200'
+                                }`}
+                              >
+                                {isPassed ? '✓ PASSED' : 'PENDING'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-500 leading-snug mb-3 line-clamp-2">{docItem.desc}</p>
+
+                            <div className="flex items-center gap-1.5 pt-2.5 border-t border-gray-100">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewInstructorDoc({
+                                    studentName: selectedEmp.name,
+                                    studentId: selectedEmp.employeeId,
+                                    title: `${docItem.num}. ${docItem.title}`,
+                                    fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                    fileUrl: doc?.dataUrl || undefined,
+                                    note: doc?.name
+                                      ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
+                                      : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
+                                    date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                  })
+                                }
+                                className="flex-1 py-1.5 px-2.5 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1 transition-all cursor-pointer"
+                              >
+                                <Eye size={12} /> {hasFile ? 'Preview' : 'View Doc'}
+                              </button>
+
+                              {hasFile && doc?.dataUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    downloadDocument(
+                                      doc.dataUrl!,
+                                      doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}`
+                                    )
+                                  }
+                                  className="py-1.5 px-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                  title="Download attached student document"
+                                >
+                                  <Download size={12} /> Download
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const newDocStatus: 'passed' | 'pending' = isPassed ? 'pending' : 'passed';
+                                  const currentDocs = selectedEmp.submittedDocuments || {};
+                                  const updatedDocs: TraineeDocuments = {
+                                    ...currentDocs,
+                                    [docItem.key]: {
+                                      ...(currentDocs[docItem.key] || {
+                                        name: `${docItem.title}.pdf`,
+                                        fileType: 'application/pdf',
+                                        size: 0,
+                                        uploadedAt: new Date().toISOString(),
+                                      }),
+                                      status: newDocStatus,
+                                    },
+                                  };
+                                  const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                  const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
+                                  const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
+
+                                  await updateEmployee(selectedEmp.id, {
+                                    submittedDocuments: updatedDocs,
+                                    documentsPassed: allPassed,
+                                    documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                  });
+                                  setSelectedEmp({
+                                    ...selectedEmp,
+                                    submittedDocuments: updatedDocs,
+                                    documentsPassed: allPassed,
+                                    documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                  });
+                                  toast.success(
+                                    newDocStatus === 'passed'
+                                      ? `${docItem.title} marked as PASSED`
+                                      : `${docItem.title} marked as PENDING`
+                                  );
+                                }}
+                                className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                  isPassed
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                                }`}
+                              >
+                                {isPassed ? 'Revoke' : 'Approve'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Bottom navigation */}
+                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => openView(selectedEmp)}
+                        className="px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                      >
+                        ← Back to Trainee Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeModal}
+                        className="px-5 py-2 text-xs font-bold text-white bg-gray-800 hover:bg-gray-900 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Done Reviewing
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                       {[

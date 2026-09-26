@@ -63,12 +63,41 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         z.radius > 0
     );
 
-    const isStudent =
-      !employee?.position?.toLowerCase().includes('instructor') &&
-      !employee?.position?.toLowerCase().includes('faculty') &&
-      !employee?.position?.toLowerCase().includes('admin') &&
-      employee?.role !== 'admin' &&
-      employee?.role !== 'instructor';
+    const userRole = (employee?.role || (employee as any)?.userRole || '').toLowerCase();
+    const userPos = (employee?.position || '').toLowerCase();
+    const isHte = userRole === 'hte' || userRole === 'host' || userPos.includes('hte') || userPos.includes('supervisor');
+    const isInstructor = userRole === 'instructor' || userRole === 'faculty' || userPos.includes('instructor') || userPos.includes('faculty');
+    const isAdmin = userRole === 'admin' || userPos.includes('admin');
+    const isStudent = !isHte && !isInstructor && !isAdmin;
+
+    if (isHte && employee) {
+      // HTE Supervisor: official establishment workplace zone
+      const empId = employee.id || '';
+      const hteStation = validConfiguredZones.find(
+        (z) =>
+          z.id === `station-${empId}` ||
+          z.id === (employee as any)?.hteId ||
+          (employee.companyName && z.name && z.name.toLowerCase().includes(employee.companyName.toLowerCase()))
+      );
+      if (hteStation) {
+        return [hteStation, ...validConfiguredZones.filter((z) => z.id !== hteStation.id)];
+      }
+      let regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat;
+      let regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng;
+      if (regLat && regLng && isValidCoord(Number(regLat), Number(regLng))) {
+        const hteDynamicZone: GeofenceZone = {
+          id: `station-${empId || 'hte'}`,
+          name: employee.companyName || employee.name || 'HTE Workplace',
+          address: employee.companyAddress || employee.registrationAddress || 'HTE Establishment Location',
+          lat: Number(regLat),
+          lng: Number(regLng),
+          radius: Number(employee.registrationLocation?.radius || 50),
+          active: true,
+        };
+        return [hteDynamicZone, ...validConfiguredZones];
+      }
+      return validConfiguredZones;
+    }
 
     if (!isStudent && employee) {
       // Instructor / Faculty / Admin: prioritize their Official Station zone
@@ -92,11 +121,12 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
 
     // 1. Direct match by zone ID: station-${empId}, assignedZoneId, or hteId
     if (empId) {
+      const assignedZoneId = (employee as any)?.assignedZoneId;
       assignedWorkplaceZone =
         validConfiguredZones.find(
           (z) =>
             z.id === `station-${empId}` ||
-            (employee?.assignedZoneId && z.id === employee.assignedZoneId) ||
+            (assignedZoneId && z.id === assignedZoneId) ||
             (employee?.hteId && (z.id === employee.hteId || z.id === `station-${employee.hteId}`))
         ) || null;
     }
@@ -149,6 +179,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
 
     if (
       !assignedWorkplaceZone &&
+      hasValidCompany &&
       regLat != null &&
       regLng != null &&
       Number.isFinite(Number(regLat)) &&
@@ -157,9 +188,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     ) {
       assignedWorkplaceZone = {
         id: `station-${empId || 'trainee'}`,
-        name: employee?.companyName
-          ? `${employee.companyName} (Assigned Workplace)`
-          : `${employee?.name || 'Trainee'} - Assigned Workplace`,
+        name: `${employee.companyName} (Assigned Workplace)`,
         address: employee?.companyAddress || employee?.registrationAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
         lat: Number(regLat),
         lng: Number(regLng),
@@ -176,7 +205,12 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       return [assignedWorkplaceZone, ...otherZones];
     }
 
-    // 5. Default Campus Location if unassigned
+    // Trainees without an assigned HTE must NOT fall back to their home or campus
+    if (isStudent) {
+      return [];
+    }
+
+    // 5. Default Campus Location for faculty / instructors only
     const campusLoc = getCampusLocation(employee?.campus);
     const campusFallbackZone: GeofenceZone = {
       id: `campus-${employee?.campus || 'main'}`,
@@ -218,6 +252,41 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       }
 
       const coords = { lat: latitude, lng: longitude };
+
+      const userRole = (employee?.role || (employee as any)?.userRole || '').toLowerCase();
+      const userPos = (employee?.position || '').toLowerCase();
+      const isHte = userRole === 'hte' || userRole === 'host' || userPos.includes('hte') || userPos.includes('supervisor');
+      const isInstructor = userRole === 'instructor' || userRole === 'faculty' || userPos.includes('instructor') || userPos.includes('faculty');
+      const isAdmin = userRole === 'admin' || userPos.includes('admin');
+      const isStudent = !isHte && !isInstructor && !isAdmin;
+      const companyName = (employee?.companyName || '').trim().toLowerCase();
+      const hasValidCompany = companyName && companyName !== 'n/a' && companyName !== 'pending';
+
+      // 1. Accuracy Threshold: Reject only if accuracy is excessively poor (> 250m) representing coarse city-level network IP
+      if (accuracy !== undefined && accuracy > 250) {
+        setResult({
+          state: 'outside',
+          zoneName: 'Inaccurate GPS Fix',
+          coords: { ...coords, accuracy },
+          accuracy,
+          errorMessage: `GPS accuracy is ±${Math.round(accuracy)}m (threshold is ±250m). Please move closer to a window or ensure device location services are enabled.`,
+        });
+        onResultRef.current(false, coords, 'outside', `GPS accuracy too low (±${Math.round(accuracy)}m)`);
+        return;
+      }
+
+      // 2. Strict HTE Assignment: Block clock-in if trainee has no assigned HTE
+      if (isStudent && (!hasValidCompany || currentZones.length === 0)) {
+        setResult({
+          state: 'outside',
+          zoneName: 'No HTE Workplace Assigned',
+          coords: { ...coords, accuracy },
+          accuracy,
+          errorMessage: 'You have not been assigned to a Host Training Establishment (HTE) yet. Clock-in is blocked until your OJT Instructor assigns your workplace location.',
+        });
+        onResultRef.current(false, coords, 'outside', 'No HTE workplace assigned');
+        return;
+      }
 
       if (!settings.geofenceEnabled) {
         setResult({
@@ -391,12 +460,13 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           lng,
           accuracy: position.coords.accuracy,
         });
+        checkGeofence();
       },
       () => {},
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  }, [checkGeofence]);
 
   const getStatusConfig = () => {
     switch (result.state) {
@@ -453,12 +523,21 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   };
 
   const config = getStatusConfig();
-  const liveCoords =
+  const rawCoords =
     watchCoords && isValidCoord(watchCoords.lat, watchCoords.lng)
       ? watchCoords
       : result.coords && isValidCoord(result.coords.lat, result.coords.lng)
         ? result.coords
         : null;
+
+  const liveCoords = React.useMemo(() => {
+    if (!rawCoords) return null;
+    return {
+      lat: rawCoords.lat,
+      lng: rawCoords.lng,
+      accuracy: rawCoords.accuracy,
+    };
+  }, [rawCoords?.lat, rawCoords?.lng, rawCoords?.accuracy]);
   const mapCenter = liveCoords
     ? ([liveCoords.lat, liveCoords.lng] as [number, number])
     : activeZones.length > 0
@@ -652,7 +731,6 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           <GeofenceMap
             zones={activeZones}
             liveUser={liveCoords || (result.coords ? { lat: result.coords.lat, lng: result.coords.lng, accuracy: result.coords.accuracy } : null)}
-            focusCoords={liveCoords ? { lat: liveCoords.lat, lng: liveCoords.lng } : undefined}
             className="h-72"
             title="Live Workplace Geofence Check"
           />

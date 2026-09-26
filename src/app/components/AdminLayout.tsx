@@ -20,6 +20,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
+import { UserAvatar } from './UserAvatar';
 import { isSecurityApiConfigured } from '../services/securityApi';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { getPendingTraineeRequests, subscribeToPendingRequests } from '../services/accountSync';
@@ -207,19 +208,16 @@ export function AdminLayout() {
 
         <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
           <div className="flex items-center gap-2 px-3 py-2 mb-2">
-            <div className="w-8 h-8 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20">
-              {(() => {
-                const url = getPhotoUrl(employee?.photo as any);
-                return url ? (
-                  <img src={url} alt={employee?.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-                ) : (
-                  <span className="text-white text-xs font-bold">AD</span>
-                );
-              })()}
-            </div>
+            <UserAvatar
+              photo={employee?.photo || currentUser?.photo}
+              name={employee?.name || currentUser?.name || 'OJT Instructor'}
+              role="admin"
+              size="sm"
+              className="border border-white/20"
+            />
             <div className="min-w-0">
-              <div className="text-white text-xs font-medium truncate">{employee?.name || 'OJT Instructor'}</div>
-              <div className="text-blue-300 text-xs truncate">{employee?.email || 'No email'}</div>
+              <div className="text-white text-xs font-medium truncate">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
+              <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
             </div>
           </div>
           <button
@@ -300,19 +298,16 @@ export function AdminLayout() {
               </nav>
               <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
                 <div className="flex items-center gap-2 px-3 py-2 mb-2">
-                  <div className="w-8 h-8 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20">
-                    {(() => {
-                      const url = getPhotoUrl(employee?.photo as any);
-                      return url ? (
-                        <img src={url} alt={employee?.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-                      ) : (
-                        <span className="text-white text-xs font-bold">AD</span>
-                      );
-                    })()}
-                  </div>
+                  <UserAvatar
+                    photo={employee?.photo || currentUser?.photo}
+                    name={employee?.name || currentUser?.name || 'OJT Instructor'}
+                    role="admin"
+                    size="sm"
+                    className="border border-white/20"
+                  />
                   <div className="min-w-0">
-                    <div className="text-white text-xs font-medium truncate">{employee?.name || 'OJT Instructor'}</div>
-                    <div className="text-blue-300 text-xs truncate">{employee?.email || 'No email'}</div>
+                    <div className="text-white text-xs font-medium truncate">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
+                    <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
                   </div>
                 </div>
                 <button
@@ -343,16 +338,13 @@ export function AdminLayout() {
             </div>
             <div className="hidden lg:flex items-center gap-2">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden border border-gray-200">
-                  {(() => {
-                    const url = getPhotoUrl(employee?.photo as any);
-                    return url ? (
-                      <img src={url} alt={employee?.name} className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
-                    ) : (
-                      <span className="text-blue-700 text-xs font-bold">AD</span>
-                    );
-                  })()}
-                </div>
+                <UserAvatar
+                  photo={employee?.photo || currentUser?.photo}
+                  name={employee?.name || currentUser?.name || 'OJT Instructor'}
+                  role="admin"
+                  size="sm"
+                  className="border border-gray-200"
+                />
               </div>
             </div>
           </div>

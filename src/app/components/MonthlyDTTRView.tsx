@@ -370,7 +370,6 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
           addTimeRecord({
             employeeId: selectedEmployee.id,
-            employeeName: selectedEmployee.name,
             date: dateStr,
             timeIn: padTime(entry.amArrival || entry.pmArrival),
             timeOut: padTime(entry.pmDeparture || entry.amDeparture || '17:00'),
@@ -378,6 +377,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             status: 'present',
             notes: entry.tasks || '',
             approvalStatus: 'approved',
+            timeInGeofenced: true,
+            timeOutGeofenced: true,
+            timeInFaceVerified: true,
+            timeOutFaceVerified: true,
           });
         }
       });

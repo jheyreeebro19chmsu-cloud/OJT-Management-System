@@ -38,6 +38,7 @@ import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { getCurrentLocation, reverseGeocode } from '../utils/geo';
 import { readAsDataUrl } from './Announcements';
+import { UserAvatar } from '../components/UserAvatar';
 import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
@@ -394,20 +395,13 @@ export function Profile() {
       >
         <div className="flex items-start gap-4">
           <div className="relative">
-            <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center overflow-hidden border-2 border-white/20 shadow-inner">
-              {avatarPreview ? (
-                <img src={avatarPreview} alt="avatar preview" className="w-full h-full object-cover" />
-              ) : employee.photo || currentUser?.photo ? (
-                <img
-                  src={getPhotoUrl(employee.photo || currentUser?.photo || '')}
-                  alt={employee.name}
-                  className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}
-                />
-              ) : (
-                <User size={28} className="text-blue-300" />
-              )}
-            </div>
+            <UserAvatar
+              photo={avatarPreview || employee.photo || currentUser?.photo}
+              name={employee.name}
+              role="employee"
+              size="xl"
+              className="rounded-2xl border-2 border-white/20 shadow-inner"
+            />
             {employee.faceRegistered && (
               <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center border-2 border-blue-800">
                 <Camera size={9} className="text-white" />
@@ -1085,7 +1079,15 @@ export function Profile() {
                     address: employee.registrationAddress || 'Calibrated Workplace GPS',
                     lat: employee.registrationLocation.lat,
                     lng: employee.registrationLocation.lng,
-                    radius: 100,
+                    radius: Math.max(
+                      40,
+                      Number(
+                        employee.registrationLocation.radius ||
+                        employee.registrationRadius ||
+                        (employee as any).registration_radius ||
+                        40
+                      )
+                    ),
                     active: true,
                   },
                 ]}

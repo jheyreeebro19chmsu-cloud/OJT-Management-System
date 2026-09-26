@@ -17,6 +17,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 
 interface HTELayoutProps {
@@ -168,17 +169,13 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
       {/* Supervisor User Footer on Left Sidebar */}
       <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
         <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
-          <div className="w-9 h-9 bg-[#1E3A66] rounded-full flex items-center justify-center overflow-hidden border border-white/20 shadow-inner shrink-0">
-            {avatarSource ? (
-              <img
-                src={getPhotoUrl(avatarSource)}
-                alt={avatarName}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <Building size={18} className="text-white" />
-            )}
-          </div>
+          <UserAvatar
+            photo={avatarSource}
+            name={avatarName}
+            role="hte"
+            size="md"
+            className="border border-white/20 shadow-inner"
+          />
           <div className="min-w-0">
             <div className="text-white text-xs font-bold truncate">{avatarName}</div>
             <div className="text-blue-300 text-[10px] truncate">{companyName}</div>

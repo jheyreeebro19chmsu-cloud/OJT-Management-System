@@ -15,12 +15,16 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
+  X,
+  Compass,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
+import { GeofenceMap } from '../components/GeofenceMap';
 
 function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
   const [hasError, setHasError] = useState(false);
@@ -45,10 +49,11 @@ function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
 
 export function HTEDashboard() {
   const navigate = useNavigate();
-  const { employees, timeRecords, evaluations, hostFeedback, announcements, currentUser, getCurrentEmployee, settings } =
+  const { employees, timeRecords, evaluations, hostFeedback, announcements, currentUser, getCurrentEmployee, settings, geofenceZones } =
     useApp();
   const currentEmp = getCurrentEmployee();
   const [searchTerm, setSearchTerm] = useState('');
+  const [showMapModal, setShowMapModal] = useState(false);
 
   const hteUser = React.useMemo(() => {
     try {
@@ -64,6 +69,31 @@ export function HTEDashboard() {
     hteUser?.companyName ||
     localStorage.getItem('ojt_hte_company') ||
     'Host Training Establishment';
+
+  const hteZone = useMemo(() => {
+    const cName = (companyName || '').toLowerCase().trim();
+    const empId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || '';
+    const found = geofenceZones.find(
+      (z) =>
+        z.id === `station-${empId}` ||
+        z.id === (currentUser as any)?.hteId ||
+        (cName && z.name && z.name.toLowerCase().includes(cName))
+    );
+    if (found) return found;
+    const loc = currentEmp?.registrationLocation || currentUser?.registrationLocation;
+    if (loc?.lat && loc?.lng) {
+      return {
+        id: `station-${empId || 'hte'}`,
+        name: companyName,
+        address: currentEmp?.registrationAddress || currentUser?.registrationAddress || 'Company Establishment',
+        lat: Number(loc.lat),
+        lng: Number(loc.lng),
+        radius: Number(loc.radius || 50),
+        active: true,
+      };
+    }
+    return null;
+  }, [geofenceZones, companyName, currentUser, currentEmp]);
 
   // Trainees tied to active HTE via company name, direct assignment, or all active OJT trainees in the active academic year
   const trainees = useMemo(() => {
@@ -247,15 +277,22 @@ export function HTEDashboard() {
 
           <div className="flex flex-wrap gap-3">
             <button
+              onClick={() => setShowMapModal(true)}
+              className="inline-flex items-center gap-2 px-5 py-3 bg-blue-700/60 hover:bg-blue-700 text-white font-bold text-sm rounded-2xl border border-blue-400/30 backdrop-blur-sm transition-all cursor-pointer"
+            >
+              <MapPin size={16} className="text-sky-300" />
+              <span>Workplace Geofence Map</span>
+            </button>
+            <button
               onClick={() => navigate('/hte/evaluations')}
-              className="inline-flex items-center gap-2 px-5 py-3 bg-white text-blue-900 font-extrabold text-sm rounded-2xl hover:bg-blue-50 shadow-lg shadow-black/10 transition-all"
+              className="inline-flex items-center gap-2 px-5 py-3 bg-white text-blue-900 font-extrabold text-sm rounded-2xl hover:bg-blue-50 shadow-lg shadow-black/10 transition-all cursor-pointer"
             >
               <Star size={16} className="text-amber-500 fill-amber-500" />
               <span>Evaluate Trainee</span>
             </button>
             <button
               onClick={() => navigate('/hte/records')}
-              className="inline-flex items-center gap-2 px-5 py-3 bg-blue-700/60 hover:bg-blue-700 text-white font-bold text-sm rounded-2xl border border-blue-400/30 backdrop-blur-sm transition-all"
+              className="inline-flex items-center gap-2 px-5 py-3 bg-blue-700/60 hover:bg-blue-700 text-white font-bold text-sm rounded-2xl border border-blue-400/30 backdrop-blur-sm transition-all cursor-pointer"
             >
               <Clock size={16} />
               <span>View Time Logs</span>
@@ -533,10 +570,17 @@ export function HTEDashboard() {
                     {log.timeOut || '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                      <ShieldCheck size={12} />
-                      Verified In Zone
-                    </span>
+                    {log.timeInGeofenced ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <ShieldCheck size={12} className="text-emerald-600" />
+                        Verified In Zone
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        <AlertTriangle size={12} className="text-rose-600" />
+                        Outside Geofence
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -602,6 +646,68 @@ export function HTEDashboard() {
           </div>
         )}
       </div>
+
+      {/* Workplace Geofence Map Modal */}
+      {showMapModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+                  <MapPin size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Workplace Geofence Perimeter</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {companyName} • Authorized boundary for student attendance
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMapModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden border border-slate-200 relative">
+              <GeofenceMap
+                zones={hteZone ? [hteZone] : []}
+                focusCoords={hteZone ? { lat: hteZone.lat, lng: hteZone.lng } : undefined}
+                className="h-80 w-full"
+                title={`${companyName} Geofence Map`}
+              />
+            </div>
+
+            {hteZone && (
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="font-bold text-slate-700">Official Location: </span>
+                  <span className="text-slate-600">{hteZone.address || 'Company Workplace'}</span>
+                </div>
+                <div className="flex items-center gap-3 font-mono text-slate-600">
+                  <span>GPS: {hteZone.lat.toFixed(5)}, {hteZone.lng.toFixed(5)}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                    ±{Math.round(hteZone.radius || 40)}m radius
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMapModal(false)}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Close Map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

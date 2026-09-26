@@ -1,0 +1,29 @@
+ID,Name,Shape Library,Page ID,Contained By,Text Area 1,Line Source,Line Destination
+1,Page,,1,,1.0 Authenticate Users,,
+2,Terminator,Flowchart Shapes,1,,Student,,
+3,Process,Flowchart Shapes,1,,1.1 Receive Registration,,
+4,Data Store,Flowchart Shapes,1,,D1: User Account Records,,
+5,Process,Flowchart Shapes,1,,1.2 Request OTP,,
+6,Terminator,Flowchart Shapes,1,,Email Service,,
+7,Process,Flowchart Shapes,1,,1.3 Verify OTP,,
+8,Process,Flowchart Shapes,1,,1.4 Validate Login,,
+9,Process,Flowchart Shapes,1,,1.5 Create User Session,,
+10,Terminator,Flowchart Shapes,1,,OJT Instructor,,
+11,Terminator,Flowchart Shapes,1,,Host Training Establishment (HTE),,
+12,Line,,1,,Registration information,2,3
+13,Line,,1,,New account information,3,4
+14,Line,,1,,Account verification request,3,5
+15,Line,,1,,OTP request,5,6
+16,Line,,1,,OTP delivery status,6,5
+17,Line,,1,,OTP verification request,5,7
+18,Line,,1,,Entered OTP code,2,7
+19,Line,,1,,Account verification request,7,4
+20,Line,,1,,Account information,4,7
+21,Line,,1,,Verified account,7,8
+22,Line,,1,,Login credentials,2,8
+23,Line,,1,,Credential lookup request,8,4
+24,Line,,1,,User credentials and account role,4,8
+25,Line,,1,,Validated login information,8,9
+26,Line,,1,,"Login status, session access",9,2
+27,Line,,1,,"Login status, session access",9,10
+28,Line,,1,,"Login status, session access",9,11

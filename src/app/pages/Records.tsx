@@ -73,7 +73,6 @@ function RecordPhotoThumbnail({
             onFailed?.();
           }}
           className={`w-full h-16 object-cover rounded-lg border ${borderClass} transition-opacity duration-200`}
-          style={{ transform: 'scaleX(-1)' }}
         />
         {isLoaded && (
           <p className="text-xs text-center text-gray-400 mt-1 group-hover:text-gray-600 transition-colors">
@@ -440,7 +439,6 @@ export function Records() {
                 alt={photoModal.label}
                 onError={() => setPhotoModal(null)}
                 className="w-full"
-                style={{ transform: 'scaleX(-1)' }}
               />
             </motion.div>
           </motion.div>

@@ -3,6 +3,8 @@ import { X, Check, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 import { readAsDataUrl } from '../pages/Announcements';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
+import { uploadFacePhoto } from '../services/supabaseService';
+import { isSupabaseConfigured } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
 
 export function AvatarEditor({ employeeId, onClose }: { employeeId: string; onClose: () => void }) {
@@ -20,19 +22,33 @@ export function AvatarEditor({ employeeId, onClose }: { employeeId: string; onCl
     if (!preview) return toast.error('Select an image first');
     setUploading(true);
     try {
+      if (isSupabaseConfigured()) {
+        try {
+          const uploadedUrl = await uploadFacePhoto(employeeId, preview, 'profile');
+          if (uploadedUrl && uploadedUrl.startsWith('http')) {
+            updateEmployee(employeeId, { photo: uploadedUrl, faceRegistered: true });
+            toast.success('Profile picture updated successfully!');
+            onClose();
+            return;
+          }
+        } catch (sErr) {
+          console.warn('Supabase storage upload notice:', sErr);
+        }
+      }
+
       if (isSecurityApiConfigured()) {
         const resp = await registerFace({ employee_id: String(employeeId), image: preview });
         if (resp.success && resp.image_url) {
           updateEmployee(employeeId, { photo: resp.image_url, faceRegistered: true });
-          toast.success('Avatar uploaded');
+          toast.success('Avatar uploaded successfully!');
           onClose();
           return;
         }
       }
 
-      // fallback: store data URL locally
+      // fallback: store data URL
       updateEmployee(employeeId, { photo: preview, faceRegistered: true });
-      toast.success('Avatar saved locally');
+      toast.success('Profile picture updated!');
       onClose();
     } catch (err) {
       console.error('Avatar upload error:', err);

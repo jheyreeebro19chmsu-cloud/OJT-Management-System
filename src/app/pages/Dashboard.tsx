@@ -214,7 +214,7 @@ export function Dashboard() {
         employee_id: emp?.id || empId,
         student_name: emp?.name || r.employeeName || r.employee_name || 'Student Trainee',
         student_id: emp?.employeeId || empId || 'OJT-TRAINEE',
-        photo: emp?.photo || r.photo,
+        photo: emp?.photo || r.timeInPhoto || r.time_in_photo || r.photo,
         course: emp?.course || emp?.department || 'OJT Trainee',
         date: r.date || (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
         timeIn: r.timeIn || r.time_in,
@@ -1087,18 +1087,24 @@ export function Dashboard() {
                   {/* Modal Header */}
                   <div className="p-6 bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 text-white flex items-start justify-between gap-4 shrink-0">
                     <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
-                        {target.photo ? (
-                          <img
-                            src={getPhotoUrl(target.photo)}
-                            alt={target.name}
-                            className="w-full h-full object-cover"
-                            style={{ transform: 'scaleX(-1)' }}
-                          />
-                        ) : (
-                          <span className="text-xl font-extrabold text-white">{initials}</span>
-                        )}
-                      </div>
+                      {(() => {
+                        const photoUrl = getPhotoUrl(target.photo);
+                        return (
+                          <div className="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center shrink-0 overflow-hidden shadow-inner relative select-none">
+                            <span className="text-xl font-extrabold text-white">{initials}</span>
+                            {photoUrl && (
+                              <img
+                                src={photoUrl}
+                                alt=""
+                                className="w-full h-full object-cover absolute inset-0 z-10"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-xl font-bold text-white">{target.name}</h3>

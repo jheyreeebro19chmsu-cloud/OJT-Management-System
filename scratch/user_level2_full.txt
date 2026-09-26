@@ -1,0 +1,308 @@
+<USER_REQUEST>
+LEVEL 2
+1.0 — Authenticate Users
+1.1 — Receive Registration
+
+Student → 1.1 Receive Registration
+Data Flow: Registration information
+
+1.1 Receive Registration → D1 User Account Records
+Data Flow: New account information
+
+1.1 Receive Registration → 1.2 Request OTP
+Data Flow: Account verification request
+
+1.2 — Request OTP
+
+1.2 Request OTP → Email Service
+Data Flow: OTP request
+
+Email Service → 1.2 Request OTP
+Data Flow: OTP delivery status
+
+1.2 Request OTP → 1.3 Verify OTP
+Data Flow: OTP verification request
+
+1.3 — Verify OTP
+
+Student → 1.3 Verify OTP
+Data Flow: Entered OTP code
+
+1.3 Verify OTP → D1 User Account Records
+Data Flow: Account verification request
+
+D1 User Account Records → 1.3 Verify OTP
+Data Flow: Account information
+
+1.3 Verify OTP → 1.4 Validate Login
+Data Flow: Verified account
+
+1.4 — Validate Login
+
+Student → 1.4 Validate Login
+Data Flow: Login credentials
+
+1.4 Validate Login → D1 User Account Records
+Data Flow: Credential lookup request
+
+D1 User Account Records → 1.4 Validate Login
+Data Flow: User credentials and account role
+
+1.4 Validate Login → 1.5 Create User Session
+Data Flow: Validated login information
+
+1.5 — Create User Session
+
+1.5 Create User Session → Student
+Data Flow: Login status, session access
+
+1.5 Create User Session → OJT Instructor
+Data Flow: Login status, session access
+
+1.5 Create User Session → Host Training Establishment (HTE)
+Data Flow: Login status, session access
+
+2.0 — Process OJT Applications
+2.1 — Receive OJT Application
+
+Student → 2.1 Receive OJT Application
+Data Flow: OJT application information
+
+2.1 Receive OJT Application → 2.2 Validate Application
+Data Flow: Submitted application
+
+2.2 — Validate Application
+
+2.2 Validate Application → D2 OJT Application Records
+Data Flow: Validated application record
+
+D2 OJT Application Records → 2.3 Retrieve Application
+Data Flow: Application information
+
+2.3 — Retrieve Application
+
+2.3 Retrieve Application → OJT Instructor
+Data Flow: OJT application for review
+
+2.4 — Review Application
+
+OJT Instructor → 2.4 Review Application
+Data Flow: Approval or rejection decision
+
+2.4 Review Application → 2.5 Update Application Status
+Data Flow: Application decision
+
+2.5 — Update Application Status
+
+2.5 Update Application Status → D2 OJT Application Records
+Data Flow: Updated application status
+
+D2 OJT Application Records → 2.6 Notify Application Result
+Data Flow: Updated application information
+
+2.6 — Notify Application Result
+
+2.6 Notify Application Result → Student
+Data Flow: Application status
+
+3.0 — Record OJT Attendance
+3.1 — Receive Attendance Request
+
+Student → 3.1 Receive Attendance Request
+Data Flow: Time In/Time Out request
+
+3.1 Receive Attendance Request → 3.2 Capture Location
+Data Flow: Attendance request
+
+3.2 — Capture Location
+
+3.2 Capture Location → GPS / Location Service
+Data Flow: Current location request
+
+GPS / Location Service → 3.2 Capture Location
+Data Flow: Current GPS coordinates
+
+3.2 Capture Location → 3.3 Validate Geofence
+Data Flow: Current location data
+
+3.3 — Validate Geofence
+
+3.3 Validate Geofence → D2 OJT Application Records
+Data Flow: Authorized OJT location request
+
+D2 OJT Application Records → 3.3 Validate Geofence
+Data Flow: Authorized OJT location
+
+3.3 Validate Geofence → 3.4 Verify Student Identity
+Data Flow: Validated location result
+
+3.4 — Verify Student Identity
+
+3.4 Verify Student Identity → Facial Recognition Service
+Data Flow: Face verification request
+
+Facial Recognition Service → 3.4 Verify Student Identity
+Data Flow: Face verification result
+
+3.4 Verify Student Identity → 3.5 Validate Attendance
+Data Flow: Identity verification result
+
+3.5 — Validate Attendance
+
+3.5 Validate Attendance → 3.6 Record Time Entry
+Data Flow: Validated attendance request
+
+3.6 — Record Time Entry
+
+3.6 Record Time Entry → D3 Attendance Records
+Data Flow: Time In/Time Out record
+
+D3 Attendance Records → 3.7 Calculate Rendered Hours
+Data Flow: Attendance time records
+
+3.7 — Calculate Rendered Hours
+
+3.7 Calculate Rendered Hours → D3 Attendance Records
+Data Flow: Rendered hours
+
+3.7 Calculate Rendered Hours → Student
+Data Flow: Attendance result, rendered hours
+
+4.0 — Manage OJT Activities
+4.1 — Create Announcement
+
+OJT Instructor → 4.1 Create Announcement
+Data Flow: Announcement information
+
+4.1 Create Announcement → D4 Announcement Records
+Data Flow: Announcement record
+
+4.2 — Publish Announcement
+
+D4 Announcement Records → 4.2 Publish Announcement
+Data Flow: Announcement information
+
+4.2 Publish Announcement → Student
+Data Flow: Published announcement
+
+4.3 — Create OJT Task
+
+OJT Instructor → 4.3 Create OJT Task
+Data Flow: Task information
+
+4.3 Create OJT Task → D5 OJT Task Records
+Data Flow: OJT task record
+
+4.4 — Assign OJT Task
+
+D5 OJT Task Records → 4.4 Assign OJT Task
+Data Flow: Task information
+
+4.4 Assign OJT Task → Student
+Data Flow: Assigned OJT task
+
+4.5 — Receive Task Submission
+
+Student → 4.5 Receive Task Submission
+Data Flow: Task submission
+
+4.5 Receive Task Submission → D6 Student Submission Records
+Data Flow: Submission record
+
+4.6 — Review Task Submission
+
+D6 Student Submission Records → 4.6 Review Task Submission
+Data Flow: Student submission
+
+4.6 Review Task Submission → OJT Instructor
+Data Flow: Submission for review
+
+5.0 — Control HTE Access
+5.1 — Receive Access Request
+
+HTE → 5.1 Receive Access Request
+Data Flow: HTE access request
+
+5.1 Receive Access Request → D7 HTE Access Records
+Data Flow: Access request record
+
+5.2 — Retrieve Access Request
+
+D7 HTE Access Records → 5.2 Retrieve Access Request
+Data Flow: Pending access request
+
+5.2 Retrieve Access Request → OJT Instructor
+Data Flow: HTE access request for review
+
+5.3 — Review Access Request
+
+OJT Instructor → 5.3 Review Access Request
+Data Flow: Approval or rejection decision
+
+5.3 Review Access Request → 5.4 Update Access Status
+Data Flow: Access decision
+
+5.4 — Update Access Status
+
+5.4 Update Access Status → D7 HTE Access Records
+Data Flow: Updated access status
+
+5.4 Update Access Status → HTE
+Data Flow: Access status
+
+6.0 — Monitor and Evaluate OJT
+6.1 — Retrieve OJT Records
+
+D2 OJT Application Records → 6.1 Retrieve OJT Records
+Data Flow: Application information
+
+D3 Attendance Records → 6.1 Retrieve OJT Records
+Data Flow: Attendance information
+
+D5 OJT Task Records → 6.1 Retrieve OJT Records
+Data Flow: Task information
+
+D6 Student Submission Records → 6.1 Retrieve OJT Records
+Data Flow: Submission information
+
+6.1 Retrieve OJT Records → 6.2 Monitor OJT Progress
+Data Flow: Consolidated OJT records
+
+6.2 — Monitor OJT Progress
+
+6.2 Monitor OJT Progress → 6.3 Generate OJT Report
+Data Flow: OJT progress information
+
+6.2 Monitor OJT Progress → HTE
+Data Flow: Student progress, attendance, rendered hours
+
+6.3 — Generate OJT Report
+
+6.3 Generate OJT Report → OJT Instructor
+Data Flow: Attendance report, OJT progress report
+
+6.4 — Record Evaluation
+
+OJT Instructor → 6.4 Record Evaluation
+Data Flow: Instructor evaluation and feedback
+
+HTE → 6.4 Record Evaluation
+Data Flow: HTE evaluation and feedback
+
+6.4 Record Evaluation → D8 Evaluation and Feedback Records
+Data Flow: Evaluation and feedback record
+
+6.5 — Provide Feedback
+
+D8 Evaluation and Feedback Records → 6.5 Provide Feedback
+Data Flow: Evaluation and feedback information
+
+6.5 Provide Feedback → Student
+Data Flow: Evaluation result and feedback
+
+
+remember I paste the dfd levle 2 here, edit this to the latest accurate one
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-25T01:57:52+08:00.
+</ADDITIONAL_METADATA>
