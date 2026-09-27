@@ -51,8 +51,9 @@ export default function App() {
       <CypressWhiteBoxHook />
       <RouterProvider router={router} />
       <Toaster
-        position="top-center"
+        position="top-right"
         richColors
+        closeButton
         toastOptions={{
           style: {
             borderRadius: '16px',

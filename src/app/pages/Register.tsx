@@ -572,9 +572,9 @@ export function Register() {
         }
       }).catch(() => {});
 
-      const accuracyLabel = accuracy <= 15 ? 'High Precision' : accuracy <= 40 ? 'Good' : 'Acceptable';
+      const accuracyLabel = accuracy <= 25 ? 'High Precision' : accuracy <= 60 ? 'Good' : 'Acceptable';
       if (accuracy > 100) {
-        toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). High-accuracy GPS under 100m is required; please calibrate or adjust the pin on the map.`, { duration: 6000 });
+        toast.info(`GPS coordinates captured (±${Math.round(accuracy)}m). You can adjust the pin on the map if needed.`, { duration: 5000 });
       } else {
         toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
       }
@@ -1542,10 +1542,27 @@ export function Register() {
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <Link to="/" className="text-blue-200 hover:text-white transition-colors">
-            <ArrowLeft size={20} />
-          </Link>
+        <div className="flex items-center gap-3 mb-6 relative z-10">
+          <button
+            type="button"
+            onClick={() => {
+              if (step > 0) {
+                setStep((prev) => prev - 1);
+                setAttemptedNext(false);
+              } else if (role !== null) {
+                setRole(null);
+                setStep(0);
+                setAttemptedNext(false);
+              } else {
+                navigate('/login');
+              }
+            }}
+            className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 flex items-center justify-center text-blue-100 hover:text-white border border-white/20 transition-all shadow-sm shrink-0 cursor-pointer"
+            title={step > 0 ? 'Previous step' : role !== null ? 'Back to role selection' : 'Back to login'}
+            aria-label="Back"
+          >
+            <ArrowLeft size={18} />
+          </button>
           <div>
             <h1 className="text-white font-bold text-lg">
               {role === null
