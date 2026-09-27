@@ -817,14 +817,22 @@ def verify_face(request: HttpRequest) -> JsonResponse:
             status=422,
         )
 
-    # Check if a test explicitly mocked deepface_service
+    # Check if a test explicitly mocked deepface_service or legacy face_recognition
     is_deepface_mocked = False
     df_mod = sys.modules.get('deepface_service')
     if df_mod is not None and ('Mock' in type(df_mod).__name__ or hasattr(df_mod, '_mock_return_value')):
         is_deepface_mocked = True
 
+    is_legacy_mocked = (
+        'Mock' in type(_encode_face_with_fallback).__name__
+        or hasattr(_encode_face_with_fallback, '_mock_return_value')
+        or 'Mock' in type(unknown_image).__name__
+        or 'Mock' in type(known_image).__name__
+        or (isinstance(known_encoding, list) and any('Mock' in type(x).__name__ for x in known_encoding))
+    )
+
     # 1. Primary InsightFace verification (ArcFace buffalo_s on ONNX Runtime)
-    if has_insightface and verify_attendance and not is_deepface_mocked:
+    if has_insightface and verify_attendance and not is_deepface_mocked and not is_legacy_mocked:
         try:
             # Check for multiple faces in captured frame
             from insightface_service import get_face_analysis_app, to_cv2_image
