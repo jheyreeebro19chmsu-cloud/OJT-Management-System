@@ -16,7 +16,10 @@
     "cypress:run:all": "cypress run",
     "download-models": "node scripts/download-face-models.cjs",
     "lint": "eslint .",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\""
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\"",
+    "seed": "powershell -ExecutionPolicy Bypass -File .\\seed_system.ps1",
+    "seed:django": "powershell -ExecutionPolicy Bypass -File .\\seed_system.ps1 -Target django",
+    "seed:supabase": "node scripts/seed-supabase.cjs"
   },
   "dependencies": {
     "@capacitor/cli": "^8.5.1",
