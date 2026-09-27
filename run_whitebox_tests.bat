@@ -20,12 +20,18 @@ if not exist "%PYTHON_EXE%" (
 set "PYTHONPATH=%SCRIPT_DIR%backend"
 set "DJANGO_SETTINGS_MODULE=ojt_backend.settings"
 
-"%PYTHON_EXE%" -m pytest backend\security\tests\test_database_connection_whitebox.py backend\security\tests\test_admin_auth_whitebox.py backend\security\tests\test_trainee_auth_whitebox.py backend\security\tests\test_auth_error_handling_whitebox.py -v --ds=ojt_backend.settings -W ignore::DeprecationWarning -W ignore::UserWarning
+if "%1"=="" (
+    echo Running all tests in backend/security/tests (114 tests)...
+    "%PYTHON_EXE%" -m pytest backend\security\tests -v
+) else (
+    echo Running specified target: %*
+    "%PYTHON_EXE%" -m pytest %* -v
+)
 
 if %ERRORLEVEL% EQU 0 (
     echo.
     echo =================================================================
-    echo  [PASSED] All White-Box Test Cases verified successfully!
+    echo  [PASSED] All Test Cases verified successfully!
     echo =================================================================
 ) else (
     echo.
@@ -35,3 +41,4 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 pause
+

@@ -52,11 +52,14 @@ switch ($Suite.ToLower()) {
     "errors" {
         $TestTargets += "backend\security\tests\test_auth_error_handling_whitebox.py"
     }
-    default {
+    "whitebox" {
         $TestTargets += "backend\security\tests\test_database_connection_whitebox.py"
         $TestTargets += "backend\security\tests\test_admin_auth_whitebox.py"
         $TestTargets += "backend\security\tests\test_trainee_auth_whitebox.py"
         $TestTargets += "backend\security\tests\test_auth_error_handling_whitebox.py"
+    }
+    default {
+        $TestTargets += "backend\security\tests"
     }
 }
 
