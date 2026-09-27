@@ -41,7 +41,7 @@ import { toast } from 'sonner';
 
 import { FaceCapture } from '../components/FaceCapture';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
-import { TraineeDocuments, TraineeDocumentItem } from '../types';
+import { TraineeDocuments, TraineeDocumentItem, User as AuthUser } from '../types';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
@@ -163,7 +163,7 @@ export function parseGoogleFullName(fullName: string, givenName?: string | null,
 }
 
 export function Register() {
-  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings, addGeofenceZone } = useApp();
+  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings, addGeofenceZone, setCurrentUser } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
@@ -226,6 +226,7 @@ export function Register() {
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [registeredUser, setRegisteredUser] = useState<AuthUser | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [registeredInstructorId, setRegisteredInstructorId] = useState('');
 
@@ -1181,9 +1182,30 @@ export function Register() {
             }
           }
 
-          toast.success('Registration completed! Profile saved. Please log in.');
+          const isInstructor = role === 'admin';
+          const isHte = role === 'hte';
+          const userRole: AuthUser['role'] = isInstructor ? 'admin' : isHte ? 'hte' : 'employee';
+          const resolvedUser: AuthUser = {
+            id: empToUpdateId,
+            name: composedName,
+            email: form.email,
+            role: userRole,
+            photo: photo || (existing ? existing.photo : undefined),
+            employeeId: updatedPayload.employeeId || empId,
+            faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
+          };
+
+          setCurrentUser(resolvedUser);
+          localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
+          localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
+          if (isHte) {
+            localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
+          }
+
+          setRegisteredUser(resolvedUser);
+          setRegistrationComplete(true);
           setIsSubmitting(false);
-          navigate('/login');
+          toast.success('Registration completed! Profile updated.');
           return;
         } catch (repairErr: any) {
           console.error('Failed to update registration record in database:', repairErr);
@@ -1266,21 +1288,34 @@ export function Register() {
       console.error(e);
     }
 
-    // Auto-redirect based on role
-    // Redirect to login after successful registration
+    // Authenticate user session and present completion options
     setIsSubmitting(false);
     localStorage.removeItem('oauth_user_id');
-    if (role === 'admin') {
-      // For admin, show the success screen with QR code
-      setRegistrationComplete(true);
-      toast.success('Registration successful! Please save your QR code.');
-    } else if (role === 'hte') {
-      toast.success('Registration successful! Please log in with your HTE credentials.');
-      navigate('/login');
-    } else {
-      toast.success('Registration successful! You can now log in to access your OJT dashboard.');
-      navigate('/login');
+    localStorage.removeItem('pending_oauth_role');
+
+    const isInstructor = role === 'admin';
+    const isHte = role === 'hte';
+    const userRole: AuthUser['role'] = isInstructor ? 'admin' : isHte ? 'hte' : 'employee';
+    const resolvedUser: AuthUser = {
+      id: newEmp.id,
+      name: newEmp.name || composedName,
+      email: newEmp.email || form.email,
+      role: userRole,
+      photo: newEmp.photo || photo,
+      employeeId: newEmp.employeeId || empId,
+      faceRegistered: newEmp.faceRegistered ?? faceRegistered,
+    };
+
+    setCurrentUser(resolvedUser);
+    localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
+    localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
+    if (isHte) {
+      localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
     }
+
+    setRegisteredUser(resolvedUser);
+    setRegistrationComplete(true);
+    toast.success('Registration successful! Your account is ready.');
   };
 
   const getValidationErrors = () => {
@@ -1485,50 +1520,91 @@ export function Register() {
 
   const locConfig = locationStatusConfig[locationStatus];
 
-  if (registrationComplete && role === 'admin') {
+  if (registrationComplete) {
+    const isInstructor = role === 'admin';
+    const isHte = role === 'hte';
+    const targetDashboard = isInstructor ? '/admin' : isHte ? '/hte' : '/app';
     const instructorQrData = JSON.stringify({
       type: 'instructor_enrollment',
-      instructorId: registeredInstructorId || form.email,
-      name: form.name || [form.firstName, form.lastName].filter(Boolean).join(' '),
+      instructorId: registeredInstructorId || registeredUser?.employeeId || form.email,
+      name: registeredUser?.name || form.name || [form.firstName, form.lastName].filter(Boolean).join(' '),
     });
+
+    const displayName = registeredUser?.name || form.name || [form.firstName, form.lastName].filter(Boolean).join(' ') || 'User';
+    const displayId = registeredUser?.employeeId || registeredInstructorId || form.employeeId || form.email;
+    const roleTitle = isInstructor ? 'OJT Instructor' : isHte ? 'HTE Representative' : 'OJT Trainee';
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl text-center">
-          <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-green-200">
-            <Check size={28} className="text-green-600" />
+          <div className="w-16 h-16 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-emerald-200 shadow-xs">
+            <Check size={32} className="text-emerald-600" />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 mb-1">Instructor Registered!</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Your account has been created. Here is your official Enrollment QR Code for trainees.
+
+          <h2 className="text-2xl font-black text-gray-900 mb-1">Registration Complete!</h2>
+          <p className="text-sm text-gray-600 mb-5">
+            Welcome to the CHMSU OJT Management System, <span className="font-bold text-gray-800">{displayName}</span>. Your account is verified and ready.
           </p>
 
-          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 mb-6 flex flex-col items-center">
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4">
-              <QRCodeSVG value={instructorQrData} size={200} level="H" includeMargin />
-            </div>
-            <p className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-1">Instructor ID</p>
-            <p className="text-sm font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200 select-all">
-              {registeredInstructorId || form.email}
-            </p>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-bold mb-6">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>{roleTitle}</span>
+            {displayId && (
+              <>
+                <span className="text-blue-300">•</span>
+                <span className="font-mono text-blue-700">{displayId}</span>
+              </>
+            )}
           </div>
 
+          {/* Instructor Official Enrollment QR Section */}
+          {isInstructor && (
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 mb-6 flex flex-col items-center">
+              <p className="text-xs font-semibold text-gray-600 mb-3">Official Trainee Enrollment QR Code</p>
+              <div className="bg-white p-3.5 rounded-xl shadow-xs border border-gray-100 mb-3">
+                <QRCodeSVG value={instructorQrData} size={180} level="H" includeMargin />
+              </div>
+              <p className="text-xs font-bold text-gray-400 tracking-wider uppercase mb-1">Instructor ID</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200 select-all">
+                  {registeredInstructorId || form.email}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(registeredInstructorId || form.email);
+                    toast.success('Instructor ID copied to clipboard!');
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Primary Action Buttons: Go to Dashboard OR Back to Login Page */}
           <div className="flex flex-col gap-3">
             <button
+              type="button"
               onClick={() => {
-                navigator.clipboard?.writeText(registeredInstructorId || form.email);
-                toast.success('Instructor ID copied to clipboard!');
+                toast.success('Entering your dashboard...');
+                navigate(targetDashboard);
               }}
-              className="w-full py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              Copy Instructor ID
+              <span>Go to Dashboard</span>
+              <ArrowRight size={16} />
             </button>
             <button
-              onClick={() => navigate('/login')}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+              type="button"
+              onClick={() => {
+                navigate('/login');
+              }}
+              className="w-full py-3 bg-gray-100 hover:bg-gray-200 active:scale-[0.99] text-gray-700 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 border border-gray-200 cursor-pointer"
             >
-              Proceed to Login
-              <ArrowRight size={16} />
+              <ArrowLeft size={15} />
+              <span>Back to Login Page</span>
             </button>
           </div>
         </motion.div>
