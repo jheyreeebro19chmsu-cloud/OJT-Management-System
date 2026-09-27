@@ -80,12 +80,12 @@ export function HTEDashboard() {
         (cName && z.name && z.name.toLowerCase().includes(cName))
     );
     if (found) return found;
-    const loc = currentEmp?.registrationLocation || currentUser?.registrationLocation;
+    const loc = currentEmp?.registrationLocation || (currentUser as any)?.registrationLocation;
     if (loc?.lat && loc?.lng) {
       return {
         id: `station-${empId || 'hte'}`,
         name: companyName,
-        address: currentEmp?.registrationAddress || currentUser?.registrationAddress || 'Company Establishment',
+        address: currentEmp?.registrationAddress || (currentUser as any)?.registrationAddress || 'Company Establishment',
         lat: Number(loc.lat),
         lng: Number(loc.lng),
         radius: Number(loc.radius || 50),

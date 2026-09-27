@@ -525,8 +525,9 @@ export function TimeRecord() {
                     <button
                       type="button"
                       onClick={() => {
-                        alert(
-                          'How to Allow GPS Location:\n\n1. Click the Lock (🔒) or Tune (🎛️) icon on the left of your browser address bar.\n2. Change Location to "Allow".\n3. Refresh this page or click "Retry Location Check".'
+                        toast.info(
+                          'How to Allow GPS Location: 1. Click the Lock (🔒) or Tune (🎛️) icon on the address bar. 2. Change Location to Allow. 3. Refresh or click Retry.',
+                          { duration: 8000 }
                         );
                       }}
                       className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-semibold transition-colors"
@@ -613,14 +614,16 @@ export function TimeRecord() {
                   return;
                 }
                 if (geofenceStatus === 'denied') {
-                  alert(
-                    'GPS Location Permission Denied\n\nTo clock in or out, you must allow location access:\n1. Click the Lock (🔒) or Site Settings icon in your browser address bar.\n2. Change Location to "Allow".\n3. Click "Request GPS Permission / Retry".'
+                  toast.error(
+                    'GPS Location Permission Denied: Click the Lock (🔒) icon in your browser address bar, set Location to Allow, and retry.',
+                    { duration: 6000 }
                   );
                   return;
                 }
                 if (!geofencePassed) {
-                  alert(
-                    'GPS Permission Required\n\nPlease allow browser location access so the system can verify you are within your designated workplace geofence before clocking in or out.'
+                  toast.error(
+                    'GPS Permission Required: Please allow browser location access so the system can verify your designated workplace geofence.',
+                    { duration: 6000 }
                   );
                   return;
                 }

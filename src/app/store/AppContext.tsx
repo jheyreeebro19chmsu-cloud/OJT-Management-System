@@ -24,6 +24,7 @@ import {
   TraineeDocuments,
   TraineeDocumentItem,
   MonthlyDttrRecord,
+  EvaluationQuestionnaire,
 } from '../types';
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
@@ -3226,7 +3227,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return rolledBack;
           });
         }
-        alert('Failed to delete evaluation from cloud. Item has been restored.');
+        toast.error('Failed to delete evaluation from cloud. Item has been restored.');
       });
     }
   };
@@ -3319,7 +3320,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // isn't actually saved, since it would vanish on next reload anyway.
           setAnnouncements((prev) => prev.filter((a) => a.id !== newAnn.id));
           if (typeof window !== 'undefined') {
-            alert('Could not save this announcement to the database. Please check your connection and try again.');
+            toast.error('Could not save this announcement to the database. Please check your connection and try again.');
           }
         });
     }
@@ -3746,7 +3747,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (previous) {
           setHostFeedback((prev) => prev.map((f) => (f.id === id ? previous : f)));
         }
-        alert('Failed to save host feedback update to cloud. Changes have been rolled back.');
+        toast.error('Failed to save host feedback update to cloud. Changes have been rolled back.');
       });
     }
   };
@@ -3760,7 +3761,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (previous) {
           setHostFeedback((prev) => [previous, ...prev]);
         }
-        alert('Failed to delete host feedback from cloud. Item has been restored.');
+        toast.error('Failed to delete host feedback from cloud. Item has been restored.');
       });
     }
   };

@@ -287,7 +287,7 @@ export default function OAuthCallback() {
             };
 
             if (photoUrl && !dbEmp.photo) {
-              supabase.from('employees').update({ photo: photoUrl }).eq('id', dbEmp.id).then(() => {}).catch(console.warn);
+              Promise.resolve(supabase.from('employees').update({ photo: photoUrl }).eq('id', dbEmp.id)).catch(console.warn);
             }
 
             setCurrentUser(resolvedUser);

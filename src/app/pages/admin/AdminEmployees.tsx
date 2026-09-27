@@ -600,8 +600,8 @@ export function AdminEmployees() {
                         </span>
                       )}
                       {(() => {
-                        const rawLat = (emp.registrationLocation as any)?.lat ?? emp.registrationLat;
-                        const rawLng = (emp.registrationLocation as any)?.lng ?? emp.registrationLng;
+                        const rawLat = emp.registrationLocation?.lat ?? (emp as any).registration_lat ?? (emp as any).registrationLat;
+                        const rawLng = emp.registrationLocation?.lng ?? (emp as any).registration_lng ?? (emp as any).registrationLng;
                         if (rawLat != null && rawLng != null && !isWithinNegrosOccidental(rawLat, rawLng)) {
                           return (
                             <span className="text-[10px] flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 font-bold" title="Stored coordinates are outside Negros Occidental">
@@ -2585,7 +2585,7 @@ export function AdminEmployees() {
                       <div key={field}>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">{label}</label>
                         <input
-                          value={(form as Record<string, string | number>)[field] as string}
+                          value={((form as Record<string, any>)[field] as string) ?? ''}
                           onChange={(e) => {
                             if (field === 'contactPhone') {
                               let val = e.target.value.replace(/[^\d+]/g, '');

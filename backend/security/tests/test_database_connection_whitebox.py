@@ -17,6 +17,22 @@ Run with:
 =============================================================================
 """
 
+import os
+import sys
+
+# Ensure backend directory is in sys.path and DJANGO_SETTINGS_MODULE is configured
+_backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
+if not os.environ.get('DJANGO_SETTINGS_MODULE'):
+    os.environ['DJANGO_SETTINGS_MODULE'] = 'ojt_backend.settings'
+
+import django
+from django.apps import apps
+if not apps.ready:
+    django.setup()
+
 import sqlite3
 from unittest.mock import patch, MagicMock
 

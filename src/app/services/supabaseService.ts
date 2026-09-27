@@ -2080,8 +2080,15 @@ function transformSupabaseHostSupervisor(data: any): HostSupervisor {
   };
 }
 
-export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{ success: boolean; repairedEmployees: number; repairedRecords: number; migratedHTEs: number }> {
-  if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0 };
+export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{
+  success: boolean;
+  repairedEmployees: number;
+  repairedRecords: number;
+  migratedHTEs: number;
+  deduplicatedZones?: number;
+  outOfRegionTrainees?: any[];
+}> {
+  if (!isSupabaseConfigured()) return { success: false, repairedEmployees: 0, repairedRecords: 0, migratedHTEs: 0, deduplicatedZones: 0, outOfRegionTrainees: [] };
 
   try {
     // 1. Update any employee missing academic_year, legacy administrator position, mismatched HTE/ADM employee_ids, or missing photo

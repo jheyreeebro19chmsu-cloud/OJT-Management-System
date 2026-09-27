@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Edit3,
   X,
-  Camera,
+  Save,
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
