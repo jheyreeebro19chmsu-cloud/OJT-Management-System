@@ -1307,7 +1307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const { data: dbEmp } = await supabase
           .from('employees')
           .select('*')
-          .or(`email.ilike.${normalizedId},employee_id.ilike.${normalizedId}`)
+          .or(`email_lower.eq.${normalizedId},employee_id_lower.eq.${normalizedId}`)
           .limit(1)
           .maybeSingle();
 
@@ -1370,7 +1370,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: dbEmp } = await supabase
               .from('employees')
               .select('*')
-              .or(`id.eq.${userId},email.ilike.${targetEmail}`)
+              .or(`id.eq.${userId},email_lower.eq.${targetEmail}`)
               .limit(1)
               .maybeSingle();
 
@@ -1381,7 +1381,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               const { data: dbHost } = await supabase
                 .from('host_supervisors')
                 .select('*')
-                .or(`id.eq.${userId},email.ilike.${targetEmail}`)
+                .or(`id.eq.${userId},email_lower.eq.${targetEmail}`)
                 .limit(1)
                 .maybeSingle();
 
