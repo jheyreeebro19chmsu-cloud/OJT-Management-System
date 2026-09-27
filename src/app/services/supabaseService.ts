@@ -996,14 +996,36 @@ export async function fetchSettings(): Promise<AppSettings | null> {
 
   if (!data) return null;
 
+  let localAcademicYears: string[] = ['2025-2026', '2026-2027'];
+  let localActiveYear: string = '2026-2027';
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('ojt_settings') : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.academicYears) && parsed.academicYears.length > 0) {
+        localAcademicYears = parsed.academicYears;
+      }
+      if (parsed.activeAcademicYear) {
+        localActiveYear = parsed.activeAcademicYear;
+      }
+    }
+  } catch {}
+
+  const resolvedYears = Array.from(new Set([
+    ...(Array.isArray(data.academic_years) && data.academic_years.length > 0 ? data.academic_years : []),
+    ...localAcademicYears,
+    '2025-2026',
+    '2026-2027',
+  ]));
+
   return {
     workStartTime: data.work_start_time,
     workEndTime: data.work_end_time,
     lateThresholdMinutes: data.late_threshold_minutes,
     geofenceEnabled: data.geofence_enabled,
     facialRecognitionEnabled: data.facial_recognition_enabled,
-    academicYears: Array.isArray(data.academic_years) && data.academic_years.length > 0 ? data.academic_years : ['2025-2026'],
-    activeAcademicYear: data.active_academic_year || '2025-2026',
+    academicYears: resolvedYears,
+    activeAcademicYear: data.active_academic_year || localActiveYear || '2026-2027',
   };
 }
 

@@ -39,8 +39,24 @@ export function AcademicYearManagement() {
   const [isRepairing, setIsRepairing] = useState(false);
 
   useEffect(() => {
-    setForm(settings);
-  }, [settings]);
+    // Collect all academic years from settings, default list, and employees in the system
+    const employeeAYs = employees
+      .map((e) => e.academicYear)
+      .filter((ay): ay is string => Boolean(ay && /^\d{4}-\d{4}$/.test(ay)));
+
+    const allYears = Array.from(new Set([
+      ...(settings.academicYears || ['2025-2026', '2026-2027']),
+      ...employeeAYs,
+      '2025-2026',
+      '2026-2027',
+    ]));
+
+    setForm({
+      ...settings,
+      academicYears: allYears,
+      activeAcademicYear: settings.activeAcademicYear || '2026-2027',
+    });
+  }, [settings, employees]);
 
   const handleAddAcademicYear = () => {
     const academicYear = newAcademicYear.trim();

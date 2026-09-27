@@ -741,8 +741,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [settings, setSettings] = useState<AppSettings>(() => {
     const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
-    const currentAcademicYear = getCurrentAcademicYear();
-    const academicYears = Array.from(new Set([...(stored.academicYears || DEFAULT_SETTINGS.academicYears), currentAcademicYear]));
+    const currentAcademicYear = '2026-2027';
+    const academicYears = Array.from(new Set([
+      ...(stored.academicYears || DEFAULT_SETTINGS.academicYears),
+      '2025-2026',
+      '2026-2027',
+    ]));
     return {
       ...DEFAULT_SETTINGS,
       ...stored,
@@ -838,6 +842,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (isMounted && emp && emp.length > 0) {
                 setEmployees(emp);
                 saveToStorage(STORAGE_KEYS.EMPLOYEES, emp);
+
+                // Auto-discover academic years from loaded employees (e.g. '2026-2027')
+                const employeeAYs = Array.from(new Set(
+                  emp.map((e) => e.academicYear).filter((ay): ay is string => Boolean(ay && /^\d{4}-\d{4}$/.test(ay)))
+                ));
+                if (employeeAYs.length > 0) {
+                  setSettings((prev) => {
+                    const mergedYears = Array.from(new Set([
+                      ...(prev.academicYears || ['2025-2026', '2026-2027']),
+                      ...employeeAYs,
+                      '2025-2026',
+                      '2026-2027',
+                    ]));
+                    const activeYear = (prev.activeAcademicYear && employeeAYs.includes(prev.activeAcademicYear))
+                      ? prev.activeAcademicYear
+                      : (employeeAYs.includes('2026-2027') ? '2026-2027' : employeeAYs[0]);
+                    const next = {
+                      ...prev,
+                      academicYears: mergedYears,
+                      activeAcademicYear: activeYear,
+                    };
+                    saveToStorage(STORAGE_KEYS.SETTINGS, next);
+                    return next;
+                  });
+                }
               }
             }),
             supabaseService.fetchTimeRecords().then((recs) => {
@@ -859,7 +888,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
               }
             }),
             supabaseService.fetchSettings().then((st) => {
-              if (isMounted && st) setSettings(st);
+              if (isMounted && st) {
+                setSettings((prev) => {
+                  const mergedYears = Array.from(new Set([
+                    ...(prev.academicYears || ['2025-2026', '2026-2027']),
+                    ...(st.academicYears || []),
+                    '2025-2026',
+                    '2026-2027',
+                  ]));
+                  const activeYear = (st.activeAcademicYear && st.activeAcademicYear !== '2025-2026')
+                    ? st.activeAcademicYear
+                    : (prev.activeAcademicYear || '2026-2027');
+                  const next = {
+                    ...prev,
+                    ...st,
+                    academicYears: mergedYears,
+                    activeAcademicYear: activeYear,
+                  };
+                  saveToStorage(STORAGE_KEYS.SETTINGS, next);
+                  return next;
+                });
+              }
             }),
             supabaseService.fetchEvaluations().then((ev) => {
               if (isMounted && ev && ev.length > 0) {
@@ -3053,11 +3102,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const previous = settings;
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
+    saveToStorage(STORAGE_KEYS.SETTINGS, updated);
 
     if (useSupabase) {
       supabaseService.updateSettings(updated).catch((err) => {
         console.error('[AppContext] Failed to update settings in Supabase:', err);
         setSettings(previous);
+        saveToStorage(STORAGE_KEYS.SETTINGS, previous);
         toast.error('Failed to save settings to cloud. Changes have been rolled back.');
       });
     }
