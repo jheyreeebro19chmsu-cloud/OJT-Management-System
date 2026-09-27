@@ -475,17 +475,34 @@ export function Dashboard() {
       };
 
       const fetchHteRequests = async () => {
+        if (typeof window !== 'undefined' && sessionStorage.getItem('ojt_hte_student_access_disabled') === 'true') {
+          return;
+        }
         try {
           const { data, error } = await supabase
             .from('hte_student_access')
             .select('*, host_supervisors(*), employees!inner(*)')
             .in('status', ['pending', 'approved'])
             .order('created_at', { ascending: false });
-          if (!error && data) {
+          if (error) {
+            if (
+              (error as any).status === 404 ||
+              error.code === 'PGRST205' ||
+              (error.message && error.message.toLowerCase().includes('does not exist'))
+            ) {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('ojt_hte_student_access_disabled', 'true');
+              }
+            }
+            return;
+          }
+          if (data) {
             setHteRequests(data);
           }
         } catch {
-          // Table may not yet be created in Supabase
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('ojt_hte_student_access_disabled', 'true');
+          }
         }
       };
 
