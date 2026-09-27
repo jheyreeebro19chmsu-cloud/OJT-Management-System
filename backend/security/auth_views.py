@@ -429,6 +429,8 @@ def login(request: HttpRequest) -> JsonResponse:
         user = User.objects.filter(email__iexact=email).first()
         if not user or not user.check_password(password):
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
+        if not user.is_active:
+            return JsonResponse({'error': 'Account disabled'}, status=401)
         role_obj = UserRole.objects.filter(user=user).first()
         role = role_obj.role if role_obj else 'student'
         refresh = RefreshToken.for_user(user)

@@ -10,6 +10,7 @@
     "start": "node server.js",
     "test": "node scripts/white-box-test.mjs",
     "test:white-box": "node scripts/white-box-test.mjs",
+    "test:white-box:admin-auth": "cypress run --spec cypress/e2e/admin_auth_whitebox.cy.js",
     "cypress:open": "cypress open",
     "cypress:run": "cypress run",
     "cypress:run:all": "cypress run",

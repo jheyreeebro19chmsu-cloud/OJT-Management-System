@@ -132,9 +132,29 @@ export function AdminEmployees() {
     if (!emp) return 'student';
     const normalized = emp.position?.toLowerCase() || '';
     const empId = emp.employeeId?.toLowerCase() || '';
-    if (normalized.includes('instructor') || empId.startsWith('adm-') || empId.startsWith('instr-')) return 'instructor';
-    if (normalized.includes('hte') || normalized.includes('host training') || empId.startsWith('hte-')) return 'hte';
+    const role = ((emp as any)?.role || '').toLowerCase();
+    if (role === 'admin' || role === 'instructor' || normalized.includes('instructor') || empId.startsWith('adm-') || empId.startsWith('instr-')) return 'instructor';
+    if (role === 'hte' || role === 'host' || normalized.includes('hte') || normalized.includes('host training') || empId.startsWith('hte-')) return 'hte';
     return 'student';
+  };
+
+  const deduplicateAccounts = <T extends { id?: string; employeeId?: string; email?: string }>(items: T[]): T[] => {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const email = (item.email || '').trim().toLowerCase();
+      const empId = (item.employeeId || '').trim().toLowerCase();
+      const id = (item.id || '').trim();
+
+      const key = email ? `email:${email}` : empId ? `empId:${empId}` : `id:${id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+
+      if (email) seen.add(`email:${email}`);
+      if (empId) seen.add(`empId:${empId}`);
+      if (id) seen.add(`id:${id}`);
+
+      return true;
+    });
   };
 
   const matchesYear = (emp: Employee) => {
@@ -150,58 +170,94 @@ export function AdminEmployees() {
   };
 
   const filteredGroups = {
-    pending: employees.filter(
-      (e) =>
-        // Pending: not yet approved or explicitly pending/unregistered
-        (e.active === false ||
-          e.approvalStatus === 'pending' ||
-          e.applicationStatus === 'pending' ||
-          e.applicationStatus === 'unregistered' ||
-          // null active with non-approved status = awaiting review
-          (e.active == null && e.applicationStatus !== 'approved')) &&
-        matchesYear(e) &&
-        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.department || '').toLowerCase().includes(search.toLowerCase()))
+    pending: deduplicateAccounts(
+      employees.filter(
+        (e) =>
+          // Pending is strictly for student trainees awaiting verification
+          getEmployeeGroup(e) === 'student' &&
+          (e.active === false ||
+            e.approvalStatus === 'pending' ||
+            e.applicationStatus === 'pending' ||
+            e.applicationStatus === 'unregistered' ||
+            // null active with non-approved status = awaiting review
+            (e.active == null && e.applicationStatus !== 'approved')) &&
+          matchesYear(e) &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      )
     ),
-    student: employees.filter(
-      (e) =>
-        (e.active === true || e.active == null) &&
-        e.approvalStatus !== 'pending' &&
-        e.applicationStatus !== 'pending' &&
-        e.applicationStatus !== 'unregistered' &&
-        getEmployeeGroup(e) === 'student' &&
-        matchesYear(e) &&
-        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.department || '').toLowerCase().includes(search.toLowerCase()))
+    student: deduplicateAccounts(
+      employees.filter(
+        (e) =>
+          (e.active === true || e.active == null) &&
+          e.approvalStatus !== 'pending' &&
+          e.applicationStatus !== 'pending' &&
+          e.applicationStatus !== 'unregistered' &&
+          getEmployeeGroup(e) === 'student' &&
+          matchesYear(e) &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      )
     ),
-    instructor: employees.filter(
-      (e) =>
-        (e.active === true || e.active == null) &&
-        e.approvalStatus !== 'pending' &&
-        e.applicationStatus !== 'pending' &&
-        getEmployeeGroup(e) === 'instructor' &&
-        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.department || '').toLowerCase().includes(search.toLowerCase()))
+    instructor: deduplicateAccounts(
+      employees.filter(
+        (e) =>
+          (e.active === true || e.active == null) &&
+          e.approvalStatus !== 'pending' &&
+          e.applicationStatus !== 'pending' &&
+          getEmployeeGroup(e) === 'instructor' &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      )
     ),
-    hte: employees.filter(
-      (e) =>
-        (e.active === true || e.active == null) &&
-        e.approvalStatus !== 'pending' &&
-        e.applicationStatus !== 'pending' &&
-        getEmployeeGroup(e) === 'hte' &&
-        matchesYear(e) &&
-        ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-          (e.department || '').toLowerCase().includes(search.toLowerCase()))
-    ),
+    hte: deduplicateAccounts([
+      ...employees.filter(
+        (e) =>
+          (e.active === true || e.active == null) &&
+          e.approvalStatus !== 'pending' &&
+          e.applicationStatus !== 'pending' &&
+          getEmployeeGroup(e) === 'hte' &&
+          matchesYear(e) &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      ),
+      ...(hostSupervisors || []).map((h) => ({
+        id: h.id,
+        employeeId: h.employeeId || h.id,
+        name: h.name,
+        email: h.email,
+        position: 'HTE Representative',
+        role: 'hte',
+        companyName: h.companyName,
+        companyAddress: h.companyAddress,
+        department: 'Host Establishment',
+        supervisorName: h.name,
+        phone: h.phone,
+        contactPhone: h.phone,
+        academicYear: h.academicYear || settings.activeAcademicYear,
+        active: h.active !== false,
+        approvalStatus: 'approved' as const,
+        applicationStatus: 'approved' as const,
+        requiredHours: 0,
+        faceRegistered: false,
+      } as Employee)).filter(
+        (h) =>
+          matchesYear(h) &&
+          ((h.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (h.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (h.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (h.department || '').toLowerCase().includes(search.toLowerCase()))
+      ),
+    ]),
   };
 
 

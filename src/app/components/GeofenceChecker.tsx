@@ -50,6 +50,13 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
 
   const employee = getCurrentEmployee();
 
+  const userRole = (employee?.role || (employee as any)?.userRole || '').toLowerCase();
+  const userPos = (employee?.position || '').toLowerCase();
+  const isHte = userRole === 'hte' || userRole === 'host' || userPos.includes('hte') || userPos.includes('supervisor');
+  const isInstructor = userRole === 'instructor' || userRole === 'faculty' || userPos.includes('instructor') || userPos.includes('faculty');
+  const isAdmin = userRole === 'admin' || userPos.includes('admin');
+  const isStudent = !isHte && !isInstructor && !isAdmin;
+
   const activeZones = React.useMemo(() => {
     const validConfiguredZones = geofenceZones.filter(
       (z) =>
@@ -62,13 +69,6 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         Number.isFinite(z.radius) &&
         z.radius > 0
     );
-
-    const userRole = (employee?.role || (employee as any)?.userRole || '').toLowerCase();
-    const userPos = (employee?.position || '').toLowerCase();
-    const isHte = userRole === 'hte' || userRole === 'host' || userPos.includes('hte') || userPos.includes('supervisor');
-    const isInstructor = userRole === 'instructor' || userRole === 'faculty' || userPos.includes('instructor') || userPos.includes('faculty');
-    const isAdmin = userRole === 'admin' || userPos.includes('admin');
-    const isStudent = !isHte && !isInstructor && !isAdmin;
 
     if (isHte && employee) {
       // HTE Supervisor: official establishment workplace zone
@@ -199,14 +199,18 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     }
 
     if (assignedWorkplaceZone) {
-      // Put assigned workplace zone strictly at index 0
+      if (isStudent) {
+        // Trainees: strictly view and check only their own assigned workplace geofence, not other users' geofencing
+        return [assignedWorkplaceZone];
+      }
+      // For instructors/faculty/admin/supervisors: put assigned/station zone at index 0, followed by all other zones
       const otherZones = validConfiguredZones.filter(
         (z) => z.id !== assignedWorkplaceZone!.id && z.name !== assignedWorkplaceZone!.name
       );
       return [assignedWorkplaceZone, ...otherZones];
     }
 
-    // Trainees without an assigned HTE must NOT fall back to their home or campus
+    // Trainees without an assigned HTE must NOT fall back to other users' stations or campus
     if (isStudent) {
       return [];
     }
@@ -715,9 +719,13 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm relative z-0 isolate">
           <div className="px-3 py-2 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-800">Live Location Map (Leaflet)</p>
+              <p className="text-xs font-semibold text-slate-800">
+                {isStudent ? 'My Workplace Geofence & Real-Time Location' : 'Live Location Map (Leaflet)'}
+              </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {result.verifiedBy === 'server'
+                {isStudent
+                  ? 'Showing your live GPS position and designated workplace geofence boundary.'
+                  : result.verifiedBy === 'server'
                   ? 'Verified by Django backend geofence API.'
                   : 'Showing device GPS with real-time geofence perimeter.'}
               </p>
@@ -733,7 +741,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
             zones={activeZones}
             liveUser={liveCoords || (result.coords ? { lat: result.coords.lat, lng: result.coords.lng, accuracy: result.coords.accuracy } : null)}
             className="h-72"
-            title="Live Workplace Geofence Check"
+            title={isStudent ? 'My Assigned Workplace Geofence' : 'Live Workplace Geofence Check'}
           />
         </div>
       )}

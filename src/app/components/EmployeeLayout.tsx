@@ -243,12 +243,10 @@ export function EmployeeLayout() {
         })}
       </nav>
 
-      {/* User Profile Footer */}
+      {/* User Profile Footer (Static display badge, not clickable since Profile is accessible via navigation) */}
       <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-        <NavLink
-          to="/app/profile"
-          onClick={() => isMobile && setSidebarOpen(false)}
-          className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+        <div
+          className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-xl bg-[#0E1D35]/40 select-none cursor-default"
         >
           <UserAvatar
             photo={avatarUrl}
@@ -258,10 +256,10 @@ export function EmployeeLayout() {
             className="border border-white/20 shadow-inner"
           />
           <div className="min-w-0 flex-1">
-            <div className="text-white text-xs font-bold truncate group-hover:text-blue-200">{displayName}</div>
+            <div className="text-white text-xs font-bold truncate">{displayName}</div>
             <div className="text-blue-300 text-[10px] truncate">{displayId}</div>
           </div>
-        </NavLink>
+        </div>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);

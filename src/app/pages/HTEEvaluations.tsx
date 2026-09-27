@@ -207,10 +207,47 @@ export function HTEEvaluations() {
     const currentCompany = (companyName || '').trim().toLowerCase();
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
-    return employees.filter((e) => {
-      if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+    const rawTrainees = employees.filter((e) => {
+      if (!e.active) return false;
+      const pos = (e.position || '').toLowerCase();
+      const role = ((e as any).role || '').toLowerCase();
+      const empId = (e.employeeId || '').toLowerCase();
+
+      // Exclude Instructor and HTE accounts from trainee evaluation list
+      const isInstructor =
+        role === 'admin' ||
+        role === 'instructor' ||
+        pos.includes('instructor') ||
+        empId.startsWith('adm-') ||
+        empId.startsWith('instr-');
+      const isHte =
+        role === 'hte' ||
+        role === 'host' ||
+        pos.includes('hte') ||
+        pos.includes('host training') ||
+        empId.startsWith('hte-');
+      if (isInstructor || isHte) return false;
+
       const empAY = e.academicYear || defaultAY;
       if (selectedAcademicYear !== 'all' && empAY !== selectedAcademicYear) return false;
+      return true;
+    });
+
+    const seen = new Set<string>();
+    const deduplicatedTrainees = rawTrainees.filter((t) => {
+      const email = (t.email || '').trim().toLowerCase();
+      const empId = (t.employeeId || '').trim().toLowerCase();
+      const id = (t.id || '').trim();
+      const key = email ? `email:${email}` : empId ? `empId:${empId}` : `id:${id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      if (email) seen.add(`email:${email}`);
+      if (empId) seen.add(`empId:${empId}`);
+      if (id) seen.add(`id:${id}`);
+      return true;
+    });
+
+    return deduplicatedTrainees.filter((e) => {
 
       const hasEvaluation = Boolean(
         evaluations.some(

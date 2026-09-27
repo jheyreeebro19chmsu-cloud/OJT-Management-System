@@ -110,8 +110,25 @@ export function Profile() {
   } = useApp();
   const [syncingLocation, setSyncingLocation] = useState(false);
   const [resolvedGpsAddress, setResolvedGpsAddress] = useState<string>('');
+  const [profileLiveGps, setProfileLiveGps] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const rawEmployee = getCurrentEmployee();
   const location = useLocation();
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setProfileLiveGps({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (location.pathname.includes('/settings') || location.hash === '#security') {
@@ -1028,6 +1045,7 @@ export function Profile() {
                 try {
                   const position = await getCurrentLocation();
                   const { latitude, longitude, accuracy } = position.coords;
+                  setProfileLiveGps({ lat: latitude, lng: longitude, accuracy });
                   const resolvedAddress = await reverseGeocode(latitude, longitude);
 
                   await updateEmployee(employee.id, {
@@ -1076,7 +1094,7 @@ export function Profile() {
               <div className="px-3 py-2 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-800 flex items-center gap-1.5">
                   <MapPin size={13} className="text-blue-600" />
-                  Calibrated Workplace Geofence
+                  Calibrated Workplace Geofence & Live Location
                 </span>
                 <span className="font-mono text-slate-500 text-[11px]">
                   {employee.registrationLocation.lat.toFixed(5)}, {employee.registrationLocation.lng.toFixed(5)}
@@ -1102,6 +1120,7 @@ export function Profile() {
                     active: true,
                   },
                 ]}
+                liveUser={profileLiveGps}
                 focusCoords={{
                   lat: employee.registrationLocation.lat,
                   lng: employee.registrationLocation.lng,

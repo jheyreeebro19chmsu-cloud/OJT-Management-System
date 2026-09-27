@@ -102,10 +102,43 @@ export function HTEDashboard() {
     const targetAY = settings?.activeAcademicYear || '2026-2027';
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
-    const ojtList = employees.filter((e) => {
-      if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+    const rawOjtList = employees.filter((e) => {
+      if (!e.active) return false;
+      const pos = (e.position || '').toLowerCase();
+      const role = ((e as any).role || '').toLowerCase();
+      const empId = (e.employeeId || '').toLowerCase();
+
+      // Exclude Instructor and HTE accounts from trainee list
+      const isInstructor =
+        role === 'admin' ||
+        role === 'instructor' ||
+        pos.includes('instructor') ||
+        empId.startsWith('adm-') ||
+        empId.startsWith('instr-');
+      const isHte =
+        role === 'hte' ||
+        role === 'host' ||
+        pos.includes('hte') ||
+        pos.includes('host training') ||
+        empId.startsWith('hte-');
+      if (isInstructor || isHte) return false;
+
       const empAY = e.academicYear || defaultAY;
       return empAY === targetAY;
+    });
+
+    const seen = new Set<string>();
+    const ojtList = rawOjtList.filter((t) => {
+      const email = (t.email || '').trim().toLowerCase();
+      const empId = (t.employeeId || '').trim().toLowerCase();
+      const id = (t.id || '').trim();
+      const key = email ? `email:${email}` : empId ? `empId:${empId}` : `id:${id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      if (email) seen.add(`email:${email}`);
+      if (empId) seen.add(`empId:${empId}`);
+      if (id) seen.add(`id:${id}`);
+      return true;
     });
 
     const specificList = ojtList.filter((e) => {

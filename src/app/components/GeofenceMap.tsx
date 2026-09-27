@@ -19,11 +19,14 @@ import 'leaflet/dist/leaflet.css';
 import './geofence-map.css';
 import type { GeofenceZone } from '../types';
 import { calculateDistance, isWithinGeofence } from '../utils/geo';
+import { useApp } from '../store/AppContext';
 
 export type MapSizePreset = 'compact' | 'normal' | 'expanded';
 
 export interface GeofenceMapProps {
   zones: GeofenceZone[];
+  /** Optional role override (auto-detected from AppContext if omitted) */
+  userRole?: string;
   /** Admin: click map to set zone center */
   picking?: boolean;
   pickedCoords?: { lat: number; lng: number };
@@ -60,6 +63,7 @@ export interface GeofenceMapProps {
 
 export function GeofenceMap({
   zones,
+  userRole,
   picking = false,
   pickedCoords,
   pickedRadius = 40,
@@ -195,19 +199,121 @@ export function GeofenceMap({
     []
   );
 
-  const safeZones = useMemo(
-    () =>
-      zones.filter(
-        (zone) =>
-          Boolean(zone) &&
-          typeof zone.lat === 'number' &&
-          typeof zone.lng === 'number' &&
-          isValidCoord(zone.lat, zone.lng) &&
-          Number.isFinite(zone.radius) &&
-          zone.radius > 0
-      ),
-    [zones]
-  );
+  // Attempt to safely retrieve user from context to enforce trainee view boundaries
+  let appCurrentUser: any = null;
+  let appCurrentEmployee: any = null;
+  try {
+    const app = useApp();
+    appCurrentUser = app?.currentUser;
+    appCurrentEmployee =
+      app?.getCurrentEmployee?.() ||
+      (appCurrentUser && app?.employees
+        ? app.employees.find(
+            (e: any) =>
+              e.id === appCurrentUser.id ||
+              (e.email && appCurrentUser.email && e.email.toLowerCase() === appCurrentUser.email.toLowerCase())
+          )
+        : null);
+  } catch {
+    // Rendered outside AppContext provider (e.g. testing)
+  }
+
+  const effectiveRole = (
+    userRole ||
+    appCurrentUser?.role ||
+    appCurrentEmployee?.role ||
+    (appCurrentEmployee as any)?.position ||
+    ''
+  ).toLowerCase();
+
+  const isInstructorOrAdmin =
+    effectiveRole === 'admin' ||
+    effectiveRole === 'instructor' ||
+    effectiveRole.includes('faculty') ||
+    effectiveRole.includes('admin') ||
+    effectiveRole.includes('instructor');
+
+  const isTrainee =
+    !isInstructorOrAdmin &&
+    (effectiveRole === 'employee' ||
+      effectiveRole === 'trainee' ||
+      effectiveRole === 'student' ||
+      effectiveRole.includes('trainee') ||
+      effectiveRole.includes('student'));
+
+  const safeZones = useMemo(() => {
+    const valid = zones.filter(
+      (zone) =>
+        Boolean(zone) &&
+        typeof zone.lat === 'number' &&
+        typeof zone.lng === 'number' &&
+        isValidCoord(zone.lat, zone.lng) &&
+        Number.isFinite(zone.radius) &&
+        zone.radius > 0
+    );
+
+    // In Trainee account, ONLY their real location and their own designated workplace geofence will be seen.
+    // They must never see any other users', other companies', or institutional geofences.
+    if (isTrainee) {
+      const empId = appCurrentEmployee?.id || appCurrentUser?.id || '';
+      const empName = (appCurrentEmployee?.name || appCurrentUser?.name || '').trim().toLowerCase();
+      const compName = (appCurrentEmployee?.companyName || '').trim().toLowerCase();
+      const assignedZoneId = (appCurrentEmployee as any)?.assignedZoneId;
+
+      // 1. Direct match by trainee employeeId, station ID, assignedZoneId, or specific trainee name
+      const matchedZone = valid.find(
+        (z) =>
+          (empId &&
+            (z.id === `station-${empId}` ||
+              z.id === `personal-${empId}` ||
+              (z as any).employeeId === empId ||
+              (z as any).employee_id === empId ||
+              (assignedZoneId && z.id === assignedZoneId))) ||
+          (empName && z.name && z.name.toLowerCase().includes(empName)) ||
+          (compName &&
+            compName !== 'n/a' &&
+            compName !== 'pending' &&
+            compName !== 'host training establishment' &&
+            z.name &&
+            z.name.toLowerCase().includes(compName) &&
+            !z.name.toLowerCase().includes('official station'))
+      );
+
+      if (matchedZone) {
+        return [matchedZone];
+      }
+
+      // 2. If no matching zone in passed array, check if employee has calibrated registrationLocation
+      const regLat = appCurrentEmployee?.registrationLocation?.lat ?? (appCurrentEmployee as any)?.registration_lat;
+      const regLng = appCurrentEmployee?.registrationLocation?.lng ?? (appCurrentEmployee as any)?.registration_lng;
+      if (regLat != null && regLng != null && isValidCoord(Number(regLat), Number(regLng))) {
+        return [
+          {
+            id: `station-${empId || 'trainee'}`,
+            name: `${appCurrentEmployee?.name || 'My'} Workplace Geofence`,
+            address: appCurrentEmployee?.registrationAddress || appCurrentEmployee?.companyAddress || 'Assigned Workplace GPS',
+            lat: Number(regLat),
+            lng: Number(regLng),
+            radius: Math.max(
+              40,
+              Number(
+                appCurrentEmployee?.registrationLocation?.radius ||
+                appCurrentEmployee?.registrationRadius ||
+                (appCurrentEmployee as any)?.registration_radius ||
+                40
+              )
+            ),
+            active: true,
+          },
+        ];
+      }
+
+      // 3. If unassigned, trainee sees NO other geofences (strictly empty)
+      return [];
+    }
+
+    return valid;
+  }, [zones, isTrainee, appCurrentEmployee, appCurrentUser]);
 
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;
@@ -793,9 +899,9 @@ function FitMapView({
 
   // Leaflet map events for dragging, panning, moving, zooming
   useMapEvents({
-    movestart: (e) => {
+    movestart: (e: any) => {
       // If movement is triggered by user gesture or not marked programmatic, register interaction
-      if (e.originalEvent || !isProgrammaticMovingRef.current) {
+      if (e?.originalEvent || !isProgrammaticMovingRef.current) {
         markUserInteracted();
       }
     },
@@ -805,13 +911,10 @@ function FitMapView({
     drag: () => {
       markUserInteracted();
     },
-    zoomstart: (e) => {
-      if (e.originalEvent || !isProgrammaticMovingRef.current) {
+    zoomstart: (e: any) => {
+      if (e?.originalEvent || !isProgrammaticMovingRef.current) {
         markUserInteracted();
       }
-    },
-    touchstart: () => {
-      markUserInteracted();
     },
   });
 
@@ -865,7 +968,7 @@ function FitMapView({
         // Check distance to designated target zone
         const dist = calculateDistance(liveUser.lat, liveUser.lng, nearestZone.lat, nearestZone.lng);
 
-        if (dist <= 1500) {
+        if (dist <= 25000) {
           try {
             const zoneBounds = L.latLng(nearestZone.lat, nearestZone.lng).toBounds(nearestZone.radius || 40);
             const points: [number, number][] = [
@@ -873,12 +976,12 @@ function FitMapView({
               [zoneBounds.getNorthEast().lat, zoneBounds.getNorthEast().lng],
               [zoneBounds.getSouthWest().lat, zoneBounds.getSouthWest().lng],
             ];
-            map.fitBounds(points, { padding: [45, 45], maxZoom: 18 });
+            map.fitBounds(points, { padding: [50, 50], maxZoom: 18 });
           } catch {
             map.setView([liveUser.lat, liveUser.lng], 17, { animate: true });
           }
         } else {
-          // Outside or calibrating: center cleanly at zoom 17
+          // Outside > 25km: center cleanly on user location
           map.setView([liveUser.lat, liveUser.lng], 17, { animate: true });
         }
         map.invalidateSize();

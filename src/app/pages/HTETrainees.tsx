@@ -56,12 +56,49 @@ export function HTETrainees() {
   const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
   const currentCompany = (companyName || '').trim().toLowerCase();
 
-  // All active student trainees eligible for OJT strictly in the active academic year
+  // All active student trainees eligible for OJT strictly in the active academic year (deduplicated, excluding instructor & HTE staff)
   const allOjtTrainees = useMemo(() => {
-    return employees.filter((e) => {
-      if (!e.active || e.position === 'OJT Instructor' || e.position === 'HTE Representative') return false;
+    const rawTrainees = employees.filter((e) => {
+      if (!e.active) return false;
+      const pos = (e.position || '').toLowerCase();
+      const role = ((e as any).role || '').toLowerCase();
+      const empId = (e.employeeId || '').toLowerCase();
+
+      // Exclude Instructor and HTE accounts to prevent account redundancy in trainee list
+      const isInstructor =
+        role === 'admin' ||
+        role === 'instructor' ||
+        pos.includes('instructor') ||
+        empId.startsWith('adm-') ||
+        empId.startsWith('instr-');
+      const isHte =
+        role === 'hte' ||
+        role === 'host' ||
+        pos.includes('hte') ||
+        pos.includes('host training') ||
+        empId.startsWith('hte-');
+      if (isInstructor || isHte) return false;
+
       const empAY = e.academicYear || defaultAY;
       return empAY === targetAY;
+    });
+
+    // Deduplicate trainees by email, employeeId, or id
+    const seen = new Set<string>();
+    return rawTrainees.filter((t) => {
+      const email = (t.email || '').trim().toLowerCase();
+      const empId = (t.employeeId || '').trim().toLowerCase();
+      const id = (t.id || '').trim();
+
+      const key = email ? `email:${email}` : empId ? `empId:${empId}` : `id:${id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+
+      if (email) seen.add(`email:${email}`);
+      if (empId) seen.add(`empId:${empId}`);
+      if (id) seen.add(`id:${id}`);
+
+      return true;
     });
   }, [employees, targetAY, defaultAY]);
 

@@ -140,16 +140,29 @@ export function AcademicYearManagement() {
       if (t.email) traineeIds.add(t.email.toLowerCase());
     });
 
-    // 2. HTE Supervisors/Representatives belonging to this academic year
-    const envHTE =
-      employees.filter(
-        (e) =>
-          (e.position === 'HTE Representative' || (e.position && e.position.toLowerCase().includes('hte')) || e.employeeId?.startsWith('HTE-')) &&
-          (e.academicYear === year || (!e.academicYear && (activeYear === year || year === defaultYear)))
-      ).length +
-      hostSupervisors.filter(
-        (h) => h.academicYear === year || (!h.academicYear && (activeYear === year || year === defaultYear))
-      ).length;
+    // 2. HTE Supervisors/Representatives belonging to this academic year (deduplicated between employees & hostSupervisors)
+    const seenHteAY = new Set<string>();
+    employees.forEach((e) => {
+      const isHte =
+        e.position === 'HTE Representative' ||
+        (e.position && e.position.toLowerCase().includes('hte')) ||
+        e.employeeId?.startsWith('HTE-') ||
+        (e as any).role === 'hte' ||
+        (e as any).role === 'host';
+      const matches = isHte && (e.academicYear === year || (!e.academicYear && (activeYear === year || year === defaultYear)));
+      if (matches) {
+        const key = (e.email || e.employeeId || e.id || '').trim().toLowerCase();
+        if (key) seenHteAY.add(key);
+      }
+    });
+    hostSupervisors.forEach((h) => {
+      const matches = h.academicYear === year || (!h.academicYear && (activeYear === year || year === defaultYear));
+      if (matches) {
+        const key = (h.email || h.employeeId || h.id || '').trim().toLowerCase();
+        if (key) seenHteAY.add(key);
+      }
+    });
+    const envHTE = seenHteAY.size;
 
     // 3. Time records belonging to this academic year (explicit AY stamp or linked trainee AY)
     const envRecords = timeRecords.filter((r) => {
@@ -180,9 +193,63 @@ export function AcademicYearManagement() {
   };
 
   const activeStats = getEnvStats(form.activeAcademicYear);
-  const totalInstructors = employees.filter((e) => e.position === 'OJT Instructor' || e.employeeId?.startsWith('ADM-')).length;
-  const totalHTE = employees.filter((e) => e.position === 'HTE Representative' || e.employeeId?.startsWith('HTE-')).length + hostSupervisors.length;
-  const totalTrainees = employees.filter((e) => e.position !== 'OJT Instructor' && e.position !== 'HTE Representative' && !e.employeeId?.startsWith('ADM-') && !e.employeeId?.startsWith('HTE-')).length;
+
+  // Deduplicated global statistics across accounts to eliminate redundancy
+  const seenInstructors = new Set<string>();
+  employees.forEach((e) => {
+    const isInst =
+      e.position === 'OJT Instructor' ||
+      (e.position && e.position.toLowerCase().includes('instructor')) ||
+      e.employeeId?.startsWith('ADM-') ||
+      e.employeeId?.startsWith('INSTR-') ||
+      (e as any).role === 'admin' ||
+      (e as any).role === 'instructor';
+    if (isInst) {
+      const key = (e.email || e.employeeId || e.id || '').trim().toLowerCase();
+      if (key) seenInstructors.add(key);
+    }
+  });
+  const totalInstructors = seenInstructors.size;
+
+  const seenHTEAll = new Set<string>();
+  employees.forEach((e) => {
+    const isHte =
+      e.position === 'HTE Representative' ||
+      (e.position && e.position.toLowerCase().includes('hte')) ||
+      e.employeeId?.startsWith('HTE-') ||
+      (e as any).role === 'hte' ||
+      (e as any).role === 'host';
+    if (isHte) {
+      const key = (e.email || e.employeeId || e.id || '').trim().toLowerCase();
+      if (key) seenHTEAll.add(key);
+    }
+  });
+  hostSupervisors.forEach((h) => {
+    const key = (h.email || h.employeeId || h.id || '').trim().toLowerCase();
+    if (key) seenHTEAll.add(key);
+  });
+  const totalHTE = seenHTEAll.size;
+
+  const seenTraineesAll = new Set<string>();
+  employees.forEach((e) => {
+    const isStaff =
+      e.position === 'OJT Instructor' ||
+      (e.position && e.position.toLowerCase().includes('instructor')) ||
+      e.employeeId?.startsWith('ADM-') ||
+      e.employeeId?.startsWith('INSTR-') ||
+      (e as any).role === 'admin' ||
+      (e as any).role === 'instructor' ||
+      e.position === 'HTE Representative' ||
+      (e.position && e.position.toLowerCase().includes('hte')) ||
+      e.employeeId?.startsWith('HTE-') ||
+      (e as any).role === 'hte' ||
+      (e as any).role === 'host';
+    if (!isStaff) {
+      const key = (e.email || e.employeeId || e.id || '').trim().toLowerCase();
+      if (key) seenTraineesAll.add(key);
+    }
+  });
+  const totalTrainees = seenTraineesAll.size;
 
   return (
     <div className="max-w-4xl space-y-6 pb-12">

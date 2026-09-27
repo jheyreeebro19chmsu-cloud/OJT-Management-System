@@ -209,25 +209,24 @@ export function AdminLayout() {
         </nav>
 
         <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-          <NavLink
-            to="/admin/profile"
-            className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+          <div
+            className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl bg-[#0E1D35]/40 select-none cursor-default"
           >
             <UserAvatar
               photo={employee?.photo || currentUser?.photo}
               name={employee?.name || currentUser?.name || 'OJT Instructor'}
               role="admin"
               size="sm"
-              className="border border-white/20"
+              className="border border-white/20 shadow-inner"
             />
             <div className="min-w-0 flex-1">
-              <div className="text-white text-xs font-medium truncate group-hover:text-blue-200">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
+              <div className="text-white text-xs font-semibold truncate">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
               <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
             </div>
-          </NavLink>
+          </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm"
+            className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
           >
             <LogOut size={14} />
             Logout
@@ -302,23 +301,21 @@ export function AdminLayout() {
                 ))}
               </nav>
               <div className="p-3 border-t border-[#0E1D35] bg-[#0E1D35]/30">
-                <NavLink
-                  to="/admin/profile"
-                  onClick={() => setSidebarOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl hover:bg-[#1E3A66] transition-all cursor-pointer group"
+                <div
+                  className="flex items-center gap-2 px-3 py-2 mb-2 rounded-xl bg-[#0E1D35]/40 select-none cursor-default"
                 >
                   <UserAvatar
                     photo={employee?.photo || currentUser?.photo}
                     name={employee?.name || currentUser?.name || 'OJT Instructor'}
                     role="admin"
                     size="sm"
-                    className="border border-white/20"
+                    className="border border-white/20 shadow-inner"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-white text-xs font-medium truncate group-hover:text-blue-200">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
+                    <div className="text-white text-xs font-semibold truncate">{employee?.name || currentUser?.name || 'OJT Instructor'}</div>
                     <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
                   </div>
-                </NavLink>
+                </div>
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
