@@ -673,8 +673,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
             .from('employees')
             .update({ role: 'admin', position: 'OJT Instructor', application_status: 'approved' })
             .eq('id', existingEmp.id)
-            .then(() => {})
-            .catch(() => {});
+            .then(() => {}, () => {});
 
           const np = normalizeProfile(existingEmp);
           await authStore.saveUser(np);
@@ -691,8 +690,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
             .from('employees')
             .update({ role: 'hte', position: 'HTE Representative', application_status: 'approved' })
             .eq('id', existingEmp.id)
-            .then(() => {})
-            .catch(() => {});
+            .then(() => {}, () => {});
 
           const np = normalizeProfile(existingEmp);
           await authStore.saveUser(np);
@@ -709,8 +707,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
             .from('employees')
             .update({ role: 'employee', position: existingEmp.position || 'OJT Trainee' })
             .eq('id', existingEmp.id)
-            .then(() => {})
-            .catch(() => {});
+            .then(() => {}, () => {});
 
           const np = normalizeProfile(existingEmp);
           await authStore.saveUser(np);

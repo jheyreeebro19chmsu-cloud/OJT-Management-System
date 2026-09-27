@@ -11,6 +11,7 @@ import {
   Image,
   Modal,
   Linking,
+  ScrollView,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -346,7 +347,7 @@ export default function InstructorTraineesScreen({
                     <View style={styles.geofenceChip}>
                       <MapPin size={10} color="#0284c7" />
                       <Text style={styles.geofenceChipText}>
-                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} ({Math.max(40, Number(item.registrationLocation?.radius || 40))}m)
+                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} ({Math.max(40, Number((item.registrationLocation as any)?.radius || 40))}m)
                       </Text>
                     </View>
                   ) : (
@@ -367,7 +368,8 @@ export default function InstructorTraineesScreen({
         const modalStats = getTraineeStats(selectedTrainee);
         const remainingHours = Math.max(0, Math.round((modalStats.req - modalStats.total) * 10) / 10);
         return (
-          <Modal animationType="slide" transparent visible={Boolean(selectedTrainee)}>
+          <>
+            <Modal animationType="slide" transparent visible={Boolean(selectedTrainee)}>
             <View style={styles.modalOverlay}>
               <ScrollView contentContainerStyle={{ paddingVertical: 20 }}>
                 <View style={styles.modalCard}>
@@ -527,7 +529,7 @@ export default function InstructorTraineesScreen({
                       ]}
                       onPress={async () => {
                         const currentPassed = selectedTrainee.documentsPassed !== false && selectedTrainee.documentsStatus !== 'pending';
-                        const newStatus = currentPassed ? 'pending' : 'passed';
+                        const newStatus: 'pending' | 'passed' = currentPassed ? 'pending' : 'passed';
                         const newPassed = !currentPassed;
 
                         await mobileDb.updateEmployee(selectedTrainee.id, {
@@ -596,7 +598,7 @@ export default function InstructorTraineesScreen({
                       <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Geofence Radius:</Text>
                         <Text style={styles.detailValue}>
-                          {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±40m min)
+                          {Math.max(40, Number((selectedTrainee.registrationLocation as any)?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±40m min)
                         </Text>
                       </View>
                       {selectedTrainee.registrationLocation && (
@@ -614,7 +616,7 @@ export default function InstructorTraineesScreen({
                       <View style={styles.geofenceStatusRow}>
                         <ShieldCheck size={14} color="#059669" />
                         <Text style={styles.geofenceStatusText}>
-                          Attendance is restricted to this {Math.max(40, Number(selectedTrainee.registrationLocation?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
+                          Attendance is restricted to this {Math.max(40, Number((selectedTrainee.registrationLocation as any)?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
                         </Text>
                       </View>
 
@@ -728,7 +730,8 @@ export default function InstructorTraineesScreen({
               </View>
             </View>
           </Modal>
-        );
+        </>
+      );
       })()}
     </View>
   );
@@ -983,5 +986,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#f1f5f9',
     marginLeft: 8,
+  },
+  closeBtn: {
+    padding: 4,
   },
 });
