@@ -57,7 +57,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { createEmployee as createEmployeeDb } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
-import { getCurrentLocation, isGeolocationPositionError, reverseGeocode } from '../utils/geo';
+import { getCurrentLocation, isGeolocationPositionError, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
 import { getAbsoluteUrl } from '../services/config';
 import { validateRegistrationData, validateSentenceLimit } from '../utils/validation';
 
@@ -573,7 +573,14 @@ export function Register() {
       }).catch(() => {});
 
       const accuracyLabel = accuracy <= 15 ? 'High Precision' : accuracy <= 40 ? 'Good' : 'Acceptable';
-      toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
+      if (accuracy > 100) {
+        toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). High-accuracy GPS under 100m is required; please calibrate or adjust the pin on the map.`, { duration: 6000 });
+      } else {
+        toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
+      }
+      if (!isWithinNegrosOccidental(latitude, longitude)) {
+        toast.warning('Captured coordinates are outside Negros Occidental / CHMSU region. Please adjust pin to your actual workplace or campus.', { duration: 7000 });
+      }
     } catch (err: unknown) {
       console.warn('Geolocation error:', err);
       const isDenied = isGeolocationPositionError(err) && err.code === 1;
@@ -602,6 +609,9 @@ export function Register() {
       }
     }).catch(() => {});
     toast.success(`Location pinned: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    if (!isWithinNegrosOccidental(lat, lng)) {
+      toast.warning('Selected pin is outside Negros Occidental. Please ensure this is your designated workplace or campus.', { duration: 6000 });
+    }
   };
 
   const startLiveTracking = () => {
@@ -1344,6 +1354,17 @@ export function Register() {
         if (!form.street?.trim()) errors.push('Please enter your Street Address / House Number / Subd.');
         if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
           errors.push('High-accuracy GPS Geofence coordinates are required for Trainee attendance. Please calibrate GPS or adjust the map pin.');
+        } else {
+          if (typeof registrationLocation.accuracy === 'number' && registrationLocation.accuracy > 100) {
+            errors.push(
+              `GPS accuracy is too low (±${Math.round(registrationLocation.accuracy)}m). High-accuracy GPS under 100m is required for attendance geofencing. Please calibrate GPS or adjust the map pin.`
+            );
+          }
+          if (!isWithinNegrosOccidental(registrationLocation.lat, registrationLocation.lng)) {
+            errors.push(
+              'Selected GPS coordinates are outside Negros Occidental / CHMSU region. Please reposition the pin on the map to your designated workplace or campus.'
+            );
+          }
         }
       }
       if (step === 1) {

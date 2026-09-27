@@ -36,7 +36,7 @@ import type { TraineeDocuments, TraineeDocumentItem } from '../types';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getPhotoUrl } from '../services/config';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
-import { getCurrentLocation, reverseGeocode } from '../utils/geo';
+import { getCurrentLocation, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
 import { readAsDataUrl } from './Announcements';
 import { UserAvatar } from '../components/UserAvatar';
 import AvatarEditor from '../components/AvatarEditor';
@@ -1065,6 +1065,12 @@ export function Profile() {
                   });
 
                   toast.success(`Location calibrated to real-time GPS: ${resolvedAddress}`);
+                  if (accuracy > 100) {
+                    toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). For optimal attendance results, calibrate outdoors or near a window.`, { duration: 6000 });
+                  }
+                  if (!isWithinNegrosOccidental(latitude, longitude)) {
+                    toast.warning('Warning: Captured coordinates are outside Negros Occidental / CHMSU region. Please verify your GPS location.', { duration: 7000 });
+                  }
                 } catch (err) {
                   console.error('Failed to sync location:', err);
                   toast.error('Could not lock real-time GPS. Please allow location permissions in your browser.');

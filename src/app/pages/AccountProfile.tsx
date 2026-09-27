@@ -26,7 +26,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { UserAvatar } from '../components/UserAvatar';
 import AvatarEditor from '../components/AvatarEditor';
-import { getCurrentLocation, reverseGeocode } from '../utils/geo';
+import { getCurrentLocation, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
 import { campusOptions, departmentOptions } from '../data/academicOptions';
 
@@ -192,6 +192,12 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
       });
 
       toast.success(`Location synced to real-time GPS: ${resolvedAddress}`);
+      if (accuracy > 100) {
+        toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). Ensure you are outdoors or near a window for optimal geofencing.`, { duration: 6000 });
+      }
+      if (!isWithinNegrosOccidental(latitude, longitude)) {
+        toast.warning('Warning: Captured coordinates are outside Negros Occidental. Please verify your location.', { duration: 7000 });
+      }
     } catch (err) {
       console.error('Failed to sync location:', err);
       toast.error('Could not acquire real-time GPS. Please allow location access in your browser.');
