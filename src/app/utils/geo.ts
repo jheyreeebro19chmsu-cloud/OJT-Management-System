@@ -106,13 +106,32 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
 // Multi-tiered high-res GPS locator with browser & device location services (no IP fallback)
 export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?: number; maximumAge?: number }): Promise<any> {
   const highAccuracy = options?.highAccuracy ?? true;
-  const timeoutMs = options?.timeout ?? 12000;
-  const maxAgeMs = options?.maximumAge ?? 0; // Prefer fresh satellite/hardware fix
+  const timeoutMs = options?.timeout ?? 7000;
+  const maxAgeMs = options?.maximumAge ?? 10000;
 
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
       return reject(new Error('Geolocation is not supported by your browser. Please use a browser that supports GPS location.'));
     }
+
+    // Step 0: If recent cached coordinates exist (within last 2 minutes) and caller permits cached, resolve immediately
+    try {
+      const cached = localStorage.getItem('ojt_last_coords');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const age = Date.now() - (parsed.time || 0);
+        if (parsed.lat && parsed.lng && age < (maxAgeMs > 0 ? maxAgeMs : 60000)) {
+          return resolve({
+            coords: {
+              latitude: parsed.lat,
+              longitude: parsed.lng,
+              accuracy: parsed.accuracy || 20,
+            },
+            timestamp: parsed.time || Date.now(),
+          });
+        }
+      }
+    } catch {}
 
     // Step 1: Try high-accuracy device GPS (hardware GNSS / mobile sensor)
     navigator.geolocation.getCurrentPosition(
@@ -149,18 +168,18 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
           (err2) => {
             if (err2.code === 1) return reject(err2);
 
-            // Step 3: Check if we have recent cached coordinates from current session (within last 2 minutes)
+            // Step 3: Check cached coords even if slightly older
             try {
               const cached = localStorage.getItem('ojt_last_coords');
               if (cached) {
                 const parsed = JSON.parse(cached);
                 const age = Date.now() - (parsed.time || 0);
-                if (parsed.lat && parsed.lng && age < 120000) {
+                if (parsed.lat && parsed.lng && age < 300000) {
                   return resolve({
                     coords: {
                       latitude: parsed.lat,
                       longitude: parsed.lng,
-                      accuracy: parsed.accuracy || 20,
+                      accuracy: parsed.accuracy || 25,
                     },
                     timestamp: parsed.time || Date.now(),
                   });
@@ -170,7 +189,7 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
 
             reject(err2);
           },
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: 10000 }
+          { enableHighAccuracy: false, timeout: 4000, maximumAge: 30000 }
         );
       },
       { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: maxAgeMs }

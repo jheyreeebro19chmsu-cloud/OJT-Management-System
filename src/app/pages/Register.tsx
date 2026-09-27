@@ -648,10 +648,6 @@ export function Register() {
   };
 
   useEffect(() => {
-    // Automatically start live GPS tracking on mount
-    if ('geolocation' in navigator) {
-      startLiveTracking();
-    }
     return () => {
       if (watchIdRef.current !== null && 'geolocation' in navigator) {
         navigator.geolocation.clearWatch(watchIdRef.current as number);
@@ -2072,33 +2068,30 @@ export function Register() {
 
                           {/* Embedded Map Component */}
                           <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm relative h-48 bg-slate-100">
-                            {locationStatus === 'capturing' ? (
-                              <div className="flex flex-col items-center justify-center h-full gap-2 text-blue-600">
-                                <Loader className="animate-spin" size={28} />
-                                <p className="text-xs font-medium">Acquiring GPS signal…</p>
+                            <GeofenceMap
+                              zones={[]}
+                              picking={pickingLocation}
+                              pickedCoords={registrationLocation || DEFAULT_CAMPUS_LOCATION}
+                              onPick={(lat, lng) => {
+                                handleMapPick(lat, lng);
+                              }}
+                              liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
+                              className="h-48"
+                            />
+
+                            {/* Non-blocking GPS capturing indicator */}
+                            {locationStatus === 'capturing' && (
+                              <div className="absolute top-2 right-2 z-[1000] bg-blue-600/90 text-white backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] font-medium shadow flex items-center gap-1.5 pointer-events-none animate-pulse">
+                                <Loader className="animate-spin" size={12} />
+                                <span>Acquiring GPS signal...</span>
                               </div>
-                            ) : (
-                              <GeofenceMap
-                                zones={[]}
-                                picking={pickingLocation}
-                                pickedCoords={registrationLocation}
-                                onPick={(lat, lng) => {
-                                  setRegistrationLocation({ lat, lng });
-                                  setRegistrationAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-                                  setLocationStatus('captured');
-                                }}
-                                liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
-                                className="h-48"
-                              />
                             )}
 
                             {/* Map Mode Overlay Badge */}
-                            {locationStatus !== 'capturing' && (
-                              <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-700 shadow border border-slate-200 flex items-center gap-1.5 pointer-events-none">
-                                <span className={`w-2 h-2 rounded-full ${pickingLocation ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-                                <span>{pickingLocation ? 'Click map to set pin' : 'Location Pin (View Mode)'}</span>
-                              </div>
-                            )}
+                            <div className="absolute top-2 left-2 z-[1000] bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-700 shadow border border-slate-200 flex items-center gap-1.5 pointer-events-none">
+                              <span className={`w-2 h-2 rounded-full ${pickingLocation ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                              <span>{pickingLocation ? 'Click map to set pin' : 'Location Pin (Click or Adjust)'}</span>
+                            </div>
                           </div>
 
                           {/* Location Action Buttons */}
