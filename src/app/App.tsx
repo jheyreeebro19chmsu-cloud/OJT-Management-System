@@ -4,6 +4,23 @@ import { Toaster } from 'sonner';
 
 import { router } from './routes';
 import { AppProvider, useApp } from './store/AppContext';
+import { loadFaceModels } from './services/faceClient';
+
+// Pre-warm face recognition models during idle time so face registration & clock-in are instantaneous
+if (typeof window !== 'undefined') {
+  const preloadModels = () => {
+    if ('requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(() => loadFaceModels().catch(() => {}), { timeout: 3000 });
+    } else {
+      setTimeout(() => loadFaceModels().catch(() => {}), 1500);
+    }
+  };
+  if (document.readyState === 'complete') {
+    preloadModels();
+  } else {
+    window.addEventListener('load', preloadModels, { once: true });
+  }
+}
 
 // Expose live AppContext state to Cypress white-box test runs
 function CypressWhiteBoxHook() {

@@ -38,6 +38,7 @@ import {
   Phone,
   MapPin,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -299,6 +300,32 @@ export function Dashboard() {
   const [pendingApps, setPendingApps] = useState<Employee[]>([]);
   const [hteRequests, setHteRequests] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [showAllNotifications, setShowAllNotifications] = useState(false);
+  const [traineeRecordsPage, setTraineeRecordsPage] = useState(1);
+  const traineeRecordsPerPage = 4;
+
+  const sortedTraineeRecords = useMemo(() => {
+    return [...allRecords].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [allRecords]);
+
+  const totalTraineePages = Math.max(1, Math.ceil(sortedTraineeRecords.length / traineeRecordsPerPage));
+  const paginatedTraineeRecords = useMemo(() => {
+    const start = (traineeRecordsPage - 1) * traineeRecordsPerPage;
+    return sortedTraineeRecords.slice(start, start + traineeRecordsPerPage);
+  }, [sortedTraineeRecords, traineeRecordsPage, traineeRecordsPerPage]);
+
+  // Late threshold evaluation
+  const [startH, startM] = (settings.workStartTime || '08:00').split(':').map(Number);
+  const lateGraceMinutes = Number(settings.lateThresholdMinutes ?? 15);
+  const lateCutoffTotalMinutes = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM) + lateGraceMinutes;
+  const currentTotalMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+  const isPastLateThreshold = !todayRecord?.timeIn && currentTotalMinutes > lateCutoffTotalMinutes;
+
+  const cutoffHour = Math.floor(lateCutoffTotalMinutes / 60) % 24;
+  const cutoffMin = lateCutoffTotalMinutes % 60;
+  const formattedCutoffTime = formatTime(
+    `${String(cutoffHour).padStart(2, '0')}:${String(cutoffMin).padStart(2, '0')}`
+  );
 
   // Trainee Required Documents state
   const [dashboardPreviewDoc, setDashboardPreviewDoc] = useState<any | null>(null);
@@ -1465,23 +1492,25 @@ export function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Live OJT Hours & Shift Proximity Notification Cards */}
+      {/* Live OJT Hours & Shift Proximity Notification Cards (Streamlined & Collapsible) */}
       <AnimatePresence>
         {traineeNotifications.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-2.5"
+            className="space-y-2"
           >
-            {traineeNotifications.map((n) => {
-              const isHigh = n.urgency === 'high';
-              const isSuccess = n.urgency === 'success';
+            {/* Display Primary / Highest-Priority Notice */}
+            {(() => {
+              const primary = traineeNotifications[0];
+              const isHigh = primary.urgency === 'high';
+              const isSuccess = primary.urgency === 'success';
 
               return (
                 <div
-                  key={n.id}
-                  className={`p-4 rounded-3xl border shadow-sm relative overflow-hidden transition-all ${
+                  key={primary.id}
+                  className={`p-3.5 sm:p-4 rounded-2xl border shadow-sm relative overflow-hidden transition-all ${
                     isHigh
                       ? 'bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border-amber-300 ring-2 ring-amber-400/20'
                       : isSuccess
@@ -1492,7 +1521,7 @@ export function Dashboard() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
                       <div
-                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
                           isHigh
                             ? 'bg-amber-500 text-white animate-pulse'
                             : isSuccess
@@ -1500,13 +1529,13 @@ export function Dashboard() {
                               : 'bg-blue-600 text-white'
                         }`}
                       >
-                        {isHigh ? <Clock size={20} /> : isSuccess ? <Award size={20} /> : <AlertTriangle size={20} />}
+                        {isHigh ? <Clock size={18} /> : isSuccess ? <Award size={18} /> : <AlertTriangle size={18} />}
                       </div>
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span
-                            className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                            className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
                               isHigh
                                 ? 'bg-amber-200 text-amber-900'
                                 : isSuccess
@@ -1514,44 +1543,116 @@ export function Dashboard() {
                                   : 'bg-blue-200 text-blue-900'
                             }`}
                           >
-                            {n.type === 'shift_near_end'
-                              ? '4:20 PM Daily Shift End Alert'
-                              : n.type === 'shift_overtime'
+                            {primary.type === 'shift_near_end'
+                              ? 'Shift End Alert'
+                              : primary.type === 'shift_overtime'
                                 ? 'Overtime Alert'
-                                : n.type === 'shift_start_soon'
-                                  ? 'Morning Shift Reminder'
+                                : primary.type === 'shift_start_soon'
+                                  ? 'Morning Shift'
                                   : 'OJT Milestone'}
                           </span>
-                          <span className="text-xs font-semibold text-gray-500 font-mono">
-                            {n.timeLabel}
+                          <span className="text-[11px] font-semibold text-gray-500 font-mono">
+                            {primary.timeLabel}
                           </span>
                         </div>
 
-                        <h3 className="font-bold text-sm text-gray-900 mt-1">{n.title}</h3>
-                        <p className="text-xs text-gray-700 mt-1 leading-relaxed max-w-2xl">{n.message}</p>
+                        <h4 className="font-bold text-xs sm:text-sm text-gray-900 mt-0.5">{primary.title}</h4>
+                        <p className="text-xs text-gray-700 mt-0.5 leading-relaxed max-w-2xl">{primary.message}</p>
                       </div>
                     </div>
 
-                    {n.actionRoute && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      {primary.actionRoute && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(primary.actionRoute!)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer ${
+                            isHigh
+                              ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
+                              : isSuccess
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                          }`}
+                        >
+                          <span>{primary.actionText || 'Open'}</span>
+                          <ChevronRight size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Toggle button if there are additional alerts */}
+                  {traineeNotifications.length > 1 && (
+                    <div className="mt-2.5 pt-2 border-t border-gray-200/50 flex items-center justify-between">
+                      <span className="text-[11px] text-gray-500">
+                        {showAllNotifications
+                          ? `Showing all ${traineeNotifications.length} notices`
+                          : `+${traineeNotifications.length - 1} more notice${traineeNotifications.length > 2 ? 's' : ''} available`}
+                      </span>
                       <button
                         type="button"
-                        onClick={() => navigate(n.actionRoute!)}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer self-start sm:self-center ${
-                          isHigh
-                            ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
-                            : isSuccess
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
-                        }`}
+                        onClick={() => setShowAllNotifications((prev) => !prev)}
+                        className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
                       >
-                        <span>{n.actionText || 'Open Time Record'}</span>
-                        <ChevronRight size={14} />
+                        {showAllNotifications ? 'Hide additional notices ▲' : `View all notices (${traineeNotifications.length}) ▼`}
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
-            })}
+            })()}
+
+            {/* Additional Collapsible Notices */}
+            {showAllNotifications &&
+              traineeNotifications.slice(1).map((n) => {
+                const isHigh = n.urgency === 'high';
+                const isSuccess = n.urgency === 'success';
+
+                return (
+                  <motion.div
+                    key={n.id}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className={`p-3 rounded-2xl border shadow-sm ${
+                      isHigh
+                        ? 'bg-amber-50/60 border-amber-200'
+                        : isSuccess
+                          ? 'bg-emerald-50/60 border-emerald-200'
+                          : 'bg-blue-50/60 border-blue-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            isHigh
+                              ? 'bg-amber-500 text-white'
+                              : isSuccess
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-blue-600 text-white'
+                          }`}
+                        >
+                          {isHigh ? <Clock size={14} /> : isSuccess ? <Award size={14} /> : <AlertTriangle size={14} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-gray-800 truncate">{n.title}</p>
+                          <p className="text-[11px] text-gray-600 truncate">{n.message}</p>
+                        </div>
+                      </div>
+                      {n.actionRoute && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(n.actionRoute!)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-100 shrink-0 transition-colors"
+                        >
+                          {n.actionText || 'Open'}
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1759,45 +1860,151 @@ export function Dashboard() {
         </motion.div>
       )}
 
-      {/* Quick Action */}
+      {/* Primary Call-To-Action (CTA): Pronounced Clock In / Clock Out Hero Button */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        <Link
-          to="/app/time-record"
-          className="flex items-center justify-between bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center">
-              <Clock size={22} className="text-blue-700" />
-            </div>
-            <div>
-              <p className="font-semibold text-gray-800 text-sm">
-                {!todayRecord?.timeIn
-                  ? 'Clock In Now'
-                  : !todayRecord?.timeOut
-                    ? 'Clock Out Now'
-                    : "View Today's Record"}
-              </p>
-              <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                <Camera size={10} />
-                Facial Recognition + Geofencing
-              </p>
+        {isPastLateThreshold ? (
+          /* Disabled State: Late threshold cutoff passed */
+          <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-slate-100 via-gray-100 to-slate-200 border-2 border-slate-300 shadow-sm opacity-90 cursor-not-allowed">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-slate-300 flex items-center justify-center text-slate-600 shrink-0 shadow-inner">
+                  <Lock size={26} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
+                      Late Cutoff Passed
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500 font-mono">
+                      Cutoff: {formattedCutoffTime}
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight uppercase mt-1">
+                    CLOCK IN CLOSED
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5 max-w-xl">
+                    Attendance cutoff passed at {formattedCutoffTime} ({lateGraceMinutes} min grace period after {formatTime(settings.workStartTime)}). Clock-in is disabled after passing the late threshold.
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-4 py-2.5 rounded-2xl bg-slate-200/80 text-slate-600 text-xs font-bold flex items-center gap-1.5 self-start sm:self-center shrink-0">
+                <Lock size={14} />
+                <span>Attendance Locked</span>
+              </div>
             </div>
           </div>
-          <ChevronRight size={18} className="text-gray-400" />
-        </Link>
+        ) : !todayRecord?.timeIn ? (
+          /* Active Standout State: Clock In Now (Hero Primary CTA) */
+          <Link
+            to="/app/time-record"
+            className="group relative block overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-xl shadow-blue-500/25 ring-4 ring-blue-500/20 active:scale-[0.99] transition-all duration-200"
+          >
+            <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+              <div className="flex items-center gap-4">
+                <div className="relative flex items-center justify-center w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl shrink-0 shadow-inner">
+                  <span className="absolute animate-ping inline-flex h-10 w-10 rounded-full bg-emerald-400 opacity-75"></span>
+                  <Clock size={28} className="text-white relative z-10" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Shift Open • Grace Cutoff: {formattedCutoffTime}
+                    </span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase mt-1">
+                    CLOCK IN NOW
+                  </h3>
+                  <p className="text-xs sm:text-sm text-blue-100 flex items-center gap-1.5 mt-0.5">
+                    <Camera size={14} className="text-blue-200" />
+                    Biometric Face Recognition + Geofenced Verification
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-5 py-2.5 rounded-2xl bg-white text-blue-700 font-black text-sm tracking-wide shadow-md group-hover:bg-blue-50 group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0">
+                <span>RECORD TIME IN</span>
+                <ChevronRight size={18} />
+              </div>
+            </div>
+          </Link>
+        ) : !todayRecord?.timeOut ? (
+          /* Active Clock Out State */
+          <Link
+            to="/app/time-record"
+            className="group relative block overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-xl shadow-amber-500/25 ring-4 ring-amber-500/20 active:scale-[0.99] transition-all duration-200"
+          >
+            <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+              <div className="flex items-center gap-4">
+                <div className="relative flex items-center justify-center w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl shrink-0 shadow-inner">
+                  <Clock size={28} className="text-white relative z-10" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                      Clocked In at {formatTime(todayRecord.timeIn)}
+                    </span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase mt-1">
+                    CLOCK OUT NOW
+                  </h3>
+                  <p className="text-xs sm:text-sm text-amber-100 flex items-center gap-1.5 mt-0.5">
+                    <Camera size={14} className="text-amber-200" />
+                    Complete today's attendance session and record hours
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-5 py-2.5 rounded-2xl bg-white text-orange-700 font-black text-sm tracking-wide shadow-md group-hover:bg-amber-50 group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0">
+                <span>RECORD TIME OUT</span>
+                <ChevronRight size={18} />
+              </div>
+            </div>
+          </Link>
+        ) : (
+          /* Completed Attendance State */
+          <Link
+            to="/app/records"
+            className="group relative block overflow-hidden rounded-3xl p-5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-lg shadow-emerald-500/20 transition-all"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                  <CheckCircle2 size={26} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white tracking-wide uppercase">
+                    TODAY'S ATTENDANCE COMPLETED
+                  </h3>
+                  <p className="text-xs text-emerald-100 mt-0.5">
+                    Time In: <strong>{formatTime(todayRecord.timeIn)}</strong> • Time Out: <strong>{formatTime(todayRecord.timeOut)}</strong>
+                    {todayRecord.totalHours ? ` (${todayRecord.totalHours.toFixed(1)} hrs rendered)` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 self-start sm:self-center shrink-0 transition-colors">
+                <span>View My DTR</span>
+                <ChevronRight size={16} />
+              </div>
+            </div>
+          </Link>
+        )}
       </motion.div>
 
-      {/* Trainee Required Documents Compliance Card */}
+      {/* Trainee Required Documents Compliance Summary Card (Concise, Non-Redundant) */}
       {!isAdmin && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12 }}
-          className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100"
+          className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-gray-100"
         >
-          <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm">
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm shrink-0">
                 <FileCheck size={20} />
               </div>
               <div>
@@ -1809,7 +2016,7 @@ export function Dashboard() {
             </div>
 
             <span
-              className={`text-xs font-bold px-3 py-1 rounded-full border flex items-center gap-1 ${
+              className={`text-xs font-bold px-3 py-1 rounded-full border flex items-center gap-1 shrink-0 ${
                 isAllDocsPassed
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                   : 'bg-amber-50 text-amber-800 border-amber-200'
@@ -1822,7 +2029,7 @@ export function Dashboard() {
               ) : (
                 <>
                   <Clock size={12} className="animate-pulse" />
-                  {missingDocsCount === 1 ? '1 Document Left' : `${missingDocsCount} Left to Pass`}
+                  {missingDocsCount === 1 ? '1 Pending' : `${missingDocsCount} Pending`}
                 </>
               )}
             </span>
@@ -1842,144 +2049,44 @@ export function Dashboard() {
             />
           </div>
 
-          {/* Missing docs warning alert banner if any are missing */}
-          {!isAllDocsPassed && (
-            <div className="mb-3.5 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-start gap-2.5">
-              <AlertTriangle size={15} className="text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-900 leading-relaxed">
-                <strong>Compliance Alert:</strong> You have {missingDocsCount} document{missingDocsCount > 1 ? 's' : ''} that {missingDocsCount > 1 ? 'have' : 'has'} not yet passed. You can submit directly below to complete your registration requirements.
-              </div>
-            </div>
-          )}
-
-          {/* The Supporting Document Items List */}
-          <div className="space-y-2">
+          {/* 4 Mini Document Status Pills (Compact Overview) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
             {STANDARD_REQUIRED_DOCS.map((docItem) => {
               const doc = submittedDocs[docItem.key];
               const hasFile = Boolean(doc?.dataUrl || doc?.name);
               const isPassed = doc?.status === 'passed' && hasFile;
-              const isUploading = dashboardUploadingKey === docItem.key;
-              const DocIcon = docItem.icon;
 
               return (
                 <div
                   key={docItem.key}
-                  className={`p-3 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                  className={`p-2 rounded-xl border flex items-center gap-2 text-xs ${
                     isPassed
-                      ? 'bg-emerald-50/40 border-emerald-200/80'
-                      : 'bg-slate-50/80 border-slate-200 hover:border-slate-300'
+                      ? 'bg-emerald-50/60 border-emerald-200 text-emerald-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                        isPassed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      <DocIcon size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-xs font-bold text-gray-800 truncate">{docItem.title}</p>
-                        <span
-                          className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${
-                            isPassed
-                              ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                              : 'bg-amber-100 text-amber-700 border-amber-200'
-                          }`}
-                        >
-                          {isPassed ? 'PASSED' : 'PENDING'}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-gray-400 truncate">
-                        {hasFile && doc?.name ? `📁 ${doc.name}` : docItem.desc}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Inline Actions */}
-                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                    {hasFile ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const resolvedUrl = resolveDocDataUrl(docItem.key, doc);
-                            setDashboardPreviewDoc({
-                              key: docItem.key,
-                              title: docItem.title,
-                              fileName: doc?.name || `${docItem.key}.pdf`,
-                              dataUrl: resolvedUrl,
-                              uploadedAt: doc?.uploadedAt,
-                              status: doc?.status || 'passed',
-                            });
-                          }}
-                          className="py-1 px-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <Eye size={12} /> View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const resolvedUrl = resolveDocDataUrl(docItem.key, doc);
-                            downloadDocument(resolvedUrl, doc?.name || `${docItem.key}_document`);
-                          }}
-                          className="py-1 px-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
-                          title="Download file"
-                        >
-                          <Download size={12} /> Download
-                        </button>
-                        <label
-                          htmlFor={`dash-replace-${docItem.key}`}
-                          className="py-1 px-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <RefreshCw size={11} className={isUploading ? 'animate-spin' : ''} />
-                          {isUploading ? 'Uploading...' : 'Replace'}
-                        </label>
-                        <input
-                          type="file"
-                          id={`dash-replace-${docItem.key}`}
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                          onChange={(e) => handleDashboardDocUpload(docItem.key, e.target.files?.[0] || null)}
-                          className="hidden"
-                          disabled={isUploading}
-                        />
-                      </>
-                    ) : (
-                      <label
-                        htmlFor={`dash-upload-${docItem.key}`}
-                        className={`py-1.5 px-3 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
-                          isUploading
-                            ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                        }`}
-                      >
-                        <Upload size={12} className={isUploading ? 'animate-spin' : ''} />
-                        {isUploading ? 'Uploading...' : 'Submit Document'}
-                        <input
-                          type="file"
-                          id={`dash-upload-${docItem.key}`}
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                          onChange={(e) => handleDashboardDocUpload(docItem.key, e.target.files?.[0] || null)}
-                          className="hidden"
-                          disabled={isUploading}
-                        />
-                      </label>
-                    )}
-                  </div>
+                  {isPassed ? (
+                    <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                  ) : (
+                    <Clock size={14} className="text-amber-500 shrink-0" />
+                  )}
+                  <span className="font-semibold truncate">{docItem.title}</span>
                 </div>
               );
             })}
           </div>
 
-          {/* Navigation Link Footer */}
-          <div className="mt-3.5 pt-3 border-t border-gray-100 flex items-center justify-between">
-            <span className="text-[11px] text-gray-500">Need full view, print, or download?</span>
+          {/* Action Link to dedicated Documents page */}
+          <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between">
+            <span className="text-[11px] text-gray-500">
+              {isAllDocsPassed ? 'All mandatory clearance documents are complete.' : 'Upload or manage all 4 documents in the document center.'}
+            </span>
             <Link
               to="/app/documents"
-              className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all"
             >
-              Open Required Docs Hub <ChevronRight size={14} />
+              <span>Manage Documents</span>
+              <ChevronRight size={13} />
             </Link>
           </div>
         </motion.div>
@@ -2193,72 +2300,127 @@ export function Dashboard() {
         </div>
       </motion.div>
 
-      {/* Recent Records */}
-      {recentRecords.length > 0 && (
+      {/* Trainee Attendance Records with Pagination */}
+      {!isAdmin && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
-          className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
+          className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-gray-100"
         >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Calendar size={16} className="text-blue-600" />
-              <h3 className="font-semibold text-gray-800 text-sm">Recent Records</h3>
+          <div className="flex items-center justify-between mb-3.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                <Calendar size={18} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-800 text-sm">My Attendance Records</h3>
+                <p className="text-[11px] text-gray-400">
+                  {sortedTraineeRecords.length} recorded session{sortedTraineeRecords.length === 1 ? '' : 's'}
+                </p>
+              </div>
             </div>
-            <Link to="/app/records" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-              View all
+            <Link to="/app/records" className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
+              <span>View all</span>
+              <ChevronRight size={14} />
             </Link>
           </div>
-          <div className="space-y-2">
-            {recentRecords.map((record) => (
-              <div
-                key={record.id}
-                className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-              >
-                <div>
-                  <p className="text-sm font-medium text-gray-800">
-                    {new Date(record.date).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </p>
-                  <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
-                    {record.timeIn && <span>In: {formatTime(record.timeIn)}</span>}
-                    {record.timeOut && <span>Out: {formatTime(record.timeOut)}</span>}
-                    {record.totalHours && (
-                      <span className="text-blue-500 font-medium">{record.totalHours.toFixed(1)}h</span>
-                    )}
+
+          {sortedTraineeRecords.length === 0 ? (
+            <div className="text-center py-6 text-gray-400 text-xs bg-slate-50/50 rounded-2xl border border-dashed border-gray-200">
+              <Clock size={28} className="mx-auto mb-2 text-gray-300" />
+              <p className="font-medium text-gray-600">No attendance sessions logged yet</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Use the "Clock In Now" button above when starting your shift.</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {paginatedTraineeRecords.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/70 border border-slate-100 hover:border-slate-200 transition-all"
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-gray-800">
+                        {new Date(record.date).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </p>
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+                        {record.timeIn && (
+                          <span>In: <strong className="text-gray-700">{formatTime(record.timeIn)}</strong></span>
+                        )}
+                        {record.timeOut && (
+                          <span>Out: <strong className="text-gray-700">{formatTime(record.timeOut)}</strong></span>
+                        )}
+                        {record.totalHours !== undefined && record.totalHours !== null && (
+                          <span className="text-blue-600 font-bold bg-blue-50 px-1.5 py-0.2 rounded-full">
+                            {Number(record.totalHours).toFixed(1)}h
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                          record.status === 'present'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : record.status === 'late'
+                              ? 'bg-amber-100 text-amber-800'
+                              : record.status === 'absent'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-blue-100 text-blue-800'
+                        }`}
+                      >
+                        {record.status}
+                      </span>
+                      {record.timeInGeofenced ? (
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          📍 Geofenced
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          ⚠ Off-premises
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalTraineePages > 1 && (
+                <div className="mt-3.5 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>
+                    Page <strong className="text-gray-800">{traineeRecordsPage}</strong> of{' '}
+                    <strong className="text-gray-800">{totalTraineePages}</strong>
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setTraineeRecordsPage((p) => Math.max(1, p - 1))}
+                      disabled={traineeRecordsPage === 1}
+                      className="px-2.5 py-1 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <ChevronLeft size={13} /> Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTraineeRecordsPage((p) => Math.min(totalTraineePages, p + 1))}
+                      disabled={traineeRecordsPage >= totalTraineePages}
+                      className="px-2.5 py-1 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      Next <ChevronRight size={13} />
+                    </button>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      record.status === 'present'
-                        ? 'bg-green-100 text-green-700'
-                        : record.status === 'late'
-                          ? 'bg-orange-100 text-orange-700'
-                          : record.status === 'absent'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-blue-100 text-blue-700'
-                    }`}
-                  >
-                    {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                  </span>
-                  {record.timeInGeofenced ? (
-                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                      📍 Geofenced (40m)
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-medium text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                      ⚠ Off-premises
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </>
+          )}
         </motion.div>
       )}
 

@@ -42,9 +42,11 @@ export async function loadFaceModels(modelsPath = '/models'): Promise<boolean> {
 
     for (const base of candidates) {
       try {
-        await api.nets.tinyFaceDetector.loadFromUri(base);
-        await api.nets.faceLandmark68Net.loadFromUri(base);
-        await api.nets.faceRecognitionNet.loadFromUri(base);
+        await Promise.all([
+          api.nets.tinyFaceDetector.loadFromUri(base),
+          api.nets.faceLandmark68Net.loadFromUri(base),
+          api.nets.faceRecognitionNet.loadFromUri(base),
+        ]);
 
         if (api.nets.ssdMobilenetv1) {
           try {

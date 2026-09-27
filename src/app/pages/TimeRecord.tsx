@@ -190,7 +190,24 @@ export function TimeRecord() {
     !employee.companyName.toLowerCase().includes('pending')
   );
 
+  // Late threshold evaluation
+  const [startH, startM] = (settings.workStartTime || '08:00').split(':').map(Number);
+  const lateGraceMinutes = Number(settings.lateThresholdMinutes ?? 15);
+  const lateCutoffTotalMinutes = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM) + lateGraceMinutes;
+  const now = new Date();
+  const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+  const isPastLateThreshold = isStudent && action === 'in' && !currentRecord?.timeIn && currentTotalMinutes > lateCutoffTotalMinutes;
+  const cutoffHour = Math.floor(lateCutoffTotalMinutes / 60) % 24;
+  const cutoffMin = lateCutoffTotalMinutes % 60;
+  const formattedCutoffTime = formatTime(
+    `${String(cutoffHour).padStart(2, '0')}:${String(cutoffMin).padStart(2, '0')}`
+  );
+
   const proceedToFaceScan = () => {
+    if (isPastLateThreshold) {
+      toast.error(`Clock-in disabled: The late threshold cutoff was ${formattedCutoffTime} (${lateGraceMinutes} min grace period after ${formatTime(settings.workStartTime)}).`);
+      return;
+    }
     if (isStudent && !hasValidHte) {
       toast.error('Clock-in blocked: You must be assigned to an approved Host Training Establishment (HTE) workplace by your instructor first.');
       return;
@@ -588,6 +605,18 @@ export function TimeRecord() {
               </button>
             </div>
 
+            {isPastLateThreshold && (
+              <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-900 text-xs flex items-start gap-3">
+                <Lock className="text-rose-600 shrink-0 mt-0.5" size={18} />
+                <div>
+                  <p className="font-bold text-sm text-rose-950">Clock-In Closed — Late Threshold Passed</p>
+                  <p className="mt-1 leading-relaxed">
+                    Attendance cutoff was {formattedCutoffTime} ({lateGraceMinutes} min grace period after {formatTime(settings.workStartTime)}). Clock-in is disabled after passing the late threshold.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {isStudent && !hasValidHte && (
               <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900 text-xs flex items-start gap-3">
                 <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={18} />
@@ -609,6 +638,10 @@ export function TimeRecord() {
 
             <button
               onClick={() => {
+                if (isPastLateThreshold) {
+                  toast.error(`Clock-in disabled: The late threshold cutoff was ${formattedCutoffTime}.`);
+                  return;
+                }
                 if (isStudent && !hasValidHte) {
                   toast.error('Clock-in blocked: Awaiting HTE workplace placement from your OJT Instructor.');
                   return;
@@ -629,20 +662,27 @@ export function TimeRecord() {
                 }
                 proceedToFaceScan();
               }}
-              disabled={geofenceStatus === 'outside' || (isStudent && !hasValidHte)}
+              disabled={isPastLateThreshold || geofenceStatus === 'outside' || (isStudent && !hasValidHte)}
               className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                isStudent && !hasValidHte
+                isPastLateThreshold
                   ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
-                  : geofencePassed
-                    ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
-                    : geofenceStatus === 'denied'
-                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
-                      : geofenceStatus === 'outside'
-                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                        : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
+                  : isStudent && !hasValidHte
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
+                    : geofencePassed
+                      ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
+                      : geofenceStatus === 'denied'
+                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
+                        : geofenceStatus === 'outside'
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
               }`}
             >
-              {isStudent && !hasValidHte ? (
+              {isPastLateThreshold ? (
+                <>
+                  <Lock size={16} />
+                  <span>Clock-In Closed (Late Cutoff Passed)</span>
+                </>
+              ) : isStudent && !hasValidHte ? (
                 <>
                   <Lock size={16} />
                   <span>Awaiting HTE Workplace Assignment</span>
