@@ -824,6 +824,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (configured) {
         try {
           setIsLoading(true);
+
+          // Wait for Supabase Auth session restoration so RLS evaluates with authenticated instructor privileges
+          try {
+            await supabase.auth.getSession();
+          } catch {}
+
           // Run one-time Supabase migration to normalize 'Administrator' → 'OJT Instructor'
           try {
             if (localStorage.getItem('ojt_migrated_instructor_positions') !== 'done') {
@@ -1158,8 +1164,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
       const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-      if (sanitizedZones.length > 0) setGeofenceZones(sanitizedZones);
-      if (supabaseSettings) setSettings(supabaseSettings);
+      if (supabaseSettings) {
+        setSettings((prev) => {
+          const mergedYears = Array.from(new Set([
+            ...(prev.academicYears || ['2025-2026', '2026-2027']),
+            ...(supabaseSettings.academicYears || []),
+            '2025-2026',
+            '2026-2027',
+          ]));
+          const activeYear = (supabaseSettings.activeAcademicYear && supabaseSettings.activeAcademicYear !== '2025-2026')
+            ? supabaseSettings.activeAcademicYear
+            : (prev.activeAcademicYear || '2026-2027');
+          const next = {
+            ...prev,
+            ...supabaseSettings,
+            academicYears: mergedYears,
+            activeAcademicYear: activeYear,
+          };
+          saveToStorage(STORAGE_KEYS.SETTINGS, next);
+          return next;
+        });
+      }
       if (supabaseEvaluations && supabaseEvaluations.length > 0) {
         setEvaluations((prev) => {
           const merged = mergeEvaluations(supabaseEvaluations, prev);
@@ -1185,6 +1210,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('focus', onFocus);
 
+    // Immediately re-fetch data when Supabase Auth session establishes or changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        refreshData();
+      }
+    });
+
     // Periodic live background sync every 45 seconds (when tab is active) so Supabase is not flooded with requests
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -1194,6 +1226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(syncInterval);
+      authListener?.subscription?.unsubscribe();
     };
   }, [refreshData, useSupabase]);
 

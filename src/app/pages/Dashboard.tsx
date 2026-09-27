@@ -94,22 +94,28 @@ export function Dashboard() {
     evaluations,
     hostFeedback,
     updateEmployee,
+    refreshData,
   } = useApp();
   const employee = getCurrentEmployee();
   const isAdmin = currentUser?.role === 'admin';
+
+  // Automatically refresh data when instructor or admin views the dashboard
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
   
   // HTE/Instructor Dashboard Metrics
   // Student trainees across the active cohort
   const studentEmployees = useMemo(() => {
-    const activeAY = settings?.activeAcademicYear;
-    const defaultAY = settings?.academicYears?.[0] || '2025-2026';
+    const activeAY = settings?.activeAcademicYear || '2026-2027';
+    const defaultAY = settings?.academicYears?.[0] || '2026-2027';
     return employees.filter(
       (e) =>
         e.position !== 'OJT Instructor' &&
         e.position !== 'HTE Representative' &&
         !e.employeeId?.startsWith('ADM-') &&
         !e.employeeId?.startsWith('HTE-') &&
-        (e.academicYear === activeAY || (!e.academicYear && (activeAY === defaultAY || !activeAY)))
+        (e.academicYear === activeAY || (!e.academicYear && (activeAY === defaultAY || !activeAY)) || e.academicYear === '2026-2027')
     );
   }, [employees, settings?.activeAcademicYear, settings?.academicYears]);
 
