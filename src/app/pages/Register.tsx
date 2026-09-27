@@ -298,12 +298,12 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702 }; // CHMSU Talisay Campus — used only as GPS fallback
+  const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702, accuracy: 15 }; // CHMSU Talisay Campus — default attendance geofence
 
-  // Registration location state — starts as idle until GPS is captured
+  // Registration location state — initialized with campus default and updated when live GPS locks
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
-  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>(undefined);
-  const [registrationAddress, setRegistrationAddress] = useState<string>('');
+  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>(DEFAULT_CAMPUS_LOCATION);
+  const [registrationAddress, setRegistrationAddress] = useState<string>('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
   const [showLocationMap, setShowLocationMap] = useState(true);
   const [pickingLocation, setPickingLocation] = useState(false);
   const watchIdRef = React.useRef<number | null>(null);
@@ -585,13 +585,15 @@ export function Register() {
       console.warn('Geolocation error:', err);
       const isDenied = isGeolocationPositionError(err) && err.code === 1;
       if (isDenied) {
-        // Permission denied — require user to grant GPS
+        // Permission denied — use campus default so trainee can proceed without being locked out
         setLocationStatus('denied');
-        toast.error('Location access denied. Please allow GPS access in your browser settings.');
+        setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
+        setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
+        toast.info('Location access not granted. Using campus coordinates as default — you can adjust the pin on the map.');
       } else {
         // Fall back to campus coords with warning
         const fallback = DEFAULT_CAMPUS_LOCATION;
-        setRegistrationLocation((prev) => prev || fallback);
+        setRegistrationLocation(fallback);
         setRegistrationAddress(`${fallback.lat.toFixed(6)}, ${fallback.lng.toFixed(6)}`);
         setLocationStatus('captured');
         toast.warning('Could not get live satellite GPS. Using campus location — you can adjust the pin on the map.');
@@ -869,14 +871,21 @@ export function Register() {
     if (errs.length > 0) {
       setAttemptedNext(true);
       toast.error(errs[0]);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     setAttemptedNext(false);
-    if (step < steps.length - 1) setStep((s) => s + 1);
+    if (step < steps.length - 1) {
+      setStep((s) => s + 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
   const handleBack = () => {
     setAttemptedNext(false);
-    if (step > 0) setStep((s) => s - 1);
+    if (step > 0) {
+      setStep((s) => s - 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleFaceSuccess = useCallback((img?: string) => {
@@ -887,6 +896,13 @@ export function Register() {
 
   const handleSubmit = async () => {
     if (isSubmitting) return; // debounce: block re-entry while a submit is in flight
+    const errs = getValidationErrors();
+    if (errs.length > 0) {
+      setAttemptedNext(true);
+      toast.error(errs[0]);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     setIsSubmitting(true);
     setSubmitError(null);
     const empId =
@@ -1349,13 +1365,8 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
         if (!form.street?.trim()) errors.push('Please enter your Street Address / House Number / Subd.');
         if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
-          errors.push('High-accuracy GPS Geofence coordinates are required for Trainee attendance. Please calibrate GPS or adjust the map pin.');
+          setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
         } else {
-          if (typeof registrationLocation.accuracy === 'number' && registrationLocation.accuracy > 100) {
-            errors.push(
-              `GPS accuracy is too low (±${Math.round(registrationLocation.accuracy)}m). High-accuracy GPS under 100m is required for attendance geofencing. Please calibrate GPS or adjust the map pin.`
-            );
-          }
           if (!isWithinNegrosOccidental(registrationLocation.lat, registrationLocation.lng)) {
             errors.push(
               'Selected GPS coordinates are outside Negros Occidental / CHMSU region. Please reposition the pin on the map to your designated workplace or campus.'
@@ -3744,75 +3755,62 @@ export function Register() {
           {/* Navigation - Only show when role is selected */}
           {role !== null && (
             <div className="mt-6">
-
-              <div className="flex gap-3">
-                {step > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-                  >
-                    <ArrowLeft size={14} />
-                    Back
-                  </button>
+                {/* Validation summary banner when user attempts to proceed with missing/invalid inputs */}
+                {attemptedNext && validationErrors.length > 0 && (
+                  <div className="mb-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs shadow-xs animate-in fade-in">
+                    <div className="flex items-center gap-2 font-bold mb-1.5 text-rose-800 text-sm">
+                      <AlertCircle size={16} className="shrink-0 text-rose-600" />
+                      <span>Please complete or correct the following to proceed:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-xs pl-1 text-rose-700">
+                      {validationErrors.map((err, idx) => (
+                        <li key={idx} className="leading-snug">{err}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
-                {step < steps.length - 1 ? (
-                  <div
-                    className="flex-1 flex"
-                    onClick={() => {
-                      if (!isStepValid()) {
-                        setAttemptedNext(true);
-                        const errs = getValidationErrors();
-                        if (errs.length > 0) {
-                          toast.error(errs[0]);
-                        }
-                      }
-                    }}
-                  >
+
+                <div className="flex gap-3">
+                  {step > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleBack}
+                      className="flex items-center gap-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft size={14} />
+                      Back
+                    </button>
+                  )}
+                  {step < steps.length - 1 ? (
                     <button
                       type="button"
                       onClick={handleNext}
-                      disabled={!isStepValid()}
-                      className="w-full flex items-center justify-center gap-1 py-2.5 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-200"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-blue-700 text-white rounded-xl text-sm font-bold hover:bg-blue-800 active:scale-[0.99] transition-all shadow-lg shadow-blue-200 cursor-pointer"
                     >
-                      Next
-                      <ArrowRight size={14} />
+                      <span>Next Step</span>
+                      <ArrowRight size={15} />
                     </button>
-                  </div>
-                ) : (
-                  <div
-                    className="flex-1 flex"
-                    onClick={() => {
-                      if (!isStepValid() || isSubmitting) {
-                        setAttemptedNext(true);
-                        const errs = getValidationErrors();
-                        if (errs.length > 0) {
-                          toast.error(errs[0]);
-                        }
-                      }
-                    }}
-                  >
+                  ) : (
                     <button
                       type="button"
                       onClick={handleSubmit}
-                      disabled={!isStepValid() || isSubmitting}
-                      className="w-full flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200"
+                      disabled={isSubmitting}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200 cursor-pointer"
                     >
                       {isSubmitting ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Registering...
+                          <span>Registering Account...</span>
                         </>
                       ) : (
                         <>
-                          <Check size={14} />
-                          Complete Registration
+                          <Check size={16} />
+                          <span>Complete Registration</span>
                         </>
                       )}
                     </button>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
               {/* Error message display */}
               {submitError && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
