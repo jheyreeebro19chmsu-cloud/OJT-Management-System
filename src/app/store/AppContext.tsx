@@ -2949,7 +2949,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const newZone = sanitizeGeofenceZone({ ...zoneWithAY, id: tempId });
     if (!newZone) return;
 
-    setGeofenceZones((prev) => [...prev.filter((z) => z.id !== newZone.id), newZone]);
+    setGeofenceZones((prev) => {
+      const updated = [...prev.filter((z) => z.id !== newZone.id), newZone];
+      saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService
@@ -2957,13 +2961,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .then((created) => {
           const sanitizedCreated = sanitizeGeofenceZone(created || newZone);
           if (sanitizedCreated) {
-            setGeofenceZones((prev) => [...prev.filter((z) => z.id !== tempId && z.id !== sanitizedCreated.id), sanitizedCreated]);
+            setGeofenceZones((prev) => {
+              const updated = [...prev.filter((z) => z.id !== tempId && z.id !== sanitizedCreated.id), sanitizedCreated];
+              saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
+              return updated;
+            });
           }
         })
         .catch((err) => {
-          console.error('[AppContext] Failed to create geofence zone in Supabase:', err);
-          setGeofenceZones((prev) => prev.filter((z) => z.id !== tempId));
-          alert('Failed to save geofence zone to cloud. Please try again.');
+          console.warn('[AppContext] Failed to create geofence zone in Supabase, saved locally:', err);
+          // Never pop up a blocking browser alert during registration or background operations
         });
     }
   };
@@ -2990,7 +2997,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return restored;
           });
         }
-        alert('Failed to save geofence zone update to cloud. Changes have been rolled back.');
+        toast.error('Could not sync geofence zone update to cloud. Changes rolled back.');
       });
     }
   };
@@ -3033,7 +3040,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         console.error('[AppContext] Failed to delete geofence zone in Supabase:', err);
         setGeofenceZones(previousZones);
         saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, previousZones);
-        alert('Failed to delete geofence zone from cloud. Item has been restored.');
+        toast.error('Failed to delete geofence zone from cloud. Item has been restored.');
       });
       if (matchedEmpId && matchedEmpId !== id) {
         supabaseService.deleteGeofenceZone(matchedEmpId).catch(() => {});
@@ -3050,7 +3057,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       supabaseService.updateSettings(updated).catch((err) => {
         console.error('[AppContext] Failed to update settings in Supabase:', err);
         setSettings(previous);
-        alert('Failed to save settings to cloud. Changes have been rolled back.');
+        toast.error('Failed to save settings to cloud. Changes have been rolled back.');
       });
     }
   };

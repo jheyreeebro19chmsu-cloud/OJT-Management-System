@@ -805,15 +805,30 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     // Column employee_id may be pending migration; proceed safely
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('geofence_zones')
     .upsert([payload], payload.id ? { onConflict: 'id' } : undefined)
     .select()
     .single();
 
-  if (error) {
-    console.error('Error creating/upserting geofence zone in database:', error);
-    throw new Error(error.message || 'Failed to create geofence zone');
+  // If failed and payload had employee_id, retry without employee_id in case column is not yet migrated in Supabase
+  if (error && payload.employee_id) {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.employee_id;
+    const retry = await supabase
+      .from('geofence_zones')
+      .upsert([fallbackPayload], fallbackPayload.id ? { onConflict: 'id' } : undefined)
+      .select()
+      .single();
+    if (!retry.error) {
+      data = retry.data;
+      error = null;
+    }
+  }
+
+  if (error || !data) {
+    console.warn('Geofence zone cloud write notice in Supabase:', error?.message || error);
+    return null;
   }
 
   return {

@@ -1139,20 +1139,24 @@ export function Register() {
 
           const hasCoords = role === 'admin' || (registrationLocation?.lat && registrationLocation?.lng);
           if (hasCoords) {
-            const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - Registered Account Geofence`;
-            const zoneAddr = role === 'admin'
-              ? campusInfo.address
-              : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
-            addGeofenceZone({
-              id: `personal-${empToUpdateId}`,
-              name: zoneName,
-              address: zoneAddr,
-              lat: role === 'admin' ? campusInfo.lat : registrationLocation!.lat,
-              lng: role === 'admin' ? campusInfo.lng : registrationLocation!.lng,
-              radius: role === 'admin' ? campusInfo.radius : 100,
-              active: true,
-              academicYear: settings.activeAcademicYear,
-            });
+            try {
+              const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - Registered Account Geofence`;
+              const zoneAddr = role === 'admin'
+                ? campusInfo.address
+                : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
+              addGeofenceZone({
+                id: `personal-${empToUpdateId}`,
+                name: zoneName,
+                address: zoneAddr,
+                lat: role === 'admin' ? campusInfo.lat : registrationLocation!.lat,
+                lng: role === 'admin' ? campusInfo.lng : registrationLocation!.lng,
+                radius: role === 'admin' ? campusInfo.radius : 100,
+                active: true,
+                academicYear: settings.activeAcademicYear,
+              });
+            } catch (zoneErr) {
+              console.warn('Geofence zone repair registration notice:', zoneErr);
+            }
           }
 
           toast.success('Registration completed! Profile saved. Please log in.');
@@ -1196,24 +1200,28 @@ export function Register() {
     // Ensure geofence zone appears in Instructor Geofence Zones monitoring
     const hasRegCoords = (registrationLocation?.lat && registrationLocation?.lng) || role === 'admin';
     if (hasRegCoords) {
-      const zoneName = role === 'admin'
-        ? `${composedName} - Official Station`
-        : role === 'hte'
-        ? `${composedName} - ${form.companyName || 'HTE Workplace'}`
-        : `${composedName} - Trainee Geofence (${form.companyName || 'Assigned Workplace'})`;
-      const zoneAddr = role === 'admin'
-        ? campusInfo.address
-        : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
-      addGeofenceZone({
-        id: `station-${newEmp.id}`,
-        name: zoneName,
-        address: zoneAddr,
-        lat: role === 'admin' ? campusInfo.lat : registrationLocation!.lat,
-        lng: role === 'admin' ? campusInfo.lng : registrationLocation!.lng,
-        radius: role === 'admin' ? campusInfo.radius : 100,
-        active: true,
-        academicYear: settings.activeAcademicYear,
-      });
+      try {
+        const zoneName = role === 'admin'
+          ? `${composedName} - Official Station`
+          : role === 'hte'
+          ? `${composedName} - ${form.companyName || 'HTE Workplace'}`
+          : `${composedName} - Trainee Geofence (${form.companyName || 'Assigned Workplace'})`;
+        const zoneAddr = role === 'admin'
+          ? campusInfo.address
+          : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
+        addGeofenceZone({
+          id: `station-${newEmp.id}`,
+          name: zoneName,
+          address: zoneAddr,
+          lat: role === 'admin' ? campusInfo.lat : registrationLocation!.lat,
+          lng: role === 'admin' ? campusInfo.lng : registrationLocation!.lng,
+          radius: role === 'admin' ? campusInfo.radius : 100,
+          active: true,
+          academicYear: settings.activeAcademicYear,
+        });
+      } catch (zoneErr) {
+        console.warn('Geofence zone registration notice:', zoneErr);
+      }
     }
 
     // Store the same face template used by attendance verification in the background (no blocking delay)
