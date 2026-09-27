@@ -14,8 +14,8 @@ from unittest.mock import patch, MagicMock
 from django.test import TestCase, RequestFactory
 from django.conf import settings
 from PIL import Image, ImageDraw, ImageFilter
-from .. import views
-from ..utils import validate_image_quality
+from security import views
+from security.utils import validate_image_quality
 
 
 class EmpiricalOcclusionAuditTests(TestCase):

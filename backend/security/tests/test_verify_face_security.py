@@ -2,7 +2,7 @@ import json
 from unittest.mock import patch, MagicMock
 from django.test import TestCase, RequestFactory
 from django.conf import settings
-from .. import views
+from security import views
 
 
 class VerifyFaceSecurityTests(TestCase):

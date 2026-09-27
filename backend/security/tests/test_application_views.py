@@ -1,7 +1,7 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
-from ..models import OJTInstructor, Student, StudentOJTApplication, UserRole
+from security.models import OJTInstructor, Student, StudentOJTApplication, UserRole
 import json
 from datetime import date, timedelta
 

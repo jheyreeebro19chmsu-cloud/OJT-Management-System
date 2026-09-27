@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
 import base64
-from ..models import Student, OJTInstructor, StudentOJTApplication, FaceRegistration
+from security.models import Student, OJTInstructor, StudentOJTApplication, FaceRegistration
 from django.utils import timezone
 
 
@@ -68,7 +68,7 @@ class ApplicationStatusEnrollTests(TestCase):
         payload = self._create_valid_test_image_b64()
         # Call view directly to avoid JWT decorator complexity in tests
         from django.test import RequestFactory
-        from .. import views
+        from security import views
 
         factory = RequestFactory()
         request = factory.post(url, data=json.dumps({'captured_image': payload}), content_type='application/json')
@@ -98,7 +98,7 @@ class ApplicationStatusEnrollTests(TestCase):
         png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
         payload = 'data:image/png;base64,' + png_b64
         from django.test import RequestFactory
-        from .. import views
+        from security import views
 
         factory = RequestFactory()
         request = factory.post(url, data=json.dumps({'captured_image': payload}), content_type='application/json')
@@ -119,7 +119,7 @@ class ApplicationStatusEnrollTests(TestCase):
         payload = self._create_valid_test_image_b64()
 
         from django.test import RequestFactory
-        from .. import views
+        from security import views
 
         factory = RequestFactory()
         # enroll
