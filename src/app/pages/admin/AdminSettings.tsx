@@ -379,7 +379,7 @@ export function AdminSettings() {
             <p className="text-xs text-gray-500">Update your admin account password</p>
           </div>
         </div>
-        <div className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); handlePasswordChange(); }} className="space-y-3">
           <input
             type="password"
             autoComplete="current-password"
@@ -397,13 +397,12 @@ export function AdminSettings() {
             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
           />
           <button
-            type="button"
-            onClick={handlePasswordChange}
+            type="submit"
             className="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
           >
             Update Password
           </button>
-        </div>
+        </form>
       </motion.div>
 
       <motion.div

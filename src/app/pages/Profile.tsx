@@ -963,7 +963,7 @@ export function Profile() {
           </div>
           <h3 className="font-bold text-gray-800 text-sm">Security</h3>
         </div>
-        <div className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); handlePasswordChange(); }} className="space-y-3">
           <div>
             <label className="text-xs text-gray-500 font-medium block mb-1">Current Password</label>
             <input
@@ -998,7 +998,7 @@ export function Profile() {
             />
           </div>
           <button
-            onClick={handlePasswordChange}
+            type="submit"
             disabled={
               !passwordForm.current ||
               !passwordForm.new ||
@@ -1009,7 +1009,7 @@ export function Profile() {
           >
             Update Password
           </button>
-        </div>
+        </form>
       </motion.div>
 
       {/* Permanent Registered Location & Geofence */}
