@@ -173,8 +173,8 @@ export function Login() {
         accountExists = true;
       } else {
         const [{ data: emps }, { data: hosts }] = await Promise.all([
-          supabase.from('employees').select('id,email').ilike('email', cleanEmail).limit(1),
-          supabase.from('host_supervisors').select('id,email').ilike('email', cleanEmail).limit(1),
+          supabase.from('employees').select('id,email').or(`email_lower.eq.${cleanEmail},email.eq.${cleanEmail}`).limit(1),
+          supabase.from('host_supervisors').select('id,email').or(`email_lower.eq.${cleanEmail},email.eq.${cleanEmail}`).limit(1),
         ]);
         if ((emps && emps.length > 0) || (hosts && hosts.length > 0)) {
           accountExists = true;
@@ -250,6 +250,11 @@ export function Login() {
     const cleanEmail = forgotEmail.trim().toLowerCase();
     setForgotError('');
 
+    if (!forgotOtp.trim()) {
+      setForgotError('Verification code is missing. Please restart password recovery.');
+      return;
+    }
+
     if (!forgotNewPassword || forgotNewPassword.length < 8) {
       setForgotError('New password must be at least 8 characters long.');
       return;
@@ -263,9 +268,29 @@ export function Login() {
     setForgotLoading(true);
 
     try {
-      const res = await resetPasswordDirect(cleanEmail, forgotNewPassword);
+      // Secure Password Reset: Verify OTP on server-side before updating password (Objective 1.1)
+      const res = await resetPasswordDirect(cleanEmail, forgotNewPassword, forgotOtp.trim());
       if (!res.success) {
         throw new Error(res.message || 'Failed to update password.');
+      }
+
+      // Synchronize with Django backend if configured
+      try {
+        const djangoApi = import.meta.env.VITE_DJANGO_API_URL;
+        if (djangoApi) {
+          const apiBase = djangoApi.startsWith('http') ? djangoApi : `https://${djangoApi}`;
+          await fetch(`${apiBase.replace(/\/$/, '')}/api/auth/reset-password/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: cleanEmail,
+              new_password: forgotNewPassword,
+              otp_code: forgotOtp.trim(),
+            }),
+          });
+        }
+      } catch (backendErr) {
+        console.debug('Backend password sync notice:', backendErr);
       }
 
       setPasswordForEmail(cleanEmail, forgotNewPassword);

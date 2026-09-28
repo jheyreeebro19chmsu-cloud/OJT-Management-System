@@ -107,6 +107,8 @@ export interface GeofenceZone {
   radius: number;
   active: boolean;
   academicYear?: string;
+  employeeId?: string;
+  employee_id?: string;
 }
 
 export interface AppSettings {

@@ -62,3 +62,42 @@ class AuthTests(TestCase):
         self.assertIsNotNone(user)
         role = UserRole.objects.filter(user=user).first()
         self.assertEqual(role.role, 'student')
+
+    def test_TC_Reset001_password_reset_without_otp_rejected(self):
+        """Objective 1.1: Reject password reset requests lacking valid OTP verification code."""
+        user = User.objects.create_user(username='reset_test', email='victim@example.com', password='OldPassword123!')
+        resp = self.client.post('/api/auth/reset-password/', data={
+            'email': 'victim@example.com',
+            'new_password': 'HackedPassword123!'
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('OldPassword123!'), "Victim password must remain unchanged")
+
+    def test_TC_Reset002_password_reset_with_invalid_otp_rejected(self):
+        """Objective 1.1: Reject password reset with invalid or unissued OTP code."""
+        user = User.objects.create_user(username='reset_test2', email='victim2@example.com', password='OldPassword123!')
+        OTPVerification.create_otp('victim2@example.com')
+        resp = self.client.post('/api/auth/reset-password/', data={
+            'email': 'victim2@example.com',
+            'new_password': 'HackedPassword123!',
+            'otp_code': '999999'  # Wrong OTP
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 400)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('OldPassword123!'))
+
+    def test_TC_Reset003_password_reset_with_valid_otp_succeeds(self):
+        """Objective 1.1: Legitimate password reset with verified OTP succeeds and invalidates OTP against replay."""
+        user = User.objects.create_user(username='reset_test3', email='legit@example.com', password='OldPassword123!')
+        otp = OTPVerification.create_otp('legit@example.com')
+        resp = self.client.post('/api/auth/reset-password/', data={
+            'email': 'legit@example.com',
+            'new_password': 'NewSecurePassword456!',
+            'otp_code': otp.otp_code
+        }, content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('NewSecurePassword456!'))
+        otp.refresh_from_db()
+        self.assertTrue(otp.is_verified, "OTP must be marked verified to prevent reuse")

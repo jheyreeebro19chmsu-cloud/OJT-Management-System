@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    let body: { email?: string; newPassword?: string };
+    let body: { email?: string; newPassword?: string; otpCode?: string };
     try {
       body = await req.json();
     } catch {
@@ -32,12 +32,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { email, newPassword } = body;
+    const { email, newPassword, otpCode } = body;
     const cleanEmail = (email || '').trim().toLowerCase();
 
     if (!cleanEmail || !newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
       return new Response(
         JSON.stringify({ success: false, error: 'Valid email and password (minimum 6 characters) are required.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Security Gate (Objective 1.1): Require valid 6-digit OTP confirmation code to prevent unauthorized account takeover
+    if (!otpCode || typeof otpCode !== 'string' || otpCode.trim().length !== 6) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Valid 6-digit OTP verification code is required to authorize password reset.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

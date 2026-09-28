@@ -748,6 +748,8 @@ export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
       radius: Number(zone.radius) || 100,
       active: zone.active !== false,
       academicYear: zone.academic_year || undefined,
+      employeeId: zone.employee_id || zone.employeeId || undefined,
+      employee_id: zone.employee_id || zone.employeeId || undefined,
     }));
 }
 
@@ -2256,7 +2258,11 @@ export async function repairDatabaseData(activeAY = '2026-2027'): Promise<{
   }
 }
 
-export async function resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+export async function resetPasswordDirect(
+  email: string,
+  newPassword: string,
+  otpCode?: string
+): Promise<{ success: boolean; message?: string }> {
   const cleanEmail = email.trim().toLowerCase();
 
   try {
@@ -2264,6 +2270,7 @@ export async function resetPasswordDirect(email: string, newPassword: string): P
       body: {
         email: cleanEmail,
         newPassword,
+        otpCode: (otpCode || '').trim(),
       },
     });
 

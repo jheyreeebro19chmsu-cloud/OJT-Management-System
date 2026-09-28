@@ -727,13 +727,14 @@ export const mobileDb = {
     };
   },
 
-  async resetPasswordDirect(email: string, newPassword: string): Promise<{ success: boolean; message?: string }> {
+  async resetPasswordDirect(email: string, newPassword: string, otpCode?: string): Promise<{ success: boolean; message?: string }> {
     const cleanEmail = email.trim().toLowerCase();
     try {
       const { data, error } = await supabase.functions.invoke('reset-password-admin', {
         body: {
           email: cleanEmail,
           newPassword,
+          otpCode: (otpCode || '').trim(),
         },
       });
 

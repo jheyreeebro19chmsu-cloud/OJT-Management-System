@@ -18,7 +18,7 @@ from django.db import transaction
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
-    UserRole, Student, OJTInstructor, HTE, OTPVerification, TraineeOTPRequest
+    UserRole, Student, OJTInstructor, HTE, OTPVerification, TraineeOTPRequest, OTPAuditLog
 )
 from .validation import validate_registration_data, sanitize_string, sanitize_email
 import requests
@@ -1366,20 +1366,55 @@ def supabase_exchange(request: HttpRequest) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def reset_password(request: HttpRequest) -> JsonResponse:
-    """Reset a user's password in Django and Supabase (if configured).
+    """Reset a user's password in Django and Supabase with strict OTP verification.
 
-    Expects JSON: {"email": "...", "new_password": "..."}
+    Expects JSON: {"email": "...", "new_password": "...", "otp_code": "..."}
+    Requires a valid, unexpired OTP code to prevent unauthorized account takeover (Objective 1.1).
     """
     try:
         data = json.loads(request.body or b"{}")
         email = data.get('email', '').strip()
         new_password = data.get('new_password', '').strip()
+        otp_code = data.get('otp_code', '').strip()
+
         if not email or not new_password:
             return JsonResponse({'error': 'email and new_password required'}, status=400)
+
+        if not otp_code:
+            return JsonResponse({'error': 'otp_code required for password reset verification'}, status=400)
 
         user = User.objects.filter(email__iexact=email).first()
         if not user:
             return JsonResponse({'error': 'User not found'}, status=404)
+
+        # Verify OTP code
+        otp_obj = OTPVerification.objects.filter(
+            email__iexact=email,
+            otp_code=otp_code
+        ).order_by('-created_at').first()
+
+        if not otp_obj:
+            return JsonResponse({'error': 'Invalid verification code'}, status=400)
+
+        if not otp_obj.is_valid():
+            return JsonResponse({'error': 'Verification code has expired or already been used'}, status=400)
+
+        # Invalidate OTP code to prevent replay attacks and account takeover
+        otp_obj.is_verified = True
+        otp_obj.save()
+
+        # Audit log for security tracking
+        try:
+            ip = request.META.get('REMOTE_ADDR') or request.META.get('HTTP_X_FORWARDED_FOR', '')
+            OTPAuditLog.objects.create(
+                action='password_reset',
+                email=email,
+                otp_code=otp_code,
+                actor=user,
+                ip_address=str(ip)
+            )
+        except Exception:
+            pass
 
         # Update Django password
         user.set_password(new_password)
@@ -1411,7 +1446,7 @@ def reset_password(request: HttpRequest) -> JsonResponse:
             except Exception as e:
                 sup_response = {'error': str(e)}
 
-        return JsonResponse({'success': True, 'supabase': sup_response})
+        return JsonResponse({'success': True, 'message': 'Password reset successfully with verified OTP.', 'supabase': sup_response})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

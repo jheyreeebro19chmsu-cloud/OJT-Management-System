@@ -646,9 +646,9 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
 
       const roleChoice = explicitRole || targetAuthRole || selectedRole || 'trainee';
 
-      // 1. Check if user already exists in employees or host_supervisors in parallel
+      // 1. Check if user already exists in employees or host_supervisors in parallel (Indexed login speed patch)
       const empOrConditions = [];
-      if (authEmail) empOrConditions.push(`email.ilike.${authEmail}`);
+      if (authEmail) empOrConditions.push(`email_lower.eq.${authEmail},email.eq.${authEmail}`);
       if (authId) empOrConditions.push(`id.eq.${authId}`);
 
       const [empResult, hostResult] = await Promise.all([

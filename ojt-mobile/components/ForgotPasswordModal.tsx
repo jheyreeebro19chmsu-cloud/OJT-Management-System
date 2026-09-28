@@ -94,10 +94,10 @@ export default function ForgotPasswordModal({
     setLoading(true);
 
     try {
-      // 1. Verify that the email is associated with an employee or host supervisor
+      // 1. Verify that the email is associated with an employee or host supervisor using indexed columns
       const [{ data: emps }, { data: hosts }] = await Promise.all([
-        supabase.from('employees').select('id,email').ilike('email', cleanEmail).limit(1),
-        supabase.from('host_supervisors').select('id,email').ilike('email', cleanEmail).limit(1),
+        supabase.from('employees').select('id,email').or(`email_lower.eq.${cleanEmail},email.eq.${cleanEmail}`).limit(1),
+        supabase.from('host_supervisors').select('id,email').or(`email_lower.eq.${cleanEmail},email.eq.${cleanEmail}`).limit(1),
       ]);
 
       const accountExists = (emps && emps.length > 0) || (hosts && hosts.length > 0);
@@ -190,7 +190,7 @@ export default function ForgotPasswordModal({
     setLoading(true);
 
     try {
-      const res = await mobileDb.resetPasswordDirect(cleanEmail, newPassword);
+      const res = await mobileDb.resetPasswordDirect(cleanEmail, newPassword, otp.trim());
 
       if (!res.success) {
         throw new Error(res.message || 'Failed to update password in Supabase Auth.');

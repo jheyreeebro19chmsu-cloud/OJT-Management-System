@@ -328,6 +328,9 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
     lng,
     radius,
     active: raw.active !== false,
+    academicYear: raw.academicYear || raw.academic_year,
+    employeeId: raw.employeeId || raw.employee_id,
+    employee_id: raw.employee_id || raw.employeeId,
   };
 }
 
@@ -342,9 +345,10 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
       !zone.id.startsWith('personal-')
     );
 
-  // Strict deduplication: keep only one zone per person/account or coordinate cluster
+  // Strict deduplication (Geofence patch): prioritize employee_id to guarantee exactly 1 active zone per user
   const seen = new Map<string, GeofenceZone>();
   for (const z of valid) {
+    const empId = z.employeeId || z.employee_id;
     const rawPerson = z.name.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name.trim();
     const normPerson = rawPerson
       .toLowerCase()
@@ -353,7 +357,7 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
       .filter((w) => w.length > 1)
       .sort()
       .join(' ');
-    const key = normPerson || `${z.lat.toFixed(3)},${z.lng.toFixed(3)}`;
+    const key = empId ? `emp_${empId}` : (normPerson || `${z.lat.toFixed(3)},${z.lng.toFixed(3)}`);
     if (!seen.has(key)) {
       seen.set(key, z);
     } else {
@@ -1400,7 +1404,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const { data: dbHost } = await supabase
             .from('host_supervisors')
             .select('*')
-            .eq('email', normalizedId)
+            .or(`email_lower.eq.${normalizedId},email.eq.${normalizedId}`)
             .limit(1)
             .maybeSingle();
 
