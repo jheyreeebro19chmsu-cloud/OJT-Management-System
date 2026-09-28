@@ -508,7 +508,8 @@ export function Dashboard() {
       };
 
       const fetchHteRequests = async () => {
-        if (typeof window !== 'undefined' && sessionStorage.getItem('ojt_hte_student_access_disabled') === 'true') {
+        // Table hte_student_access is unmigrated in this Supabase instance
+        if (typeof window !== 'undefined' && localStorage.getItem('ojt_enable_hte_student_access') !== 'true') {
           return;
         }
         try {
@@ -517,25 +518,12 @@ export function Dashboard() {
             .select('*, host_supervisors(*), employees!inner(*)')
             .in('status', ['pending', 'approved'])
             .order('created_at', { ascending: false });
-          if (error) {
-            if (
-              (error as any).status === 404 ||
-              error.code === 'PGRST205' ||
-              (error.message && error.message.toLowerCase().includes('does not exist'))
-            ) {
-              if (typeof window !== 'undefined') {
-                sessionStorage.setItem('ojt_hte_student_access_disabled', 'true');
-              }
-            }
-            return;
-          }
+          if (error) return;
           if (data) {
             setHteRequests(data);
           }
         } catch {
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('ojt_hte_student_access_disabled', 'true');
-          }
+          // ignore
         }
       };
 

@@ -1051,7 +1051,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseEvaluations,
             supabaseAnnouncements,
             supabaseSubmissions,
-            supabaseComments,
             supabaseHostFeedback,
             supabaseHostSupervisors,
           ] = await Promise.all([
@@ -1062,7 +1061,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchEvaluations(),
             supabaseService.fetchAnnouncements(),
             supabaseService.fetchAnnouncementSubmissions(),
-            supabaseService.fetchAnnouncementComments(),
             supabaseService.fetchHostFeedback(),
             supabaseService.fetchHostSupervisors(),
           ]);
@@ -1090,7 +1088,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
           if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
-          if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
           if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
           if (supabaseHostSupervisors) setHostSupervisors(supabaseHostSupervisors);
 
