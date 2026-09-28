@@ -1126,7 +1126,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .subscribe();
 
+    const handlePageHide = () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+
     return () => {
+      window.removeEventListener('pagehide', handlePageHide);
       supabase.removeChannel(channel);
     };
   }, [useSupabase]);

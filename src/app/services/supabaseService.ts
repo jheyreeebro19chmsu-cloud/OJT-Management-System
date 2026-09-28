@@ -1577,7 +1577,8 @@ export async function createAnnouncementSubmission(submission: Omit<Announcement
   }
 }
 
-let announcementCommentsTableMissing = false;
+let announcementCommentsTableMissing =
+  typeof window !== 'undefined' && localStorage.getItem('ojt_missing_announcement_comments') === '1';
 
 export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]> {
   if (!isSupabaseConfigured() || announcementCommentsTableMissing) return [];
@@ -1589,9 +1590,10 @@ export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]
       .order('created_at', { ascending: true });
 
     if (error) {
-      if (error.code === 'PGRST205' || error.code === '42P01' || error.message?.includes('does not exist')) {
-        announcementCommentsTableMissing = true;
-      }
+      announcementCommentsTableMissing = true;
+      try {
+        localStorage.setItem('ojt_missing_announcement_comments', '1');
+      } catch {}
       return [];
     }
 

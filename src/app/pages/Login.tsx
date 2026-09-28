@@ -403,6 +403,7 @@ export function Login() {
               <input
                 type="email"
                 name="email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
@@ -416,6 +417,7 @@ export function Login() {
                 <input
                   type={showPass ? 'text' : 'password'}
                   name="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -592,6 +594,7 @@ export function Login() {
                         <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                           type="email"
+                          autoComplete="email"
                           value={forgotEmail}
                           onChange={(e) => {
                             setForgotEmail(e.target.value);
@@ -662,6 +665,7 @@ export function Login() {
                       </label>
                       <input
                         type="text"
+                        autoComplete="one-time-code"
                         maxLength={6}
                         value={forgotOtp}
                         onChange={(e) => {
