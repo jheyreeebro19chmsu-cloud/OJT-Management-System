@@ -3050,8 +3050,8 @@ export function Register() {
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
                             : 'bg-gray-50 border-gray-200 text-gray-800'
                         }`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div className="flex items-start gap-3">
+                          <div className="flex flex-col gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
                               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                                 locationStatus === 'capturing'
                                   ? 'bg-blue-100 text-blue-600'
@@ -3068,107 +3068,108 @@ export function Register() {
                                 )}
                               </div>
 
-                              <div>
+                              <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="font-bold text-sm">
-                                  {locationStatus === 'capturing'
-                                    ? 'Acquiring Real-Time Device GPS...'
-                                    : locationStatus === 'denied'
-                                    ? 'GPS Location Access Required'
-                                    : locationStatus === 'error'
-                                    ? 'GPS Signal Not Detected'
-                                    : registrationLocation
-                                    ? 'Real-Time GPS Location Locked'
-                                    : 'Awaiting Real-Time GPS Detection'}
-                                </h4>
-                                {registrationLocation && (
-                                  <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300">
-                                    ±{Math.round(registrationLocation.accuracy || 10)}m Accuracy
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="text-xs mt-1 opacity-85">
-                                {locationStatus === 'capturing'
-                                  ? 'Connecting to your device GPS sensor to detect your live physical coordinates...'
-                                  : locationStatus === 'denied'
-                                  ? 'Browser location access was denied. Please allow GPS permissions in your browser or click "Adjust Pin" on the map.'
-                                  : locationStatus === 'error'
-                                  ? 'Could not acquire live satellite GPS from your device. Click "Recalibrate GPS" or use "Adjust Pin" on the map.'
-                                  : registrationLocation
-                                  ? 'Your live physical GPS location is locked and will be used as your official attendance geofence.'
-                                  : 'Click "Recalibrate GPS" to acquire real-time coordinates, or use "Adjust Pin" to set location on the map.'}
-                              </p>
-
-                              {(locationStatus === 'denied' || locationStatus === 'error') && !registrationLocation && (
-                                <div className="mt-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
-                                      setLocationStatus('captured');
-                                      setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
-                                      toast.info('Using CHMSU Talisay Campus coordinates as fallback.');
-                                    }}
-                                    className="text-xs text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
-                                  >
-                                    Or click here to use CHMSU Talisay Campus as fallback
-                                  </button>
-                                </div>
-                              )}
-
-                              {registrationLocation && (
-                                <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
-                                  <span className="font-mono font-semibold bg-white/80 px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-800">
-                                    📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
-                                  </span>
-                                  {registrationAddress && registrationAddress !== `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` && (
-                                    <span className="text-emerald-900 font-medium truncate max-w-xs text-[11px]">
-                                      {registrationAddress}
+                                  <h4 className="font-bold text-sm">
+                                    {locationStatus === 'capturing'
+                                      ? 'Acquiring Real-Time Device GPS...'
+                                      : locationStatus === 'denied'
+                                      ? 'GPS Location Access Required'
+                                      : locationStatus === 'error'
+                                      ? 'GPS Signal Not Detected'
+                                      : registrationLocation
+                                      ? 'Real-Time GPS Location Locked'
+                                      : 'Awaiting Real-Time GPS Detection'}
+                                  </h4>
+                                  {registrationLocation && (
+                                    <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                                      ±{Math.round(registrationLocation.accuracy || 10)}m Accuracy
                                     </span>
                                   )}
                                 </div>
-                              )}
+
+                                <p className="text-xs mt-1 opacity-85 leading-relaxed">
+                                  {locationStatus === 'capturing'
+                                    ? 'Connecting to your device GPS sensor to detect your live physical coordinates...'
+                                    : locationStatus === 'denied'
+                                    ? 'Browser location access was denied. Please allow GPS permissions in your browser or click "Adjust Pin" on the map.'
+                                    : locationStatus === 'error'
+                                    ? 'Could not acquire live satellite GPS from your device. Click "Recalibrate GPS" or use "Adjust Pin" on the map.'
+                                    : registrationLocation
+                                    ? 'Your live physical GPS location is locked and will be used as your official attendance geofence.'
+                                    : 'Click "Recalibrate GPS" to acquire real-time coordinates, or use "Adjust Pin" to set location on the map.'}
+                                </p>
+
+                                {(locationStatus === 'denied' || locationStatus === 'error') && !registrationLocation && (
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
+                                        setLocationStatus('captured');
+                                        setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
+                                        toast.info('Using CHMSU Talisay Campus coordinates as fallback.');
+                                      }}
+                                      className="text-xs text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
+                                    >
+                                      Or click here to use CHMSU Talisay Campus as fallback
+                                    </button>
+                                  </div>
+                                )}
+
+                                {registrationLocation && (
+                                  <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                                    <span className="font-mono font-semibold bg-white/90 px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-800 shrink-0">
+                                      📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
+                                    </span>
+                                    {registrationAddress && registrationAddress !== `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` && (
+                                      <span className="text-emerald-900 font-medium truncate max-w-full text-[11px] block">
+                                        {registrationAddress}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
 
-                          {/* GPS Control Buttons */}
-                          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => captureLocation()}
-                              disabled={locationStatus === 'capturing'}
-                              className="px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                              title="Acquire a fresh, high-accuracy satellite fix"
-                            >
-                              <RefreshCw size={12} className={locationStatus === 'capturing' ? 'animate-spin text-blue-600' : 'text-gray-500'} />
-                              Recalibrate GPS
-                            </button>
+                            {/* GPS Control Buttons - Clean Action Bar Inside Card */}
+                            <div className="flex items-center gap-2 pt-2.5 border-t border-emerald-200/50 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => captureLocation()}
+                                disabled={locationStatus === 'capturing'}
+                                className="px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                                title="Acquire a fresh, high-accuracy satellite fix"
+                              >
+                                <RefreshCw size={12} className={locationStatus === 'capturing' ? 'animate-spin text-blue-600' : 'text-gray-500'} />
+                                Recalibrate GPS
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowLocationMap(true);
-                                setPickingLocation(!pickingLocation);
-                              }}
-                              className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                                pickingLocation
-                                  ? 'bg-blue-600 border-blue-700 text-white'
-                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                              }`}
-                              title="Click on map to pin your exact workplace building"
-                            >
-                              <Crosshair size={12} className={pickingLocation ? 'text-white' : 'text-blue-600'} />
-                              {pickingLocation ? 'Done Pinning' : 'Adjust Pin'}
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowLocationMap(true);
+                                  setPickingLocation(!pickingLocation);
+                                }}
+                                className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                                  pickingLocation
+                                    ? 'bg-blue-600 border-blue-700 text-white'
+                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                }`}
+                                title="Click on map to pin your exact workplace building"
+                              >
+                                <Crosshair size={12} className={pickingLocation ? 'text-white' : 'text-blue-600'} />
+                                {pickingLocation ? 'Done Pinning' : 'Adjust Pin'}
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => setShowLocationMap(!showLocationMap)}
-                              className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all shadow-xs cursor-pointer"
-                            >
-                              {showLocationMap ? 'Hide Map' : 'View Map'}
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowLocationMap(!showLocationMap)}
+                                className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all shadow-xs cursor-pointer"
+                              >
+                                {showLocationMap ? 'Hide Map' : 'View Map'}
+                              </button>
+                            </div>
                           </div>
                         </div>
 
@@ -3185,7 +3186,6 @@ export function Register() {
                             <span>GPS Geofence Required: Please acquire a high-accuracy GPS satellite fix or click &quot;Adjust Pin&quot; to mark your attendance location.</span>
                           </div>
                         )}
-                      </div>
 
                         {/* Interactive Geofence Map Preview */}
                         <AnimatePresence>
