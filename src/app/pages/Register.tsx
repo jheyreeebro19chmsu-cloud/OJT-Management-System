@@ -299,12 +299,12 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702, accuracy: 15 }; // CHMSU Talisay Campus — default attendance geofence
+  const DEFAULT_CAMPUS_LOCATION = { lat: 10.7410, lng: 122.9702, accuracy: 15 }; // CHMSU Talisay Campus — fallback option
 
-  // Registration location state — initialized with campus default and updated when live GPS locks
+  // Registration location state — initialized undefined so live device GPS is acquired in real time
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
-  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>(DEFAULT_CAMPUS_LOCATION);
-  const [registrationAddress, setRegistrationAddress] = useState<string>('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
+  const [registrationLocation, setRegistrationLocation] = useState<{ lat: number; lng: number; accuracy?: number } | undefined>(undefined);
+  const [registrationAddress, setRegistrationAddress] = useState<string>('');
   const [showLocationMap, setShowLocationMap] = useState(true);
   const [pickingLocation, setPickingLocation] = useState(false);
   const watchIdRef = React.useRef<number | null>(null);
@@ -560,7 +560,10 @@ export function Register() {
   const captureLocation = async () => {
     setLocationStatus('capturing');
     try {
-      const position = await getCurrentLocation({ highAccuracy: true, timeout: 12000, maximumAge: 0 });
+      try {
+        localStorage.removeItem('ojt_last_coords');
+      } catch {}
+      const position = await getCurrentLocation({ highAccuracy: true, timeout: 15000, maximumAge: 0 });
       const { latitude, longitude, accuracy } = position.coords;
       setRegistrationLocation({ lat: latitude, lng: longitude, accuracy });
       setLocationStatus('captured');
@@ -575,29 +578,19 @@ export function Register() {
 
       const accuracyLabel = accuracy <= 25 ? 'High Precision' : accuracy <= 60 ? 'Good' : 'Acceptable';
       if (accuracy > 100) {
-        toast.info(`GPS coordinates captured (±${Math.round(accuracy)}m). You can adjust the pin on the map if needed.`, { duration: 5000 });
+        toast.info(`Real-time GPS coordinates captured (±${Math.round(accuracy)}m). You can adjust the pin on the map if needed.`, { duration: 5000 });
       } else {
-        toast.success(`GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
-      }
-      if (!isWithinNegrosOccidental(latitude, longitude)) {
-        toast.warning('Captured coordinates are outside Negros Occidental / CHMSU region. Please adjust pin to your actual workplace or campus.', { duration: 7000 });
+        toast.success(`Real-time GPS locked! Accuracy: ±${Math.round(accuracy)}m (${accuracyLabel})`);
       }
     } catch (err: unknown) {
       console.warn('Geolocation error:', err);
       const isDenied = isGeolocationPositionError(err) && err.code === 1;
       if (isDenied) {
-        // Permission denied — use campus default so trainee can proceed without being locked out
         setLocationStatus('denied');
-        setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
-        setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
-        toast.info('Location access not granted. Using campus coordinates as default — you can adjust the pin on the map.');
+        toast.error('Location permission was denied. Please allow location access in your browser or click "Adjust Pin" to set location.');
       } else {
-        // Fall back to campus coords with warning
-        const fallback = DEFAULT_CAMPUS_LOCATION;
-        setRegistrationLocation(fallback);
-        setRegistrationAddress(`${fallback.lat.toFixed(6)}, ${fallback.lng.toFixed(6)}`);
-        setLocationStatus('captured');
-        toast.warning('Could not get live satellite GPS. Using campus location — you can adjust the pin on the map.');
+        setLocationStatus('error');
+        toast.warning('Could not acquire live device GPS. Click "Detect Device GPS" or click "Adjust Pin" on the map to place your workplace pin.');
       }
     }
   };
@@ -1400,13 +1393,7 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
         if (!form.street?.trim()) errors.push('Please enter your Street Address / House Number / Subd.');
         if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
-          setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
-        } else {
-          if (!isWithinNegrosOccidental(registrationLocation.lat, registrationLocation.lng)) {
-            errors.push(
-              'Selected GPS coordinates are outside Negros Occidental / CHMSU region. Please reposition the pin on the map to your designated workplace or campus.'
-            );
-          }
+          errors.push('Please acquire your device GPS location or click "Adjust Pin" on the map to set your workplace geofence.');
         }
       }
       if (step === 1) {
@@ -2175,7 +2162,7 @@ export function Register() {
                             <GeofenceMap
                               zones={[]}
                               picking={pickingLocation}
-                              pickedCoords={registrationLocation || DEFAULT_CAMPUS_LOCATION}
+                              pickedCoords={registrationLocation}
                               onPick={(lat, lng) => {
                                 handleMapPick(lat, lng);
                               }}
@@ -3057,6 +3044,8 @@ export function Register() {
                             ? 'bg-blue-50/70 border-blue-200 text-blue-900'
                             : locationStatus === 'denied'
                             ? 'bg-amber-50 border-amber-300 text-amber-900'
+                            : locationStatus === 'error'
+                            ? 'bg-rose-50 border-rose-300 text-rose-950'
                             : registrationLocation
                             ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
                             : 'bg-gray-50 border-gray-200 text-gray-800'
@@ -3068,6 +3057,8 @@ export function Register() {
                                   ? 'bg-blue-100 text-blue-600'
                                   : locationStatus === 'denied'
                                   ? 'bg-amber-100 text-amber-700'
+                                  : locationStatus === 'error'
+                                  ? 'bg-rose-100 text-rose-700'
                                   : 'bg-emerald-100 text-emerald-700'
                               }`}>
                                 {locationStatus === 'capturing' ? (
@@ -3081,10 +3072,14 @@ export function Register() {
                                 <div className="flex items-center gap-2 flex-wrap">
                                 <h4 className="font-bold text-sm">
                                   {locationStatus === 'capturing'
-                                    ? 'Acquiring High-Accuracy GPS Lock...'
+                                    ? 'Acquiring Real-Time Device GPS...'
                                     : locationStatus === 'denied'
                                     ? 'GPS Location Access Required'
-                                    : 'Official Trainee Attendance Geofence'}
+                                    : locationStatus === 'error'
+                                    ? 'GPS Signal Not Detected'
+                                    : registrationLocation
+                                    ? 'Real-Time GPS Location Locked'
+                                    : 'Awaiting Real-Time GPS Detection'}
                                 </h4>
                                 {registrationLocation && (
                                   <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300">
@@ -3095,11 +3090,32 @@ export function Register() {
 
                               <p className="text-xs mt-1 opacity-85">
                                 {locationStatus === 'capturing'
-                                  ? 'Connecting to satellite GPS sensor for accurate workplace coordinates...'
+                                  ? 'Connecting to your device GPS sensor to detect your live physical coordinates...'
                                   : locationStatus === 'denied'
-                                  ? 'Browser location access was denied. Please allow GPS to link your attendance geofence.'
-                                  : 'Accurate GPS locked. This position is monitored in your OJT Instructor’s Geofence Zones.'}
+                                  ? 'Browser location access was denied. Please allow GPS permissions in your browser or click "Adjust Pin" on the map.'
+                                  : locationStatus === 'error'
+                                  ? 'Could not acquire live satellite GPS from your device. Click "Recalibrate GPS" or use "Adjust Pin" on the map.'
+                                  : registrationLocation
+                                  ? 'Your live physical GPS location is locked and will be used as your official attendance geofence.'
+                                  : 'Click "Recalibrate GPS" to acquire real-time coordinates, or use "Adjust Pin" to set location on the map.'}
                               </p>
+
+                              {(locationStatus === 'denied' || locationStatus === 'error') && !registrationLocation && (
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
+                                      setLocationStatus('captured');
+                                      setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
+                                      toast.info('Using CHMSU Talisay Campus coordinates as fallback.');
+                                    }}
+                                    className="text-xs text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
+                                  >
+                                    Or click here to use CHMSU Talisay Campus as fallback
+                                  </button>
+                                </div>
+                              )}
 
                               {registrationLocation && (
                                 <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">

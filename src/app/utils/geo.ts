@@ -106,7 +106,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
 // Multi-tiered high-res GPS locator with browser & device location services (no IP fallback)
 export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?: number; maximumAge?: number }): Promise<any> {
   const highAccuracy = options?.highAccuracy ?? true;
-  const timeoutMs = options?.timeout ?? 7000;
+  const timeoutMs = options?.timeout ?? 15000;
   const maxAgeMs = options?.maximumAge ?? 10000;
 
   return new Promise((resolve, reject) => {
@@ -114,24 +114,26 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
       return reject(new Error('Geolocation is not supported by your browser. Please use a browser that supports GPS location.'));
     }
 
-    // Step 0: If recent cached coordinates exist (within last 2 minutes) and caller permits cached, resolve immediately
-    try {
-      const cached = localStorage.getItem('ojt_last_coords');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const age = Date.now() - (parsed.time || 0);
-        if (parsed.lat && parsed.lng && age < (maxAgeMs > 0 ? maxAgeMs : 60000)) {
-          return resolve({
-            coords: {
-              latitude: parsed.lat,
-              longitude: parsed.lng,
-              accuracy: parsed.accuracy || 20,
-            },
-            timestamp: parsed.time || Date.now(),
-          });
+    // Step 0: Only check cached coordinates if caller explicitly allows cache (maxAgeMs > 0)
+    if (maxAgeMs > 0) {
+      try {
+        const cached = localStorage.getItem('ojt_last_coords');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const age = Date.now() - (parsed.time || 0);
+          if (parsed.lat && parsed.lng && age < maxAgeMs) {
+            return resolve({
+              coords: {
+                latitude: parsed.lat,
+                longitude: parsed.lng,
+                accuracy: parsed.accuracy || 20,
+              },
+              timestamp: parsed.time || Date.now(),
+            });
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     // Step 1: Try high-accuracy device GPS (hardware GNSS / mobile sensor)
     navigator.geolocation.getCurrentPosition(
@@ -152,7 +154,7 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
           return reject(err1);
         }
 
-        // Step 2: Try standard Wi-Fi / network geolocation (works reliably on PC/Windows Location Services)
+        // Step 2: Try standard network/Wi-Fi assisted geolocation
         navigator.geolocation.getCurrentPosition(
           (pos2) => {
             try {
@@ -168,28 +170,30 @@ export function getCurrentLocation(options?: { highAccuracy?: boolean; timeout?:
           (err2) => {
             if (err2.code === 1) return reject(err2);
 
-            // Step 3: Check cached coords even if slightly older
-            try {
-              const cached = localStorage.getItem('ojt_last_coords');
-              if (cached) {
-                const parsed = JSON.parse(cached);
-                const age = Date.now() - (parsed.time || 0);
-                if (parsed.lat && parsed.lng && age < 300000) {
-                  return resolve({
-                    coords: {
-                      latitude: parsed.lat,
-                      longitude: parsed.lng,
-                      accuracy: parsed.accuracy || 25,
-                    },
-                    timestamp: parsed.time || Date.now(),
-                  });
+            // Step 3: Check cached coords only if caller permits cached results
+            if (maxAgeMs > 0) {
+              try {
+                const cached = localStorage.getItem('ojt_last_coords');
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  const age = Date.now() - (parsed.time || 0);
+                  if (parsed.lat && parsed.lng && age < 300000) {
+                    return resolve({
+                      coords: {
+                        latitude: parsed.lat,
+                        longitude: parsed.lng,
+                        accuracy: parsed.accuracy || 25,
+                      },
+                      timestamp: parsed.time || Date.now(),
+                    });
+                  }
                 }
-              }
-            } catch {}
+              } catch {}
+            }
 
             reject(err2);
           },
-          { enableHighAccuracy: false, timeout: 4000, maximumAge: 30000 }
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: maxAgeMs > 0 ? 30000 : 0 }
         );
       },
       { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: maxAgeMs }
