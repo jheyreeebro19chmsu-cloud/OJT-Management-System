@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   FileText,
   FileCheck,
@@ -41,25 +41,63 @@ interface PreviewModalState {
   uploadedAt?: string;
   fileSize?: string | number;
   status: 'passed' | 'pending';
+  description?: string;
+  notes?: string;
+}
+
+interface SubmitDialogState {
+  docKey: string;
+  title: string;
+  file: File;
+  previewUrl: string;
+  description: string;
+  notes: string;
 }
 
 export function Documents() {
   const navigate = useNavigate();
-  const { currentUser, getCurrentEmployee, updateEmployee } = useApp();
+  const { currentUser, getCurrentEmployee, updateEmployee, getEmployeeRequiredDocuments } = useApp();
   const employee = getCurrentEmployee();
 
   const [previewDoc, setPreviewDoc] = useState<PreviewModalState | null>(null);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [submitDialog, setSubmitDialog] = useState<SubmitDialogState | null>(null);
 
   const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
 
-  const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
-  const totalRequired = docKeys.length;
-  const uploadedCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
-  const passedCount = docKeys.filter((k) => submittedDocs[k]?.status === 'passed').length;
+  const customRequiredDocs = employee?.id ? getEmployeeRequiredDocuments(employee.id) : [];
+  const allDocRequirements = useMemo(() => {
+    const list = [...STANDARD_REQUIRED_DOCS];
+    for (const custom of customRequiredDocs) {
+      if (!list.some((d) => d.title.toLowerCase() === custom.title.toLowerCase() || d.key === custom.id)) {
+        list.push({
+          key: custom.id as any,
+          id: custom.id,
+          num: String(list.length + 1),
+          title: custom.title,
+          subtitle: custom.notes || 'Institutional Required Document',
+          desc: custom.description || 'Departmental required credential for OJT compliance.',
+          icon: FileText,
+          color: 'from-blue-600 to-indigo-700',
+          badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+        });
+      }
+    }
+    return list;
+  }, [customRequiredDocs]);
+
+  const totalRequired = allDocRequirements.length;
+  const uploadedCount = allDocRequirements.filter((k) => Boolean(submittedDocs[k.key]?.dataUrl || submittedDocs[k.key]?.name)).length;
+  const passedCount = allDocRequirements.filter((k) => submittedDocs[k.key]?.status === 'passed').length;
   const isAllPassed = uploadedCount === totalRequired && passedCount === totalRequired;
-  const missingCount = totalRequired - uploadedCount;
-  const progressPercent = Math.round((uploadedCount / totalRequired) * 100);
+  const missingDocs = useMemo(() => {
+    return allDocRequirements.filter((item) => {
+      const doc = submittedDocs[item.key];
+      return !doc?.dataUrl && !doc?.name;
+    });
+  }, [allDocRequirements, submittedDocs]);
+  const missingCount = missingDocs.length;
+  const progressPercent = totalRequired > 0 ? Math.round((uploadedCount / totalRequired) * 100) : 100;
 
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
     if (docItem?.dataUrl) return docItem.dataUrl;
@@ -75,7 +113,46 @@ export function Documents() {
     return '';
   };
 
-  const handleFileUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+  const onSelectFile = (docKey: string, title: string, file: File | null) => {
+    if (!file) return;
+
+    const ALLOWED_MIME = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
+    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      toast.error(
+        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
+      );
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size exceeds 10MB limit. Please upload a file up to 10MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setSubmitDialog({
+        docKey,
+        title,
+        file,
+        previewUrl: e.target?.result as string,
+        description: submittedDocs[docKey]?.description || '',
+        notes: submittedDocs[docKey]?.notes || '',
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileUpload = (docKey: string, file: File | null, customDescription?: string, customNotes?: string) => {
     if (!file) return;
 
     // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
@@ -133,8 +210,9 @@ export function Documents() {
         dataUrl: finalUrl,
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        // Initial status is pending until OJT Coordinator reviews and approves
         status: 'pending',
+        description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
+        notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
       };
 
       const updatedDocs: TraineeDocuments = {
@@ -142,9 +220,9 @@ export function Documents() {
         [docKey]: newDocItem,
       };
 
-      const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
-      const allPreviouslyPassed = docKeys.every((k) =>
-        k === docKey ? true : updatedDocs[k]?.status === 'passed'
+      const newUploadedCount = allDocRequirements.filter((k) => Boolean(updatedDocs[k.key]?.dataUrl || updatedDocs[k.key]?.name)).length;
+      const allPreviouslyPassed = allDocRequirements.every((k) =>
+        k.key === docKey ? true : updatedDocs[k.key]?.status === 'passed'
       );
       const newIsAllPassed = newUploadedCount === totalRequired && allPreviouslyPassed;
 
@@ -157,12 +235,14 @@ export function Documents() {
       }
 
       setUploadingKey(null);
-      const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
+      setSubmitDialog(null);
+      const meta = allDocRequirements.find((d) => d.key === docKey);
       toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
     };
 
     reader.onerror = () => {
       setUploadingKey(null);
+      setSubmitDialog(null);
       toast.error('Failed to read file. Please try again.');
     };
 
@@ -296,15 +376,68 @@ export function Documents() {
         </div>
       </motion.div>
 
-      {/* 4 Standard Documents Grid */}
+      {/* Missing or Incomplete Requirements Alert Banner */}
+      {missingDocs.length > 0 ? (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 rounded-3xl bg-amber-500/10 border-2 border-amber-300/80 shadow-sm"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md">
+              <Clock size={22} className="animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h3 className="text-sm sm:text-base font-extrabold text-amber-950 flex items-center gap-2">
+                  Missing or Incomplete OJT Requirements ({missingDocs.length} remaining)
+                </h3>
+                <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  Required for OJT Completion
+                </span>
+              </div>
+              <p className="text-xs text-amber-900/80 mt-1 leading-relaxed">
+                The following documents are mandatory for Carlos Hilado Memorial State University OJT internship compliance. Please upload all required files with descriptions and notes.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {missingDocs.map((m) => (
+                  <span
+                    key={m.key}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white border border-amber-300 text-amber-900 text-xs font-semibold shadow-xs"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    {m.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-3xl bg-emerald-500/10 border border-emerald-300 text-emerald-950 flex items-center gap-3 shadow-xs"
+        >
+          <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <CheckCircle2 size={20} />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-bold text-emerald-900">All OJT Requirements Complete</h4>
+            <p className="text-[11px] text-emerald-800">You have no missing or incomplete documentary requirements. Your coordinator will record final evaluations.</p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Required Documents Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-        {STANDARD_REQUIRED_DOCS.map((item) => {
+        {allDocRequirements.map((item) => {
           const doc = submittedDocs[item.key];
           const hasFile = Boolean(doc?.dataUrl || doc?.name);
           const isPassed = doc?.status === 'passed' && hasFile;
           const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
           const isUploading = uploadingKey === item.key;
-          const Icon = item.icon;
+          const Icon = item.icon || FileText;
           const docCategory = doc ? getFileCategory(doc.name || doc.fileType || '') : 'other';
 
           return (
@@ -323,13 +456,18 @@ export function Documents() {
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md bg-gradient-to-br ${item.color}`}
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md bg-gradient-to-br ${item.color || 'from-blue-600 to-indigo-600'}`}
                     >
                       <Icon size={20} />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">DOC #{item.num}</span>
+                        {item.custom && (
+                          <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded border border-purple-200">
+                            Custom Requirement
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">{item.title}</h3>
                     </div>
@@ -378,49 +516,67 @@ export function Documents() {
                   </span>
                 </div>
 
-                {/* Uploaded File Info Card */}
+                {/* Uploaded File Info Card with Description & Notes */}
                 {hasFile && doc && (
-                  <div className="mb-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex items-center gap-2">
-                      <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                          docCategory === 'picture'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : docCategory === 'doc'
-                              ? 'bg-indigo-100 text-indigo-700'
-                              : 'bg-blue-100 text-blue-700'
-                        }`}
+                  <div className="mb-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex items-center gap-2">
+                        <div
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                            docCategory === 'picture'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : docCategory === 'doc'
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-blue-100 text-blue-700'
+                          }`}
+                        >
+                          {docCategory === 'picture' ? (
+                            <ImageIcon size={16} />
+                          ) : docCategory === 'doc' ? (
+                            <FileText size={16} />
+                          ) : (
+                            <FileGeneric size={16} />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
+                            {doc.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Uploaded'}
+                            {doc.size ? ` • ${formatFileSize(doc.size)}` : ''}
+                            <span className="ml-1.5 font-semibold text-slate-500 uppercase">
+                              ({docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDoc(item.key)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        title="Remove file"
                       >
-                        {docCategory === 'picture' ? (
-                          <ImageIcon size={16} />
-                        ) : docCategory === 'doc' ? (
-                          <FileText size={16} />
-                        ) : (
-                          <FileGeneric size={16} />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
-                          {doc.name}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Uploaded'}
-                          {doc.size ? ` • ${formatFileSize(doc.size)}` : ''}
-                          <span className="ml-1.5 font-semibold text-slate-500 uppercase">
-                            ({docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
-                          </span>
-                        </p>
-                      </div>
+                        <Trash2 size={15} />
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDoc(item.key)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
-                      title="Remove file"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {/* Description and Notes Details */}
+                    {(doc.description || doc.notes) && (
+                      <div className="pt-2 border-t border-slate-200/60 text-[11px] space-y-1 bg-white/70 p-2 rounded-xl">
+                        {doc.description && (
+                          <p className="text-slate-700">
+                            <strong className="text-slate-900 font-semibold">Description:</strong> {doc.description}
+                          </p>
+                        )}
+                        {doc.notes && (
+                          <p className="text-slate-500 italic">
+                            <strong className="text-slate-700 font-semibold not-italic">Notes:</strong> {doc.notes}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -442,6 +598,8 @@ export function Documents() {
                           uploadedAt: doc?.uploadedAt,
                           fileSize: doc?.size,
                           status: doc?.status || 'passed',
+                          description: doc?.description,
+                          notes: doc?.notes,
                         });
                       }}
                       className="flex-1 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
@@ -472,7 +630,7 @@ export function Documents() {
                       type="file"
                       id={`replace-doc-${item.key}`}
                       accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => handleFileUpload(item.key, e.target.files?.[0] || null)}
+                      onChange={(e) => onSelectFile(item.key, e.target.files?.[0] || null)}
                       className="hidden"
                       disabled={isUploading}
                     />
@@ -492,7 +650,7 @@ export function Documents() {
                       type="file"
                       id={`upload-doc-${item.key}`}
                       accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => handleFileUpload(item.key, e.target.files?.[0] || null)}
+                      onChange={(e) => onSelectFile(item.key, e.target.files?.[0] || null)}
                       className="hidden"
                       disabled={isUploading}
                     />
@@ -503,6 +661,111 @@ export function Documents() {
           );
         })}
       </div>
+
+      {/* Submit Document with Description & Notes Dialog Modal */}
+      <AnimatePresence>
+        {submitDialog && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 border border-slate-100 flex flex-col gap-4"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <FileCheck size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Submit Required Document</h3>
+                    <p className="text-xs text-slate-500">{submitDialog.title}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSubmitDialog(null)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700 truncate max-w-[260px]">
+                  📄 {submitDialog.file.name}
+                </span>
+                <span className="text-slate-500 font-mono">
+                  {formatFileSize(submitDialog.file.size)}
+                </span>
+              </div>
+
+              {/* Description Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Document Description <span className="text-red-500">*</span></span>
+                  <span className="text-[10px] text-slate-400 font-normal">e.g. Approved MOA signed by HTE director</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Provide a brief summary or title of this document..."
+                  value={submitDialog.description}
+                  onChange={(e) => setSubmitDialog({ ...submitDialog, description: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden"
+                />
+              </div>
+
+              {/* Notes Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Notes / Remarks</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Optional coordinator note</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Add any additional context, expiry date, notary status, or notes for the coordinator..."
+                  value={submitDialog.notes}
+                  onChange={(e) => setSubmitDialog({ ...submitDialog, notes: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setSubmitDialog(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={uploadingKey === submitDialog.key}
+                  onClick={() => {
+                    handleFileUpload(
+                      submitDialog.key,
+                      submitDialog.file,
+                      submitDialog.description,
+                      submitDialog.notes
+                    );
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all"
+                >
+                  {uploadingKey === submitDialog.key ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} /> Submit Document
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Document Preview Modal */}
       <AnimatePresence>
@@ -566,6 +829,24 @@ export function Documents() {
                   </span>
                 </div>
               </div>
+
+              {/* Description & Notes in Preview Modal */}
+              {(previewDoc.description || previewDoc.notes) && (
+                <div className="px-6 py-2 bg-blue-50/50 border-b border-blue-100/60 text-xs flex flex-col gap-1">
+                  {previewDoc.description && (
+                    <div className="text-slate-700">
+                      <span className="font-bold text-slate-800">Description: </span>
+                      {previewDoc.description}
+                    </div>
+                  )}
+                  {previewDoc.notes && (
+                    <div className="text-slate-500 italic">
+                      <span className="font-semibold text-slate-700 not-italic">Notes: </span>
+                      {previewDoc.notes}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Preview Content */}
               <div className="flex-1 overflow-y-auto p-4 bg-slate-100 flex items-center justify-center min-h-[350px]">

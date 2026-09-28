@@ -57,6 +57,8 @@ export interface TraineeDocumentItem {
   fileType?: string;
   uploadedAt: string;
   status: 'passed' | 'pending';
+  description?: string;
+  notes?: string;
 }
 
 export interface TraineeDocuments {
@@ -72,6 +74,7 @@ export interface TraineeDocuments {
   evaluationReport?: TraineeDocumentItem;
   // Legacy / backward-compatible aliases
   endorsement?: TraineeDocumentItem;
+  [key: string]: TraineeDocumentItem | undefined;
 }
 
 export interface TimeRecord {

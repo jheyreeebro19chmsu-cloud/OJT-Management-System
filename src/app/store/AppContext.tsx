@@ -251,6 +251,7 @@ interface AppContextType {
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
   addAnnouncementComment: (comment: Omit<AnnouncementComment, 'id'>) => Promise<AnnouncementComment>;
   getAnnouncementComments: (announcementId: string) => AnnouncementComment[];
+  requiredDocuments: RequiredDocument[];
   addRequiredDocument: (
     employeeId: string,
     data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean; academicYear?: string }

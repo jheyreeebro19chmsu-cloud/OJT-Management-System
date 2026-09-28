@@ -2690,7 +2690,7 @@ export function Register() {
 
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">College *</label>
                               <select
                                 value={form.department}
                                 onChange={(e) => {
@@ -2702,7 +2702,7 @@ export function Register() {
                                 }}
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                               >
-                                <option value="">Select Department</option>
+                                <option value="">Select College</option>
                                 {departmentOptions.map((department) => (
                                   <option key={department} value={department}>
                                     {department}
@@ -2711,7 +2711,7 @@ export function Register() {
                               </select>
                             </div>
                             <div>
-                              <label className="text-xs font-semibold text-gray-600 block mb-1">Course / Field *</label>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Program *</label>
                               <select
                                 value={form.course}
                                 onChange={(e) => {
@@ -2729,7 +2729,7 @@ export function Register() {
                                 }}
                                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                               >
-                                <option value="">Select Program / Field</option>
+                                <option value="">Select Program</option>
                                 {selectedProgramOptions.map((program) => (
                                   <option key={program} value={program}>
                                     {program}
@@ -3419,7 +3419,7 @@ export function Register() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 block mb-1">Department *</label>
+                    <label className="text-xs font-semibold text-gray-600 block mb-1">College *</label>
                     <select
                       value={form.department}
                       onChange={(e) => {
@@ -3431,7 +3431,7 @@ export function Register() {
                       }}
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 cursor-pointer"
                     >
-                      <option value="">Select Department</option>
+                      <option value="">Select College</option>
                       {departmentOptions.map((department) => (
                         <option key={department} value={department}>
                           {department}

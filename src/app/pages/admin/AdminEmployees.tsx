@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -56,7 +56,9 @@ export function AdminEmployees() {
     settings,
     refreshData,
     hostSupervisors,
+    requiredDocuments = [],
     addRequiredDocument,
+    deleteRequiredDocument,
     getEmployeeRequiredDocuments,
     submitRequiredDocument,
     getRequiredDocumentSubmission,
@@ -77,7 +79,10 @@ export function AdminEmployees() {
   const [phoneValue, setPhoneValue] = useState('');
   const [docTitle, setDocTitle] = useState('');
   const [docDescription, setDocDescription] = useState('');
+  const [docNotes, setDocNotes] = useState('');
   const [docDueDate, setDocDueDate] = useState('');
+  const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [activeCategoryTab, setActiveCategoryTab] = useState<'student' | 'instructor' | 'hte' | 'pending' | 'documents' | 'all'>('student');
   const [assigningHte, setAssigningHte] = useState(false);
   const [selectedHteId, setSelectedHteId] = useState('');
 
@@ -531,6 +536,36 @@ export function AdminEmployees() {
                   <div>
                     <p className="text-sm text-gray-700">{emp.department || 'General'}</p>
                     <p className="text-xs text-gray-400">{isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || emp.position)}</p>
+                    {isTraineeGroup && (
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
+                          <Building size={11} className="text-blue-600 shrink-0" />
+                          HTE: {emp.companyName && !emp.companyName.toLowerCase().includes('pending') ? emp.companyName : 'Unassigned HTE'}
+                        </span>
+                        {(() => {
+                          const latestRec = timeRecords.find(r => r.employeeId === emp.id || r.employeeId === emp.employeeId);
+                          if (latestRec?.timeInGeofenced) {
+                            return (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1 w-fit">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Verified at HTE Premises
+                              </span>
+                            );
+                          }
+                          if (emp.registrationLocation?.lat) {
+                            return (
+                              <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-flex items-center gap-1 w-fit">
+                                <MapPin size={10} className="text-blue-600" />
+                                HTE Geofenced ({emp.registrationLocation.radius || 40}m)
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-[10px] text-gray-400 italic">No HTE Geofence Pin</span>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                   {isTraineeGroup ? (
                     !isPendingGroup ? (
@@ -590,6 +625,23 @@ export function AdminEmployees() {
                           </>
                         )}
                       </button>
+                      {(() => {
+                        const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                          (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
+                        ).length;
+                        if (missingDocsCount > 0) {
+                          return (
+                            <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              ⚠️ {missingDocsCount} Missing
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            ✓ Complete
+                          </span>
+                        );
+                      })()}
                       {emp.faceRegistered ? (
                         <span className="text-[10px] flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
                           <Camera size={9} /> Face Enrolled
@@ -1018,14 +1070,25 @@ export function AdminEmployees() {
             className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
           >
             <Plus size={15} />
-            Add Employee
+            Add Trainee / Account
           </button>
         </div>
       </div>
 
+      {/* Top Metric Cards - Clickable to Switch Tabs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {Object.entries(groupConfig).map(([key, config]) => (
-          <div key={key} className={`rounded-xl border ${key === 'pending' && filteredGroups.pending.length > 0 ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200 bg-white'} px-3 py-2`}>
+          <div
+            key={key}
+            onClick={() => setActiveCategoryTab(key as any)}
+            className={`rounded-xl border cursor-pointer transition-all hover:scale-[1.01] ${
+              activeCategoryTab === key
+                ? 'border-blue-500 ring-2 ring-blue-400/30 bg-blue-50/20'
+                : key === 'pending' && filteredGroups.pending.length > 0
+                ? 'border-amber-300 bg-amber-50/50'
+                : 'border-gray-200 bg-white hover:border-gray-300'
+            } px-3 py-2`}
+          >
             <p className="text-[11px] uppercase tracking-wide text-gray-400">{config.title}</p>
             <p className={`text-lg font-bold ${key === 'pending' && filteredGroups.pending.length > 0 ? 'text-amber-700' : 'text-gray-800'}`}>
               {filteredGroups[key as keyof typeof filteredGroups].length}
@@ -1034,26 +1097,345 @@ export function AdminEmployees() {
         ))}
       </div>
 
-      <div className="relative">
-        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, ID, course, company, or department..."
-          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        />
+      {/* Category Separation Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={() => setActiveCategoryTab('student')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeCategoryTab === 'student'
+              ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <GraduationCap size={15} />
+          Students / Trainees
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeCategoryTab === 'student' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            {filteredGroups.student.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCategoryTab('instructor')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeCategoryTab === 'instructor'
+              ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <ShieldCheck size={15} />
+          OJT Instructors
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeCategoryTab === 'instructor' ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            {filteredGroups.instructor.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCategoryTab('hte')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeCategoryTab === 'hte'
+              ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-500/30'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <Building size={15} />
+          Host Establishments (HTE)
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeCategoryTab === 'hte' ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            {filteredGroups.hte.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCategoryTab('pending')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeCategoryTab === 'pending'
+              ? 'bg-amber-600 text-white shadow-sm shadow-amber-500/30'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <Clock size={15} />
+          Pending Approvals
+          {filteredGroups.pending.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-bold animate-pulse">
+              {filteredGroups.pending.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCategoryTab('documents')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeCategoryTab === 'documents'
+              ? 'bg-violet-600 text-white shadow-sm shadow-violet-500/30'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <FileCheck size={15} />
+          Required Documents
+          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeCategoryTab === 'documents' ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            {REQUIRED_TRAINEE_DOCUMENTS.length + (requiredDocuments?.length || 0)}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveCategoryTab('all')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+            activeCategoryTab === 'all'
+              ? 'bg-slate-800 text-white shadow-sm'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <Users size={15} />
+          All Records ({totalFiltered})
+        </button>
       </div>
 
+      {activeCategoryTab !== 'documents' && (
+        <div className="relative">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, ID, course, company, or department..."
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          />
+        </div>
+      )}
+
+      {/* Main Content Area */}
       <div className="space-y-5">
-        {totalFiltered === 0 ? (
+        {activeCategoryTab === 'documents' ? (
+          /* Required Documents Management Section */
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <FileCheck size={20} className="text-violet-600" />
+                  Required OJT Documents & Deployment Compliance
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Manage the official institutional documents required for trainee deployment, verification, and final evaluation across CHMSU.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAddDocModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer self-start sm:self-auto"
+              >
+                <Plus size={15} /> Add Required Document
+              </button>
+            </div>
+
+            {/* Standard 10 Mandatory Documents Grid */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-600" />
+                Standard Mandatory IS OJT Requirements ({REQUIRED_TRAINEE_DOCUMENTS.length})
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {REQUIRED_TRAINEE_DOCUMENTS.map((doc) => (
+                  <div key={doc.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-black flex items-center justify-center">
+                            {doc.num}
+                          </span>
+                          {doc.title}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Mandatory
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-blue-700">{doc.subtitle}</p>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{doc.desc}</p>
+                    </div>
+                    <div className="mt-3 pt-2.5 border-t border-gray-200/60 flex items-center justify-between text-[11px] text-gray-400">
+                      <span>Status: Institutional Standard</span>
+                      <span className="font-semibold text-emerald-600">Active Requirement</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Departmental Documents (if any) */}
+            {requiredDocuments && requiredDocuments.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-gray-100">
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText size={14} className="text-violet-600" />
+                  Additional Departmental Requirements ({requiredDocuments.length})
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {requiredDocuments.map((doc, idx) => (
+                    <div key={doc.id} className="p-4 rounded-2xl border border-violet-200 bg-violet-50/30 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-black flex items-center justify-center">
+                              {REQUIRED_TRAINEE_DOCUMENTS.length + idx + 1}
+                            </span>
+                            {doc.title}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200">
+                              Custom Requirement
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Remove "${doc.title}" from required documents?`)) {
+                                  deleteRequiredDocument(doc.id);
+                                  toast.success(`"${doc.title}" removed.`);
+                                }
+                              }}
+                              className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                              title="Delete requirement"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                        {doc.description && <p className="text-xs text-gray-600 mt-1">{doc.description}</p>}
+                        {doc.notes && <p className="text-[11px] text-gray-500 mt-1 italic">Notes: {doc.notes}</p>}
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-violet-100 flex items-center justify-between text-[11px] text-gray-400">
+                        <span>Due: {doc.dueDate || 'Prior to Deployment'}</span>
+                        <span className="text-violet-700 font-semibold">A.Y. {doc.academicYear || settings.activeAcademicYear}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : totalFiltered === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 text-center py-12">
             <Users size={40} className="text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-500 font-medium">No employees found</p>
+            <p className="text-gray-500 font-medium">No records found</p>
           </div>
-        ) : (
+        ) : activeCategoryTab === 'all' ? (
           (['pending', 'student', 'instructor', 'hte'] as const).map((group) => renderEmployeeSection(group, groupConfig[group].title))
+        ) : (
+          renderEmployeeSection(activeCategoryTab, groupConfig[activeCategoryTab].title)
         )}
       </div>
+
+      {/* Add Custom Required Document Modal */}
+      <AnimatePresence>
+        {showAddDocModal && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-gray-100 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Add New Required Document</h3>
+                  <p className="text-xs text-gray-500">Students will be prompted to upload this document in their portal.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddDocModal(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">Document Title *</label>
+                  <input
+                    type="text"
+                    value={docTitle}
+                    onChange={(e) => setDocTitle(e.target.value)}
+                    placeholder="e.g. Barangay Clearance, PhilHealth ID, Certificate of Good Moral"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">Description / Instructions</label>
+                  <textarea
+                    rows={2}
+                    value={docDescription}
+                    onChange={(e) => setDocDescription(e.target.value)}
+                    placeholder="Describe what the student needs to submit (e.g. Photocopy or clear photo with official stamp)"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:outline-none resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">Special Notes / Requirements</label>
+                  <input
+                    type="text"
+                    value={docNotes}
+                    onChange={(e) => setDocNotes(e.target.value)}
+                    placeholder="e.g. Must be certified true copy or verified by OJT Coordinator"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">Due Date / Milestone</label>
+                  <input
+                    type="text"
+                    value={docDueDate}
+                    onChange={(e) => setDocDueDate(e.target.value)}
+                    placeholder="e.g. Prior to HTE Deployment or specify date"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddDocModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!docTitle.trim()) {
+                      toast.error('Document title is required');
+                      return;
+                    }
+                    addRequiredDocument('all', {
+                      title: docTitle.trim(),
+                      description: docDescription.trim(),
+                      notes: docNotes.trim(),
+                      dueDate: docDueDate.trim(),
+                      required: true,
+                      academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+                    });
+                    setDocTitle('');
+                    setDocDescription('');
+                    setDocNotes('');
+                    setDocDueDate('');
+                    setShowAddDocModal(false);
+                    toast.success('New required document added! Trainees can now submit this credential.');
+                  }}
+                  className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer"
+                >
+                  Save Required Document
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal */}
       <AnimatePresence>
@@ -2136,7 +2518,7 @@ export function AdminEmployees() {
 
                       {/* College / Department */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-700 block mb-1">College / Department</label>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">College (CHMSU)</label>
                         <select
                           value={editForm.department}
                           onChange={(e) => {
@@ -2145,7 +2527,7 @@ export function AdminEmployees() {
                           }}
                           className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
                         >
-                          <option value="">Select Department</option>
+                          <option value="">Select College</option>
                           {departmentOptions.map((d) => (
                             <option key={d} value={d}>
                               {d}
@@ -2154,15 +2536,15 @@ export function AdminEmployees() {
                         </select>
                       </div>
 
-                      {/* Course */}
+                      {/* Program */}
                       <div className="sm:col-span-2">
-                        <label className="text-xs font-semibold text-gray-700 block mb-1">Course / Degree Program</label>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">Program (CHMSU)</label>
                         <select
                           value={editForm.course}
                           onChange={(e) => updEdit('course', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
                         >
-                          <option value="">Select Course</option>
+                          <option value="">Select Program</option>
                           {getCoursesForDepartment(editForm.department, editForm.campus).map((course) => (
                             <option key={course} value={course}>
                               {course}

@@ -1157,8 +1157,10 @@ export function Profile() {
       {/* School Info */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <Section title="School Information" icon={<GraduationCap size={15} className="text-blue-700" />}>
-          <InfoRow label="School" value={employee.schoolName} />
-          <InfoRow label="Course" value={employee.course} />
+          <InfoRow label="School" value={employee.schoolName || 'Carlos Hilado Memorial State University'} />
+          <InfoRow label="Campus" value={employee.campus || 'CHMSU Campus'} />
+          <InfoRow label="College" value={employee.department || 'College of Computer Studies'} />
+          <InfoRow label="Program" value={employee.course || 'Bachelor of Science in Information Systems'} />
           <InfoRow label="Required Hours" value={`${employee.requiredHours} hours`} />
         </Section>
       </motion.div>
