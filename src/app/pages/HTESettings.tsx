@@ -140,6 +140,7 @@ export function HTESettings() {
             <label className="text-xs font-bold text-slate-700 block mb-1.5">Current Password</label>
             <input
               type="password"
+              autoComplete="current-password"
               required
               value={passwordForm.current}
               onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
@@ -153,6 +154,7 @@ export function HTESettings() {
               <label className="text-xs font-bold text-slate-700 block mb-1.5">New Password</label>
               <input
                 type="password"
+                autoComplete="new-password"
                 required
                 value={passwordForm.new}
                 onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
@@ -164,6 +166,7 @@ export function HTESettings() {
               <label className="text-xs font-bold text-slate-700 block mb-1.5">Confirm New Password</label>
               <input
                 type="password"
+                autoComplete="new-password"
                 required
                 value={passwordForm.confirm}
                 onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}

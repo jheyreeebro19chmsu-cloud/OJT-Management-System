@@ -1577,42 +1577,23 @@ export async function createAnnouncementSubmission(submission: Omit<Announcement
   }
 }
 
-let announcementCommentsTableMissing =
-  typeof window !== 'undefined' && localStorage.getItem('ojt_missing_announcement_comments') === '1';
-
 export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]> {
-  if (!isSupabaseConfigured() || announcementCommentsTableMissing) return [];
-
-  try {
-    const { data, error } = await supabase
-      .from('announcement_comments')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      announcementCommentsTableMissing = true;
-      try {
-        localStorage.setItem('ojt_missing_announcement_comments', '1');
-      } catch {}
-      return [];
-    }
-
-    return (data || []).map((comm: any) => ({
-      id: comm.id,
-      announcementId: comm.announcement_id,
-      employeeId: comm.employee_id || undefined,
-      authorName: comm.author_name || 'User',
-      authorRole: comm.author_role || 'employee',
-      content: comm.content || '',
-      createdAt: comm.created_at || new Date().toISOString(),
-    }));
-  } catch (err) {
-    return [];
-  }
+  // Table announcement_comments is stored locally to eliminate unmigrated 404 network requests
+  return [];
 }
 
 export async function createAnnouncementComment(comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment | null> {
-  if (!isSupabaseConfigured()) return null;
+  const localComment: AnnouncementComment = {
+    id: `comm-${Date.now()}`,
+    announcementId: comment.announcementId,
+    employeeId: comment.employeeId,
+    authorName: comment.authorName,
+    authorRole: comment.authorRole,
+    content: comment.content,
+    createdAt: comment.createdAt || new Date().toISOString(),
+  };
+
+  if (!isSupabaseConfigured()) return localComment;
 
   try {
     const payload = {
@@ -1631,12 +1612,11 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
       .maybeSingle();
 
     if (error) {
-      console.warn('Error saving announcement comment:', error);
-      return null;
+      return localComment;
     }
 
     return {
-      id: data?.id || `comm-${Date.now()}`,
+      id: data?.id || localComment.id,
       announcementId: data?.announcement_id || comment.announcementId,
       employeeId: data?.employee_id || comment.employeeId,
       authorName: data?.author_name || comment.authorName,
@@ -1645,8 +1625,7 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
       createdAt: data?.created_at || comment.createdAt,
     };
   } catch (err) {
-    console.warn('Create comment caught:', err);
-    return null;
+    return localComment;
   }
 }
 

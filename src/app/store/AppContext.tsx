@@ -935,9 +935,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchAnnouncementSubmissions().then((subs) => {
               if (isMounted && subs && subs.length > 0) setAnnouncementSubmissions(subs);
             }),
-            supabaseService.fetchAnnouncementComments().then((cmts) => {
-              if (isMounted && cmts && cmts.length > 0) setAnnouncementComments(cmts);
-            }),
             supabaseService.fetchHostFeedback().then((fb) => {
               if (isMounted && fb && fb.length > 0) setHostFeedback(fb);
             }),
@@ -1152,7 +1149,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseEvaluations,
         supabaseAnnouncements,
         supabaseSubmissions,
-        supabaseComments,
         supabaseHostFeedback,
         supabaseHostSupervisors,
       ] = await Promise.all([
@@ -1163,7 +1159,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchEvaluations(),
         supabaseService.fetchAnnouncements(),
         supabaseService.fetchAnnouncementSubmissions(),
-        supabaseService.fetchAnnouncementComments(),
         supabaseService.fetchHostFeedback(),
         supabaseService.fetchHostSupervisors(),
       ]);

@@ -382,6 +382,7 @@ export function AdminSettings() {
         <div className="space-y-3">
           <input
             type="password"
+            autoComplete="current-password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             placeholder="Current password"
@@ -389,6 +390,7 @@ export function AdminSettings() {
           />
           <input
             type="password"
+            autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="New password (min 6 chars)"

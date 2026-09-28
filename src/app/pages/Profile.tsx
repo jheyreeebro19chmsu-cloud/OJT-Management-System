@@ -968,6 +968,7 @@ export function Profile() {
             <label className="text-xs text-gray-500 font-medium block mb-1">Current Password</label>
             <input
               type="password"
+              autoComplete="current-password"
               value={passwordForm.current}
               onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -978,6 +979,7 @@ export function Profile() {
             <label className="text-xs text-gray-500 font-medium block mb-1">New Password</label>
             <input
               type="password"
+              autoComplete="new-password"
               value={passwordForm.new}
               onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -988,6 +990,7 @@ export function Profile() {
             <label className="text-xs text-gray-500 font-medium block mb-1">Confirm New Password</label>
             <input
               type="password"
+              autoComplete="new-password"
               value={passwordForm.confirm}
               onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
               className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${passwordForm.confirm && passwordForm.new !== passwordForm.confirm ? 'border-red-300' : 'border-gray-200'}`}
