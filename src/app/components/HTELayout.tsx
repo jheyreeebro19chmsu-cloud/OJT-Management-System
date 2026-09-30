@@ -99,7 +99,10 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-white font-bold text-xs sm:text-[13px] leading-snug">CHMSU OJT Management System</div>
-              <div className="text-[#D9A441] text-xs font-semibold mt-0.5">HTE Panel</div>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[11px] font-semibold mt-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>HTE Panel</span>
+              </div>
             </div>
           </div>
           {isMobile && (
@@ -135,7 +138,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
                   isActive
-                    ? 'bg-[#146B4D] text-white shadow-md shadow-[#146B4D]/25'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
                     : 'text-slate-300 hover:bg-[#1E3A66] hover:text-white'
                 }`
               }

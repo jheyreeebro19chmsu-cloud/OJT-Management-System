@@ -41,6 +41,31 @@
   --slate-ink-muted: #4B5563;
   --slate-ink-light: #9CA3AF;
 
+  /* ──────────────────────────────────────────────────────────────────────────
+   * Dedicated Role Identity Color Palettes
+   * ──────────────────────────────────────────────────────────────────────────
+   * Trainee:    Sapphire Blue  #2563EB (student focus, learning, verified biometrics)
+   * HTE:        Emerald Green  #059669 (host establishment, workplace partner, industry)
+   * Instructor: Royal Purple   #7C3AED (faculty authority, academic supervisor)
+   * ────────────────────────────────────────────────────────────────────────── */
+  --role-trainee: #2563EB;
+  --role-trainee-light: #3B82F6;
+  --role-trainee-dark: #1D4ED8;
+  --role-trainee-bg: #EFF6FF;
+  --role-trainee-border: #BFDBFE;
+
+  --role-hte: #059669;
+  --role-hte-light: #10B981;
+  --role-hte-dark: #047857;
+  --role-hte-bg: #ECFDF5;
+  --role-hte-border: #A7F3D0;
+
+  --role-instructor: #7C3AED;
+  --role-instructor-light: #8B5CF6;
+  --role-instructor-dark: #6D28D9;
+  --role-instructor-bg: #F5F3FF;
+  --role-instructor-border: #DDD6FE;
+
   --background: #F7F7F3;
   --foreground: #1F2937;
   --card: #FFFFFF;

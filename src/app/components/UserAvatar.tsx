@@ -77,16 +77,16 @@ export function UserAvatar({
   const isHte = normRole === 'hte' || normRole === 'host';
 
   const defaultFallbackBg = isInstructor
-    ? 'bg-gradient-to-tr from-indigo-700 to-blue-600 text-white'
+    ? 'bg-gradient-to-tr from-purple-700 via-indigo-600 to-purple-800 text-white shadow-purple-500/20'
     : isHte
-    ? 'bg-gradient-to-tr from-[#1E3A66] to-[#0E1D35] text-blue-100'
-    : 'bg-gradient-to-tr from-blue-700 to-indigo-800 text-white';
+    ? 'bg-gradient-to-tr from-emerald-700 via-teal-600 to-emerald-800 text-white shadow-emerald-500/20'
+    : 'bg-gradient-to-tr from-blue-700 via-sky-600 to-blue-800 text-white shadow-blue-500/20';
 
   const renderDefaultIcon = () => {
     if (fallbackIcon) return fallbackIcon;
-    if (isInstructor) return <GraduationCap size={sizeConfig.iconSize} className="text-white drop-shadow-sm" />;
-    if (isHte) return <Building size={sizeConfig.iconSize} className="text-blue-200 drop-shadow-sm" />;
-    return <User size={sizeConfig.iconSize} className="text-white drop-shadow-sm" />;
+    if (isInstructor) return <GraduationCap size={sizeConfig.iconSize} className="text-purple-100 drop-shadow-sm" />;
+    if (isHte) return <Building size={sizeConfig.iconSize} className="text-emerald-100 drop-shadow-sm" />;
+    return <User size={sizeConfig.iconSize} className="text-blue-100 drop-shadow-sm" />;
   };
 
   const showImage = Boolean(photoUrl && !hasError);

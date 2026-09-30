@@ -463,13 +463,13 @@ export function Login() {
           </div>
 
           {/* Direct Role Google Buttons */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {/* Continue as Trainee */}
             <button
               type="button"
               onClick={() => handleGoogleSignInWithRole('trainee')}
               disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 rounded-xl font-bold text-gray-700 hover:text-blue-700 transition-all shadow-xs disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm bg-white"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-blue-200 bg-blue-50/40 hover:bg-blue-50 hover:border-blue-400 rounded-xl font-bold text-blue-800 transition-all shadow-xs disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm"
             >
               {googleLoading && loadingRole === 'trainee' ? (
                 <div className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
@@ -489,10 +489,10 @@ export function Login() {
               type="button"
               onClick={() => handleGoogleSignInWithRole('admin')}
               disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50/50 rounded-xl font-bold text-gray-700 hover:text-indigo-700 transition-all shadow-xs disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm bg-white"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-purple-200 bg-purple-50/40 hover:bg-purple-50 hover:border-purple-400 rounded-xl font-bold text-purple-800 transition-all shadow-xs disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm"
             >
               {googleLoading && loadingRole === 'admin' ? (
-                <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-purple-600/30 border-t-purple-600 rounded-full animate-spin" />
               ) : (
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -509,7 +509,7 @@ export function Login() {
               type="button"
               onClick={() => handleGoogleSignInWithRole('hte')}
               disabled={googleLoading || loading}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/50 rounded-xl font-bold text-gray-700 hover:text-emerald-700 transition-all shadow-xs disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm bg-white"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-emerald-200 bg-emerald-50/40 hover:bg-emerald-50 hover:border-emerald-400 rounded-xl font-bold text-emerald-800 transition-all shadow-xs disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer text-sm"
             >
               {googleLoading && loadingRole === 'hte' ? (
                 <div className="w-4 h-4 border-2 border-emerald-600/30 border-t-emerald-600 rounded-full animate-spin" />

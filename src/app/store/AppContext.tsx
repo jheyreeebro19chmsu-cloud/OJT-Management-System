@@ -513,6 +513,7 @@ export function clearAuthStorage(): void {
     localStorage.removeItem('oauth_family_name');
     localStorage.removeItem('oauth_photo');
     localStorage.removeItem('oauth_user_id');
+    localStorage.removeItem('ojt_last_active_timestamp');
 
     if (typeof window !== 'undefined') {
       Object.keys(localStorage).forEach((k) => {
@@ -2049,6 +2050,79 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     }
   };
+
+  // ── Automatic Inactivity Timeout (10 minutes) ───────────────────────────────
+  // Automatically logs out the account after 10 minutes of inactivity in browser or mobile app.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (typeof window === 'undefined') return;
+    if ((window as any).Cypress) return; // Prevent premature logout during automated tests
+
+    const INACTIVITY_LIMIT_MS = 10 * 60 * 1000; // 10 minutes (600,000 ms)
+    const STORAGE_KEY = 'ojt_last_active_timestamp';
+
+    // Initialize last active timestamp
+    let lastActive = Number(localStorage.getItem(STORAGE_KEY)) || Date.now();
+    try {
+      localStorage.setItem(STORAGE_KEY, String(Date.now()));
+    } catch {}
+
+    let lastWriteTime = Date.now();
+
+    const recordActivity = () => {
+      const now = Date.now();
+      lastActive = now;
+      // Throttle localStorage updates to once every 5 seconds to optimize performance & battery
+      if (now - lastWriteTime > 5000) {
+        lastWriteTime = now;
+        try {
+          localStorage.setItem(STORAGE_KEY, String(now));
+        } catch {}
+      }
+    };
+
+    const checkInactivity = () => {
+      const stored = Number(localStorage.getItem(STORAGE_KEY)) || lastActive;
+      const elapsed = Date.now() - stored;
+      if (elapsed >= INACTIVITY_LIMIT_MS) {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {}
+        logout();
+        toast.info('Session expired', {
+          description: 'You have been automatically logged out due to 10 minutes of inactivity.',
+          duration: 6000,
+        });
+      }
+    };
+
+    // User interaction events covering desktop browsers and mobile touch screens
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach((ev) => {
+      window.addEventListener(ev, recordActivity, { passive: true });
+    });
+
+    // Check when user switches back to browser tab or resumes mobile app from background
+    const handleVisibilityOrFocus = () => {
+      if (!document.hidden) {
+        checkInactivity();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    // Periodic background check every 15 seconds while app is in foreground
+    const intervalId = setInterval(checkInactivity, 15000);
+
+    return () => {
+      events.forEach((ev) => {
+        window.removeEventListener(ev, recordActivity);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearInterval(intervalId);
+    };
+  }, [currentUser]);
 
   const getCurrentUserEmail = (): string | null => {
     if (!currentUser) return null;

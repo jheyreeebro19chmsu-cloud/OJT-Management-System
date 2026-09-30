@@ -433,25 +433,25 @@ export function AdminEmployees() {
       title: 'Pending Approvals',
       emptyText: 'No pending student enrollments awaiting approval',
       accent: 'amber',
-      badge: 'bg-amber-100 text-amber-800 font-bold',
+      badge: 'bg-amber-100 text-amber-800 font-bold border border-amber-200',
     },
     student: {
       title: 'Active Trainees',
       emptyText: 'No active trainees found for this academic year',
       accent: 'blue',
-      badge: 'bg-blue-100 text-blue-700',
+      badge: 'bg-blue-100 text-blue-800 font-bold border border-blue-200',
     },
     instructor: {
       title: 'OJT Instructors',
       emptyText: 'No instructor accounts found',
-      accent: 'indigo',
-      badge: 'bg-indigo-100 text-indigo-700',
+      accent: 'purple',
+      badge: 'bg-purple-100 text-purple-800 font-bold border border-purple-200',
     },
     hte: {
       title: 'HTE Supervisors',
       emptyText: 'No HTE accounts found',
       accent: 'emerald',
-      badge: 'bg-emerald-100 text-emerald-700',
+      badge: 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-200',
     },
   } as const;
 
@@ -505,9 +505,14 @@ export function AdminEmployees() {
                   <div className="flex items-center gap-3">
                     {(() => {
                       const photoUrl = getPhotoUrl(emp.photo);
+                      const avatarClass = isInstructorGroup
+                        ? 'bg-purple-100 text-purple-700'
+                        : isHteGroup
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-blue-100 text-blue-700';
                       return (
-                        <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none">
-                          <span className="text-blue-700 font-bold text-sm">{emp.name.charAt(0)}</span>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none ${avatarClass}`}>
+                          <span className="font-bold text-sm">{emp.name.charAt(0)}</span>
                           {photoUrl && (
                             <img
                               src={photoUrl}
@@ -587,7 +592,7 @@ export function AdminEmployees() {
                     )
                   ) : isInstructorGroup ? (
                     <div>
-                      <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                      <span className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg">
                         Faculty Coordinator
                       </span>
                       <p className="text-[11px] text-gray-400 mt-0.5">{emp.schoolName || 'CHMSU'}</p>
@@ -835,9 +840,14 @@ export function AdminEmployees() {
                   <div className="flex items-start gap-3">
                     {(() => {
                       const photoUrl = getPhotoUrl(emp.photo);
+                      const avatarClass = isInstructorGroup
+                        ? 'bg-purple-100 text-purple-700'
+                        : isHteGroup
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-blue-100 text-blue-700';
                       return (
-                        <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none">
-                          <span className="text-blue-700 font-bold">{emp.name.charAt(0)}</span>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none ${avatarClass}`}>
+                          <span className="font-bold">{emp.name.charAt(0)}</span>
                           {photoUrl && (
                             <img
                               src={photoUrl}

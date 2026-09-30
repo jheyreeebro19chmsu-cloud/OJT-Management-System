@@ -304,7 +304,11 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
         <button
           type="button"
           onClick={handleOpenEdit}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-2xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer ${
+            isHte
+              ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+              : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200'
+          }`}
         >
           <Edit3 size={15} />
           <span>Edit Profile</span>
@@ -321,7 +325,7 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
               name={name}
               role={isHte ? 'hte' : 'admin'}
               size="2xl"
-              className="rounded-2xl border-2 border-blue-200 shadow-sm"
+              className={`rounded-2xl border-2 shadow-sm ${isHte ? 'border-emerald-200' : 'border-purple-200'}`}
             />
             {employee && (
               <button
@@ -340,8 +344,12 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-extrabold text-slate-900 leading-tight">{name}</h2>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                <CheckCircle size={12} className="text-blue-600" />
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                isHte
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-purple-50 text-purple-700 border border-purple-200'
+              }`}>
+                <CheckCircle size={12} className={isHte ? 'text-emerald-600' : 'text-purple-600'} />
                 {position}
               </span>
             </div>

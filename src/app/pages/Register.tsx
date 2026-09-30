@@ -1600,8 +1600,22 @@ export function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
-      <div className="absolute top-0 left-0 w-72 h-72 bg-sky-500/20 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
+    <div className={`min-h-screen flex flex-col items-center justify-center px-4 py-8 transition-colors duration-500 ${
+      role === 'admin'
+        ? 'bg-gradient-to-br from-[#1E112A] via-[#2E1065] to-[#1E1B4B]'
+        : role === 'hte'
+        ? 'bg-gradient-to-br from-[#06241B] via-[#064E3B] to-[#134E4A]'
+        : role === 'trainee'
+        ? 'bg-gradient-to-br from-blue-950 via-blue-900 to-sky-900'
+        : 'bg-gradient-to-br from-[#0F1E36] via-[#152B4D] to-[#1E3A66]'
+    }`}>
+      <div className={`absolute top-0 left-0 w-72 h-72 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl transition-colors duration-500 ${
+        role === 'admin'
+          ? 'bg-purple-500/20'
+          : role === 'hte'
+          ? 'bg-emerald-500/20'
+          : 'bg-sky-500/20'
+      }`} />
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
         {/* Header */}
@@ -1650,7 +1664,19 @@ export function Register() {
             {steps.map((s, i) => (
               <div
                 key={s}
-                className={`h-1.5 flex-1 rounded-full transition-all ${i <= step ? 'bg-sky-400' : 'bg-blue-700'}`}
+                className={`h-1.5 flex-1 rounded-full transition-all ${
+                  i <= step
+                    ? role === 'admin'
+                      ? 'bg-purple-400'
+                      : role === 'hte'
+                      ? 'bg-emerald-400'
+                      : 'bg-sky-400'
+                    : role === 'admin'
+                    ? 'bg-purple-900/60'
+                    : role === 'hte'
+                    ? 'bg-emerald-900/60'
+                    : 'bg-blue-900/60'
+                }`}
               />
             ))}
           </div>
@@ -3666,8 +3692,8 @@ export function Register() {
                 exit={{ opacity: 0, x: -20 }}
               >
                 <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Camera size={16} className="text-purple-700" />
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Camera size={16} className="text-blue-700" />
                   </div>
                   <h2 className="font-bold text-gray-800">Face Registration</h2>
                 </div>
@@ -3675,8 +3701,8 @@ export function Register() {
                   <p>
                     Register your face for biometric time recording. Live webcam capture is processed by DeepFace AI models for identity verification during clock-in and clock-out.
                   </p>
-                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900 font-semibold flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-purple-700 shrink-0" />
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 font-semibold flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-blue-700 shrink-0" />
                     <span>Mandatory Trainee Verification: Live webcam facial capture is required for AI attendance verification and anti-spoofing fraud prevention.</span>
                   </div>
                   {attemptedNext && !faceRegistered && (
@@ -3770,7 +3796,7 @@ export function Register() {
                       id="scan-capture-now-btn"
                       data-testid="scan-capture-now-btn"
                       onClick={() => setShowCameraPermissionPrompt(true)}
-                      className="px-6 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
+                      className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
                     >
                       <Camera size={16} />
                       Scan &amp; Capture Now
@@ -3786,7 +3812,7 @@ export function Register() {
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in"
                   >
                     <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 text-center space-y-4">
-                      <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mx-auto border border-purple-200 shadow-inner">
+                      <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto border border-blue-200 shadow-inner">
                         <Camera size={28} />
                       </div>
                       <div>
@@ -3795,7 +3821,7 @@ export function Register() {
                           The system requires access to your camera to scan and register your facial biometrics for trainee verification.
                         </p>
                       </div>
-                      <div className="p-3 bg-purple-50/80 rounded-xl border border-purple-100 text-[11px] text-purple-900 text-left leading-relaxed">
+                      <div className="p-3 bg-blue-50/80 rounded-xl border border-blue-100 text-[11px] text-blue-900 text-left leading-relaxed">
                         🔒 <strong>Biometric Privacy Notice:</strong> Your facial photo is securely processed to verify identity during your OJT attendance clock-in and clock-out.
                       </div>
                       <div className="flex gap-3 pt-2">
@@ -3848,7 +3874,7 @@ export function Register() {
                               setFaceCapturing(true);
                             }
                           }}
-                          className="flex-1 py-2.5 px-4 rounded-xl bg-purple-600 text-white font-semibold text-xs hover:bg-purple-700 shadow-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 shadow-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <Check size={14} />
                           Allow
@@ -3894,7 +3920,13 @@ export function Register() {
                     <button
                       type="button"
                       onClick={handleNext}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-blue-700 text-white rounded-xl text-sm font-bold hover:bg-blue-800 active:scale-[0.99] transition-all shadow-lg shadow-blue-200 cursor-pointer"
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-white rounded-xl text-sm font-bold active:scale-[0.99] transition-all cursor-pointer ${
+                        role === 'admin'
+                          ? 'bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-200'
+                          : role === 'hte'
+                          ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200'
+                          : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200'
+                      }`}
                     >
                       <span>Next Step</span>
                       <ArrowRight size={15} />
@@ -3904,7 +3936,13 @@ export function Register() {
                       type="button"
                       onClick={handleSubmit}
                       disabled={isSubmitting}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-200 cursor-pointer"
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-white rounded-xl text-sm font-bold active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                        role === 'admin'
+                          ? 'bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-200'
+                          : role === 'hte'
+                          ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200'
+                          : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200'
+                      }`}
                     >
                       {isSubmitting ? (
                         <>
