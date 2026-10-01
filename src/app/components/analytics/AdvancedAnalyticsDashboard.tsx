@@ -84,7 +84,8 @@ export function AdvancedAnalyticsDashboard({
 
   const activeTraineeCount = trainees.length || 1;
   const standardDailyCapacityHours = activeTraineeCount * 8; // Available working capacity per working day
-  const totalMonthlyCapacityHours = activeTraineeCount * workingDaysInMonth * 8;
+  const targetMonthlyCapacityHours = activeTraineeCount * workingDaysInMonth * 8;
+  const totalMonthlyCapacityHours = targetMonthlyCapacityHours;
 
   // -------------------------------------------------------------
   // 1. DAILY DATA with Regular vs Overtime & 7-day Rolling Average
