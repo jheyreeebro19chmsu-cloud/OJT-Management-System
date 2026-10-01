@@ -2278,12 +2278,12 @@ export function Dashboard() {
                 </div>
               ) : (
                 <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-400">
-                  <span className="text-[11px]">Answer and submit your feedback.</span>
+                  <span className="text-[11px]">View your evaluation form and details.</span>
                   <Link
                     to="/app/evaluation"
                     className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                   >
-                    Fill Questionnaire <ChevronRight size={13} />
+                    View Questionnaire <ChevronRight size={13} />
                   </Link>
                 </div>
               )}

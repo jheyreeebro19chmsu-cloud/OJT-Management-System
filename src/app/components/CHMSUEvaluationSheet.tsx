@@ -303,9 +303,8 @@ export function CHMSUEvaluationSheet({
   const isCriteriaReadOnly = role === 'trainee' || role === 'instructor' || isReadOnly;
 
   // Page 2 Questionnaire (Student Practicum Feedback):
-  // ONLY editable by Trainee so student's own reflection words cannot be overridden.
-  // Read-only for Instructor and HTE to view trainee answers.
-  const isQuestionnaireReadOnly = role === 'trainee' ? false : true;
+  // Read-only when isReadOnly is set or for Instructor and HTE.
+  const isQuestionnaireReadOnly = isReadOnly || role !== 'trainee';
 
   // Calculate Subtotals per Category
   const categoryStats = React.useMemo(() => {

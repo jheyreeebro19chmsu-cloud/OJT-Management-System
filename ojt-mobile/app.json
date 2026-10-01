@@ -36,6 +36,11 @@
       "expo-camera",
       "expo-location",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d0e38b8b-13d2-42b2-96b7-b939a152548f"
+      }
+    }
   }
 }
