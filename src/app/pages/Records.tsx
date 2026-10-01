@@ -4,6 +4,8 @@ import {
   MapPin,
   Camera,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Filter,
   FileText,
   AlertTriangle,
@@ -11,11 +13,12 @@ import {
   ShieldOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
 import { MonthlyDTTRView } from '../components/MonthlyDTTRView';
+import { getPaginationWindow } from '../utils/pagination';
 
 
 const STATUS_COLORS: Record<string, string> = {
@@ -99,6 +102,18 @@ export function Records() {
   const filteredRecords = filterMonth === 'all'
     ? allRecords
     : allRecords.filter((r) => r.date.startsWith(filterMonth));
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const RECORDS_PER_PAGE = 10;
+  const totalPages = Math.ceil(filteredRecords.length / RECORDS_PER_PAGE) || 1;
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * RECORDS_PER_PAGE;
+    return filteredRecords.slice(start, start + RECORDS_PER_PAGE);
+  }, [filteredRecords, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterMonth]);
 
   const totalHours = filteredRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
   const presentCount = filteredRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
@@ -274,7 +289,7 @@ export function Records() {
         </motion.div>
       ) : (
         <div className="space-y-2">
-          {filteredRecords.map((record, idx) => {
+          {paginatedRecords.map((record, idx) => {
             const { day, date, month } = formatDate(record.date);
             const isExpanded = expandedId === record.id;
             const inPremises = record.timeInGeofenced;
@@ -447,6 +462,83 @@ export function Records() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm mt-4">
+          <p className="text-xs text-gray-500 font-medium order-2 sm:order-1">
+            Showing <span className="font-semibold text-gray-800">{(currentPage - 1) * RECORDS_PER_PAGE + 1}</span> to{' '}
+            <span className="font-semibold text-gray-800">
+              {Math.min(currentPage * RECORDS_PER_PAGE, filteredRecords.length)}
+            </span>{' '}
+            of <span className="font-semibold text-gray-800">{filteredRecords.length}</span> records
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap justify-center order-1 sm:order-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {(() => {
+              const pages = getPaginationWindow(currentPage, totalPages, 10);
+              return (
+                <>
+                  {pages[0] > 1 && (
+                    <>
+                      <button
+                        onClick={() => setCurrentPage(1)}
+                        className="w-8 h-8 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+                      >
+                        1
+                      </button>
+                      {pages[0] > 2 && <span className="text-gray-400 text-xs px-1">...</span>}
+                    </>
+                  )}
+                  {pages.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p)}
+                      className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all ${
+                        currentPage === p
+                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-200 font-bold'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  {pages[pages.length - 1] < totalPages && (
+                    <>
+                      {pages[pages.length - 1] < totalPages - 1 && (
+                        <span className="text-gray-400 text-xs px-1">...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(totalPages)}
+                        className="w-8 h-8 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+                      >
+                        {totalPages}
+                      </button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       )}
       </>

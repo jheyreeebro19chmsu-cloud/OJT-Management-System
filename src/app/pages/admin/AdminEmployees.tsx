@@ -13,6 +13,7 @@ import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../../data/documentRequirements';
 import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper';
 import { isWithinNegrosOccidental } from '../../utils/geo';
+import { getPaginationWindow } from '../../utils/pagination';
 
 
 
@@ -1000,20 +1001,55 @@ export function AdminEmployees() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: p }))}
-                    className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      currentPage === p
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
+                {(() => {
+                  const pages = getPaginationWindow(currentPage, totalPages, 10);
+                  return (
+                    <>
+                      {pages[0] > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: 1 }))}
+                            className="w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                          >
+                            1
+                          </button>
+                          {pages[0] > 2 && <span className="px-1 text-gray-400 font-bold">...</span>}
+                        </>
+                      )}
+
+                      {pages.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: p }))}
+                          className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            currentPage === p
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+
+                      {pages[pages.length - 1] < totalPages && (
+                        <>
+                          {pages[pages.length - 1] < totalPages - 1 && (
+                            <span className="px-1 text-gray-400 font-bold">...</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setPageByGroup((prev) => ({ ...prev, [group]: totalPages }))}
+                            className="w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                          >
+                            {totalPages}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <button

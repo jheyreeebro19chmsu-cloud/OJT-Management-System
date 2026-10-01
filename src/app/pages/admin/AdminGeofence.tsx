@@ -36,6 +36,7 @@ import { GeofenceZone, Employee } from '../../types';
 import { GEOFENCE_RADIUS_METERS, reverseGeocode, isWithinNegrosOccidental } from '../../utils/geo';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { getPhotoUrl } from '../../services/config';
+import { getPaginationWindow } from '../../utils/pagination';
 
 const BLANK_ZONE = {
   name: '',
@@ -1470,19 +1471,50 @@ export function AdminGeofence() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all ${
-                      currentPage === page
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                        : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
+                {(() => {
+                  const pages = getPaginationWindow(currentPage, totalPages, 10);
+                  return (
+                    <>
+                      {pages[0] > 1 && (
+                        <>
+                          <button
+                            onClick={() => setCurrentPage(1)}
+                            className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                          >
+                            1
+                          </button>
+                          {pages[0] > 2 && <span className="text-gray-400 text-xs px-1">...</span>}
+                        </>
+                      )}
+                      {pages.map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            currentPage === page
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                              : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      {pages[pages.length - 1] < totalPages && (
+                        <>
+                          {pages[pages.length - 1] < totalPages - 1 && (
+                            <span className="text-gray-400 text-xs px-1">...</span>
+                          )}
+                          <button
+                            onClick={() => setCurrentPage(totalPages)}
+                            className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                          >
+                            {totalPages}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <button

@@ -48,7 +48,6 @@ import { toast } from 'sonner';
 import { sendWelcomeEmail } from '../lib/resend';
 import { supabase } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
-import { Announcement, Employee, TraineeDocuments, TraineeDocumentItem } from '../types';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
 import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/supabaseService';
@@ -56,6 +55,7 @@ import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
 import { computeTraineeOjtNotifications } from '../utils/traineeNotifications';
+import { getPaginationWindow } from '../utils/pagination';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -880,20 +880,53 @@ export function Dashboard() {
                   </button>
 
                   <div className="flex items-center gap-1">
-                    {Array.from({ length: totalLinkedPages }, (_, i) => i + 1).map((page) => (
-                      <button
-                        type="button"
-                        key={page}
-                        onClick={() => setLinkedStudentsPage(page)}
-                        className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          linkedStudentsPage === page
-                            ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                            : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    ))}
+                    {(() => {
+                      const pages = getPaginationWindow(linkedStudentsPage, totalLinkedPages, 10);
+                      return (
+                        <>
+                          {pages[0] > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setLinkedStudentsPage(1)}
+                                className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                              >
+                                1
+                              </button>
+                              {pages[0] > 2 && <span className="text-gray-400 text-xs px-1">...</span>}
+                            </>
+                          )}
+                          {pages.map((page) => (
+                            <button
+                              type="button"
+                              key={page}
+                              onClick={() => setLinkedStudentsPage(page)}
+                              className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                linkedStudentsPage === page
+                                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                                  : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          ))}
+                          {pages[pages.length - 1] < totalLinkedPages && (
+                            <>
+                              {pages[pages.length - 1] < totalLinkedPages - 1 && (
+                                <span className="text-gray-400 text-xs px-1">...</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setLinkedStudentsPage(totalLinkedPages)}
+                                className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-all cursor-pointer"
+                              >
+                                {totalLinkedPages}
+                              </button>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <button
@@ -1052,20 +1085,57 @@ export function Dashboard() {
                 </button>
 
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: totalRecentRecordsPages }, (_, i) => i + 1).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setRecentRecordsPage(p)}
-                      className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        recentRecordsPage === p
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  {(() => {
+                    const pages = getPaginationWindow(recentRecordsPage, totalRecentRecordsPages, 10);
+                    return (
+                      <>
+                        {pages[0] > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setRecentRecordsPage(1)}
+                              className="w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                            >
+                              1
+                            </button>
+                            {pages[0] > 2 && (
+                              <span className="px-1 text-gray-400 font-bold">...</span>
+                            )}
+                          </>
+                        )}
+
+                        {pages.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setRecentRecordsPage(p)}
+                            className={`w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              recentRecordsPage === p
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+
+                        {pages[pages.length - 1] < totalRecentRecordsPages && (
+                          <>
+                            {pages[pages.length - 1] < totalRecentRecordsPages - 1 && (
+                              <span className="px-1 text-gray-400 font-bold">...</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setRecentRecordsPage(totalRecentRecordsPages)}
+                              className="w-8 h-8 rounded-xl text-xs font-bold transition-all cursor-pointer bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                            >
+                              {totalRecentRecordsPages}
+                            </button>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <button

@@ -51,6 +51,7 @@ import { getPhotoUrl } from '../../services/config';
 import { Employee, Evaluation } from '../../types';
 import { MonthlyDTTRView } from '../../components/MonthlyDTTRView';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
+import { getPaginationWindow } from '../../utils/pagination';
 
 export const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }> = {
   Excellent: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
@@ -1655,20 +1656,55 @@ export function AdminReports() {
                     </button>
 
                     <div className="flex items-center gap-1">
-                      {Array.from({ length: totalTraineePages }, (_, i) => i + 1).map((page) => (
-                        <button
-                          type="button"
-                          key={page}
-                          onClick={() => setTraineePage(page)}
-                          className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                            traineePage === page
-                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                              : 'border border-slate-300 text-slate-700 hover:bg-white shadow-2xs'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
+                      {(() => {
+                        const pages = getPaginationWindow(traineePage, totalTraineePages, 10);
+                        return (
+                          <>
+                            {pages[0] > 1 && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setTraineePage(1)}
+                                  className="min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer border border-slate-300 text-slate-700 hover:bg-white shadow-2xs"
+                                >
+                                  1
+                                </button>
+                                {pages[0] > 2 && <span className="px-1 text-slate-400 font-bold">...</span>}
+                              </>
+                            )}
+
+                            {pages.map((page) => (
+                              <button
+                                type="button"
+                                key={page}
+                                onClick={() => setTraineePage(page)}
+                                className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                                  traineePage === page
+                                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                                    : 'border border-slate-300 text-slate-700 hover:bg-white shadow-2xs'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            ))}
+
+                            {pages[pages.length - 1] < totalTraineePages && (
+                              <>
+                                {pages[pages.length - 1] < totalTraineePages - 1 && (
+                                  <span className="px-1 text-slate-400 font-bold">...</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setTraineePage(totalTraineePages)}
+                                  className="min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer border border-slate-300 text-slate-700 hover:bg-white shadow-2xs"
+                                >
+                                  {totalTraineePages}
+                                </button>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     <button

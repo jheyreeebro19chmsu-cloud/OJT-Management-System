@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { GeofenceMap } from '../components/GeofenceMap';
+import { getPaginationWindow } from '../utils/pagination';
 
 function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
   const [hasError, setHasError] = useState(false);
@@ -523,19 +524,50 @@ export function HTEDashboard() {
                 </button>
 
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: totalTraineePages }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setTraineePage(page)}
-                      className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        traineePage === page
-                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {(() => {
+                    const pages = getPaginationWindow(traineePage, totalTraineePages, 10);
+                    return (
+                      <>
+                        {pages[0] > 1 && (
+                          <>
+                            <button
+                              onClick={() => setTraineePage(1)}
+                              className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+                            >
+                              1
+                            </button>
+                            {pages[0] > 2 && <span className="text-slate-400 text-xs px-1">...</span>}
+                          </>
+                        )}
+                        {pages.map((page) => (
+                          <button
+                            key={page}
+                            onClick={() => setTraineePage(page)}
+                            className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              traineePage === page
+                                ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                                : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                        {pages[pages.length - 1] < totalTraineePages && (
+                          <>
+                            {pages[pages.length - 1] < totalTraineePages - 1 && (
+                              <span className="text-slate-400 text-xs px-1">...</span>
+                            )}
+                            <button
+                              onClick={() => setTraineePage(totalTraineePages)}
+                              className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+                            >
+                              {totalTraineePages}
+                            </button>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <button
@@ -651,19 +683,50 @@ export function HTEDashboard() {
                 </button>
 
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: totalLogPages }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setLogPage(page)}
-                      className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        logPage === page
-                          ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {(() => {
+                    const pages = getPaginationWindow(logPage, totalLogPages, 10);
+                    return (
+                      <>
+                        {pages[0] > 1 && (
+                          <>
+                            <button
+                              onClick={() => setLogPage(1)}
+                              className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+                            >
+                              1
+                            </button>
+                            {pages[0] > 2 && <span className="text-slate-400 text-xs px-1">...</span>}
+                          </>
+                        )}
+                        {pages.map((page) => (
+                          <button
+                            key={page}
+                            onClick={() => setLogPage(page)}
+                            className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              logPage === page
+                                ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                                : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                        {pages[pages.length - 1] < totalLogPages && (
+                          <>
+                            {pages[pages.length - 1] < totalLogPages - 1 && (
+                              <span className="text-slate-400 text-xs px-1">...</span>
+                            )}
+                            <button
+                              onClick={() => setLogPage(totalLogPages)}
+                              className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+                            >
+                              {totalLogPages}
+                            </button>
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <button

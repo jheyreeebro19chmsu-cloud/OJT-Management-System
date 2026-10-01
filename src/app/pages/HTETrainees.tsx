@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { courseOptions } from '../data/academicOptions';
+import { getPaginationWindow } from '../utils/pagination';
 
 export function HTETrainees() {
   const navigate = useNavigate();
@@ -550,19 +551,50 @@ export function HTETrainees() {
               </button>
 
               <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      currentPage === page
-                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
-                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
+                {(() => {
+                  const pages = getPaginationWindow(currentPage, totalPages, 10);
+                  return (
+                    <>
+                      {pages[0] > 1 && (
+                        <>
+                          <button
+                            onClick={() => setCurrentPage(1)}
+                            className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+                          >
+                            1
+                          </button>
+                          {pages[0] > 2 && <span className="text-slate-400 text-xs px-1">...</span>}
+                        </>
+                      )}
+                      {pages.map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            currentPage === page
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30'
+                              : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      {pages[pages.length - 1] < totalPages && (
+                        <>
+                          {pages[pages.length - 1] < totalPages - 1 && (
+                            <span className="text-slate-400 text-xs px-1">...</span>
+                          )}
+                          <button
+                            onClick={() => setCurrentPage(totalPages)}
+                            className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+                          >
+                            {totalPages}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <button
