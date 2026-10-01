@@ -596,6 +596,10 @@ export function AdvancedAnalyticsDashboard({
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                     Overtime Hours (&gt;8h)
                   </span>
+                  <span className="flex items-center gap-1.5 text-rose-600 font-semibold">
+                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-rose-500" />
+                    Capacity Target
+                  </span>
                   {timeGranularity === 'daily' && (
                     <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
                       <span className="w-3.5 h-0.5 bg-emerald-600" />
@@ -614,12 +618,12 @@ export function AdvancedAnalyticsDashboard({
           </div>
         )}
 
-        {/* 1. OVERTIME VS REGULAR HOURS (Stacked Bars + 7-Day Rolling Line) */}
+        {/* 1. OVERTIME VS REGULAR HOURS (Stacked Bars + 7-Day Rolling Line + Capacity Line) */}
         {viewMode === 'overtime_regular' && (
           <div className="h-80 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
               {timeGranularity === 'daily' ? (
-                <ComposedChart data={dailyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <ComposedChart data={dailyData} margin={{ top: 15, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis
                     dataKey="day"
@@ -646,6 +650,13 @@ export function AdvancedAnalyticsDashboard({
                     labelFormatter={(label) => `Day ${label} of ${monthLabel}`}
                   />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <ReferenceLine
+                    y={standardDailyCapacityHours}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    strokeWidth={2}
+                    label={{ value: `Capacity (${standardDailyCapacityHours}h/day)`, position: 'top', fill: '#dc2626', fontSize: 10, fontWeight: 700 }}
+                  />
                   <Bar
                     dataKey="regularHours"
                     name="Regular Duty Hours"
@@ -670,7 +681,7 @@ export function AdvancedAnalyticsDashboard({
                   />
                 </ComposedChart>
               ) : timeGranularity === 'weekly' ? (
-                <BarChart data={weeklyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <BarChart data={weeklyData} margin={{ top: 15, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
@@ -684,11 +695,18 @@ export function AdvancedAnalyticsDashboard({
                     formatter={(val: any, name: any) => [`${val} hrs`, name]}
                   />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <ReferenceLine
+                    y={activeTraineeCount * 40}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    strokeWidth={2}
+                    label={{ value: `Weekly Capacity (${activeTraineeCount * 40}h)`, position: 'top', fill: '#dc2626', fontSize: 10, fontWeight: 700 }}
+                  />
                   <Bar dataKey="regularHours" name="Regular Hours" stackId="w" fill="#3b82f6" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="overtimeHours" name="Overtime Hours" stackId="w" fill="#f59e0b" radius={[6, 6, 0, 0]} />
                 </BarChart>
               ) : (
-                <BarChart data={monthlyHistoricalData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <BarChart data={monthlyHistoricalData} margin={{ top: 15, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="monthLabel" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
@@ -702,6 +720,13 @@ export function AdvancedAnalyticsDashboard({
                     formatter={(val: any, name: any) => [`${val} hrs`, name]}
                   />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <ReferenceLine
+                    y={activeTraineeCount * 22 * 8}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    strokeWidth={2}
+                    label={{ value: `Monthly Capacity (${activeTraineeCount * 22 * 8}h)`, position: 'top', fill: '#dc2626', fontSize: 10, fontWeight: 700 }}
+                  />
                   <Bar dataKey="regularHours" name="Regular Hours" stackId="m" fill="#3b82f6" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="overtimeHours" name="Overtime Hours" stackId="m" fill="#f59e0b" radius={[6, 6, 0, 0]} />
                 </BarChart>
