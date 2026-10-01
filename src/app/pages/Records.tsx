@@ -92,28 +92,36 @@ export function Records() {
   const empLookupId = currentEmp?.id || currentEmp?.employeeId || '';
   const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
   const [viewMode, setViewMode] = useState<'timeline' | 'monthly_dttr'>('timeline');
-  const [filterMonth, setFilterMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  const [filterMonth, setFilterMonth] = useState('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [photoModal, setPhotoModal] = useState<{ src: string; label: string } | null>(null);
 
-  const filteredRecords = allRecords.filter((r) => r.date.startsWith(filterMonth));
+  const filteredRecords = filterMonth === 'all'
+    ? allRecords
+    : allRecords.filter((r) => r.date.startsWith(filterMonth));
 
   const totalHours = filteredRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
   const presentCount = filteredRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
   const lateCount = filteredRecords.filter((r) => r.status === 'late').length;
   const outsideCount = filteredRecords.filter((r) => !r.timeInGeofenced || !r.timeOutGeofenced).length;
 
-  // Generate month options (last 6 months)
-  const monthOptions = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    return { value, label };
-  });
+  // Overall OJT stats
+  const allTotalHours = allRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
+  const requiredHours = Number(currentEmp?.requiredHours) > 0 ? Number(currentEmp?.requiredHours) : 486;
+  const progressPercent = Math.min(100, Math.round((allTotalHours / requiredHours) * 100));
+
+  // Generate month options (All Months + last 6 months)
+  const monthOptions = [
+    { value: 'all', label: `All Months (Entire OJT Duration • ${allRecords.length} records)` },
+    ...Array.from({ length: 6 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const countInMonth = allRecords.filter((r) => r.date.startsWith(value)).length;
+      return { value, label: `${label} (${countInMonth} record${countInMonth === 1 ? '' : 's'})` };
+    }),
+  ];
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
@@ -130,12 +138,12 @@ export function Records() {
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 text-white"
+        className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 text-white shadow-lg"
       >
-        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <div className="flex items-center gap-2">
             <FileText size={18} />
-            <h2 className="font-bold">Daily Time Records</h2>
+            <h2 className="font-bold text-lg">Daily Time Records</h2>
           </div>
 
           <div className="flex bg-white/10 p-1 rounded-2xl border border-white/20">
@@ -163,11 +171,30 @@ export function Records() {
             </button>
           </div>
         </div>
-        <p className="text-blue-200 text-xs mb-4">
+
+        <p className="text-blue-200 text-xs mb-3">
           {currentEmp?.name} • {currentEmp?.employeeId || 'OJT Trainee'}
         </p>
 
-        {/* Month summary */}
+        {/* Lifetime OJT Progress Indicator */}
+        <div className="bg-white/10 rounded-2xl p-3 mb-3 border border-white/15">
+          <div className="flex justify-between items-center text-xs mb-1.5 font-medium">
+            <span className="text-blue-200">Cumulative OJT Progress</span>
+            <span className="text-white font-bold">{allTotalHours.toFixed(1)} / {requiredHours} hrs ({progressPercent}%)</span>
+          </div>
+          <div className="w-full bg-black/20 rounded-full h-2.5 overflow-hidden">
+            <div
+              className="bg-linear-to-r from-emerald-400 to-teal-300 h-2.5 rounded-full transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <div className="flex justify-between items-center text-[10px] text-blue-200 mt-1">
+            <span>{allRecords.length} Total Verified Attendance Logs</span>
+            <span>{Math.max(0, requiredHours - allTotalHours).toFixed(1)} hrs remaining</span>
+          </div>
+        </div>
+
+        {/* Selected Period summary */}
         <div className="grid grid-cols-4 gap-2">
           <div className="bg-white/15 rounded-2xl p-2.5 text-center">
             <p className="text-xl font-bold">{totalHours.toFixed(0)}</p>
@@ -186,6 +213,19 @@ export function Records() {
             <p className="text-blue-200 text-xs">Off-site</p>
           </div>
         </div>
+
+        {filterMonth !== 'all' && (
+          <div className="mt-2.5 flex items-center justify-between text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+            <span className="text-blue-200">Filtered view active</span>
+            <button
+              type="button"
+              onClick={() => setFilterMonth('all')}
+              className="text-white font-semibold underline hover:text-emerald-300 transition-colors"
+            >
+              Show all {allRecords.length} records ({allTotalHours.toFixed(0)} hrs)
+            </button>
+          </div>
+        )}
       </motion.div>
 
       {viewMode === 'monthly_dttr' ? (
@@ -205,20 +245,20 @@ export function Records() {
           >
             <div className="flex items-center gap-2">
               <Filter size={14} className="text-gray-400" />
-              <span className="text-xs text-gray-500 font-medium">Filter by month:</span>
-          <select
-            value={filterMonth}
-            onChange={(e) => setFilterMonth(e.target.value)}
-            className="flex-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer"
-          >
-            {monthOptions.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </motion.div>
+              <span className="text-xs text-gray-500 font-medium">Filter by period:</span>
+              <select
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="flex-1 text-sm text-gray-700 bg-transparent focus:outline-none cursor-pointer font-medium"
+              >
+                {monthOptions.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </motion.div>
 
       {/* Records List */}
       {filteredRecords.length === 0 ? (
