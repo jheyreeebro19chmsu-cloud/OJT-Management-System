@@ -250,23 +250,21 @@ export function calculateTotalHours(timeIn: string, timeOut: string): number {
 export function getAttendanceStatus(
   timeIn: string,
   workStartTime = '08:00',
-  lateThresholdMinutes = 0
-): 'present' | 'late' {
+  lateThresholdMinutes = 0,
+  isGeofenced = true
+): 'present' | 'late' | 'offsite' {
+  // If attendance was not recorded within the designated HTE geofence premises -> marked 'offsite'
+  if (isGeofenced === false) {
+    return 'offsite';
+  }
+
   const [inH, inM] = timeIn.split(':').map(Number);
   const inTotal = inH * 60 + inM;
 
   const [startH, startM] = (workStartTime || '08:00').split(':').map(Number);
   const startTotal = startH * 60 + startM;
 
-  // 5:00 PM cutoff = 17:00 = 1020 minutes
-  const cutoff5pm = 17 * 60;
-
-  // If clocking in after 5:00 PM -> marked late
-  if (inTotal >= cutoff5pm) {
-    return 'late';
-  }
-
-  // If clocking in after start time (08:00) + grace threshold -> marked late
+  // Clock-in after late threshold -> marked late
   if (inTotal > startTotal + (lateThresholdMinutes || 0)) {
     return 'late';
   }

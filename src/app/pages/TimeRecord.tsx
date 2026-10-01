@@ -204,10 +204,6 @@ export function TimeRecord() {
   );
 
   const proceedToFaceScan = () => {
-    if (isPastLateThreshold) {
-      toast.error(`Clock-in disabled: The late threshold cutoff was ${formattedCutoffTime} (${lateGraceMinutes} min grace period after ${formatTime(settings.workStartTime)}).`);
-      return;
-    }
     if (isStudent && !hasValidHte) {
       toast.error('Clock-in blocked: You must be assigned to an approved Host Training Establishment (HTE) workplace by your instructor first.');
       return;
@@ -257,7 +253,7 @@ export function TimeRecord() {
       let createdRecordId: string | null = null;
 
       if (currentAction === 'in') {
-        const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes);
+        const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes, geofencePassed);
         const newRecord = addTimeRecord({
           employeeId: targetEmpId,
           date: dateStr,
@@ -275,7 +271,7 @@ export function TimeRecord() {
         setAction('out');
         userActionOverrideRef.current = false;
         setCompletedMessage(
-          `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : ''}${!geofencePassed ? ' ⚠ Outside premises' : ''}`
+          `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : status === 'offsite' ? ' (Offsite)' : ''}`
         );
       } else if (currentRecord) {
         const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
@@ -435,7 +431,7 @@ export function TimeRecord() {
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-blue-100 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-          <span>🕒 Attendance Window: <strong>6:00 AM – 5:00 PM</strong></span>
+          <span>🕒 Clock In: <strong>Open All Times</strong> (Late after {formattedCutoffTime || '8:15 AM'})</span>
           <span>🔄 Daily Reset: <strong>6:00 AM</strong></span>
         </div>
 
@@ -606,12 +602,12 @@ export function TimeRecord() {
             </div>
 
             {isPastLateThreshold && (
-              <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-900 text-xs flex items-start gap-3">
-                <Lock className="text-rose-600 shrink-0 mt-0.5" size={18} />
+              <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-amber-900 text-xs flex items-start gap-2.5">
+                <Clock className="text-amber-600 shrink-0 mt-0.5" size={16} />
                 <div>
-                  <p className="font-bold text-sm text-rose-950">Clock-In Closed — Late Threshold Passed</p>
-                  <p className="mt-1 leading-relaxed">
-                    Attendance cutoff was {formattedCutoffTime} ({lateGraceMinutes} min grace period after {formatTime(settings.workStartTime)}). Clock-in is disabled after passing the late threshold.
+                  <p className="font-bold text-xs text-amber-950">Clock-In Active (Late Attendance)</p>
+                  <p className="mt-0.5 leading-relaxed text-amber-800">
+                    Attendance cutoff was {formattedCutoffTime} ({lateGraceMinutes} min grace period). Clock-in is open and your attendance will be recorded as <strong>Late</strong>.
                   </p>
                 </div>
               </div>
@@ -638,10 +634,6 @@ export function TimeRecord() {
 
             <button
               onClick={() => {
-                if (isPastLateThreshold) {
-                  toast.error(`Clock-in disabled: The late threshold cutoff was ${formattedCutoffTime}.`);
-                  return;
-                }
                 if (isStudent && !hasValidHte) {
                   toast.error('Clock-in blocked: Awaiting HTE workplace placement from your OJT Instructor.');
                   return;
@@ -662,27 +654,20 @@ export function TimeRecord() {
                 }
                 proceedToFaceScan();
               }}
-              disabled={isPastLateThreshold || geofenceStatus === 'outside' || (isStudent && !hasValidHte)}
+              disabled={geofenceStatus === 'outside' || (isStudent && !hasValidHte)}
               className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                isPastLateThreshold
+                isStudent && !hasValidHte
                   ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
-                  : isStudent && !hasValidHte
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
-                    : geofencePassed
-                      ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
-                      : geofenceStatus === 'denied'
-                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
-                        : geofenceStatus === 'outside'
-                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                          : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
+                  : geofencePassed
+                    ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
+                    : geofenceStatus === 'denied'
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400 cursor-pointer shadow-sm'
+                      : geofenceStatus === 'outside'
+                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                        : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
               }`}
             >
-              {isPastLateThreshold ? (
-                <>
-                  <Lock size={16} />
-                  <span>Clock-In Closed (Late Cutoff Passed)</span>
-                </>
-              ) : isStudent && !hasValidHte ? (
+              {isStudent && !hasValidHte ? (
                 <>
                   <Lock size={16} />
                   <span>Awaiting HTE Workplace Assignment</span>

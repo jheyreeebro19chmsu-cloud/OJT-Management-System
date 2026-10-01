@@ -92,7 +92,7 @@ export interface TimeRecord {
   timeInPhoto?: string;
   timeOutPhoto?: string;
   totalHours?: number;
-  status: 'present' | 'late' | 'absent' | 'half-day' | 'overtime';
+  status: 'present' | 'late' | 'absent' | 'half-day' | 'overtime' | 'offsite';
   notes?: string;
   academicYear?: string;
   approvalStatus?: 'approved' | 'disapproved' | 'pending';

@@ -676,33 +676,32 @@ export function Dashboard() {
     const currentH = currentTime.getHours();
     const currentM = currentTime.getMinutes();
     const currentTimeInMinutes = currentH * 60 + currentM;
-    const shiftOpenMinutes = 6 * 60; // 6:00 AM (06:00)
-    const shiftCloseMinutes = 17 * 60; // 5:00 PM (17:00)
+    const [startH, startM] = (settings.workStartTime || '08:00').split(':').map(Number);
+    const lateGrace = Number(settings.lateThresholdMinutes ?? 15);
+    const lateThresholdMinutes = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM) + lateGrace;
 
     if (todayRecord?.timeIn && todayRecord?.timeOut) {
       return { label: 'Completed', color: 'text-green-700 bg-green-100' };
     }
     if (todayRecord?.timeIn) {
-      if (currentTimeInMinutes >= shiftCloseMinutes) {
+      if (todayRecord.status === 'offsite') {
         return {
-          label: 'Shift Ended (Clock Out)',
-          color: 'text-amber-700 bg-amber-100',
+          label: 'Clocked In (Offsite)',
+          color: 'text-purple-700 bg-purple-100',
         };
       }
       return {
-        label: todayRecord.status === 'late' ? 'Clocked In (Late)' : 'Clocked In',
+        label: todayRecord.status === 'late' ? 'Clocked In (Late)' : 'Clocked In (On-Time)',
         color: todayRecord.status === 'late' ? 'text-orange-700 bg-orange-100' : 'text-sky-700 bg-sky-100',
       };
     }
 
-    if (currentTimeInMinutes < shiftOpenMinutes) {
-      return { label: 'Opens at 6:00 AM', color: 'text-indigo-700 bg-indigo-100' };
-    }
-    if (currentTimeInMinutes >= shiftCloseMinutes) {
-      return { label: 'Closed (5:00 PM)', color: 'text-gray-500 bg-gray-100' };
+    // Trainee has not recorded attendance for today yet
+    if (currentTimeInMinutes > lateThresholdMinutes) {
+      return { label: 'Offsite (No Attendance Yet)', color: 'text-rose-700 bg-rose-100' };
     }
 
-    return { label: 'Not Clocked In', color: 'text-gray-500 bg-gray-100' };
+    return { label: 'Open (Clock In Anytime)', color: 'text-emerald-700 bg-emerald-100' };
   };
 
   const handleStudentClick = (record: any) => {
@@ -1701,7 +1700,7 @@ export function Dashboard() {
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-white/80 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-          <span>🕒 Attendance Window: <strong>6:00 AM – 5:00 PM</strong></span>
+          <span>🕒 Clock In: <strong>Open All Times</strong> (Late after {settings?.workStartTime || '8:00 AM'})</span>
           <span>🔄 Resets daily at 6:00 AM</span>
         </div>
 
@@ -2365,9 +2364,11 @@ export function Dashboard() {
                             ? 'bg-emerald-100 text-emerald-800'
                             : record.status === 'late'
                               ? 'bg-amber-100 text-amber-800'
-                              : record.status === 'absent'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-blue-100 text-blue-800'
+                              : record.status === 'offsite'
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : record.status === 'absent'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-blue-100 text-blue-800'
                         }`}
                       >
                         {record.status}

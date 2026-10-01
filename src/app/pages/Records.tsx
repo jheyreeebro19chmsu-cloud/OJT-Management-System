@@ -24,6 +24,7 @@ const STATUS_COLORS: Record<string, string> = {
   absent: 'bg-red-100 text-red-700',
   overtime: 'bg-blue-100 text-blue-700',
   'half-day': 'bg-yellow-100 text-yellow-700',
+  offsite: 'bg-purple-100 text-purple-700 border border-purple-200',
 };
 
 interface RecordPhotoThumbnailProps {
