@@ -115,8 +115,15 @@ export function EmployeeLayout() {
   const submittedDocs = employee?.submittedDocuments || {};
   const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
   const totalRequired = docKeys.length;
-  const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
-  const missingDocsCount = totalRequired - uploadedDocsCount;
+  const uploadedDocsCount = docKeys.filter((k) => {
+    const doc =
+      submittedDocs[k] ||
+      (k === 'consent' ? submittedDocs.parent_consent : undefined) ||
+      (k === 'moa' ? submittedDocs.endorsement : undefined) ||
+      (k === 'medical' ? submittedDocs.clearance : undefined);
+    return Boolean(doc?.dataUrl || doc?.name);
+  }).length;
+  const missingDocsCount = Math.max(0, totalRequired - uploadedDocsCount);
 
   const traineeEvaluation = evaluations.find(
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId

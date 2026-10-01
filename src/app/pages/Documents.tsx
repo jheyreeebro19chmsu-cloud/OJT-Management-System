@@ -65,11 +65,40 @@ export function Documents() {
 
   const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
 
+  // Helper to safely get document item supporting legacy aliases
+  const getDocItem = (key: string): TraineeDocumentItem | undefined => {
+    if (submittedDocs[key]) return submittedDocs[key];
+    if (key === 'consent' && submittedDocs.parent_consent) return submittedDocs.parent_consent;
+    if (key === 'moa' && submittedDocs.endorsement) return submittedDocs.endorsement;
+    if (key === 'medical' && submittedDocs.clearance) return submittedDocs.clearance;
+    // Check case-insensitive key
+    const foundKey = Object.keys(submittedDocs).find((k) => k.toLowerCase() === key.toLowerCase());
+    return foundKey ? submittedDocs[foundKey] : undefined;
+  };
+
   const customRequiredDocs = employee?.id ? getEmployeeRequiredDocuments(employee.id) : [];
   const allDocRequirements = useMemo(() => {
     const list = [...STANDARD_REQUIRED_DOCS];
     for (const custom of customRequiredDocs) {
-      if (!list.some((d) => d.title.toLowerCase() === custom.title.toLowerCase() || d.key === custom.id)) {
+      const isAlreadyCovered = list.some((d) => {
+        const dTitle = d.title.toLowerCase();
+        const cTitle = custom.title.toLowerCase();
+        return (
+          dTitle === cTitle ||
+          d.key === custom.id ||
+          d.id === custom.id ||
+          custom.id.includes(d.key) ||
+          (cTitle.includes('medical') && dTitle.includes('medical')) ||
+          (cTitle.includes('resume') && dTitle.includes('resume')) ||
+          (cTitle.includes('consent') && dTitle.includes('consent')) ||
+          (cTitle.includes('memorandum') && dTitle.includes('memorandum')) ||
+          (cTitle.includes('pledge') && dTitle.includes('pledge')) ||
+          (cTitle.includes('enrolment') && dTitle.includes('enrolment')) ||
+          (cTitle.includes('internship') && dTitle.includes('internship')) ||
+          (cTitle.includes('evaluation') && dTitle.includes('evaluation'))
+        );
+      });
+      if (!isAlreadyCovered) {
         list.push({
           key: custom.id as any,
           id: custom.id,
@@ -87,12 +116,18 @@ export function Documents() {
   }, [customRequiredDocs]);
 
   const totalRequired = allDocRequirements.length;
-  const uploadedCount = allDocRequirements.filter((k) => Boolean(submittedDocs[k.key]?.dataUrl || submittedDocs[k.key]?.name)).length;
-  const passedCount = allDocRequirements.filter((k) => submittedDocs[k.key]?.status === 'passed').length;
+  const uploadedCount = allDocRequirements.filter((k) => {
+    const doc = getDocItem(k.key);
+    return Boolean(doc?.dataUrl || doc?.name);
+  }).length;
+  const passedCount = allDocRequirements.filter((k) => {
+    const doc = getDocItem(k.key);
+    return doc?.status === 'passed' && Boolean(doc?.dataUrl || doc?.name);
+  }).length;
   const isAllPassed = uploadedCount === totalRequired && passedCount === totalRequired;
   const missingDocs = useMemo(() => {
     return allDocRequirements.filter((item) => {
-      const doc = submittedDocs[item.key];
+      const doc = getDocItem(item.key);
       return !doc?.dataUrl && !doc?.name;
     });
   }, [allDocRequirements, submittedDocs]);
@@ -432,7 +467,7 @@ export function Documents() {
       {/* Required Documents Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
         {allDocRequirements.map((item) => {
-          const doc = submittedDocs[item.key];
+          const doc = getDocItem(item.key);
           const hasFile = Boolean(doc?.dataUrl || doc?.name);
           const isPassed = doc?.status === 'passed' && hasFile;
           const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
