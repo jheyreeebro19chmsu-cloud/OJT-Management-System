@@ -28,6 +28,7 @@ import {
   ArrowUpDown,
   RefreshCw,
   FileSpreadsheet,
+  Activity,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
@@ -52,6 +53,7 @@ import { Employee, Evaluation } from '../../types';
 import { MonthlyDTTRView } from '../../components/MonthlyDTTRView';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 import { getPaginationWindow } from '../../utils/pagination';
+import { AdvancedAnalyticsDashboard } from '../../components/analytics/AdvancedAnalyticsDashboard';
 
 export const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }> = {
   Excellent: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
@@ -195,8 +197,8 @@ function TraineeAvatar({
 export function AdminReports() {
   const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings, currentUser } = useApp();
 
-  // Active Top Tab: 'attendance', 'monthly_dttr', or 'evaluation'
-  const [activeTab, setActiveTab] = useState<'attendance' | 'monthly_dttr' | 'evaluation'>('attendance');
+  // Active Top Tab: 'attendance', 'analytics', 'monthly_dttr', or 'evaluation'
+  const [activeTab, setActiveTab] = useState<'attendance' | 'analytics' | 'monthly_dttr' | 'evaluation'>('attendance');
 
   // Attendance Filters
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
@@ -787,6 +789,21 @@ export function AdminReports() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab('analytics')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'analytics'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Activity size={14} />
+              <span>Advanced Analytics</span>
+              <span className="ml-0.5 text-[10px] px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded-full font-extrabold">
+                Live
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab('monthly_dttr')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'monthly_dttr'
@@ -830,6 +847,78 @@ export function AdminReports() {
           </button>
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* ADVANCED COHORT ANALYTICS & INTELLIGENCE VIEW               */}
+      {/* ========================================================= */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          {/* Analytics Filter Toolbar */}
+          <div className="flex flex-wrap gap-3 no-print bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm items-center justify-between">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                <span className="text-xs font-semibold text-slate-500">AY:</span>
+                <select
+                  value={selectedAcademicYear}
+                  onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                  className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none"
+                >
+                  <option value="all">All Academic Years</option>
+                  {settings.academicYears.map((ay) => (
+                    <option key={ay} value={ay}>
+                      A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                <Calendar size={13} className="text-slate-400" />
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+                >
+                  {monthOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                <Users size={13} className="text-slate-400" />
+                <select
+                  value={selectedEmpId}
+                  onChange={(e) => setSelectedEmpId(e.target.value)}
+                  className="text-xs font-semibold text-slate-700 bg-transparent focus:outline-none"
+                >
+                  <option value="all">All Trainees ({traineeEmployees.length})</option>
+                  {traineeEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium">
+              Analyzing <strong className="text-slate-800">{filteredRecords.length}</strong> attendance records
+            </div>
+          </div>
+
+          {/* Full Advanced Analytics Suite */}
+          <AdvancedAnalyticsDashboard
+            records={filteredRecords}
+            allRecords={timeRecords}
+            trainees={selectedEmpId === 'all' ? traineeEmployees : traineeEmployees.filter((e) => e.id === selectedEmpId)}
+            selectedMonth={selectedMonth}
+            selectedAcademicYear={selectedAcademicYear}
+          />
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* MONTHLY DTTR MONITORING VIEW                               */}
@@ -1301,37 +1390,14 @@ export function AdminReports() {
             </div>
           </div>
 
-          {/* Daily Hours Chart */}
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-800 mb-4">Daily Total Rendered Hours</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dailyData}>
-                  <defs>
-                    <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11 }} tickLine={false} unit="h" />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="hours"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#hoursGrad)"
-                    name="Total Hours"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Advanced OJT Cohort Analytics Suite */}
+          <AdvancedAnalyticsDashboard
+            records={filteredRecords}
+            allRecords={timeRecords}
+            trainees={selectedEmpId === 'all' ? traineeEmployees : traineeEmployees.filter((e) => e.id === selectedEmpId)}
+            selectedMonth={selectedMonth}
+            selectedAcademicYear={selectedAcademicYear}
+          />
 
           {/* Trainee Hours Summary Enterprise Data Table */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden font-sans">
