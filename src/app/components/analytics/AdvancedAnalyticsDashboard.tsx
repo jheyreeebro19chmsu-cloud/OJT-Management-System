@@ -1,19 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import {
-  TrendingUp,
-  TrendingDown,
+  GraduationCap,
   Clock,
   Calendar,
-  BarChart3,
-  Activity,
-  Target,
-  Zap,
   Building,
   Users,
   CheckCircle2,
-  AlertTriangle,
-  Layers,
+  TrendingUp,
   Sparkles,
+  BarChart3,
+  BookOpen,
+  MapPin,
+  CheckCircle,
+  AlertCircle,
+  Award,
+  ChevronRight,
   Info,
 } from 'lucide-react';
 import {
@@ -26,11 +27,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
-  ReferenceArea,
-  ReferenceLine,
   ComposedChart,
+  ReferenceLine,
 } from 'recharts';
-import { motion, AnimatePresence } from 'motion/react';
 
 import { Employee, TimeRecord } from '../../types';
 
@@ -42,7 +41,7 @@ interface AdvancedAnalyticsDashboardProps {
   selectedAcademicYear?: string;
 }
 
-type AnalyticsViewMode = 'overtime_regular' | 'utilization' | 'by_hte' | 'heatmap';
+type AnalyticsViewMode = 'attendance_trend' | 'trainee_milestones' | 'by_hte' | 'by_program' | 'heatmap';
 type TimeGranularity = 'daily' | 'weekly' | 'monthly';
 
 export function AdvancedAnalyticsDashboard({
@@ -52,11 +51,11 @@ export function AdvancedAnalyticsDashboard({
   selectedMonth,
   selectedAcademicYear,
 }: AdvancedAnalyticsDashboardProps) {
-  const [viewMode, setViewMode] = useState<AnalyticsViewMode>('overtime_regular');
+  const [viewMode, setViewMode] = useState<AnalyticsViewMode>('attendance_trend');
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>('daily');
   const [hoveredCalendarDay, setHoveredCalendarDay] = useState<any | null>(null);
 
-  // Parse Year and Month
+  // Parse Year and Month for filtering and labels
   const { year, month, daysInMonth, monthLabel, monthKey } = useMemo(() => {
     const fallbackMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     const targetKey = selectedMonth === 'all' ? fallbackMonth : selectedMonth;
@@ -69,101 +68,186 @@ export function AdvancedAnalyticsDashboard({
     return { year: y, month: m, daysInMonth: days, monthLabel: label, monthKey: targetKey };
   }, [selectedMonth]);
 
-  // Working days in month (Mon-Fri)
-  const workingDaysInMonth = useMemo(() => {
-    let count = 0;
-    for (let day = 1; day <= daysInMonth; day++) {
-      const d = new Date(year, month, day);
-      const dayOfWeek = d.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        count++;
+  // Total Trainee Count
+  const totalTrainees = trainees.length || 0;
+
+  // -------------------------------------------------------------
+  // 1. INDIVIDUAL TRAINEE TOTALS & MILESTONES (All-Time Progress)
+  // -------------------------------------------------------------
+  const traineeProgressList = useMemo(() => {
+    return trainees.map((t) => {
+      const requiredHours = Number(t.requiredHours) || 486;
+      // All-time records for this specific trainee
+      const studentRecords = allRecords.filter(
+        (r) => r.employeeId === t.id || r.employeeId === t.employeeId
+      );
+      const renderedHours = studentRecords.reduce(
+        (sum, r) => sum + (Number(r.totalHours) || 0),
+        0
+      );
+      const roundedRendered = Math.round(renderedHours * 10) / 10;
+      const progressPercent = Math.min(100, Math.round((roundedRendered / requiredHours) * 100));
+      const remainingHours = Math.max(0, Math.round((requiredHours - roundedRendered) * 10) / 10);
+
+      // Current month rendered hours
+      const thisMonthRecords = records.filter(
+        (r) => r.employeeId === t.id || r.employeeId === t.employeeId
+      );
+      const thisMonthHours = Math.round(
+        thisMonthRecords.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0) * 10
+      ) / 10;
+
+      // Status Category
+      let milestone: 'completed' | 'near_completion' | 'in_progress' | 'just_started' = 'just_started';
+      if (roundedRendered >= requiredHours) {
+        milestone = 'completed';
+      } else if (progressPercent >= 75) {
+        milestone = 'near_completion';
+      } else if (progressPercent >= 25) {
+        milestone = 'in_progress';
+      } else {
+        milestone = 'just_started';
       }
-    }
-    return count || 22;
-  }, [year, month, daysInMonth]);
 
-  const activeTraineeCount = trainees.length || 1;
-  const standardDailyCapacityHours = activeTraineeCount * 8; // Available working capacity per working day
-  const targetMonthlyCapacityHours = activeTraineeCount * workingDaysInMonth * 8;
-  const totalMonthlyCapacityHours = targetMonthlyCapacityHours;
+      return {
+        id: t.id,
+        name: t.name,
+        employeeId: t.employeeId || 'OJT-ID',
+        course: t.course || t.department || 'BSIT',
+        companyName: t.companyName?.trim() || 'Pending Assignment',
+        requiredHours,
+        renderedHours: roundedRendered,
+        remainingHours,
+        progressPercent,
+        thisMonthHours,
+        milestone,
+        active: roundedRendered > 0,
+      };
+    }).sort((a, b) => b.renderedHours - a.renderedHours);
+  }, [trainees, allRecords, records]);
+
+  // Milestone Counts for Cohort Summary
+  const milestoneCounts = useMemo(() => {
+    const counts = {
+      completed: 0,
+      near_completion: 0,
+      in_progress: 0,
+      just_started: 0,
+    };
+    traineeProgressList.forEach((t) => {
+      counts[t.milestone]++;
+    });
+    return counts;
+  }, [traineeProgressList]);
 
   // -------------------------------------------------------------
-  // 1. DAILY DATA with Regular vs Overtime & 7-day Rolling Average
+  // 2. CORE OJT SUMMARY KPIS (Understandable & Relevant)
   // -------------------------------------------------------------
-  const dailyData = useMemo(() => {
-    const rawDays = Array.from({ length: daysInMonth }, (_, i) => {
+  const ojtSummary = useMemo(() => {
+    // Total required hours across all trainees (standard 486h per trainee)
+    const totalRequired = traineeProgressList.reduce((sum, t) => sum + t.requiredHours, 0);
+    // Total rendered hours by all trainees to date
+    const totalRendered = traineeProgressList.reduce((sum, t) => sum + t.renderedHours, 0);
+    const overallProgressPercent = totalRequired > 0 ? Math.round((totalRendered / totalRequired) * 100) : 0;
+    const totalRemaining = Math.max(0, totalRequired - totalRendered);
+
+    // Month specific hours
+    const monthRendered = records.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
+
+    // Active Trainees in this period (trainees who logged at least 1 record this month)
+    const activeStudentIds = new Set(records.map((r) => r.employeeId));
+    const activeInMonthCount = activeStudentIds.size;
+    const participationRate = totalTrainees > 0 ? Math.round((activeInMonthCount / totalTrainees) * 100) : 0;
+
+    // Average hours completed per student
+    const avgHoursPerTrainee = totalTrainees > 0 ? Math.round((totalRendered / totalTrainees) * 10) / 10 : 0;
+
+    // Attendance health metrics from records
+    let presentCount = 0;
+    let lateCount = 0;
+    let geofencedCount = 0;
+    const totalLogs = records.length;
+
+    records.forEach((r) => {
+      if (r.status === 'present' || r.status === 'overtime') presentCount++;
+      if (r.status === 'late') lateCount++;
+      if (r.timeInGeofenced) geofencedCount++;
+    });
+
+    const onTimeRate = (presentCount + lateCount) > 0
+      ? Math.round((presentCount / (presentCount + lateCount)) * 100)
+      : 100;
+
+    const geofenceComplianceRate = totalLogs > 0
+      ? Math.round((geofencedCount / totalLogs) * 100)
+      : 100;
+
+    return {
+      totalRequired,
+      totalRendered: Math.round(totalRendered * 10) / 10,
+      totalRemaining: Math.round(totalRemaining * 10) / 10,
+      overallProgressPercent,
+      monthRendered: Math.round(monthRendered * 10) / 10,
+      activeInMonthCount,
+      participationRate,
+      avgHoursPerTrainee,
+      onTimeRate,
+      geofenceComplianceRate,
+      totalLogs,
+      presentCount,
+      lateCount,
+    };
+  }, [traineeProgressList, records, totalTrainees]);
+
+  // -------------------------------------------------------------
+  // 3. DAILY ATTENDANCE & HOURS (Month Breakdown)
+  // -------------------------------------------------------------
+  const dailyAttendanceData = useMemo(() => {
+    return Array.from({ length: daysInMonth }, (_, i) => {
       const dayNum = i + 1;
       const dateStr = `${monthKey}-${String(dayNum).padStart(2, '0')}`;
       const dayDate = new Date(year, month, dayNum);
-      const dayOfWeekNum = dayDate.getDay();
-      const isWeekend = dayOfWeekNum === 0 || dayOfWeekNum === 6;
+      const isWeekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
       const weekdayShort = dayDate.toLocaleDateString('en-US', { weekday: 'short' });
 
       const dayRecs = records.filter((r) => r.date === dateStr);
-
-      let regular = 0;
-      let overtime = 0;
-      let presentCount = 0;
-      let lateCount = 0;
+      let dayHours = 0;
+      let present = 0;
+      let late = 0;
+      const uniqueStudents = new Set<string>();
 
       dayRecs.forEach((r) => {
         const h = Number(r.totalHours) || 0;
-        if (h > 0) {
-          const reg = Math.min(8, h);
-          const ot = Math.max(0, h - 8);
-          regular += reg;
-          overtime += ot;
-        }
-        if (r.status === 'present' || r.status === 'overtime') presentCount++;
-        if (r.status === 'late') lateCount++;
+        dayHours += h;
+        if (r.status === 'late') late++;
+        else present++;
+        if (r.employeeId) uniqueStudents.add(r.employeeId);
       });
-
-      const totalH = parseFloat((regular + overtime).toFixed(1));
-      const expectedCapacity = isWeekend ? 0 : standardDailyCapacityHours;
-      const utilization = expectedCapacity > 0 ? Math.min(150, Math.round((totalH / expectedCapacity) * 100)) : 0;
 
       return {
         day: String(dayNum),
         dateStr,
         weekdayShort,
         isWeekend,
-        dayOfWeekNum,
-        regularHours: parseFloat(regular.toFixed(1)),
-        overtimeHours: parseFloat(overtime.toFixed(1)),
-        totalHours: totalH,
-        utilizationPct: utilization,
-        presentCount,
-        lateCount,
+        totalHours: Math.round(dayHours * 10) / 10,
+        studentCount: uniqueStudents.size,
+        presentCount: present,
+        lateCount: late,
         recordCount: dayRecs.length,
       };
     });
-
-    // Compute honest 7-day rolling average for each day
-    return rawDays.map((item, idx) => {
-      const windowStart = Math.max(0, idx - 6);
-      const windowSlice = rawDays.slice(windowStart, idx + 1);
-      const sum = windowSlice.reduce((s, d) => s + d.totalHours, 0);
-      const rollingAvg = parseFloat((sum / windowSlice.length).toFixed(1));
-
-      return {
-        ...item,
-        rollingAvg7d: rollingAvg,
-      };
-    });
-  }, [records, daysInMonth, monthKey, year, month, standardDailyCapacityHours]);
+  }, [records, daysInMonth, monthKey, year, month]);
 
   // -------------------------------------------------------------
-  // 2. WEEKLY TOTALS
+  // 4. WEEKLY TOTALS
   // -------------------------------------------------------------
-  const weeklyData = useMemo(() => {
+  const weeklyAttendanceData = useMemo(() => {
     const weeks: {
       week: string;
       range: string;
-      regularHours: number;
-      overtimeHours: number;
       totalHours: number;
-      utilizationPct: number;
-      presentCount: number;
+      studentCount: number;
+      avgHoursPerDay: number;
     }[] = [];
 
     const weekSize = 7;
@@ -172,43 +256,33 @@ export function AdvancedAnalyticsDashboard({
     for (let w = 0; w < numWeeks; w++) {
       const startDay = w * weekSize + 1;
       const endDay = Math.min(daysInMonth, (w + 1) * weekSize);
-      const daysInThisWeek = dailyData.slice(startDay - 1, endDay);
+      const daysSlice = dailyAttendanceData.slice(startDay - 1, endDay);
 
-      const reg = daysInThisWeek.reduce((s, d) => s + d.regularHours, 0);
-      const ot = daysInThisWeek.reduce((s, d) => s + d.overtimeHours, 0);
-      const tot = daysInThisWeek.reduce((s, d) => s + d.totalHours, 0);
-      const pres = daysInThisWeek.reduce((s, d) => s + d.presentCount, 0);
-
-      // Week expected capacity (approx 5 working days per 7-day block)
-      const workingDaysInWeek = daysInThisWeek.filter((d) => !d.isWeekend).length || 5;
-      const weekCapacity = activeTraineeCount * workingDaysInWeek * 8;
-      const util = weekCapacity > 0 ? Math.min(150, Math.round((tot / weekCapacity) * 100)) : 0;
+      const totHours = daysSlice.reduce((s, d) => s + d.totalHours, 0);
+      const maxStudentsOnAnyDay = Math.max(0, ...daysSlice.map((d) => d.studentCount));
+      const workdaysInSlice = daysSlice.filter((d) => !d.isWeekend).length || 5;
 
       weeks.push({
         week: `Week ${w + 1}`,
         range: `Day ${startDay}–${endDay}`,
-        regularHours: parseFloat(reg.toFixed(1)),
-        overtimeHours: parseFloat(ot.toFixed(1)),
-        totalHours: parseFloat(tot.toFixed(1)),
-        utilizationPct: util,
-        presentCount: pres,
+        totalHours: Math.round(totHours * 10) / 10,
+        studentCount: maxStudentsOnAnyDay,
+        avgHoursPerDay: Math.round((totHours / workdaysInSlice) * 10) / 10,
       });
     }
 
     return weeks;
-  }, [dailyData, daysInMonth, activeTraineeCount]);
+  }, [dailyAttendanceData, daysInMonth]);
 
   // -------------------------------------------------------------
-  // 3. MONTHLY HISTORICAL TOTALS (Past 6 Months)
+  // 5. MONTHLY HISTORICAL TREND (Past 6 Months)
   // -------------------------------------------------------------
-  const monthlyHistoricalData = useMemo(() => {
+  const monthlyTrendData = useMemo(() => {
     const list: {
       monthLabel: string;
       monthKey: string;
-      regularHours: number;
-      overtimeHours: number;
       totalHours: number;
-      utilizationPct: number;
+      activeStudents: number;
     }[] = [];
 
     for (let i = 5; i >= 0; i--) {
@@ -217,208 +291,196 @@ export function AdvancedAnalyticsDashboard({
       const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
       const mRecs = allRecords.filter((r) => r.date.startsWith(mKey));
-      let reg = 0;
-      let ot = 0;
-      mRecs.forEach((r) => {
-        const h = Number(r.totalHours) || 0;
-        reg += Math.min(8, h);
-        ot += Math.max(0, h - 8);
-      });
-      const tot = reg + ot;
-      const approxCapacity = activeTraineeCount * 22 * 8;
-      const util = approxCapacity > 0 ? Math.min(150, Math.round((tot / approxCapacity) * 100)) : 0;
+      const hours = mRecs.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
+      const studentSet = new Set(mRecs.map((r) => r.employeeId));
 
       list.push({
         monthLabel: label,
         monthKey: mKey,
-        regularHours: parseFloat(reg.toFixed(1)),
-        overtimeHours: parseFloat(ot.toFixed(1)),
-        totalHours: parseFloat(tot.toFixed(1)),
-        utilizationPct: util,
+        totalHours: Math.round(hours * 10) / 10,
+        activeStudents: studentSet.size,
       });
     }
 
     return list;
-  }, [allRecords, year, month, activeTraineeCount]);
+  }, [allRecords, year, month]);
 
   // -------------------------------------------------------------
-  // 4. STACKED BARS BY HTE / TEAM / CLIENT
+  // 6. BY HOST TRAINING ESTABLISHMENT (HTE) LEADERBOARD
   // -------------------------------------------------------------
-  const hteBreakdownData = useMemo(() => {
-    const companyMap: Record<string, { regular: number; overtime: number; count: number; trainees: Set<string> }> = {};
+  const hteLeaderboard = useMemo(() => {
+    const companyMap: Record<
+      string,
+      { totalHours: number; trainees: Set<string>; logCount: number }
+    > = {};
 
+    // Populate with registered trainees
     trainees.forEach((t) => {
-      const cName = t.companyName?.trim() || 'Unassigned / Pending HTE';
+      const cName = t.companyName?.trim() || 'Pending Assignment';
       if (!companyMap[cName]) {
-        companyMap[cName] = { regular: 0, overtime: 0, count: 0, trainees: new Set() };
+        companyMap[cName] = { totalHours: 0, trainees: new Set(), logCount: 0 };
       }
       companyMap[cName].trainees.add(t.id);
     });
 
-    records.forEach((r) => {
+    // Accumulate total rendered hours per company from records
+    allRecords.forEach((r) => {
       const emp = trainees.find((t) => t.id === r.employeeId || t.employeeId === r.employeeId);
       const cName = emp?.companyName?.trim() || 'Other Training Station';
       if (!companyMap[cName]) {
-        companyMap[cName] = { regular: 0, overtime: 0, count: 0, trainees: new Set() };
+        companyMap[cName] = { totalHours: 0, trainees: new Set(), logCount: 0 };
       }
-      const h = Number(r.totalHours) || 0;
-      companyMap[cName].regular += Math.min(8, h);
-      companyMap[cName].overtime += Math.max(0, h - 8);
-      companyMap[cName].count++;
+      companyMap[cName].totalHours += Number(r.totalHours) || 0;
+      companyMap[cName].logCount++;
     });
 
     return Object.entries(companyMap)
-      .map(([name, val]) => {
-        const reg = parseFloat(val.regular.toFixed(1));
-        const ot = parseFloat(val.overtime.toFixed(1));
-        const total = parseFloat((reg + ot).toFixed(1));
-        const traineeCount = val.trainees.size;
+      .map(([name, data]) => {
+        const studentCount = data.trainees.size;
+        const total = Math.round(data.totalHours * 10) / 10;
         return {
           name,
-          shortName: name.length > 18 ? name.slice(0, 16) + '…' : name,
-          regularHours: reg,
-          overtimeHours: ot,
+          shortName: name.length > 22 ? name.slice(0, 20) + '…' : name,
+          studentCount,
           totalHours: total,
-          traineeCount,
-          avgHoursPerTrainee: traineeCount > 0 ? parseFloat((total / traineeCount).toFixed(1)) : 0,
+          avgHoursPerStudent: studentCount > 0 ? Math.round((total / studentCount) * 10) / 10 : 0,
         };
       })
-      .filter((item) => item.totalHours > 0 || item.traineeCount > 0)
+      .filter((c) => c.studentCount > 0 || c.totalHours > 0)
       .sort((a, b) => b.totalHours - a.totalHours)
-      .slice(0, 8); // Top 8 companies for clear, non-cluttered display
-  }, [records, trainees]);
+      .slice(0, 8); // Top 8 companies
+  }, [trainees, allRecords]);
 
   // -------------------------------------------------------------
-  // 5. SUMMARY KPIS & VARIANCE INDICATORS
+  // 7. BY ACADEMIC PROGRAM / COURSE COMPARISON (BSIT vs BSCS etc)
   // -------------------------------------------------------------
-  const summaryKpis = useMemo(() => {
-    const totalRendered = records.reduce((s, r) => s + (Number(r.totalHours) || 0), 0);
-    const regularSum = records.reduce((s, r) => s + Math.min(8, Number(r.totalHours) || 0), 0);
-    const overtimeSum = Math.max(0, totalRendered - regularSum);
+  const programComparison = useMemo(() => {
+    const progMap: Record<
+      string,
+      {
+        courseName: string;
+        studentCount: number;
+        totalRendered: number;
+        totalRequired: number;
+      }
+    > = {};
 
-    // Current month utilization %
-    const utilizationRate =
-      totalMonthlyCapacityHours > 0
-        ? Math.min(100, Math.round((totalRendered / totalMonthlyCapacityHours) * 100))
-        : 0;
+    traineeProgressList.forEach((t) => {
+      const c = t.course || 'BSIT';
+      if (!progMap[c]) {
+        progMap[c] = {
+          courseName: c,
+          studentCount: 0,
+          totalRendered: 0,
+          totalRequired: 0,
+        };
+      }
+      progMap[c].studentCount++;
+      progMap[c].totalRendered += t.renderedHours;
+      progMap[c].totalRequired += t.requiredHours;
+    });
 
-    // Previous month comparison
-    const prevMonthDate = new Date(year, month - 1, 1);
-    const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthRecords = allRecords.filter((r) => r.date.startsWith(prevMonthKey));
-    const prevMonthTotal = prevMonthRecords.reduce((s, r) => s + (Number(r.totalHours) || 0), 0);
-
-    let varianceVsLastMonthPct = 0;
-    if (prevMonthTotal > 0) {
-      varianceVsLastMonthPct = parseFloat((((totalRendered - prevMonthTotal) / prevMonthTotal) * 100).toFixed(1));
-    } else if (totalRendered > 0) {
-      varianceVsLastMonthPct = 100;
-    }
-
-    // Variance vs Target Pace (85% benchmark)
-    const targetBenchmarkPct = 85;
-    const varianceVsTarget = utilizationRate - targetBenchmarkPct;
-
-    const overtimeSharePct = totalRendered > 0 ? Math.round((overtimeSum / totalRendered) * 100) : 0;
-
-    return {
-      totalRendered: parseFloat(totalRendered.toFixed(1)),
-      regularHours: parseFloat(regularSum.toFixed(1)),
-      overtimeHours: parseFloat(overtimeSum.toFixed(1)),
-      utilizationRate,
-      targetMonthlyCapacityHours,
-      prevMonthTotal: parseFloat(prevMonthTotal.toFixed(1)),
-      varianceVsLastMonthPct,
-      varianceVsTarget,
-      overtimeSharePct,
-    };
-  }, [records, allRecords, year, month, totalMonthlyCapacityHours]);
+    return Object.values(progMap).map((p) => {
+      const completionRate = p.totalRequired > 0 ? Math.round((p.totalRendered / p.totalRequired) * 100) : 0;
+      const avgHours = p.studentCount > 0 ? Math.round((p.totalRendered / p.studentCount) * 10) / 10 : 0;
+      return {
+        course: p.courseName,
+        studentCount: p.studentCount,
+        totalRendered: Math.round(p.totalRendered * 10) / 10,
+        totalRequired: Math.round(p.totalRequired * 10) / 10,
+        avgHours,
+        completionRate,
+      };
+    }).sort((a, b) => b.studentCount - a.studentCount);
+  }, [traineeProgressList]);
 
   // -------------------------------------------------------------
-  // 6. CALENDAR HEATMAP MATRIX
+  // 8. CALENDAR HEATMAP MATRIX
   // -------------------------------------------------------------
   const heatmapMatrix = useMemo(() => {
     const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = Sunday
-    const cells: (typeof dailyData[0] | null)[] = [];
+    const cells: (typeof dailyAttendanceData[0] | null)[] = [];
 
-    // Prepend null cells for alignment
+    // Prepend empty slots
     for (let i = 0; i < firstDayOfWeek; i++) {
       cells.push(null);
     }
-    // Add all month days
-    dailyData.forEach((dayItem) => {
+    // Add day cells
+    dailyAttendanceData.forEach((dayItem) => {
       cells.push(dayItem);
     });
 
     return cells;
-  }, [dailyData, year, month]);
+  }, [dailyAttendanceData, year, month]);
 
-  const maxDailyHours = useMemo(() => {
-    return Math.max(...dailyData.map((d) => d.totalHours), 1);
-  }, [dailyData]);
+  const maxDailyAttendanceHours = useMemo(() => {
+    return Math.max(...dailyAttendanceData.map((d) => d.totalHours), 1);
+  }, [dailyAttendanceData]);
 
   const getHeatmapColor = (hours: number, isWeekend: boolean) => {
     if (hours === 0) {
-      return isWeekend ? 'bg-slate-100/60 text-slate-400 border-slate-200' : 'bg-slate-100 text-slate-500 border-slate-200';
+      return isWeekend
+        ? 'bg-slate-50 text-slate-400 border-slate-200'
+        : 'bg-slate-100/70 text-slate-500 border-slate-200';
     }
-    const ratio = hours / maxDailyHours;
-    if (ratio < 0.25) return 'bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold';
-    if (ratio < 0.55) return 'bg-emerald-300 text-emerald-950 border-emerald-400 font-bold';
+    const ratio = hours / maxDailyAttendanceHours;
+    if (ratio < 0.25) return 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold';
+    if (ratio < 0.55) return 'bg-emerald-200 text-emerald-950 border-emerald-300 font-bold';
     if (ratio < 0.8) return 'bg-emerald-500 text-white border-emerald-600 font-bold shadow-xs';
     return 'bg-emerald-700 text-white border-emerald-800 font-black shadow-xs ring-1 ring-emerald-300';
   };
 
   return (
-    <div className="space-y-5 bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm font-sans">
-      {/* Header and Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-2xl shadow-sm">
-              <Activity size={18} />
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
-                  OJT Cohort Intelligence &amp; Analytics
-                </h3>
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                  <Sparkles size={11} /> Live Insights
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Comprehensive tracking of student utilization, overtime distributions, rolling pace, and establishment breakdowns for {monthLabel}
-              </p>
+    <div className="space-y-6 bg-white p-5 sm:p-7 rounded-3xl border border-slate-200 shadow-sm font-sans">
+      {/* ------------------------------------------------------------------ */}
+      {/* HEADER SECTION                                                     */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+            <GraduationCap size={24} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                OJT Cohort Progress &amp; Attendance Analytics
+              </h3>
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                <Sparkles size={11} /> Live Progress
+              </span>
             </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Academic requirement tracking (486h standard), student completion status, and partner establishment duty hours for {monthLabel}
+            </p>
           </div>
         </div>
 
-        {/* View Mode Buttons */}
+        {/* View Mode Switcher */}
         <div className="flex items-center gap-1.5 flex-wrap bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200">
           <button
             type="button"
-            onClick={() => setViewMode('overtime_regular')}
+            onClick={() => setViewMode('attendance_trend')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'overtime_regular'
+              viewMode === 'attendance_trend'
                 ? 'bg-white text-blue-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <BarChart3 size={13} />
-            <span>Overtime vs Regular</span>
+            <span>Attendance Trend</span>
           </button>
 
           <button
             type="button"
-            onClick={() => setViewMode('utilization')}
+            onClick={() => setViewMode('trainee_milestones')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'utilization'
-                ? 'bg-white text-emerald-700 shadow-xs'
+              viewMode === 'trainee_milestones'
+                ? 'bg-white text-indigo-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Target size={13} />
-            <span>Utilization % (Target Band)</span>
+            <Award size={13} />
+            <span>Student Milestones</span>
           </button>
 
           <button
@@ -431,7 +493,20 @@ export function AdvancedAnalyticsDashboard({
             }`}
           >
             <Building size={13} />
-            <span>Hours by HTE</span>
+            <span>Partner Companies</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('by_program')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === 'by_program'
+                ? 'bg-white text-teal-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <BookOpen size={13} />
+            <span>Programs (BSIT/BSCS)</span>
           </button>
 
           <button
@@ -439,115 +514,208 @@ export function AdvancedAnalyticsDashboard({
             onClick={() => setViewMode('heatmap')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               viewMode === 'heatmap'
-                ? 'bg-white text-teal-700 shadow-xs'
+                ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Calendar size={13} />
-            <span>Calendar Heatmap</span>
+            <span>Monthly Heatmap</span>
           </button>
         </div>
       </div>
 
-      {/* Variance & KPI Cards Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* KPI 1: Utilization Rate with Target Band Indicator */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/80 to-teal-50/40 border border-emerald-200/80 shadow-2xs">
+      {/* ------------------------------------------------------------------ */}
+      {/* 4 CORE OJT METRIC CARDS (Natural Academic Metrics)                */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Metric 1: Total Rendered vs Required */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/90 to-indigo-50/50 border border-blue-200/90 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider">Utilization %</span>
-            <div className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-              <Target size={14} />
+            <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">Cohort OJT Completion</span>
+            <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+              <GraduationCap size={16} />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-800">{summaryKpis.utilizationRate}%</span>
-            <span className="text-xs text-slate-500 font-medium">of available capacity</span>
+          <div className="mt-2.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-blue-900">{ojtSummary.overallProgressPercent}%</span>
+            <span className="text-xs text-blue-700 font-semibold">of 486h requirement</span>
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px]">
-            <span className="text-slate-600">
-              {summaryKpis.totalRendered}h / {summaryKpis.targetMonthlyCapacityHours}h avail.
-            </span>
-            <span
-              className={`font-bold px-1.5 py-0.2 rounded-md ${
-                summaryKpis.utilizationRate >= 80
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : summaryKpis.utilizationRate >= 60
-                  ? 'bg-amber-100 text-amber-800'
-                  : 'bg-rose-100 text-rose-800'
-              }`}
-            >
-              {summaryKpis.utilizationRate >= 80 ? '✓ In Target Band' : 'Under Pace'}
-            </span>
+          {/* Progress Bar */}
+          <div className="w-full bg-blue-200/70 h-2 rounded-full mt-2.5 overflow-hidden">
+            <div
+              className="bg-blue-600 h-full rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, ojtSummary.overallProgressPercent)}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600">
+            <span>{ojtSummary.totalRendered}h rendered</span>
+            <span className="font-semibold text-slate-800">{ojtSummary.totalRemaining}h remaining</span>
           </div>
         </div>
 
-        {/* KPI 2: Variance vs Last Month */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-50/80 to-indigo-50/40 border border-blue-200/80 shadow-2xs">
+        {/* Metric 2: Average Hours Per Trainee */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/90 to-purple-50/50 border border-indigo-200/90 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">Variance vs Last Mo.</span>
-            <div className="w-7 h-7 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-bold">
-              {summaryKpis.varianceVsLastMonthPct >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            <span className="text-xs font-bold text-indigo-900 uppercase tracking-wider">Average Hours / Student</span>
+            <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+              <Clock size={16} />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span
-              className={`text-2xl font-black ${
-                summaryKpis.varianceVsLastMonthPct >= 0 ? 'text-blue-800' : 'text-rose-700'
-              }`}
-            >
-              {summaryKpis.varianceVsLastMonthPct >= 0 ? `+${summaryKpis.varianceVsLastMonthPct}%` : `${summaryKpis.varianceVsLastMonthPct}%`}
-            </span>
-            <span className="text-xs text-slate-500 font-medium">rendered hours</span>
+          <div className="mt-2.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-indigo-900">{ojtSummary.avgHoursPerTrainee}h</span>
+            <span className="text-xs text-slate-500 font-medium">rendered average</span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-600 truncate">
-            Last month: <span className="font-semibold text-slate-800">{summaryKpis.prevMonthTotal}h</span>
+          <p className="mt-2.5 text-xs text-slate-600">
+            Target: <strong className="text-slate-800">486 hours</strong> per student
           </p>
+          <div className="mt-2 text-[11px] text-indigo-700 font-semibold flex items-center gap-1">
+            <TrendingUp size={12} />
+            <span>{ojtSummary.monthRendered}h logged in {monthLabel}</span>
+          </div>
         </div>
 
-        {/* KPI 3: Regular vs Overtime Breakdown */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/80 to-orange-50/40 border border-amber-200/80 shadow-2xs">
+        {/* Metric 3: Active Trainee Participation */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50/90 to-teal-50/50 border border-emerald-200/90 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">Overtime vs Regular</span>
-            <div className="w-7 h-7 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-              <Zap size={14} />
+            <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider">Active Trainees</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+              <Users size={16} />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-amber-900">{summaryKpis.overtimeHours}h</span>
-            <span className="text-xs font-bold text-amber-700">({summaryKpis.overtimeSharePct}% OT)</span>
+          <div className="mt-2.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-emerald-900">
+              {ojtSummary.activeInMonthCount} / {totalTrainees}
+            </span>
+            <span className="text-xs text-emerald-700 font-bold">({ojtSummary.participationRate}%)</span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-600">
-            Regular duty: <span className="font-semibold text-slate-800">{summaryKpis.regularHours}h</span>
+          <p className="mt-2.5 text-xs text-slate-600">
+            Actively reporting to host companies
           </p>
+          <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between">
+            <span>{totalTrainees - ojtSummary.activeInMonthCount} inactive / pending</span>
+            <span className="font-bold text-emerald-700">Enrolled: {totalTrainees}</span>
+          </div>
         </div>
 
-        {/* KPI 4: 7-Day Rolling Trend Pace */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50/80 to-violet-50/40 border border-purple-200/80 shadow-2xs">
+        {/* Metric 4: Punctuality & Verification Health */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/90 to-orange-50/50 border border-amber-200/90 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-purple-900 uppercase tracking-wider">7-Day Rolling Pace</span>
-            <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center font-bold">
-              <Clock size={14} />
+            <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">Attendance Punctuality</span>
+            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+              <CheckCircle2 size={16} />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-purple-900">
-              {dailyData[dailyData.length - 1]?.rollingAvg7d || 0}h
-            </span>
-            <span className="text-xs text-slate-500 font-medium">per cohort day</span>
+          <div className="mt-2.5 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-amber-900">{ojtSummary.onTimeRate}%</span>
+            <span className="text-xs text-amber-800 font-semibold">on-time arrival rate</span>
           </div>
-          <p className="mt-2 text-[11px] text-slate-600">
-            Target per day: <span className="font-semibold text-slate-800">{standardDailyCapacityHours}h</span>
+          <p className="mt-2.5 text-xs text-slate-600">
+            Geofence Verified: <strong className="text-emerald-700">{ojtSummary.geofenceComplianceRate}%</strong>
           </p>
+          <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between">
+            <span>{ojtSummary.lateCount} late records</span>
+            <span className="font-semibold text-slate-700">{ojtSummary.totalLogs} total logs</span>
+          </div>
         </div>
       </div>
 
-      {/* Main Chart Area */}
+      {/* ------------------------------------------------------------------ */}
+      {/* STUDENT MILESTONE DISTRIBUTION BANNER                             */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <Award size={16} className="text-blue-700" />
+            <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+              Student Requirement Completion Stages
+            </span>
+          </div>
+          <span className="text-xs text-slate-500">
+            Curriculum Standard: <strong>486 Hours</strong> per Trainee
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Stage 1: Completed */}
+          <div className="bg-white p-3 rounded-xl border border-emerald-200 shadow-2xs flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              <CheckCircle size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-black text-emerald-700">{milestoneCounts.completed}</span>
+                <span className="text-[11px] text-slate-500">students</span>
+              </div>
+              <p className="text-[11px] font-bold text-slate-700 truncate">Completed (100%)</p>
+              <p className="text-[10px] text-emerald-600">486+ hours reached</p>
+            </div>
+          </div>
+
+          {/* Stage 2: Near Completion */}
+          <div className="bg-white p-3 rounded-xl border border-blue-200 shadow-2xs flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <TrendingUp size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-black text-blue-700">{milestoneCounts.near_completion}</span>
+                <span className="text-[11px] text-slate-500">students</span>
+              </div>
+              <p className="text-[11px] font-bold text-slate-700 truncate">Near Completion (75–99%)</p>
+              <p className="text-[10px] text-blue-600">365–485 hours</p>
+            </div>
+          </div>
+
+          {/* Stage 3: In Progress */}
+          <div className="bg-white p-3 rounded-xl border border-indigo-200 shadow-2xs flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+              <Clock size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-black text-indigo-700">{milestoneCounts.in_progress}</span>
+                <span className="text-[11px] text-slate-500">students</span>
+              </div>
+              <p className="text-[11px] font-bold text-slate-700 truncate">In Progress (25–74%)</p>
+              <p className="text-[10px] text-indigo-600">120–364 hours</p>
+            </div>
+          </div>
+
+          {/* Stage 4: Just Started / Behind */}
+          <div className="bg-white p-3 rounded-xl border border-amber-200 shadow-2xs flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+              <AlertCircle size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-lg font-black text-amber-700">{milestoneCounts.just_started}</span>
+                <span className="text-[11px] text-slate-500">students</span>
+              </div>
+              <p className="text-[11px] font-bold text-slate-700 truncate">Just Started (&lt;25%)</p>
+              <p className="text-[10px] text-amber-600">&lt;120 hours / 0 hours</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* MAIN VIEW CONTROLS & CHARTS                                        */}
+      {/* ------------------------------------------------------------------ */}
       <div className="space-y-4">
-        {/* Sub-toolbar when viewing Time Breakdown (Daily / Weekly / Monthly) */}
-        {(viewMode === 'overtime_regular' || viewMode === 'utilization') && (
-          <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-700">Aggregation Level:</span>
+        {/* VIEW 1: ATTENDANCE TREND (Daily / Weekly / Monthly) */}
+        {viewMode === 'attendance_trend' && (
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <div>
+                <h4 className="text-sm font-bold text-slate-800">
+                  Internship Attendance &amp; Rendered Hours Over Time
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Daily breakdown of student work hours rendered and student attendance volume
+                </p>
+              </div>
+
+              {/* Granularity Selector */}
               <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200">
                 <button
                   type="button"
@@ -558,7 +726,7 @@ export function AdvancedAnalyticsDashboard({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Daily (with 7-Day Rolling Trend)
+                  Daily Breakdown
                 </button>
                 <button
                   type="button"
@@ -580,234 +748,219 @@ export function AdvancedAnalyticsDashboard({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  6-Month Comparison
+                  6-Month Trend
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 text-xs text-slate-500">
-              {viewMode === 'overtime_regular' && (
-                <>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                    Regular Hours (≤8h/day)
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    Overtime Hours (&gt;8h)
-                  </span>
-                  <span className="flex items-center gap-1.5 text-rose-600 font-semibold">
-                    <span className="w-3.5 h-0.5 border-t-2 border-dashed border-rose-500" />
-                    Capacity Target
-                  </span>
-                  {timeGranularity === 'daily' && (
-                    <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                      <span className="w-3.5 h-0.5 bg-emerald-600" />
-                      7-Day Rolling Avg
-                    </span>
-                  )}
-                </>
-              )}
-              {viewMode === 'utilization' && (
-                <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                  <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-400" />
-                  Target Band (80%–100%)
-                </span>
-              )}
+            {/* Chart Area */}
+            <div className="h-80 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                {timeGranularity === 'daily' ? (
+                  <ComposedChart data={dailyAttendanceData} margin={{ top: 15, right: 15, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickFormatter={(val) => `D${val}`}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      unit="h"
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 11, fill: '#10b981' }}
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '16px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                        fontSize: '12px',
+                      }}
+                      formatter={(val: any, name: any) => [
+                        name.includes('Students') ? `${val} students` : `${val} hrs`,
+                        name,
+                      ]}
+                      labelFormatter={(label) => `Day ${label} of ${monthLabel}`}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="totalHours"
+                      name="Hours Rendered"
+                      fill="#3b82f6"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={24}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="studentCount"
+                      name="Students Present"
+                      stroke="#10b981"
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: '#10b981' }}
+                    />
+                  </ComposedChart>
+                ) : timeGranularity === 'weekly' ? (
+                  <BarChart data={weeklyAttendanceData} margin={{ top: 15, right: 15, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '16px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                      }}
+                      formatter={(val: any, name: any, item: any) => [
+                        `${val} hrs (Peak: ${item.payload.studentCount} students)`,
+                        'Total Hours Rendered',
+                      ]}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                    <Bar dataKey="totalHours" name="Weekly Rendered Hours" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                ) : (
+                  <BarChart data={monthlyTrendData} margin={{ top: 15, right: 15, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '16px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                      }}
+                      formatter={(val: any, name: any, item: any) => [
+                        `${val} hrs (${item.payload.activeStudents} active students)`,
+                        'Rendered Hours',
+                      ]}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                    <Bar dataKey="totalHours" name="Monthly Total Hours" fill="#0d9488" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
             </div>
           </div>
         )}
 
-        {/* 1. OVERTIME VS REGULAR HOURS (Stacked Bars + 7-Day Rolling Line + Capacity Line) */}
-        {viewMode === 'overtime_regular' && (
-          <div className="h-80 w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              {timeGranularity === 'daily' ? (
-                <ComposedChart data={dailyData} margin={{ top: 15, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                    tickFormatter={(val) => `D${val}`}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                    unit="h"
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '16px',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-                      fontSize: '12px',
-                    }}
-                    formatter={(val: any, name: any) => [`${val} hrs`, name]}
-                    labelFormatter={(label) => `Day ${label} of ${monthLabel}`}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <ReferenceLine
-                    y={standardDailyCapacityHours}
-                    stroke="#ef4444"
-                    strokeDasharray="4 4"
-                    strokeWidth={2}
-                    label={{ value: `Capacity (${standardDailyCapacityHours}h/day)`, position: 'top', fill: '#dc2626', fontSize: 10, fontWeight: 700 }}
-                  />
-                  <Bar
-                    dataKey="regularHours"
-                    name="Regular Duty Hours"
-                    stackId="hours"
-                    fill="#3b82f6"
-                    radius={[0, 0, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="overtimeHours"
-                    name="Overtime Hours"
-                    stackId="hours"
-                    fill="#f59e0b"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="rollingAvg7d"
-                    name="7-Day Rolling Average"
-                    stroke="#10b981"
-                    strokeWidth={2.5}
-                    dot={false}
-                  />
-                </ComposedChart>
-              ) : timeGranularity === 'weekly' ? (
-                <BarChart data={weeklyData} margin={{ top: 15, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '16px',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-                    }}
-                    formatter={(val: any, name: any) => [`${val} hrs`, name]}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <ReferenceLine
-                    y={activeTraineeCount * 40}
-                    stroke="#ef4444"
-                    strokeDasharray="4 4"
-                    strokeWidth={2}
-                    label={{ value: `Weekly Capacity (${activeTraineeCount * 40}h)`, position: 'top', fill: '#dc2626', fontSize: 10, fontWeight: 700 }}
-                  />
-                  <Bar dataKey="regularHours" name="Regular Hours" stackId="w" fill="#3b82f6" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="overtimeHours" name="Overtime Hours" stackId="w" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              ) : (
-                <BarChart data={monthlyHistoricalData} margin={{ top: 15, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="monthLabel" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '16px',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-                    }}
-                    formatter={(val: any, name: any) => [`${val} hrs`, name]}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <ReferenceLine
-                    y={activeTraineeCount * 22 * 8}
-                    stroke="#ef4444"
-                    strokeDasharray="4 4"
-                    strokeWidth={2}
-                    label={{ value: `Monthly Capacity (${activeTraineeCount * 22 * 8}h)`, position: 'top', fill: '#dc2626', fontSize: 10, fontWeight: 700 }}
-                  />
-                  <Bar dataKey="regularHours" name="Regular Hours" stackId="m" fill="#3b82f6" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="overtimeHours" name="Overtime Hours" stackId="m" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              )}
-            </ResponsiveContainer>
+        {/* VIEW 2: TRAINEE MILESTONES & PROGRESS LEADERBOARD */}
+        {viewMode === 'trainee_milestones' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>
+                Individual student progress toward the required <strong>486 hours</strong>
+              </span>
+              <span className="font-semibold text-slate-700">
+                Showing top trainees by hours completed
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
+              {traineeProgressList.map((t) => (
+                <div
+                  key={t.id}
+                  className="p-3.5 rounded-2xl border border-slate-200/90 bg-slate-50/50 hover:bg-white hover:shadow-xs transition-all"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h5 className="text-sm font-bold text-slate-900 truncate">{t.name}</h5>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {t.course} • {t.companyName}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                        t.milestone === 'completed'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : t.milestone === 'near_completion'
+                          ? 'bg-blue-100 text-blue-800'
+                          : t.milestone === 'in_progress'
+                          ? 'bg-indigo-100 text-indigo-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {t.milestone === 'completed'
+                        ? 'Completed'
+                        : t.milestone === 'near_completion'
+                        ? 'Near Completion'
+                        : t.milestone === 'in_progress'
+                        ? 'In Progress'
+                        : 'Just Started'}
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="mt-3">
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="font-bold text-slate-700">{t.renderedHours} hrs rendered</span>
+                      <span className="text-slate-500">{t.progressPercent}% of {t.requiredHours}h</span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          t.milestone === 'completed'
+                            ? 'bg-emerald-500'
+                            : t.milestone === 'near_completion'
+                            ? 'bg-blue-600'
+                            : t.milestone === 'in_progress'
+                            ? 'bg-indigo-600'
+                            : 'bg-amber-500'
+                        }`}
+                        style={{ width: `${t.progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-500">
+                    <span>This month: <strong>{t.thisMonthHours}h</strong></span>
+                    <span>Remaining: <strong>{t.remainingHours}h</strong></span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* 2. UTILIZATION % (0-100% AXIS with 80-100% TARGET BAND) */}
-        {viewMode === 'utilization' && (
-          <div className="h-80 w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={timeGranularity === 'daily' ? dailyData : timeGranularity === 'weekly' ? weeklyData : monthlyHistoricalData}
-                margin={{ top: 15, right: 15, left: -10, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                  dataKey={timeGranularity === 'daily' ? 'day' : timeGranularity === 'weekly' ? 'week' : 'monthLabel'}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickLine={false}
-                  tickFormatter={timeGranularity === 'daily' ? (v) => `D${v}` : undefined}
-                />
-                <YAxis
-                  domain={[0, 120]}
-                  ticks={[0, 20, 40, 60, 80, 100, 120]}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickLine={false}
-                  unit="%"
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#ffffff',
-                    borderRadius: '16px',
-                    border: '1px solid #e2e8f0',
-                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-                    fontSize: '12px',
-                  }}
-                  formatter={(val: any) => [`${val}%`, 'Utilization Rate']}
-                />
-                {/* 80% to 100% Target Band */}
-                <ReferenceArea y1={80} y2={100} fill="#10b981" fillOpacity={0.12} stroke="#10b981" strokeDasharray="2 2" />
-                <ReferenceLine y={85} stroke="#059669" strokeDasharray="3 3" label={{ value: 'Target 85%', position: 'insideTopRight', fill: '#059669', fontSize: 11 }} />
-                <Bar
-                  dataKey="utilizationPct"
-                  name="Utilization %"
-                  fill="#0d9488"
-                  radius={[6, 6, 0, 0]}
-                  maxBarSize={timeGranularity === 'daily' ? 18 : 36}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="utilizationPct"
-                  name="Utilization Trend"
-                  stroke="#0f766e"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#0f766e' }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* 3. STACKED BARS BY HTE / TEAM / CLIENT */}
+        {/* VIEW 3: BY HOST TRAINING ESTABLISHMENT (HTE) */}
         {viewMode === 'by_hte' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Top Host Training Establishments (HTE) by Rendered Hours</span>
-              <span className="font-semibold text-slate-700">Showing {hteBreakdownData.length} active stations</span>
+              <span>Top Host Training Establishments (Partner Companies) by Student Rendered Hours</span>
+              <span className="font-semibold text-slate-700">Showing {hteLeaderboard.length} active stations</span>
             </div>
 
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hteBreakdownData} layout="vertical" margin={{ top: 5, right: 20, left: 40, bottom: 5 }}>
+                <BarChart
+                  data={hteLeaderboard}
+                  layout="vertical"
+                  margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} unit="h" />
                   <YAxis
                     dataKey="shortName"
                     type="category"
                     tick={{ fontSize: 11, fill: '#334155', fontWeight: 600 }}
-                    width={120}
+                    width={130}
                     tickLine={false}
                   />
                   <Tooltip
@@ -819,34 +972,106 @@ export function AdvancedAnalyticsDashboard({
                       fontSize: '12px',
                     }}
                     formatter={(val: any, name: any, item: any) => [
-                      `${val} hrs (${item.payload.traineeCount} trainees)`,
-                      name,
+                      `${val} hrs total (${item.payload.studentCount} students • avg ${item.payload.avgHoursPerStudent}h/student)`,
+                      'Total Rendered Hours',
                     ]}
                   />
                   <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                  <Bar dataKey="regularHours" name="Regular Hours" stackId="hte" fill="#6366f1" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="overtimeHours" name="Overtime Hours" stackId="hte" fill="#f59e0b" radius={[0, 6, 6, 0]} />
+                  <Bar dataKey="totalHours" name="Total Hours Rendered" fill="#6366f1" radius={[0, 8, 8, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
         )}
 
-        {/* 4. CALENDAR HEATMAP */}
+        {/* VIEW 4: BY ACADEMIC PROGRAM (BSIT vs BSCS) */}
+        {viewMode === 'by_program' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Comparison across Academic Programs / Departments</span>
+              <span className="font-semibold text-slate-700">{programComparison.length} Programs Tracked</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {programComparison.map((prog) => (
+                <div
+                  key={prog.course}
+                  className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-white border border-slate-200 shadow-2xs space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-base font-extrabold text-slate-900">{prog.course}</span>
+                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      {prog.studentCount} Students
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-slate-500">Curriculum Completion</span>
+                      <span className="font-bold text-slate-800">{prog.completionRate}%</span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${prog.completionRate}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <div>
+                      <p className="text-[10px] text-slate-400">Total Rendered</p>
+                      <p className="font-bold text-slate-800">{prog.totalRendered} hrs</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400">Avg per Student</p>
+                      <p className="font-bold text-indigo-700">{prog.avgHours} hrs</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="h-64 w-full pt-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={programComparison} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="course" tick={{ fontSize: 12, fill: '#475569', fontWeight: 600 }} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} unit="h" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#ffffff',
+                      borderRadius: '16px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                      fontSize: '12px',
+                    }}
+                    formatter={(val: any, name: any) => [`${val} hrs`, name]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Bar dataKey="avgHours" name="Average Hours per Student" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="totalRendered" name="Total Program Hours" fill="#0d9488" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 5: CALENDAR ATTENDANCE HEATMAP */}
         {viewMode === 'heatmap' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-600 font-medium">
-                Day-of-week intensity matrix for <span className="font-bold text-slate-900">{monthLabel}</span>
+                Daily attendance intensity for <span className="font-bold text-slate-900">{monthLabel}</span>
               </span>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <span>Low</span>
+                <span>0 hrs</span>
                 <span className="w-3.5 h-3.5 rounded bg-slate-100 border border-slate-200" />
                 <span className="w-3.5 h-3.5 rounded bg-emerald-100 border border-emerald-300" />
-                <span className="w-3.5 h-3.5 rounded bg-emerald-300 border border-emerald-400" />
+                <span className="w-3.5 h-3.5 rounded bg-emerald-200 border border-emerald-400" />
                 <span className="w-3.5 h-3.5 rounded bg-emerald-500 border border-emerald-600" />
                 <span className="w-3.5 h-3.5 rounded bg-emerald-700 border border-emerald-800" />
-                <span>High</span>
+                <span>Peak</span>
               </div>
             </div>
 
@@ -880,13 +1105,19 @@ export function AdvancedAnalyticsDashboard({
                     <div className="flex justify-between items-center text-[10px]">
                       <span>{cell.day}</span>
                       {cell.lateCount > 0 && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 ring-1 ring-white" title={`${cell.lateCount} late`} />
+                        <span
+                          className="w-2 h-2 rounded-full bg-amber-400 ring-1 ring-white"
+                          title={`${cell.lateCount} late arrivals`}
+                        />
                       )}
                     </div>
 
                     <div className="text-right">
                       {cell.totalHours > 0 ? (
-                        <span className="text-xs tracking-tight">{cell.totalHours}h</span>
+                        <div>
+                          <div className="text-xs font-black tracking-tight">{cell.totalHours}h</div>
+                          <div className="text-[9px] opacity-80">{cell.studentCount} std</div>
+                        </div>
                       ) : (
                         <span className="text-[10px] opacity-40">—</span>
                       )}
@@ -905,20 +1136,19 @@ export function AdvancedAnalyticsDashboard({
                       {hoveredCalendarDay.weekdayShort}, {hoveredCalendarDay.dateStr}:
                     </span>
                     <span>
-                      <strong className="text-blue-700">{hoveredCalendarDay.totalHours} hrs rendered</strong> (Regular: {hoveredCalendarDay.regularHours}h • Overtime: {hoveredCalendarDay.overtimeHours}h)
+                      <strong className="text-blue-700">{hoveredCalendarDay.totalHours} hrs rendered</strong> across {hoveredCalendarDay.studentCount} students
                     </span>
                   </div>
                   <div className="flex items-center gap-3 text-slate-600">
-                    <span>{hoveredCalendarDay.presentCount} Trainees Present</span>
+                    <span className="font-semibold text-emerald-700">{hoveredCalendarDay.presentCount} Present</span>
                     {hoveredCalendarDay.lateCount > 0 && (
                       <span className="text-amber-700 font-bold">{hoveredCalendarDay.lateCount} Late</span>
                     )}
-                    <span>{hoveredCalendarDay.utilizationPct}% Utilization</span>
                   </div>
                 </>
               ) : (
                 <span className="text-slate-400 italic flex items-center gap-1.5">
-                  <Info size={13} /> Hover over any calendar day to inspect detailed hours, presence, and overtime.
+                  <Info size={13} /> Hover over any calendar day to inspect hours rendered, student headcount, and late arrivals.
                 </span>
               )}
             </div>
