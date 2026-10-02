@@ -46,9 +46,19 @@ export default function OAuthCallback() {
 
         let session: any = null;
 
-        // 2. PKCE Authorization Code grant (?code=...)
+        // 2. Immediate check: supabase-js auto-detects code/hash on initialization
+        try {
+          const { data: storedSession } = await supabase.auth.getSession();
+          if (storedSession?.session) {
+            session = storedSession.session;
+          }
+        } catch (getSessErr) {
+          console.warn('Initial getSession error:', getSessErr);
+        }
+
+        // 3. PKCE Authorization Code grant (?code=...) if not already resolved by SDK
         const code = searchParams.get('code');
-        if (code) {
+        if (!session && code) {
           setStatusMessage('Exchanging authorization code...');
           try {
             const { data: codeData, error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
@@ -60,7 +70,7 @@ export default function OAuthCallback() {
           }
         }
 
-        // 3. Implicit grant hash fragment (#access_token=...&refresh_token=...)
+        // 4. Implicit grant hash fragment (#access_token=...&refresh_token=...)
         if (!session) {
           const accessToken = hashParams.get('access_token');
           const refreshToken = hashParams.get('refresh_token');
@@ -80,19 +90,6 @@ export default function OAuthCallback() {
           }
         }
 
-        // 4. Fallback to existing Supabase session in storage
-        if (!session) {
-          setStatusMessage('Checking active session...');
-          try {
-            const { data: storedSession } = await supabase.auth.getSession();
-            if (storedSession?.session) {
-              session = storedSession.session;
-            }
-          } catch (getSessErr) {
-            console.warn('getSession error:', getSessErr);
-          }
-        }
-
         // 5. Direct localStorage scan for Supabase auth token
         if (!session && typeof window !== 'undefined') {
           for (let i = 0; i < localStorage.length; i++) {
@@ -109,7 +106,7 @@ export default function OAuthCallback() {
           }
         }
 
-        // 6. Wait briefly for onAuthStateChange in case background exchange is finishing
+        // 6. Fast listener for onAuthStateChange if background exchange is in-flight
         if (!session) {
           session = await new Promise((resolve) => {
             let done = false;
@@ -127,7 +124,7 @@ export default function OAuthCallback() {
                 authListener?.subscription?.unsubscribe();
                 resolve(null);
               }
-            }, 3000);
+            }, 1000);
           });
         }
 

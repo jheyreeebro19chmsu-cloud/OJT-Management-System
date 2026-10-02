@@ -41,6 +41,13 @@ export function Login() {
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
+  useEffect(() => {
+    // Pre-warm Supabase connection so TLS handshake and GoTrue container are warm
+    if (isSupabaseConfigured()) {
+      supabase.auth.getSession().catch(() => {});
+    }
+  }, []);
+
   const handleGoogleSignInWithRole = async (targetRole: 'trainee' | 'admin' | 'hte') => {
     setError('');
     setGoogleLoading(true);
@@ -63,7 +70,6 @@ export function Login() {
           redirectTo: `${redirectOrigin}/oauth-callback`,
           queryParams: {
             prompt: 'select_account',
-            access_type: 'offline',
           },
         },
       });

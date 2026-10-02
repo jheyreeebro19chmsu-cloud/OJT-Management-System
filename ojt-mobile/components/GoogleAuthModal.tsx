@@ -56,7 +56,6 @@ export default function GoogleAuthModal({
               redirectTo: `${origin}/oauth-callback`,
               queryParams: {
                 prompt: 'select_account',
-                access_type: 'offline',
               },
             },
           });
@@ -70,7 +69,6 @@ export default function GoogleAuthModal({
             redirectTo: REDIRECT_URI,
             queryParams: {
               prompt: 'select_account',
-              access_type: 'offline',
             },
           },
         });

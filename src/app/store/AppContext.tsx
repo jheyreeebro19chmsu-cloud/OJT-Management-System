@@ -1725,63 +1725,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    // Step 2: Supabase DB check if not found in memory/storage
+    // Step 2: Supabase DB check if not found in memory/storage (parallelized for maximum speed)
     if (useSupabase && !matchedEmp && !matchedHost) {
       try {
+        const promises: Promise<any>[] = [];
         if (authEmail) {
-          const { data: dbEmp, error: empErr } = await supabase
-            .from('employees')
-            .select('*')
-            .ilike('email', authEmail)
-            .limit(1)
-            .maybeSingle();
-
-          if (!empErr && dbEmp) {
-            matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
-            setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
-            saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
-          }
+          promises.push(supabase.from('employees').select('*').ilike('email', authEmail).limit(1));
+        } else {
+          promises.push(Promise.resolve({ data: null, error: null }));
         }
 
-        if (!matchedEmp && authId) {
-          const { data: dbEmpId, error: empIdErr } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('id', authId)
-            .limit(1)
-            .maybeSingle();
-
-          if (!empIdErr && dbEmpId) {
-            matchedEmp = supabaseService.transformSupabaseEmployee(dbEmpId);
-            setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
-            saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
-          }
+        if (authId) {
+          promises.push(supabase.from('employees').select('*').eq('id', authId).limit(1));
+        } else {
+          promises.push(Promise.resolve({ data: null, error: null }));
         }
 
-        if (!matchedEmp && authEmail) {
-          const { data: dbHost, error: hostErr } = await supabase
-            .from('host_supervisors')
-            .select('*')
-            .ilike('email', authEmail)
-            .limit(1)
-            .maybeSingle();
+        if (authEmail) {
+          promises.push(supabase.from('host_supervisors').select('*').ilike('email', authEmail).limit(1));
+        } else {
+          promises.push(Promise.resolve({ data: null, error: null }));
+        }
 
-          if (!hostErr && dbHost) {
-            matchedHost = {
-              id: dbHost.id,
-              employeeId: dbHost.employee_id,
-              name: dbHost.name,
-              email: dbHost.email,
-              companyName: dbHost.company_name,
-              companyAddress: dbHost.company_address,
-              contactPerson: dbHost.contact_person,
-              phone: dbHost.phone,
-              academicYear: dbHost.academic_year,
-              isApproved: dbHost.is_approved ?? true,
-              active: dbHost.active ?? true,
-            };
-            setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
-          }
+        const [empEmailRes, empIdRes, hostEmailRes] = await Promise.allSettled(promises);
+
+        const rawEmpEmail = empEmailRes.status === 'fulfilled' ? empEmailRes.value?.data?.[0] : null;
+        const rawEmpId = empIdRes.status === 'fulfilled' ? empIdRes.value?.data?.[0] : null;
+        const rawHostEmail = hostEmailRes.status === 'fulfilled' ? hostEmailRes.value?.data?.[0] : null;
+
+        const dbEmp = rawEmpEmail || rawEmpId;
+        if (dbEmp) {
+          matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
+          setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+          saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
+        } else if (rawHostEmail) {
+          matchedHost = {
+            id: rawHostEmail.id,
+            employeeId: rawHostEmail.employee_id,
+            name: rawHostEmail.name,
+            email: rawHostEmail.email,
+            companyName: rawHostEmail.company_name,
+            companyAddress: rawHostEmail.company_address,
+            contactPerson: rawHostEmail.contact_person,
+            phone: rawHostEmail.phone,
+            academicYear: rawHostEmail.academic_year,
+            isApproved: rawHostEmail.is_approved ?? true,
+            active: rawHostEmail.active ?? true,
+          };
+          setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
         }
       } catch (lookupErr) {
         console.warn('OAuth database lookup notice:', lookupErr);
