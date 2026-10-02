@@ -518,6 +518,118 @@ export function Register() {
         setRole('trainee');
       }
 
+      // Check if user with this OAuth email ALREADY exists in the system
+      if (oauthEmail) {
+        const cleanOauthEmail = oauthEmail.trim().toLowerCase();
+        const existingEmp = employees.find((e) => (e.email || '').trim().toLowerCase() === cleanOauthEmail);
+        const existingHost = hostSupervisors.find((hs) => (hs.email || '').trim().toLowerCase() === cleanOauthEmail);
+
+        if (existingEmp) {
+          const isInst =
+            existingEmp.role === 'admin' ||
+            existingEmp.position?.toLowerCase().includes('instructor') ||
+            existingEmp.position?.toLowerCase().includes('admin');
+          const isHte =
+            existingEmp.role === 'hte' ||
+            existingEmp.position?.toLowerCase().includes('hte');
+          const userRole: AuthUser['role'] = isInst ? 'admin' : isHte ? 'hte' : 'employee';
+          const resolvedUser: AuthUser = {
+            id: existingEmp.id,
+            name: existingEmp.name,
+            email: existingEmp.email,
+            role: userRole,
+            photo: existingEmp.photo || oauthPhoto || '',
+            employeeId: existingEmp.employeeId || existingEmp.id,
+            faceRegistered: Boolean(existingEmp.faceRegistered),
+          };
+          setCurrentUser(resolvedUser);
+          localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
+          localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
+          if (userRole === 'hte') localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
+          localStorage.removeItem('pending_oauth_role');
+          localStorage.removeItem('oauth_email');
+          localStorage.removeItem('oauth_name');
+          localStorage.removeItem('oauth_given_name');
+          localStorage.removeItem('oauth_family_name');
+          localStorage.removeItem('oauth_photo');
+          localStorage.removeItem('oauth_user_id');
+          toast.success(`Welcome back, ${existingEmp.name}! Signing you in...`);
+          navigate(userRole === 'admin' ? '/admin' : userRole === 'hte' ? '/hte' : '/app', { replace: true });
+          return;
+        }
+
+        if (existingHost) {
+          const resolvedHost: AuthUser = {
+            id: existingHost.id,
+            name: existingHost.name,
+            email: existingHost.email,
+            role: 'hte',
+            photo: oauthPhoto || '',
+            employeeId: existingHost.employeeId || existingHost.id,
+            faceRegistered: false,
+          };
+          setCurrentUser(resolvedHost);
+          localStorage.setItem('ojt_user', JSON.stringify(resolvedHost));
+          localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedHost));
+          localStorage.setItem('ojt_current_user', JSON.stringify(resolvedHost));
+          localStorage.removeItem('pending_oauth_role');
+          localStorage.removeItem('oauth_email');
+          localStorage.removeItem('oauth_name');
+          localStorage.removeItem('oauth_given_name');
+          localStorage.removeItem('oauth_family_name');
+          localStorage.removeItem('oauth_photo');
+          localStorage.removeItem('oauth_user_id');
+          toast.success(`Welcome back, ${existingHost.name}! Signing you in...`);
+          navigate('/hte', { replace: true });
+          return;
+        }
+
+        // Also check Supabase directly in case in-memory employees list is still loading
+        if (isSupabaseConfigured()) {
+          supabase
+            .from('employees')
+            .select('*')
+            .ilike('email', cleanOauthEmail)
+            .limit(1)
+            .then(({ data: dbEmps }) => {
+              if (dbEmps && dbEmps.length > 0) {
+                const dbEmp = dbEmps[0];
+                const isInst =
+                  dbEmp.role === 'admin' ||
+                  dbEmp.position === 'OJT Instructor' ||
+                  (dbEmp.position && (dbEmp.position.toLowerCase().includes('instructor') || dbEmp.position.toLowerCase().includes('admin')));
+                const isHte =
+                  dbEmp.role === 'hte' ||
+                  (dbEmp.position && dbEmp.position.toLowerCase().includes('hte'));
+                const userRole: AuthUser['role'] = isInst ? 'admin' : isHte ? 'hte' : 'employee';
+                const resolvedUser: AuthUser = {
+                  id: dbEmp.id,
+                  name: dbEmp.name,
+                  email: dbEmp.email,
+                  role: userRole,
+                  photo: dbEmp.photo || oauthPhoto || '',
+                  employeeId: dbEmp.employee_id || dbEmp.id,
+                  faceRegistered: Boolean(dbEmp.face_registered),
+                };
+                setCurrentUser(resolvedUser);
+                localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
+                localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
+                if (userRole === 'hte') localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
+                localStorage.removeItem('pending_oauth_role');
+                localStorage.removeItem('oauth_email');
+                localStorage.removeItem('oauth_name');
+                localStorage.removeItem('oauth_given_name');
+                localStorage.removeItem('oauth_family_name');
+                localStorage.removeItem('oauth_photo');
+                localStorage.removeItem('oauth_user_id');
+                toast.success(`Welcome back, ${dbEmp.name}! Signing you in...`);
+                navigate(userRole === 'admin' ? '/admin' : userRole === 'hte' ? '/hte' : '/app', { replace: true });
+              }
+            })
+            .catch(console.warn);
+        }
+      }
+
       if (oauthEmail || oauthName || oauthGivenName || oauthFamilyName) {
         setOauthPending(true);
         if (oauthEmail) update('email', oauthEmail);
@@ -548,7 +660,7 @@ export function Register() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [employees, hostSupervisors, navigate, setCurrentUser]);
 
   // Automatically capture real-time GPS location for all roles (trainees, admin, hte)
   useEffect(() => {

@@ -7,7 +7,7 @@ import { User } from '../types';
 
 export default function OAuthCallback() {
   const navigate = useNavigate();
-  const { setCurrentUser } = useApp();
+  const { setCurrentUser, loginWithOAuthUser, employees, hostSupervisors } = useApp();
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('Verifying Google credentials...');
   const [isSuccess, setIsSuccess] = useState(false);
@@ -17,10 +17,10 @@ export default function OAuthCallback() {
     if (hasProcessedRef.current) return;
     hasProcessedRef.current = true;
 
-    // Safety watchdog: after 8 seconds, if still loading, provide user control
+    // Safety watchdog: after 15 seconds, if still loading, provide user control
     const watchdogTimer = setTimeout(() => {
       setError((prev) => prev || 'Sign in took longer than expected. Please select an option below to proceed.');
-    }, 8000);
+    }, 15000);
 
     const processOAuth = async () => {
       try {
@@ -154,65 +154,92 @@ export default function OAuthCallback() {
 
         setStatusMessage('Checking system records for your account...');
 
-        // 7. Check if user already exists in the system (database or local storage)
+        // ── 7A. First priority: Check with AppContext loginWithOAuthUser ──
+        if (typeof loginWithOAuthUser === 'function') {
+          try {
+            const loggedInUser = await loginWithOAuthUser(authUser, pendingRole as any);
+            if (loggedInUser) {
+              clearTimeout(watchdogTimer);
+              setIsSuccess(true);
+              setStatusMessage(`Welcome back, ${loggedInUser.name}! Signing you in...`);
+              localStorage.removeItem('pending_oauth_role');
+              localStorage.removeItem('oauth_email');
+              localStorage.removeItem('oauth_name');
+              localStorage.removeItem('oauth_given_name');
+              localStorage.removeItem('oauth_family_name');
+              localStorage.removeItem('oauth_photo');
+              localStorage.removeItem('oauth_user_id');
+              const targetPath = loggedInUser.role === 'admin' ? '/admin' : loggedInUser.role === 'hte' ? '/hte' : '/app';
+              setTimeout(() => navigate(targetPath, { replace: true }), 300);
+              return;
+            }
+          } catch (hookErr) {
+            console.warn('loginWithOAuthUser check notice:', hookErr);
+          }
+        }
+
+        // ── 7B. Direct Supabase lookup by email, id, or user_id ──
         let dbEmp: any = null;
         let dbHost: any = null;
 
         if (isSupabaseConfigured() && email) {
           try {
             const cleanEmail = email.trim().toLowerCase();
-            const [empByIdRes, empByEmailRes, hostByIdRes, hostByEmailRes] = await Promise.allSettled([
-              Promise.race([
-                supabase
-                  .from('employees')
-                  .select('id, name, employee_id, email, position, photo, face_registered')
-                  .eq('id', authUser.id)
-                  .maybeSingle(),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
-              ]),
-              Promise.race([
-                supabase
-                  .from('employees')
-                  .select('id, name, employee_id, email, position, photo, face_registered')
-                  .ilike('email', cleanEmail)
-                  .maybeSingle(),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
-              ]),
-              Promise.race([
-                supabase
-                  .from('host_supervisors')
-                  .select('id, name, email, position, company_name')
-                  .eq('id', authUser.id)
-                  .maybeSingle(),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
-              ]),
-              Promise.race([
-                supabase
-                  .from('host_supervisors')
-                  .select('id, name, email, position, company_name')
-                  .ilike('email', cleanEmail)
-                  .maybeSingle(),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
-              ]),
+            const [empByEmailRes, empByIdRes, empByUserIdRes, hostByEmailRes, hostByIdRes] = await Promise.allSettled([
+              supabase.from('employees').select('*').ilike('email', cleanEmail).limit(1),
+              supabase.from('employees').select('*').eq('id', authUser.id).limit(1),
+              supabase.from('employees').select('*').eq('user_id', authUser.id).limit(1),
+              supabase.from('host_supervisors').select('*').ilike('email', cleanEmail).limit(1),
+              supabase.from('host_supervisors').select('*').eq('id', authUser.id).limit(1),
             ]);
 
-            if (empByIdRes.status === 'fulfilled' && (empByIdRes.value as any)?.data) {
-              dbEmp = (empByIdRes.value as any).data;
-            } else if (empByEmailRes.status === 'fulfilled' && (empByEmailRes.value as any)?.data) {
-              dbEmp = (empByEmailRes.value as any).data;
+            if (empByEmailRes.status === 'fulfilled' && empByEmailRes.value.data?.[0]) {
+              dbEmp = empByEmailRes.value.data[0];
+            } else if (empByIdRes.status === 'fulfilled' && empByIdRes.value.data?.[0]) {
+              dbEmp = empByIdRes.value.data[0];
+            } else if (empByUserIdRes.status === 'fulfilled' && empByUserIdRes.value.data?.[0]) {
+              dbEmp = empByUserIdRes.value.data[0];
             }
 
-            if (hostByIdRes.status === 'fulfilled' && (hostByIdRes.value as any)?.data) {
-              dbHost = (hostByIdRes.value as any).data;
-            } else if (hostByEmailRes.status === 'fulfilled' && (hostByEmailRes.value as any)?.data) {
-              dbHost = (hostByEmailRes.value as any).data;
+            if (hostByEmailRes.status === 'fulfilled' && hostByEmailRes.value.data?.[0]) {
+              dbHost = hostByEmailRes.value.data[0];
+            } else if (hostByIdRes.status === 'fulfilled' && hostByIdRes.value.data?.[0]) {
+              dbHost = hostByIdRes.value.data[0];
             }
           } catch (dbErr) {
             console.warn('Database user search error:', dbErr);
           }
         }
 
-        // Fallback to authUser user_metadata if account role was already established
+        // ── 7C. Check in-memory AppContext state ──
+        if (!dbEmp && !dbHost) {
+          const inMemEmp = employees?.find(
+            (e: any) =>
+              (e.email && e.email.trim().toLowerCase() === email) ||
+              (e.id && e.id === authUser.id) ||
+              (e.userId && e.userId === authUser.id)
+          );
+          const inMemHost = hostSupervisors?.find(
+            (h: any) =>
+              (h.email && h.email.trim().toLowerCase() === email) ||
+              (h.id && h.id === authUser.id)
+          );
+          if (inMemEmp) dbEmp = inMemEmp;
+          else if (inMemHost) dbHost = inMemHost;
+        }
+
+        // ── 7D. Check localStorage backup ──
+        if (!dbEmp && !dbHost && typeof window !== 'undefined') {
+          try {
+            const cachedEmps = JSON.parse(localStorage.getItem('ojt_employees') || '[]');
+            dbEmp = cachedEmps.find((e: any) => e.email && e.email.trim().toLowerCase() === email);
+
+            const cachedHosts = JSON.parse(localStorage.getItem('ojt_host_supervisors') || '[]');
+            dbHost = cachedHosts.find((h: any) => h.email && h.email.trim().toLowerCase() === email);
+          } catch {}
+        }
+
+        // Fallback to authUser user_metadata if role was already set
         if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'admin') {
           dbEmp = {
             id: authUser.id,
@@ -230,17 +257,6 @@ export default function OAuthCallback() {
             position: 'HTE Representative',
             company_name: 'Host Training Establishment',
           };
-        }
-
-        // Check local storage backup if DB returned null or offline
-        if (!dbEmp && !dbHost && typeof window !== 'undefined') {
-          try {
-            const cachedEmps = JSON.parse(localStorage.getItem('ojt_employees') || '[]');
-            dbEmp = cachedEmps.find((e: any) => e.email && e.email.trim().toLowerCase() === email);
-
-            const cachedHosts = JSON.parse(localStorage.getItem('ojt_host_supervisors') || '[]');
-            dbHost = cachedHosts.find((h: any) => h.email && h.email.trim().toLowerCase() === email);
-          } catch {}
         }
 
         clearTimeout(watchdogTimer);
@@ -281,12 +297,12 @@ export default function OAuthCallback() {
               name: dbEmp.name || `${dbEmp.first_name || ''} ${dbEmp.last_name || ''}`.trim() || fullName,
               email: dbEmp.email || email,
               role,
-              employeeId: dbEmp.employee_id || dbEmp.id,
+              employeeId: dbEmp.employee_id || dbEmp.employeeId || dbEmp.id,
               photo: dbEmp.photo || photoUrl,
-              faceRegistered: dbEmp.face_registered ?? false,
+              faceRegistered: dbEmp.face_registered ?? dbEmp.faceRegistered ?? false,
             };
 
-            if (photoUrl && !dbEmp.photo) {
+            if (photoUrl && !dbEmp.photo && isSupabaseConfigured()) {
               Promise.resolve(supabase.from('employees').update({ photo: photoUrl }).eq('id', dbEmp.id)).catch(console.warn);
             }
 
@@ -308,7 +324,7 @@ export default function OAuthCallback() {
               name: dbHost.name || fullName,
               email: dbHost.email || email,
               role: 'hte',
-              employeeId: dbHost.employee_id || dbHost.id,
+              employeeId: dbHost.employee_id || dbHost.employeeId || dbHost.id,
               photo: photoUrl || '',
               faceRegistered: false,
             };
