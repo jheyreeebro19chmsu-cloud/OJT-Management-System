@@ -2742,7 +2742,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (isStudent && updatedEmployee.companyName && !updatedEmployee.companyName.toLowerCase().includes('pending')) {
         let hteCoords = updatedEmployee.registrationLocation;
         let hteAddress = updatedEmployee.companyAddress || updatedEmployee.registrationAddress || `${updatedEmployee.companyName} Workplace Premises`;
-        let hteRadius = Math.max(40, Number(updatedEmployee.registrationRadius || (hteCoords as any)?.radius || 40));
+        let hteRadius = Math.max(20, Number(updatedEmployee.registrationRadius || (hteCoords as any)?.radius || 40));
 
         if (!hteCoords || !hteCoords.lat || !hteCoords.lng) {
           const matchedHost = hostSupervisors.find(
@@ -2755,7 +2755,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               lng: Number(matchedHost.registrationLocation.lng),
             };
             hteAddress = matchedHost.companyAddress || matchedHost.registrationAddress || hteAddress;
-            hteRadius = Math.max(40, Number(matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
+            hteRadius = Math.max(20, Number(matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
           } else {
             const matchedHteEmp = employees.find(
               (e) => (e.position?.toLowerCase().includes('hte') || e.role === 'hte') &&
@@ -2768,7 +2768,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 lng: Number(matchedHteEmp.registrationLocation.lng),
               };
               hteAddress = matchedHteEmp.companyAddress || matchedHteEmp.registrationAddress || hteAddress;
-              hteRadius = Math.max(40, Number(matchedHteEmp.registrationRadius || (matchedHteEmp.registrationLocation as any)?.radius || 40));
+              hteRadius = Math.max(20, Number(matchedHteEmp.registrationRadius || (matchedHteEmp.registrationLocation as any)?.radius || 40));
             }
           }
         }

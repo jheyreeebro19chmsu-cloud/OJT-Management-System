@@ -254,7 +254,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         name: stationZone.name || userProfile?.companyName || 'Assigned HTE Workplace',
         lat: Number(stationZone.lat),
         lng: Number(stationZone.lng),
-        radius: Math.max(40, Number(stationZone.radius || 300)),
+        radius: Math.max(20, Number(stationZone.radius || 300)),
       });
     } else {
       // Profile registration location fallback
@@ -269,7 +269,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
           name: userProfile?.companyName || userProfile?.company_name || 'Assigned OJT Workplace',
           lat: Number(regLoc.lat),
           lng: Number(regLoc.lng),
-          radius: Math.max(40, Number(regLoc.radius || 300)),
+          radius: Math.max(20, Number(regLoc.radius || 300)),
         });
       }
     }

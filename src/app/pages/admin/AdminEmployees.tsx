@@ -877,7 +877,7 @@ export function AdminEmployees() {
                               geofenceZones.some((z) => z.id === `station-${emp.id}` || z.id === `personal-${emp.id}` || (z.name && emp.name && z.name.toLowerCase().includes(emp.name.toLowerCase())))
                             );
                             const matchedZone = geofenceZones.find((z) => z.id === `station-${emp.id}` || z.id === `personal-${emp.id}` || (z.name && emp.name && z.name.toLowerCase().includes(emp.name.toLowerCase())));
-                            const zoneRadius = Math.max(40, Number(emp.registrationLocation?.radius || emp.registrationRadius || matchedZone?.radius || 40));
+                            const zoneRadius = Math.max(20, Number(emp.registrationLocation?.radius || emp.registrationRadius || matchedZone?.radius || 40));
 
                             return (
                               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1979,7 +1979,7 @@ export function AdminEmployees() {
                                         const existingLoc = selectedEmp.registrationLocation;
                                         const hasExistingCoords = existingLoc?.lat != null && existingLoc?.lng != null && Number.isFinite(Number(existingLoc.lat)) && Number.isFinite(Number(existingLoc.lng));
                                         const targetLoc = hasExistingCoords ? existingLoc : (matchedHost.registrationLocation || { lat: 10.7410, lng: 122.9702 });
-                                        const hteRadius = Math.max(40, Number(selectedEmp.registrationRadius || (existingLoc as any)?.radius || matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
+                                        const hteRadius = Math.max(20, Number(selectedEmp.registrationRadius || (existingLoc as any)?.radius || matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
 
                                         const updatedFields: any = {
                                           hteId: matchedHost.id,
@@ -2324,7 +2324,7 @@ export function AdminEmployees() {
                                 const numLng = rawLng != null && !isNaN(Number(rawLng)) ? Number(rawLng) : null;
 
                                 if (numLat != null && numLng != null) {
-                                  const rad = Math.max(40, Number((regLoc as any)?.radius || selectedEmp.registrationRadius || 40));
+                                  const rad = Math.max(20, Number((regLoc as any)?.radius || selectedEmp.registrationRadius || 40));
                                   const isNegrosValid = isWithinNegrosOccidental(numLat, numLng);
                                   return (
                                     <div className="space-y-1.5 mt-1">

@@ -387,7 +387,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
       updatedRegLoc.lng = updates.registrationLocation.lng ?? null;
     }
     if (regRadius) {
-      updatedRegLoc.radius = Math.max(40, Number(regRadius));
+      updatedRegLoc.radius = Math.max(20, Number(regRadius));
     }
     if (updates.contactPhone !== undefined || updates.phone !== undefined || updates.telephone !== undefined) {
       const pVal = updates.contactPhone ?? updates.phone ?? updates.telephone;
@@ -794,7 +794,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     address: zone.address || '',
     lat: Number(zone.lat),
     lng: Number(zone.lng),
-    radius: Math.max(40, Number(zone.radius) || 40),
+    radius: Math.max(20, Number(zone.radius) || 20),
     active: zone.active !== false,
   };
 
@@ -924,7 +924,7 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
       address: updates.address || '',
       lat: Number(updates.lat),
       lng: Number(updates.lng),
-      radius: Math.max(40, Number(updates.radius) || 40),
+      radius: Math.max(20, Number(updates.radius) || 20),
       active: updates.active !== false,
       academicYear: updates.academicYear,
       employeeId: empId,
@@ -1841,7 +1841,7 @@ export function transformSupabaseEmployee(data: any): Employee {
     active: data.active,
     academicYear: data.academic_year,
     registrationLocation: (() => {
-      const radiusVal = Math.max(40, Number(data.registration_radius ?? regLoc?.radius ?? 40));
+      const radiusVal = Math.max(20, Number(data.registration_radius ?? regLoc?.radius ?? 40));
       if (data.registration_lat != null && data.registration_lng != null) {
         return { lat: Number(data.registration_lat), lng: Number(data.registration_lng), radius: radiusVal };
       }
@@ -1856,7 +1856,7 @@ export function transformSupabaseEmployee(data: any): Employee {
       }
       return undefined;
     })(),
-    registrationRadius: Math.max(40, Number(data.registration_radius ?? regLoc?.radius ?? 40)),
+    registrationRadius: Math.max(20, Number(data.registration_radius ?? regLoc?.radius ?? 40)),
     registrationAddress: data.registration_address || regLoc?.address || undefined,
     contactPhone: phoneVal,
     phone: phoneVal,

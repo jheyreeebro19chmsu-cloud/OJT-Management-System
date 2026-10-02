@@ -265,7 +265,7 @@ export function AdminGeofence() {
           address: addr,
           lat: Number(loc.lat),
           lng: Number(loc.lng),
-          radius: Math.max(40, Number(loc.radius || matchedHost.registrationRadius || 40)),
+          radius: Math.max(20, Number(loc.radius || matchedHost.registrationRadius || 40)),
         };
       }
     }
@@ -287,7 +287,7 @@ export function AdminGeofence() {
           address: addr,
           lat: Number(regLoc.lat),
           lng: Number(regLoc.lng),
-          radius: Math.max(40, Number((regLoc as any).radius || (matchedHteEmp as any).registration_radius || 40)),
+          radius: Math.max(20, Number((regLoc as any).radius || (matchedHteEmp as any).registration_radius || 40)),
         };
       }
     }
@@ -306,7 +306,7 @@ export function AdminGeofence() {
         address: matchedHteZone.address || `${matchedHteZone.name} Workplace Premises`,
         lat: Number(matchedHteZone.lat),
         lng: Number(matchedHteZone.lng),
-        radius: Math.max(40, Number(matchedHteZone.radius || 40)),
+        radius: Math.max(20, Number(matchedHteZone.radius || 40)),
       };
     }
 
@@ -377,7 +377,7 @@ export function AdminGeofence() {
             zoneData.lng = Number(regLng);
           }
           if (regLoc?.radius || (account as any)?.registrationRadius) {
-            zoneData.radius = Math.max(40, Number(regLoc?.radius || (account as any)?.registrationRadius || zoneData.radius || 40));
+            zoneData.radius = Math.max(20, Number(regLoc?.radius || (account as any)?.registrationRadius || zoneData.radius || 40));
           }
           if (!zoneData.address && (account.registrationAddress || account.companyAddress)) {
             zoneData.address = account.registrationAddress || account.companyAddress || zoneData.address;
@@ -535,7 +535,7 @@ export function AdminGeofence() {
   const saveZoneCoordinates = (zoneId: string, updatedData: Partial<GeofenceZone>) => {
     const matchedZone = allCombinedZones.find((z) => z.id === zoneId);
     const account = getAccountForZone(matchedZone || { id: zoneId });
-    const targetRadius = Math.max(40, Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS));
+    const targetRadius = Math.max(20, Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS));
 
     if (account) {
       updateEmployee(account.id, {
@@ -1849,15 +1849,15 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
       <div className="space-y-2 p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-gray-800">
-            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 40} meters</span>
+            Geofence Boundary Radius: <span className="text-blue-700 font-mono">{form.radius || 20} meters</span>
           </label>
           <div className="flex items-center gap-1">
             <input
               type="number"
-              min={40}
+              min={20}
               max={1000}
-              value={form.radius || 40}
-              onChange={(e) => upd('radius', Math.max(40, parseInt(e.target.value) || 40))}
+              value={form.radius || 20}
+              onChange={(e) => upd('radius', Math.max(20, parseInt(e.target.value) || 20))}
               className="w-16 px-2 py-1 bg-white border border-gray-300 rounded-lg text-center font-bold text-xs text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
             />
             <span className="text-xs text-gray-500 font-bold">m</span>
@@ -1866,32 +1866,32 @@ function ZoneForm({ form, upd }: { form: typeof BLANK_ZONE; upd: (f: string, v: 
 
         <input
           type="range"
-          min={40}
+          min={20}
           max={500}
           step={5}
-          value={form.radius || 40}
-          onChange={(e) => upd('radius', Math.max(40, parseInt(e.target.value) || 40))}
+          value={form.radius || 20}
+          onChange={(e) => upd('radius', Math.max(20, parseInt(e.target.value) || 20))}
           className="w-full accent-blue-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
         />
 
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {[40, 50, 75, 100, 150, 200, 300].map((preset) => (
+          {[20, 30, 40, 50, 75, 100, 150, 200, 300].map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => upd('radius', preset)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
-                (form.radius || 40) === preset
+                (form.radius || 20) === preset
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
               }`}
             >
-              {preset}m {preset === 40 ? '(Minimum / Standard)' : ''}
+              {preset}m {preset === 20 ? '(Minimum)' : preset === 40 ? '(Standard)' : ''}
             </button>
           ))}
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
-          Minimum allowed workplace perimeter is 40 meters. You can adjust this according to the size of the establishment facility. Updates reflect live on the map and for trainee attendance.
+          Minimum allowed workplace perimeter is 20 meters. You can adjust this according to the size of the establishment facility. Updates reflect live on the map and for trainee attendance.
         </p>
       </div>
 

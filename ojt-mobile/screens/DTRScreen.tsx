@@ -177,14 +177,14 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
       targetCoords.push({
         lat: Number(matchedHteZone.lat),
         lng: Number(matchedHteZone.lng),
-        radius: Math.max(40, Number(matchedHteZone.radius || 40)),
+        radius: Math.max(20, Number(matchedHteZone.radius || 40)),
       });
     } else if (regLoc?.lat && regLoc?.lng) {
       // Strictly rely on where account was registered with instructor-configured radius
       targetCoords.push({
         lat: Number(regLoc.lat),
         lng: Number(regLoc.lng),
-        radius: Math.max(40, Number(regLoc.radius || dynamicRadius)),
+        radius: Math.max(20, Number(regLoc.radius || dynamicRadius)),
       });
     } else {
       // 2. Geofence zones from Supabase fallback only if no registered account location

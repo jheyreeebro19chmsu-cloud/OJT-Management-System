@@ -347,7 +347,7 @@ export default function InstructorTraineesScreen({
                     <View style={styles.geofenceChip}>
                       <MapPin size={10} color="#0284c7" />
                       <Text style={styles.geofenceChipText}>
-                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} ({Math.max(40, Number((item.registrationLocation as any)?.radius || 40))}m)
+                        GPS: {item.registrationLocation.lat.toFixed(4)}, {item.registrationLocation.lng.toFixed(4)} ({Math.max(20, Number((item.registrationLocation as any)?.radius || 40))}m)
                       </Text>
                     </View>
                   ) : (
@@ -598,7 +598,7 @@ export default function InstructorTraineesScreen({
                       <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Geofence Radius:</Text>
                         <Text style={styles.detailValue}>
-                          {Math.max(40, Number((selectedTrainee.registrationLocation as any)?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±40m min)
+                          {Math.max(20, Number((selectedTrainee.registrationLocation as any)?.radius || (selectedTrainee as any)?.registration_radius || 40))} Meters (±20m min)
                         </Text>
                       </View>
                       {selectedTrainee.registrationLocation && (
@@ -616,7 +616,7 @@ export default function InstructorTraineesScreen({
                       <View style={styles.geofenceStatusRow}>
                         <ShieldCheck size={14} color="#059669" />
                         <Text style={styles.geofenceStatusText}>
-                          Attendance is restricted to this {Math.max(40, Number((selectedTrainee.registrationLocation as any)?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
+                          Attendance is restricted to this {Math.max(20, Number((selectedTrainee.registrationLocation as any)?.radius || (selectedTrainee as any)?.registration_radius || 40))}m workplace boundary.
                         </Text>
                       </View>
 
@@ -709,7 +709,7 @@ export default function InstructorTraineesScreen({
                           </Text>
                           {loc?.lat && loc?.lng && (
                             <Text style={{ fontSize: 10, color: '#0284c7', marginTop: 2, fontFamily: 'serif' }}>
-                              GPS: {Number(loc.lat).toFixed(4)}, {Number(loc.lng).toFixed(4)} ({Math.max(40, Number(loc.radius || 40))}m)
+                              GPS: {Number(loc.lat).toFixed(4)}, {Number(loc.lng).toFixed(4)} ({Math.max(20, Number(loc.radius || 40))}m)
                             </Text>
                           )}
                         </View>
