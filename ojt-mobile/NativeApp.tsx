@@ -2287,6 +2287,7 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
                 userLat={currentLocation?.coords.latitude}
                 userLng={currentLocation?.coords.longitude}
                 userAccuracy={currentLocation?.coords.accuracy}
+                userPhoto={profile?.photo || profile?.avatar_url || profile?.photo_url || null}
                 zoneName={assignedWorkplaceName}
                 interactive={false}
                 height={340}

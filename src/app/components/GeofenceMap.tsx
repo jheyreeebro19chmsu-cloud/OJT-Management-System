@@ -20,6 +20,7 @@ import './geofence-map.css';
 import type { GeofenceZone } from '../types';
 import { calculateDistance, isWithinGeofence } from '../utils/geo';
 import { useApp } from '../store/AppContext';
+import { getPhotoUrl } from '../services/config';
 
 export type MapSizePreset = 'compact' | 'normal' | 'expanded';
 
@@ -36,6 +37,8 @@ export interface GeofenceMapProps {
   focusCoords?: { lat: number; lng: number };
   /** Employee / trainee live GPS — shows position vs geofences */
   liveUser?: { lat: number; lng: number; accuracy?: number } | null;
+  /** Optional profile photo URL for live user avatar on map */
+  liveUserPhoto?: string | null;
   /** e.g. h-64 (admin) or h-72 min-h-[220px] (time record) */
   className?: string;
   /** Zone ID that is currently set to interactive draggable mode */
@@ -70,6 +73,7 @@ export function GeofenceMap({
   onPick,
   focusCoords,
   liveUser = null,
+  liveUserPhoto = null,
   className = 'h-80',
   draggableZoneId = null,
   onZoneDrag,
@@ -240,6 +244,87 @@ export function GeofenceMap({
       effectiveRole === 'student' ||
       effectiveRole.includes('trainee') ||
       effectiveRole.includes('student'));
+
+  const getZoneMarkerIcon = useCallback(
+    (zone: GeofenceZone, isDraggable: boolean) => {
+      if (isDraggable) return draggableZoneIcon;
+
+      // Extract photo and account
+      let photoUrl: string | null = null;
+      if (zone.photo) {
+        photoUrl = getPhotoUrl(zone.photo);
+      } else if (appCurrentUser && appCurrentEmployee && (zone.employeeId === appCurrentEmployee.id || zone.employee_id === appCurrentEmployee.id || zone.id === `station-${appCurrentEmployee.id}` || zone.id === `personal-${appCurrentEmployee.id}`)) {
+        photoUrl = getPhotoUrl(appCurrentEmployee.photo || appCurrentUser.photo);
+      }
+
+      const name = zone.name || 'Geofence Zone';
+      const initial = (name.replace(/[^a-zA-Z]/g, '')[0] || 'Z').toUpperCase();
+      const zName = (zone.name || '').toLowerCase();
+      const userType =
+        zone.userType ||
+        (zName.includes('trainee') || zName.includes('student')
+          ? 'trainee'
+          : zName.includes('instructor') || zName.includes('faculty') || zName.includes('admin')
+          ? 'instructor'
+          : zName.includes('hte') || zName.includes('workplace')
+          ? 'hte'
+          : 'institutional');
+
+      const borderColor = !zone.active
+        ? '#94a3b8'
+        : userType === 'trainee'
+        ? '#10b981'
+        : userType === 'instructor'
+        ? '#8b5cf6'
+        : userType === 'hte'
+        ? '#f59e0b'
+        : '#2563eb';
+
+      const badgeEmoji =
+        userType === 'trainee' ? '🎓' : userType === 'instructor' ? '🛡️' : userType === 'hte' ? '🏢' : '📍';
+
+      const avatarInner = photoUrl
+        ? `<img src="${photoUrl}" alt="${name.replace(/"/g, '&quot;')}" class="leaflet-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="leaflet-avatar-fallback" style="display:none; background:${borderColor};">${initial}</div>`
+        : `<div class="leaflet-avatar-fallback" style="background:${borderColor};">${initial}</div>`;
+
+      return L.divIcon({
+        className: 'leaflet-avatar-marker-wrapper',
+        html: `
+          <div class="leaflet-avatar-marker" style="--marker-border-color: ${borderColor};">
+            <div class="leaflet-avatar-circle" style="border-color: ${borderColor};">
+              ${avatarInner}
+            </div>
+            <div class="leaflet-avatar-badge" style="background-color: ${borderColor};">${badgeEmoji}</div>
+          </div>
+        `,
+        iconSize: [38, 44],
+        iconAnchor: [19, 44],
+        popupAnchor: [0, -42],
+      });
+    },
+    [draggableZoneIcon, appCurrentUser, appCurrentEmployee]
+  );
+
+  const getLiveUserMarkerIcon = useCallback(() => {
+    const rawPhoto = liveUserPhoto || appCurrentUser?.photo || appCurrentEmployee?.photo;
+    const photoUrl = rawPhoto ? getPhotoUrl(rawPhoto) : null;
+    if (!photoUrl) return liveUserIcon;
+
+    return L.divIcon({
+      className: 'leaflet-avatar-marker-wrapper',
+      html: `
+        <div class="leaflet-avatar-marker live-user-pulse" style="--marker-border-color: #0ea5e9;">
+          <div class="leaflet-avatar-circle" style="border-color: #0ea5e9; box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.4);">
+            <img src="${photoUrl}" alt="You" class="leaflet-avatar-img" onerror="this.style.display='none';" />
+          </div>
+          <div class="leaflet-avatar-badge" style="background-color: #0ea5e9;">📍</div>
+        </div>
+      `,
+      iconSize: [38, 44],
+      iconAnchor: [19, 44],
+      popupAnchor: [0, -42],
+    });
+  }, [liveUserPhoto, appCurrentUser?.photo, appCurrentEmployee?.photo, liveUserIcon]);
 
   const safeZones = useMemo(() => {
     const valid = zones.filter(
@@ -498,7 +583,7 @@ export function GeofenceMap({
               />
               <Marker
                 position={[zone.lat, zone.lng]}
-                icon={isDraggable ? draggableZoneIcon : zone.active ? zoneIcon : inactiveZoneIcon}
+                icon={getZoneMarkerIcon(zone, isDraggable)}
                 draggable={isDraggable}
                 eventHandlers={{
                   drag: (e: any) => {
@@ -518,7 +603,68 @@ export function GeofenceMap({
               >
                 <Popup className="leaflet-geofence-popup">
                   <div className="leaflet-popup-card">
-                    <p className="leaflet-popup-title">{zone.name || 'Geofence Zone'}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                      <div
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '9999px',
+                          overflow: 'hidden',
+                          backgroundColor: '#f1f5f9',
+                          flexShrink: 0,
+                          border: `2px solid ${
+                            zone.userType === 'trainee'
+                              ? '#10b981'
+                              : zone.userType === 'instructor'
+                              ? '#8b5cf6'
+                              : zone.userType === 'hte'
+                              ? '#f59e0b'
+                              : '#3b82f6'
+                          }`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {zone.photo ? (
+                          <img
+                            src={getPhotoUrl(zone.photo)}
+                            alt={zone.name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>
+                            {(zone.name[0] || 'Z').toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>
+                          {zone.name || 'Geofence Zone'}
+                        </p>
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            color:
+                              zone.userType === 'trainee'
+                                ? '#059669'
+                                : zone.userType === 'instructor'
+                                ? '#7c3aed'
+                                : zone.userType === 'hte'
+                                ? '#d97706'
+                                : '#2563eb',
+                          }}
+                        >
+                          {zone.userType ? `${zone.userType} geofence` : 'Official Zone'}
+                        </span>
+                      </div>
+                    </div>
                     {isDraggable && (
                       <p style={{ color: '#2563eb', fontWeight: 800, margin: '4px 0' }}>
                         📍 Drag mode active: Drag this pin to relocate
@@ -603,10 +749,46 @@ export function GeofenceMap({
               radius={7}
               pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0ea5e9', fillOpacity: 1, interactive: false }}
             />
-            <Marker position={[safeLiveUser.lat, safeLiveUser.lng]} icon={liveUserIcon}>
+            <Marker position={[safeLiveUser.lat, safeLiveUser.lng]} icon={getLiveUserMarkerIcon()}>
               <Popup className="leaflet-geofence-popup">
                 <div className="leaflet-popup-card">
-                  <p className="leaflet-popup-title">Your Live GPS Location</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '9999px',
+                        overflow: 'hidden',
+                        backgroundColor: '#e0f2fe',
+                        flexShrink: 0,
+                        border: '2px solid #0ea5e9',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {liveUserPhoto || appCurrentUser?.photo || appCurrentEmployee?.photo ? (
+                        <img
+                          src={getPhotoUrl(liveUserPhoto || appCurrentUser?.photo || appCurrentEmployee?.photo)}
+                          alt="You"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: '13px' }}>📍</span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', fontWeight: 800 }}>
+                        {appCurrentUser?.name || 'Your Live GPS Location'}
+                      </p>
+                      <span style={{ fontSize: '9px', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase' }}>
+                        Active Device Sensor
+                      </span>
+                    </div>
+                  </div>
                   <p>
                     {safeLiveUser.lat.toFixed(6)}, {safeLiveUser.lng.toFixed(6)}
                   </p>

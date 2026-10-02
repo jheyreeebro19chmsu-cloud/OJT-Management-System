@@ -34,6 +34,8 @@ export interface LeafletGeofenceMapProps {
   userLng?: number | null;
   userAccuracy?: number | null;
   zoneName?: string;
+  userPhoto?: string | null;
+  centerPhoto?: string | null;
   interactive?: boolean; // Can user tap/drag to change coordinates?
   height?: number;
   onLocationChange?: (location: { lat: number; lng: number; address?: string }) => void;
@@ -48,6 +50,8 @@ export default function LeafletGeofenceMap({
   userLng,
   userAccuracy,
   zoneName = 'Workplace Geofence',
+  userPhoto,
+  centerPhoto,
   interactive = true,
   height = 320,
   onLocationChange,
@@ -215,16 +219,32 @@ export default function LeafletGeofenceMap({
       filter: blur(1.5px);
     }
 
-    /* Custom User Location Marker */
+    /* Custom User Location Marker with photo support */
     .user-pulse-marker {
-      width: 22px;
-      height: 22px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       background: #2563eb;
-      border: 3px solid #ffffff;
+      border: 2.5px solid #ffffff;
       box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.35);
       animation: pulse 2s infinite;
       transform: translate(-50%, -50%);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .user-avatar-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      display: block;
+    }
+    .user-avatar-fallback {
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 800;
     }
     @keyframes pulse {
       0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.6); }
@@ -287,20 +307,31 @@ export default function LeafletGeofenceMap({
       subdomains: ['a', 'b', 'c']
     }).addTo(map);
 
+    const safeUserPhoto = ${userPhoto ? JSON.stringify(userPhoto) : 'null'};
+    const safeCenterPhoto = ${centerPhoto ? JSON.stringify(centerPhoto) : 'null'};
+
     // Custom Office Pin DivIcon
+    const officeBubbleHtml = safeCenterPhoto
+      ? '<img src="' + safeCenterPhoto + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\\'none\\'; this.nextElementSibling.style.display=\\'inline\\';" /><span class="office-pin-icon" style="display:none;">🏢</span>'
+      : '<span class="office-pin-icon">🏢</span>';
+
     const officeIcon = L.divIcon({
       className: 'custom-office-pin',
-      html: '<div class="office-pin-wrapper"><div class="office-pin-bubble"><span class="office-pin-icon">🏢</span></div><div class="office-pin-shadow"></div></div>',
+      html: '<div class="office-pin-wrapper"><div class="office-pin-bubble">' + officeBubbleHtml + '</div><div class="office-pin-shadow"></div></div>',
       iconSize: [40, 48],
       iconAnchor: [20, 48]
     });
 
-    // Custom User Dot DivIcon
+    // Custom User Dot DivIcon with Trainee Photo
+    const userMarkerHtml = safeUserPhoto
+      ? '<div class="user-pulse-marker"><img src="' + safeUserPhoto + '" class="user-avatar-img" onerror="this.style.display=\\'none\\'; this.nextElementSibling.style.display=\\'block\\';" /><span class="user-avatar-fallback" style="display:none;">📍</span></div>'
+      : '<div class="user-pulse-marker"><span class="user-avatar-fallback">📍</span></div>';
+
     const userIcon = L.divIcon({
       className: 'user-pin',
-      html: '<div class="user-pulse-marker"></div>',
-      iconSize: [22, 22],
-      iconAnchor: [11, 11]
+      html: userMarkerHtml,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
     });
 
     // Create Office Marker

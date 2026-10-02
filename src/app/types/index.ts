@@ -112,6 +112,8 @@ export interface GeofenceZone {
   academicYear?: string;
   employeeId?: string;
   employee_id?: string;
+  photo?: string;
+  userType?: 'trainee' | 'instructor' | 'hte' | 'institutional';
 }
 
 export interface AppSettings {

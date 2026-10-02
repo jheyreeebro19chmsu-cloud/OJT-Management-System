@@ -731,7 +731,7 @@ export function AdminGeofence() {
     return allCombinedZones.find((z) => z.id === dragZoneId) || null;
   }, [dragZoneId, allCombinedZones]);
 
-  // Display zones list with live drag coordinates and real-time editing radius overridden
+  // Display zones list with live drag coordinates and real-time editing radius overridden, with user photos attached
   const displayZones = useMemo(() => {
     return filteredZones.map((z) => {
       let updated = { ...z };
@@ -745,9 +745,21 @@ export function AdminGeofence() {
         if (form.lng) updated.lng = Number(form.lng);
         if (form.name) updated.name = form.name;
       }
+      // Attach user profile photo & user type for avatar marker on the map
+      const account = getAccountForZone(z);
+      const rawPhoto = account?.photo || (account as any)?.avatar || (account as any)?.avatar_url || z.photo;
+      const photoUrl = getPhotoUrl(rawPhoto);
+      const isTrainee = isTraineeZone(z);
+      const isInstructor = isInstructorZone(z);
+      const isHTE = isHTEZone(z);
+      updated.photo = photoUrl || undefined;
+      updated.userType = isTrainee ? 'trainee' : isInstructor ? 'instructor' : isHTE ? 'hte' : 'institutional';
+      if (account) {
+        updated.employeeId = account.employeeId || account.id;
+      }
       return updated;
     });
-  }, [filteredZones, dragZoneId, dragCoords, editId, form.radius, form.lat, form.lng, form.name]);
+  }, [filteredZones, dragZoneId, dragCoords, editId, form.radius, form.lat, form.lng, form.name, employees]);
 
   return (
     <div className="space-y-5">

@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
-import { RefreshCw, WifiOff, ArrowLeft, Shield } from 'lucide-react-native';
+import { RefreshCw, WifiOff } from 'lucide-react-native';
 
 const WEB_APP_URL = 'https://chmsuojtmis.site';
 
@@ -96,44 +96,7 @@ export function WebShell({ onSwitchToNative }: WebShellProps) {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
 
-      {/* Top Utility Bar (for back navigation / reload) */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarLeft}>
-          {canGoBack && (
-            <TouchableOpacity
-              onPress={() => webViewRef.current?.goBack()}
-              style={styles.iconButton}
-              accessibilityLabel="Go back"
-            >
-              <ArrowLeft size={20} color="#1e3a8a" />
-            </TouchableOpacity>
-          )}
-          <View style={styles.branding}>
-            <View style={styles.onlineDot} />
-            <Text style={styles.brandTitle}>CHMSU OJT</Text>
-          </View>
-        </View>
 
-        <View style={styles.topBarRight}>
-          <TouchableOpacity
-            onPress={handleReload}
-            style={styles.iconButton}
-            accessibilityLabel="Reload web app"
-          >
-            <RefreshCw size={18} color="#475569" />
-          </TouchableOpacity>
-          {onSwitchToNative && (
-            <TouchableOpacity
-              onPress={onSwitchToNative}
-              style={styles.modeBadge}
-              accessibilityLabel="Switch to native mode"
-            >
-              <Shield size={12} color="#2563eb" />
-              <Text style={styles.modeBadgeText}>Native</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
 
       {/* Main WebView Container */}
       <View style={styles.webViewWrapper}>
@@ -208,63 +171,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
   },
-  topBar: {
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  branding: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  onlineDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#10b981',
-  },
-  brandTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1e3a8a',
-    letterSpacing: 0.3,
-  },
-  topBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  iconButton: {
-    padding: 6,
-    borderRadius: 8,
-  },
-  modeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-  },
-  modeBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#2563eb',
-  },
+
   webViewWrapper: {
     flex: 1,
     position: 'relative',

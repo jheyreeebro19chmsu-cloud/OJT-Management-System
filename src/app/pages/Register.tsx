@@ -1169,6 +1169,9 @@ export function Register() {
                 radius: role === 'admin' ? campusInfo.radius : 100,
                 active: true,
                 academicYear: settings.activeAcademicYear,
+                employeeId: empToUpdateId,
+                photo: photo || (existing ? existing.photo : undefined),
+                userType: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'trainee',
               });
             } catch (zoneErr) {
               console.warn('Geofence zone repair registration notice:', zoneErr);
@@ -1255,6 +1258,9 @@ export function Register() {
           radius: role === 'admin' ? campusInfo.radius : 100,
           active: true,
           academicYear: settings.activeAcademicYear,
+          employeeId: newEmp.id,
+          photo: photo,
+          userType: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'trainee',
         });
       } catch (zoneErr) {
         console.warn('Geofence zone registration notice:', zoneErr);
@@ -3230,6 +3236,7 @@ export function Register() {
                                   pickedCoords={registrationLocation}
                                   focusCoords={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng } : undefined}
                                   liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
+                                  liveUserPhoto={photo || googleAvatar}
                                   className="h-56 w-full"
                                 />
                               </div>
