@@ -297,9 +297,9 @@ export function GeofenceMap({
             <div class="leaflet-avatar-badge" style="background-color: ${borderColor};">${badgeEmoji}</div>
           </div>
         `,
-        iconSize: [38, 44],
-        iconAnchor: [19, 44],
-        popupAnchor: [0, -42],
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
+        popupAnchor: [0, -22],
       });
     },
     [draggableZoneIcon, appCurrentUser, appCurrentEmployee]
@@ -320,9 +320,9 @@ export function GeofenceMap({
           <div class="leaflet-avatar-badge" style="background-color: #0ea5e9;">📍</div>
         </div>
       `,
-      iconSize: [38, 44],
-      iconAnchor: [19, 44],
-      popupAnchor: [0, -42],
+      iconSize: [38, 38],
+      iconAnchor: [19, 19],
+      popupAnchor: [0, -22],
     });
   }, [liveUserPhoto, appCurrentUser?.photo, appCurrentEmployee?.photo, liveUserIcon]);
 

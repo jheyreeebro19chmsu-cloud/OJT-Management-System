@@ -184,39 +184,43 @@ export default function LeafletGeofenceMap({
     .office-pin-wrapper {
       position: relative;
       width: 40px;
-      height: 48px;
+      height: 40px;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      transform: translate(-50%, -100%);
       cursor: ${interactive ? 'grab' : 'default'};
     }
     .office-pin-bubble {
-      width: 38px;
-      height: 38px;
+      width: 40px;
+      height: 40px;
       background: linear-gradient(135deg, #059669 0%, #10b981 100%);
-      border-radius: 50% 50% 50% 0;
-      transform: rotate(-45deg);
+      border-radius: 50%;
       border: 3px solid #ffffff;
-      box-shadow: 0 4px 12px rgba(5, 150, 105, 0.45);
+      box-shadow: 0 4px 14px rgba(5, 150, 105, 0.4), 0 0 0 2px rgba(255, 255, 255, 0.8);
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
     }
     .office-pin-icon {
-      transform: rotate(45deg);
       color: #ffffff;
       font-size: 16px;
       font-weight: 800;
     }
-    .office-pin-shadow {
-      width: 14px;
-      height: 6px;
-      background: rgba(15, 23, 42, 0.25);
+    .office-pin-badge {
+      position: absolute;
+      bottom: -2px;
+      right: -2px;
+      width: 16px;
+      height: 16px;
       border-radius: 50%;
-      margin-top: 2px;
-      filter: blur(1.5px);
+      background-color: #059669;
+      border: 1.5px solid #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
     }
 
     /* Custom User Location Marker with photo support */
@@ -228,7 +232,6 @@ export default function LeafletGeofenceMap({
       border: 2.5px solid #ffffff;
       box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.35);
       animation: pulse 2s infinite;
-      transform: translate(-50%, -50%);
       overflow: hidden;
       display: flex;
       align-items: center;
@@ -317,9 +320,10 @@ export default function LeafletGeofenceMap({
 
     const officeIcon = L.divIcon({
       className: 'custom-office-pin',
-      html: '<div class="office-pin-wrapper"><div class="office-pin-bubble">' + officeBubbleHtml + '</div><div class="office-pin-shadow"></div></div>',
-      iconSize: [40, 48],
-      iconAnchor: [20, 48]
+      html: '<div class="office-pin-wrapper"><div class="office-pin-bubble">' + officeBubbleHtml + '</div><div class="office-pin-badge">🏢</div></div>',
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+      popupAnchor: [0, -22]
     });
 
     // Custom User Dot DivIcon with Trainee Photo
