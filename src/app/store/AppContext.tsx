@@ -1211,6 +1211,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
       const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+      if (sanitizedZones && sanitizedZones.length > 0) {
+        setGeofenceZones(sanitizedZones);
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
+      }
       if (supabaseSettings) {
         setSettings((prev) => {
           const mergedYears = Array.from(new Set([
@@ -1241,7 +1245,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (supabaseAnnouncements && supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
       if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
-      if (supabaseComments && supabaseComments.length > 0) setAnnouncementComments(supabaseComments);
       if (supabaseHostFeedback && supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
       if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
     } catch (err) {
