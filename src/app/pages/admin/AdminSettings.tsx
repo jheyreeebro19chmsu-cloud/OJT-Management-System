@@ -11,6 +11,10 @@ import {
   Server,
   KeyRound,
   Calendar,
+  Users,
+  Sparkles,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useState, useEffect } from 'react';
@@ -20,9 +24,14 @@ import { isSupabaseConfigured } from '../../lib/supabase';
 import addressApi from '../../services/addressApi';
 import { fetchSecurityHealth, isSecurityApiConfigured, type SecurityHealthResponse } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
+import {
+  seedDemoTraineesToDatabase,
+  removeDemoTraineesFromDatabase,
+  DEMO_TAG_PREFIX,
+} from '../../data/dummyTraineesSeeder';
 
 export function AdminSettings() {
-  const { settings, updateSettings, changeCurrentUserPassword, currentUser } = useApp();
+  const { settings, updateSettings, changeCurrentUserPassword, currentUser, employees } = useApp();
   const [form, setForm] = useState(settings);
   const supabaseConnected = isSupabaseConfigured();
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
@@ -31,6 +40,11 @@ export function AdminSettings() {
   const [loadingOtps, setLoadingOtps] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [isSeedingDemo, setIsSeedingDemo] = useState(false);
+  const [isRemovingDemo, setIsRemovingDemo] = useState(false);
+  const [demoProgress, setDemoProgress] = useState<{ step: string; percent: number } | null>(null);
+
+  const demoTraineesCount = employees.filter((e) => e.employeeId?.startsWith(DEMO_TAG_PREFIX)).length;
 
   const upd = (f: string, v: string | number | boolean | string[]) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -42,6 +56,72 @@ export function AdminSettings() {
   const handleReset = () => {
     setForm(settings);
     toast.info('Changes discarded.');
+  };
+
+  const handleSeedDemoTrainees = async () => {
+    if (
+      !confirm(
+        'Generate and seed 120 realistic demo trainees with DTR logs, partner HTEs, and evaluations into the system?\n\nThis safely simulates students across different progress stages (20h to 600h).'
+      )
+    ) {
+      return;
+    }
+
+    setIsSeedingDemo(true);
+    setDemoProgress({ step: 'Initializing generation...', percent: 5 });
+
+    try {
+      const res = await seedDemoTraineesToDatabase((step, percent) => {
+        setDemoProgress({ step, percent });
+      });
+
+      if (res.success) {
+        toast.success(res.message);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Error seeding demo trainees.');
+    } finally {
+      setIsSeedingDemo(false);
+      setDemoProgress(null);
+    }
+  };
+
+  const handleRemoveDemoTrainees = async () => {
+    if (
+      !confirm(
+        'Are you sure you want to remove all 120 demo trainees, their generated DTR records, and evaluations?\n\nReal user accounts and data will NOT be touched.'
+      )
+    ) {
+      return;
+    }
+
+    setIsRemovingDemo(true);
+    setDemoProgress({ step: 'Removing demo accounts...', percent: 10 });
+
+    try {
+      const res = await removeDemoTraineesFromDatabase((step, percent) => {
+        setDemoProgress({ step, percent });
+      });
+
+      if (res.success) {
+        toast.success(res.message);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Error removing demo trainees.');
+    } finally {
+      setIsRemovingDemo(false);
+      setDemoProgress(null);
+    }
   };
 
   const probeSecurityBackend = async () => {
@@ -913,6 +993,129 @@ export function AdminSettings() {
           <p className="text-emerald-800">
             All trainee records, facial recognition descriptors, photo captures, and GPS geofence zones are actively persisted directly to the cloud database.
           </p>
+        </div>
+      </motion.div>
+
+      {/* Demo Simulation & Realistic Trainee Data Management */}
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.16 }}
+        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center">
+              <Users size={18} className="text-indigo-700" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800">Talisay Campus Demo Trainees — Printing Services (120 Accounts)</h3>
+              <p className="text-xs text-gray-500">CHMSU Talisay Main Campus • College of Computer Studies • Assigned to HTE 3: Printing Services (Yzel Norte)</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+              demoTraineesCount > 0 ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-600'
+            }`}>
+              <Sparkles size={12} />
+              {demoTraineesCount} Active Demo Trainees
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-2">
+            <p className="font-semibold text-slate-900">
+              Realistic Bell-Curve Distribution & Authentic Local Data:
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <span className="font-bold text-amber-600">~20% (24 Trainees)</span>
+                <p className="text-[11px] text-slate-500">Newly Started (20–80 hrs)</p>
+              </div>
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <span className="font-bold text-blue-600">~45% (54 Trainees)</span>
+                <p className="text-[11px] text-slate-500">Mid-OJT (200–380 hrs)</p>
+              </div>
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <span className="font-bold text-indigo-600">~25% (30 Trainees)</span>
+                <p className="text-[11px] text-slate-500">Near-Complete (480–570 hrs)</p>
+              </div>
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <span className="font-bold text-emerald-600">~5% (6 Trainees)</span>
+                <p className="text-[11px] text-slate-500">Completed (600 hrs)</p>
+              </div>
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <span className="font-bold text-rose-600">~5% (6 Trainees)</span>
+                <p className="text-[11px] text-slate-500">At-Risk / Irregular (40–120 hrs)</p>
+              </div>
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <span className="font-bold text-indigo-700">HTE 3: Printing Services</span>
+                <p className="text-[11px] text-slate-500">Supervisor: Yzel Norte</p>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 pt-1">
+              All 120 trainees are assigned to <strong>Printing Services</strong> with matching time-in/out coordinates, geofences, and evaluations by supervisor <strong>Yzel Norte</strong>.
+            </p>
+          </div>
+
+          {demoProgress && (
+            <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-200 text-xs space-y-1.5">
+              <div className="flex justify-between items-center text-indigo-900 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <Loader2 size={13} className="animate-spin text-indigo-600" />
+                  {demoProgress.step}
+                </span>
+                <span>{demoProgress.percent}%</span>
+              </div>
+              <div className="w-full bg-indigo-200 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
+                  style={{ width: `${demoProgress.percent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={handleSeedDemoTrainees}
+              disabled={isSeedingDemo || isRemovingDemo}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors disabled:opacity-60"
+            >
+              {isSeedingDemo ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Seeding 120 Trainees...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={14} />
+                  <span>Seed 120 Realistic Demo Trainees</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRemoveDemoTrainees}
+              disabled={isSeedingDemo || isRemovingDemo || demoTraineesCount === 0}
+              className="flex items-center justify-center gap-2 py-2.5 px-4 border border-rose-200 hover:bg-rose-50 text-rose-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isRemovingDemo ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Removing...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={14} />
+                  <span>Rollback / Remove Demo Data</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </motion.div>
 
