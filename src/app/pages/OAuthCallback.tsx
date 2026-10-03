@@ -147,14 +147,16 @@ export default function OAuthCallback() {
           authUser.user_metadata?.avatar_url ||
           authUser.user_metadata?.picture ||
           '';
-        const pendingRole = (localStorage.getItem('pending_oauth_role') || '').trim().toLowerCase();
+        const urlRole = (searchParams.get('role') || hashParams.get('role') || '').trim().toLowerCase();
+        const storedRole = (localStorage.getItem('pending_oauth_role') || '').trim().toLowerCase();
+        const pendingRole = urlRole || storedRole;
 
         setStatusMessage('Checking system records for your account...');
 
         // ── 7A. First priority: Check with AppContext loginWithOAuthUser ──
         if (typeof loginWithOAuthUser === 'function') {
           try {
-            const loggedInUser = await loginWithOAuthUser(authUser, pendingRole as any);
+            const loggedInUser = await loginWithOAuthUser(authUser, (pendingRole as any) || null);
             if (loggedInUser) {
               clearTimeout(watchdogTimer);
               setIsSuccess(true);
@@ -237,16 +239,17 @@ export default function OAuthCallback() {
         }
 
         // Fallback to authUser user_metadata if role was already set
-        if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'admin') {
+        if (!dbEmp && !dbHost && (authUser.user_metadata?.role === 'admin' || pendingRole === 'admin')) {
           dbEmp = {
             id: authUser.id,
             name: fullName,
             email,
             position: 'OJT Instructor',
-            employee_id: authUser.user_metadata?.employee_id || 'ADM-INSTRUCTOR',
+            role: 'admin',
+            employee_id: authUser.user_metadata?.employee_id || `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
             photo: photoUrl,
           };
-        } else if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'hte') {
+        } else if (!dbEmp && !dbHost && (authUser.user_metadata?.role === 'hte' || pendingRole === 'hte')) {
           dbHost = {
             id: authUser.id,
             name: fullName,
@@ -275,6 +278,7 @@ export default function OAuthCallback() {
 
           if (dbEmp) {
             const isInstructor =
+              pendingRole === 'admin' ||
               dbEmp.role === 'admin' ||
               dbEmp.position === 'OJT Instructor' ||
               dbEmp.position === 'Administrator' ||
@@ -282,13 +286,14 @@ export default function OAuthCallback() {
               (dbEmp.position && String(dbEmp.position).toLowerCase().includes('admin'));
 
             const isHte =
+              pendingRole === 'hte' ||
               dbEmp.role === 'hte' ||
               dbEmp.role === 'host' ||
               dbEmp.position === 'HTE Representative' ||
               dbEmp.position === 'Training Supervisor' ||
               (dbEmp.position && String(dbEmp.position).toLowerCase().includes('hte'));
 
-            const role: User['role'] = isInstructor ? 'admin' : isHte ? 'hte' : 'employee';
+            const role: User['role'] = pendingRole === 'admin' ? 'admin' : pendingRole === 'hte' ? 'hte' : isInstructor ? 'admin' : isHte ? 'hte' : 'employee';
             const resolvedUser: User = {
               id: dbEmp.id,
               name: dbEmp.name || `${dbEmp.first_name || ''} ${dbEmp.last_name || ''}`.trim() || fullName,
@@ -337,10 +342,128 @@ export default function OAuthCallback() {
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // CASE B: User DOES NOT EXIST in system -> DIRECT TO SIGN UP WITH GOOGLE!
+        // CASE B: User DOES NOT EXIST -> DIRECT ACCESS FOR INSTRUCTOR & HTE!
+        // ═══════════════════════════════════════════════════════════════════════
+        if (pendingRole === 'admin') {
+          setIsSuccess(true);
+          setStatusMessage(`Welcome, Instructor ${fullName}! Setting up your workspace...`);
+          const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+          const adminUser: User = {
+            id: authUser.id,
+            name: fullName,
+            email,
+            role: 'admin',
+            employeeId,
+            photo: photoUrl || '',
+            faceRegistered: false,
+          };
+          setCurrentUser(adminUser);
+          localStorage.setItem('ojt_user', JSON.stringify(adminUser));
+          localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
+          localStorage.removeItem('pending_oauth_role');
+          localStorage.removeItem('oauth_email');
+          localStorage.removeItem('oauth_name');
+          localStorage.removeItem('oauth_photo');
+          localStorage.removeItem('oauth_user_id');
+
+          if (isSupabaseConfigured()) {
+            try {
+              await supabase.from('employees').upsert({
+                id: authUser.id,
+                employee_id: employeeId,
+                name: fullName,
+                email,
+                position: 'OJT Instructor',
+                role: 'admin',
+                academic_year: '2026-2027',
+                department: 'College of Computer Studies',
+                campus: 'Talisay Campus',
+                school_name: 'Carlos Hilado Memorial State University',
+                photo: photoUrl || null,
+                active: true,
+                application_status: 'approved',
+                documents_passed: true,
+                documents_status: 'passed',
+                face_registered: false,
+                required_hours: 0,
+              }, { onConflict: 'email' });
+            } catch (pErr) {
+              console.warn('OAuth admin provisioning error:', pErr);
+            }
+          }
+
+          setTimeout(() => navigate('/admin', { replace: true }), 300);
+          return;
+        }
+
+        if (pendingRole === 'hte') {
+          setIsSuccess(true);
+          setStatusMessage(`Welcome, ${fullName}! Setting up your HTE portal...`);
+          const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+          const hteUser: User = {
+            id: authUser.id,
+            name: fullName,
+            email,
+            role: 'hte',
+            employeeId,
+            photo: photoUrl || '',
+            faceRegistered: false,
+          };
+          setCurrentUser(hteUser);
+          localStorage.setItem('ojt_user', JSON.stringify(hteUser));
+          localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
+          localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
+          localStorage.removeItem('pending_oauth_role');
+          localStorage.removeItem('oauth_email');
+          localStorage.removeItem('oauth_name');
+          localStorage.removeItem('oauth_photo');
+          localStorage.removeItem('oauth_user_id');
+
+          if (isSupabaseConfigured()) {
+            try {
+              await supabase.from('host_supervisors').upsert({
+                id: authUser.id,
+                employee_id: employeeId,
+                name: fullName,
+                email,
+                company_name: 'Host Training Establishment',
+                contact_person: fullName,
+                is_approved: true,
+                active: true,
+              }, { onConflict: 'email' });
+
+              await supabase.from('employees').upsert({
+                id: authUser.id,
+                employee_id: employeeId,
+                name: fullName,
+                email,
+                position: 'HTE Representative',
+                role: 'hte',
+                academic_year: '2026-2027',
+                company_name: 'Host Training Establishment',
+                supervisor_name: fullName,
+                photo: photoUrl || null,
+                active: true,
+                application_status: 'approved',
+                documents_passed: true,
+                documents_status: 'passed',
+                face_registered: false,
+                required_hours: 0,
+              }, { onConflict: 'email' });
+            } catch (pErr) {
+              console.warn('OAuth HTE provisioning error:', pErr);
+            }
+          }
+
+          setTimeout(() => navigate('/hte', { replace: true }), 300);
+          return;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // TRAINEE: Trainees must fill out registration info (geofence, address, biometrics)
         // ═══════════════════════════════════════════════════════════════════════
         setIsSuccess(true);
-        setStatusMessage('Google account verified! Redirecting to complete registration...');
+        setStatusMessage('Google account verified! Redirecting to complete Trainee registration...');
 
         localStorage.setItem('oauth_email', email);
         localStorage.setItem('oauth_name', fullName);
@@ -348,18 +471,9 @@ export default function OAuthCallback() {
         if (familyName) localStorage.setItem('oauth_family_name', familyName);
         if (photoUrl) localStorage.setItem('oauth_photo', photoUrl);
         localStorage.setItem('oauth_user_id', authUser.id);
+        localStorage.setItem('pending_oauth_role', 'trainee');
 
-        if (pendingRole === 'admin') {
-          localStorage.setItem('pending_oauth_role', 'admin');
-          setTimeout(() => navigate('/register?role=admin', { replace: true }), 300);
-        } else if (pendingRole === 'hte') {
-          localStorage.setItem('pending_oauth_role', 'hte');
-          setTimeout(() => navigate('/register?role=hte', { replace: true }), 300);
-        } else {
-          // Default Trainee registration
-          localStorage.setItem('pending_oauth_role', 'trainee');
-          setTimeout(() => navigate('/register?role=trainee', { replace: true }), 300);
-        }
+        setTimeout(() => navigate('/register?role=trainee', { replace: true }), 300);
       } catch (err: any) {
         console.error('OAuth callback processing error:', err);
         clearTimeout(watchdogTimer);

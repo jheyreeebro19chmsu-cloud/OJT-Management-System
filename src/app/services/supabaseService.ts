@@ -783,7 +783,7 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
 
   let empId = (zone as any).employeeId || (zone as any).employee_id;
   if (!empId && zone.id) {
-    const rawSuffix = zone.id.replace(/^(station|personal)-/, '');
+    const rawSuffix = zone.id.replace(/^(station|personal|trainee|inst|hte)-/, '');
     if (isValidUUID(rawSuffix)) {
       empId = rawSuffix;
     }
@@ -883,7 +883,7 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
 
   let empId = (updates as any).employeeId || (updates as any).employee_id;
   if (!empId && id) {
-    const rawSuffix = id.replace(/^(station|personal)-/, '');
+    const rawSuffix = id.replace(/^(station|personal|trainee|inst|hte)-/, '');
     if (isValidUUID(rawSuffix)) {
       empId = rawSuffix;
     }
@@ -897,7 +897,7 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
     if (!error) return true;
   }
 
-  // Non-UUID ID (e.g. station-xxx or personal-xxx): match by employee_id or name
+  // Match by employee_id if available
   if (empId) {
     try {
       const { data: matchedEmp } = await supabase.from('geofence_zones').select('id').eq('employee_id', empId).limit(1);
@@ -916,15 +916,15 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
     }
   }
 
-  // If not yet present in geofence_zones table, create record
-  if (updates.name && updates.lat && updates.lng) {
+  // If not yet present in geofence_zones table, create record with resolved coordinates
+  if (updates.lat && updates.lng) {
     await createGeofenceZone({
-      id,
-      name: updates.name,
+      id: isValidUUID(id) ? id : undefined,
+      name: updates.name || 'Workplace Geofence Zone',
       address: updates.address || '',
       lat: Number(updates.lat),
       lng: Number(updates.lng),
-      radius: Math.max(20, Number(updates.radius) || 20),
+      radius: Math.max(20, Number(updates.radius) || 40),
       active: updates.active !== false,
       academicYear: updates.academicYear,
       employeeId: empId,

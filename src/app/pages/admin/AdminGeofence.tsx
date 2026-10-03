@@ -50,7 +50,7 @@ const BLANK_ZONE = {
 type ZoneTypeFilter = 'all' | 'trainee' | 'instructor' | 'hte' | 'institutional' | 'out_of_region';
 
 export function AdminGeofence() {
-  const { currentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, settings, hostSupervisors = [] } = useApp();
+  const { currentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, updateHostSupervisor, settings, hostSupervisors = [] } = useApp();
   const navigate = useNavigate();
 
   // Trainee role guard: Trainees are strictly forbidden from accessing or managing geofences
@@ -261,11 +261,23 @@ export function AdminGeofence() {
       if (isTraineeAccount(acc)) return false;
     }
     const zoneName = (zone?.name || '').toLowerCase();
-    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
+    const zoneEmpId = (zone?.employeeId || zone?.employee_id || '').toLowerCase();
+    if (zoneName.includes('trainee') || zoneName.includes('student') || zoneName.includes('intern')) return false;
+
+    // Check if zone matches any hostSupervisor by employee_id or company name
+    const matchesHost = hostSupervisors.some(
+      (h) =>
+        (zoneEmpId && (h.id.toLowerCase() === zoneEmpId || h.employeeId?.toLowerCase() === zoneEmpId)) ||
+        (h.companyName && zoneName.includes(h.companyName.toLowerCase())) ||
+        (h.name && zoneName.includes(h.name.toLowerCase()))
+    );
+    if (matchesHost) return true;
+
     return Boolean(
       zoneName.includes('hte') ||
       zoneName.includes('host training') ||
-      zoneName.includes('partner workplace')
+      zoneName.includes('partner workplace') ||
+      zoneName.includes('printing services')
     );
   };
 
@@ -591,33 +603,69 @@ export function AdminGeofence() {
     const matchedZone = allCombinedZones.find((z) => z.id === zoneId);
     const account = getAccountForZone(matchedZone || { id: zoneId });
     const targetRadius = Math.max(20, Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS));
+    const targetLat = Number(updatedData.lat ?? matchedZone?.lat ?? 10.741);
+    const targetLng = Number(updatedData.lng ?? matchedZone?.lng ?? 122.9702);
+    const targetAddress = updatedData.address || matchedZone?.address || 'Official Workplace GPS';
+    const targetName = updatedData.name || matchedZone?.name || (account ? `${account.name} - Trainee Geofence` : 'Geofence Zone');
 
     if (account) {
       updateEmployee(account.id, {
         registrationLocation: {
-          lat: Number(updatedData.lat ?? matchedZone?.lat),
-          lng: Number(updatedData.lng ?? matchedZone?.lng),
+          lat: targetLat,
+          lng: targetLng,
           radius: targetRadius,
         },
         registrationRadius: targetRadius,
-        registrationAddress: updatedData.address || matchedZone?.address,
+        registrationAddress: targetAddress,
       });
     }
 
-    const existsInZones = geofenceZones.some((z) => z.id === zoneId);
-    if (existsInZones) {
-      updateGeofenceZone(zoneId, { ...updatedData, radius: targetRadius });
+    // Also sync if this is a host supervisor establishment
+    const hostAccount = hostSupervisors.find(
+      (h) => h.id === zoneId || (account && (h.id === account.id || h.employeeId === account.id))
+    );
+    if (hostAccount) {
+      updateHostSupervisor(hostAccount.id, {
+        registrationLocation: {
+          lat: targetLat,
+          lng: targetLng,
+          radius: targetRadius,
+        } as any,
+        registrationRadius: targetRadius,
+        registrationAddress: targetAddress,
+        companyAddress: targetAddress,
+      });
+    }
+
+    const realDbZone = geofenceZones.find(
+      (z) =>
+        z.id === zoneId ||
+        (account && ((z as any).employeeId === account.id || (z as any).employee_id === account.id)) ||
+        (account && z.name && account.name && z.name.toLowerCase().includes(account.name.toLowerCase()))
+    );
+
+    if (realDbZone) {
+      updateGeofenceZone(realDbZone.id, {
+        ...updatedData,
+        lat: targetLat,
+        lng: targetLng,
+        radius: targetRadius,
+        address: targetAddress,
+        name: targetName,
+        employeeId: account?.id,
+      } as any);
     } else {
       addGeofenceZone({
-        id: zoneId,
-        name: updatedData.name || matchedZone?.name || (account ? `${account.name} - Trainee Geofence` : 'Geofence Zone'),
-        address: updatedData.address || matchedZone?.address || 'Official Workplace GPS',
-        lat: Number(updatedData.lat ?? matchedZone?.lat ?? 10.741),
-        lng: Number(updatedData.lng ?? matchedZone?.lng ?? 122.9702),
+        id: account?.id || zoneId,
+        name: targetName,
+        address: targetAddress,
+        lat: targetLat,
+        lng: targetLng,
         radius: targetRadius,
         active: updatedData.active ?? matchedZone?.active ?? true,
         academicYear: selectedAcademicYear !== 'all' ? selectedAcademicYear : settings.activeAcademicYear,
-      });
+        employeeId: account?.id,
+      } as any);
     }
   };
 
@@ -693,27 +741,31 @@ export function AdminGeofence() {
     setDragCoords({ lat, lng });
   };
 
-  const handleZoneDragEnd = (_zoneId: string, lat: number, lng: number) => {
-    setDragCoords({ lat, lng });
-  };
+  const handleZoneDragEnd = async (zoneId: string, lat: number, lng: number) => {
+    const safeLat = Number(lat.toFixed(6));
+    const safeLng = Number(lng.toFixed(6));
+    setDragCoords({ lat: safeLat, lng: safeLng });
 
-  const handleSaveDrag = async () => {
-    if (dragZoneId && dragCoords) {
-      const zName = draggedZone?.name || 'Geofence Zone';
-      let resolvedAddress = draggedZone?.address;
-      try {
-        const addr = await reverseGeocode(dragCoords.lat, dragCoords.lng);
-        if (addr) resolvedAddress = addr;
-      } catch {}
-      saveZoneCoordinates(dragZoneId, {
-        lat: Number(dragCoords.lat.toFixed(6)),
-        lng: Number(dragCoords.lng.toFixed(6)),
-        address: resolvedAddress,
-      });
-      setDragZoneId(null);
-      setDragCoords(null);
-      toast.success(`✓ Saved new geofence position for "${zName}"!`);
-    }
+    const matchedZone = allCombinedZones.find((z) => z.id === zoneId);
+    const zName = matchedZone?.name || 'Geofence Zone';
+
+    let resolvedAddress = matchedZone?.address || '';
+    try {
+      const addr = await reverseGeocode(safeLat, safeLng);
+      if (addr) resolvedAddress = addr;
+    } catch {}
+
+    saveZoneCoordinates(zoneId, {
+      lat: safeLat,
+      lng: safeLng,
+      address: resolvedAddress,
+      name: matchedZone?.name,
+      radius: matchedZone?.radius,
+    });
+
+    setDragZoneId(null);
+    setDragCoords(null);
+    toast.success(`✓ Permanently saved new geofence position for "${zName}"!`);
   };
 
   const handleCancelDrag = () => {
@@ -1110,6 +1162,7 @@ export function AdminGeofence() {
           pickedRadius={Number(form.radius) || GEOFENCE_RADIUS_METERS}
           focusCoords={focusCoords}
           className="h-80"
+          allZonesDraggable={true}
           draggableZoneId={dragZoneId}
           onZoneDrag={handleZoneDrag}
           onZoneDragEnd={handleZoneDragEnd}

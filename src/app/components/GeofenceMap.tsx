@@ -43,6 +43,8 @@ export interface GeofenceMapProps {
   className?: string;
   /** Zone ID that is currently set to interactive draggable mode */
   draggableZoneId?: string | null;
+  /** Allow all zones on the map to be dragged and relocated directly */
+  allZonesDraggable?: boolean;
   /** Callbacks for interactive dragging */
   onZoneDrag?: (zoneId: string, lat: number, lng: number) => void;
   onZoneDragEnd?: (zoneId: string, lat: number, lng: number) => void;
@@ -76,6 +78,7 @@ export function GeofenceMap({
   liveUserPhoto = null,
   className = 'h-80',
   draggableZoneId = null,
+  allZonesDraggable = false,
   onZoneDrag,
   onZoneDragEnd,
   onZoneClick,
@@ -566,7 +569,7 @@ export function GeofenceMap({
         />
 
         {safeZones.map((zone) => {
-          const isDraggable = draggableZoneId === zone.id;
+          const isDraggable = (allZonesDraggable && !picking) || draggableZoneId === zone.id;
           return (
             <React.Fragment key={zone.id}>
               <Circle

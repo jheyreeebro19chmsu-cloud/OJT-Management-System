@@ -2656,23 +2656,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return e;
     });
     setEmployees(updatedEmployees);
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
-    }
+    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
 
     const updatedEmployee = updatedEmployees.find((e) => e.id === id || e.employeeId === id);
-    if (updatedEmployee && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
-      setCurrentUser((prev) =>
-        prev
-          ? {
-            ...prev,
-            name: updatedEmployee.name || prev.name,
-            email: updatedEmployee.email || prev.email,
-            photo: updatedEmployee.photo || prev.photo,
-            faceRegistered: updatedEmployee.faceRegistered ?? prev.faceRegistered ?? false,
-          }
-          : prev
-      );
+    if (
+      updatedEmployee &&
+      currentUser &&
+      (currentUser.employeeId === id ||
+        currentUser.id === id ||
+        (currentUser.email && updatedEmployee.email && normalizeEmail(currentUser.email) === normalizeEmail(updatedEmployee.email)))
+    ) {
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const nextUser = {
+          ...prev,
+          ...updatedEmployee,
+          name: updatedEmployee.name || prev.name,
+          email: updatedEmployee.email || prev.email,
+          photo: updatedEmployee.photo || prev.photo,
+          faceRegistered: updatedEmployee.faceRegistered ?? prev.faceRegistered ?? false,
+          companyName: updatedEmployee.companyName ?? prev.companyName,
+          supervisorName: updatedEmployee.supervisorName ?? prev.supervisorName,
+          companyAddress: updatedEmployee.companyAddress ?? (prev as any).companyAddress,
+          registrationLocation: updatedEmployee.registrationLocation ?? (prev as any).registrationLocation,
+          registrationAddress: updatedEmployee.registrationAddress ?? (prev as any).registrationAddress,
+        };
+        saveToStorage(STORAGE_KEYS.CURRENT_USER, nextUser);
+        return nextUser;
+      });
     }
 
     if (useSupabase) {
@@ -2696,9 +2707,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if ('registrationLocation' in data && !data.registrationLocation) {
       setGeofenceZones((prev) => {
         const filtered = prev.filter((z) => z.id !== `personal-${id}` && z.id !== id);
-        if (!useSupabase) {
-          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
-        }
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
         return filtered;
       });
       if (useSupabase) {
@@ -2710,9 +2719,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGeofenceZones((prev) => {
       const filtered = prev.filter((z) => z.id !== `personal-${id}`);
       if (filtered.length !== prev.length) {
-        if (!useSupabase) {
-          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
-        }
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
         if (useSupabase) {
           supabaseService.deleteGeofenceZone(`personal-${id}`).catch(() => {});
         }
@@ -2760,6 +2767,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
               };
               hteAddress = matchedHteEmp.companyAddress || matchedHteEmp.registrationAddress || hteAddress;
               hteRadius = Math.max(20, Number(matchedHteEmp.registrationRadius || (matchedHteEmp.registrationLocation as any)?.radius || 40));
+            } else {
+              // Check existing HTE zone in geofenceZones
+              const matchedZone = geofenceZones.find(
+                (z) => z.name && z.name.toLowerCase().includes(updatedEmployee.companyName!.trim().toLowerCase())
+              );
+              if (matchedZone?.lat && matchedZone?.lng) {
+                hteCoords = { lat: Number(matchedZone.lat), lng: Number(matchedZone.lng) };
+                hteAddress = matchedZone.address || hteAddress;
+                hteRadius = Math.max(20, Number(matchedZone.radius || 40));
+              }
             }
           }
         }
@@ -2778,37 +2795,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           };
 
           setGeofenceZones((prev) => {
-            const exists = prev.some((z) => z.id === stationZoneId);
+            const exists = prev.some((z) => z.id === stationZoneId || (z as any).employeeId === id || (z as any).employee_id === id);
             const updated = exists
-              ? prev.map((z) => (z.id === stationZoneId ? { ...z, ...stationZone } : z))
+              ? prev.map((z) => (z.id === stationZoneId || (z as any).employeeId === id || (z as any).employee_id === id ? { ...z, ...stationZone } : z))
               : [...prev, stationZone];
-            if (!useSupabase) {
-              saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
-            }
+            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
             return updated;
           });
 
           if (useSupabase) {
-            supabase
-              .from('geofence_zones')
-              .upsert([
-                {
-                  id: stationZone.id,
-                  name: stationZone.name,
-                  address: stationZone.address,
-                  lat: stationZone.lat,
-                  lng: stationZone.lng,
-                  radius: stationZone.radius,
-                  active: stationZone.active,
-                  academic_year: stationZone.academicYear,
-                },
-              ])
-              .then(
-                () => {},
-                (err: any) => {
-                  console.warn('[AppContext] Auto-sync trainee geofence zone error:', err);
-                }
-              );
+            supabaseService
+              .createGeofenceZone({
+                ...stationZone,
+                employeeId: id,
+              })
+              .catch((err) => {
+                console.warn('[AppContext] Auto-sync trainee geofence zone notice:', err);
+              });
           }
         }
       }

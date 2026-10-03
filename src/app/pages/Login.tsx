@@ -67,7 +67,7 @@ export function Login() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback`,
+          redirectTo: `${redirectOrigin}/oauth-callback?role=${targetRole}`,
           queryParams: {
             prompt: 'select_account',
           },

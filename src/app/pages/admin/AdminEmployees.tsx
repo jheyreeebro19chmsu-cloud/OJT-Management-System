@@ -1975,48 +1975,67 @@ export function AdminEmployees() {
                                         const matchedHost = hostSupervisors.find((h) => h.id === selectedHteId);
                                         if (!matchedHost) return;
 
-                                        const hteAddress = matchedHost.companyAddress || matchedHost.registrationAddress || `${matchedHost.companyName} Workplace Premises`;
-                                        const existingLoc = selectedEmp.registrationLocation;
-                                        const hasExistingCoords = existingLoc?.lat != null && existingLoc?.lng != null && Number.isFinite(Number(existingLoc.lat)) && Number.isFinite(Number(existingLoc.lng));
-                                        const targetLoc = hasExistingCoords ? existingLoc : (matchedHost.registrationLocation || { lat: 10.7410, lng: 122.9702 });
-                                        const hteRadius = Math.max(20, Number(selectedEmp.registrationRadius || (existingLoc as any)?.radius || matchedHost.registrationRadius || (matchedHost.registrationLocation as any)?.radius || 40));
+                                        // Resolve HTE's official workplace coordinates from existing zones, supervisor profile, or default
+                                        const hteZone = geofenceZones.find(
+                                          (z) =>
+                                            (z as any).employeeId === matchedHost.id ||
+                                            (z as any).employee_id === matchedHost.id ||
+                                            z.id === matchedHost.id ||
+                                            z.id === `station-${matchedHost.id}` ||
+                                            (matchedHost.companyName && z.name && z.name.toLowerCase().includes(matchedHost.companyName.toLowerCase()))
+                                        );
+                                        const hteEmp = employees.find(
+                                          (e) =>
+                                            e.id === matchedHost.id ||
+                                            e.employeeId === matchedHost.id ||
+                                            (matchedHost.companyName && e.companyName && e.companyName.toLowerCase() === matchedHost.companyName.toLowerCase())
+                                        );
+
+                                        const targetLoc = hteZone && hteZone.lat && hteZone.lng
+                                          ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
+                                          : matchedHost.registrationLocation?.lat && matchedHost.registrationLocation?.lng
+                                          ? { lat: Number(matchedHost.registrationLocation.lat), lng: Number(matchedHost.registrationLocation.lng) }
+                                          : hteEmp?.registrationLocation?.lat && hteEmp?.registrationLocation?.lng
+                                          ? { lat: Number(hteEmp.registrationLocation.lat), lng: Number(hteEmp.registrationLocation.lng) }
+                                          : { lat: 10.74275, lng: 122.970168 };
+
+                                        const hteRadius = Math.max(20, Number(hteZone?.radius || matchedHost.registrationRadius || hteEmp?.registrationRadius || 40));
+                                        const hteAddress = hteZone?.address || matchedHost.companyAddress || matchedHost.registrationAddress || `${matchedHost.companyName} Workplace Premises`;
 
                                         const updatedFields: any = {
                                           hteId: matchedHost.id,
                                           companyName: matchedHost.companyName,
                                           companyAddress: hteAddress,
                                           supervisorName: matchedHost.name,
-                                        };
-
-                                        if (!hasExistingCoords) {
-                                          updatedFields.registrationLocation = {
+                                          registrationLocation: {
                                             lat: Number(targetLoc.lat),
                                             lng: Number(targetLoc.lng),
                                             radius: hteRadius,
-                                          };
-                                          updatedFields.registrationRadius = hteRadius;
-                                          updatedFields.registrationAddress = hteAddress;
-                                        }
+                                          },
+                                          registrationRadius: hteRadius,
+                                          registrationAddress: hteAddress,
+                                        };
 
                                         updateEmployee(selectedEmp.id, updatedFields);
 
                                         addGeofenceZone({
-                                          id: `station-${selectedEmp.id}`,
+                                          id: selectedEmp.id,
                                           name: `${selectedEmp.name} - Trainee Geofence (${matchedHost.companyName})`,
-                                          address: selectedEmp.registrationAddress || hteAddress,
+                                          address: hteAddress,
                                           lat: Number(targetLoc.lat),
                                           lng: Number(targetLoc.lng),
                                           radius: hteRadius,
                                           active: true,
                                           academicYear: selectedEmp.academicYear || settings?.activeAcademicYear,
-                                        });
+                                          employeeId: selectedEmp.id,
+                                        } as any);
 
                                         setSelectedEmp((prev) => prev ? {
                                           ...prev,
                                           ...updatedFields,
                                         } : null);
                                         setAssigningHte(false);
-                                        toast.success(`Assigned ${selectedEmp.name} to ${matchedHost.companyName} & synced workplace geofence!`);
+                                        toast.success(`Assigned ${selectedEmp.name} to ${matchedHost.companyName} with official workplace geofence!`);
                                       }}
                                       className="px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 disabled:opacity-50 cursor-pointer shadow-sm"
                                     >

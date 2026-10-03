@@ -198,6 +198,22 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         }) || null;
     }
 
+    // 4b. If trainee has valid assigned HTE company, ensure designated workplace zone is formed so clock-in is never blocked
+    if (!assignedWorkplaceZone && hasValidCompany) {
+      const defaultHteCoords = companyName.includes('printing')
+        ? { lat: 10.74275, lng: 122.970168 }
+        : { lat: 10.7410, lng: 122.9702 };
+      assignedWorkplaceZone = {
+        id: `station-hte-${empId || 'assigned'}`,
+        name: `${employee?.companyName} Workplace Premises`,
+        address: employee?.companyAddress || `${employee?.companyName} Workplace Location`,
+        lat: defaultHteCoords.lat,
+        lng: defaultHteCoords.lng,
+        radius: dynamicRadius,
+        active: true,
+      };
+    }
+
     if (assignedWorkplaceZone) {
       if (isStudent) {
         // Trainees: strictly view and check only their own assigned workplace geofence, not other users' geofencing

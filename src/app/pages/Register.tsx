@@ -364,6 +364,7 @@ export function Register() {
           photo: oauthPhoto,
           faceRegistered: false,
         };
+        setCurrentUser(adminUser);
         localStorage.setItem('ojt_user', JSON.stringify(adminUser));
         localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
         localStorage.removeItem('pending_oauth_role');
@@ -387,6 +388,7 @@ export function Register() {
           photo: oauthPhoto,
           faceRegistered: false,
         };
+        setCurrentUser(hteUser);
         localStorage.setItem('ojt_user', JSON.stringify(hteUser));
         localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
         localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
@@ -409,9 +411,8 @@ export function Register() {
 
   const handleGoogleRegister = async (targetRole?: UserRole) => {
     if (googleLoading) return; // debounce: block re-entry while OAuth redirect is starting
-    if (targetRole) {
-      localStorage.setItem('pending_oauth_role', targetRole);
-    }
+    const effectiveRole = targetRole || role || 'trainee';
+    localStorage.setItem('pending_oauth_role', effectiveRole);
     setGoogleLoading(true);
     try {
       if (!isSupabaseConfigured()) {
@@ -426,7 +427,7 @@ export function Register() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback`,
+          redirectTo: `${redirectOrigin}/oauth-callback?role=${effectiveRole}`,
         },
       });
       if (error) {
@@ -475,6 +476,7 @@ export function Register() {
           photo: avatarUrl,
           faceRegistered: false,
         };
+        setCurrentUser(adminUser);
         localStorage.setItem('ojt_user', JSON.stringify(adminUser));
         localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
         localStorage.removeItem('pending_oauth_role');
@@ -501,6 +503,7 @@ export function Register() {
           photo: avatarUrl,
           faceRegistered: false,
         };
+        setCurrentUser(hteUser);
         localStorage.setItem('ojt_user', JSON.stringify(hteUser));
         localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
         localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
