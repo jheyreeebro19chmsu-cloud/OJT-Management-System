@@ -249,33 +249,15 @@ export function HTEEvaluations() {
     });
 
     return deduplicatedTrainees.filter((e) => {
-
-      const hasEvaluation = Boolean(
-        evaluations.some(
-          (evalItem) => evalItem.employeeId === e.id || (e.employeeId && evalItem.employeeId === e.employeeId)
-        )
+      const isAssignedToCurrentHte = Boolean(
+        currentHteId &&
+        (e.hteId === currentHteId ||
+         (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
+         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
       );
-
-      const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
-      const isCompanyMatched = Boolean(
-        currentCompany &&
-        currentCompany !== 'host training establishment' &&
-        e.companyName &&
-        (e.companyName.trim().toLowerCase() === currentCompany ||
-         e.companyName.toLowerCase().includes(currentCompany) ||
-         currentCompany.includes(e.companyName.toLowerCase()))
-      );
-      const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
-      const hasAnyAssignment = Boolean(e.instructorId || e.hteId);
-
-      // Trainee is visible if:
-      // 1. Trainee already has an evaluation in progress (e.g. answered questionnaire or passed by instructor)
-      // 2. Trainee is assigned to this HTE ID or company name matches
-      // 3. Trainee is assigned to instructor while HTE is viewing
-      // 4. Trainee has company assigned and not yet assigned to another specific HTE ID
-      return hasEvaluation || isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked || (!hasAnyAssignment && Boolean(e.companyName));
+      return isAssignedToCurrentHte;
     });
-  }, [employees, currentUser, currentEmp, hteUser, companyName, settings, selectedAcademicYear, evaluations]);
+  }, [employees, currentUser, currentEmp, hteUser, selectedAcademicYear]);
 
   // Handle preselected student from URL
   React.useEffect(() => {
@@ -889,8 +871,16 @@ export function HTEEvaluations() {
 
               {filteredTrainees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400">
-                    No student interns found matching your filter.
+                  <td colSpan={5} className="py-14 text-center">
+                    <div className="max-w-md mx-auto space-y-2">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+                        <Users size={24} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Trainees Deployed for Evaluation</p>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Student interns will appear here once assigned and deployed by the university OJT Instructor.
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}

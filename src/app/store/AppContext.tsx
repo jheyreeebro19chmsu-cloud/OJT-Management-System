@@ -2220,15 +2220,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               }
             }
 
-            if (!autoHteId) {
-              const { data: anyHte } = await supabase
-                .from('employees')
-                .select('id')
-                .eq('position', 'HTE Representative')
-                .limit(1)
-                .maybeSingle();
-              if (anyHte?.id) autoHteId = anyHte.id;
-            }
           } catch (hteErr) {
             console.warn('Auto HTE linking lookup failed:', hteErr);
           }
@@ -2321,30 +2312,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           supabaseService.createHostSupervisor(hostPayload).catch((hErr) => {
             console.debug('HostSupervisor creation notice:', hErr);
           });
-
-          // Bidirectional sync: Link all Trainees registered under this academic year with matching company name to this HTE
-          const comp = (created.companyName || cleanData.companyName || '').trim().toLowerCase();
-          if (comp && comp !== 'n/a' && comp !== 'host training establishment') {
-            const traineesToLink = employees.filter(
-              (e) =>
-                e.position !== 'OJT Instructor' &&
-                e.position !== 'HTE Representative' &&
-                (e.academicYear === targetAcademicYear || (!e.academicYear && targetAcademicYear === defaultAY)) &&
-                e.companyName &&
-                e.companyName.trim().toLowerCase() === comp &&
-                !e.hteId
-            );
-
-            if (traineesToLink.length > 0) {
-              traineesToLink.forEach((t) => {
-                t.hteId = created!.id;
-                supabase.from('employees').update({ hte_id: created!.id }).eq('id', t.id).then(undefined, () => {});
-              });
-              setEmployees((prev) =>
-                prev.map((e) => (traineesToLink.some((t) => t.id === e.id) ? { ...e, hteId: created!.id } : e))
-              );
-            }
-          }
         }
 
         // Cross-role sync: If registering an Instructor, auto-link unassigned Trainees in this academic year

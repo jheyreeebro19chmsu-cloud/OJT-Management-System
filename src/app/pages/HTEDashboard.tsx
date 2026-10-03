@@ -143,19 +143,17 @@ export function HTEDashboard() {
     });
 
     const specificList = ojtList.filter((e) => {
-      const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
-      const isCompanyMatched = Boolean(
-        currentCompany &&
-        currentCompany !== 'host training establishment' &&
-        e.companyName &&
-        e.companyName.trim().toLowerCase() === currentCompany
+      const isAssignedToCurrentHte = Boolean(
+        currentHteId &&
+        (e.hteId === currentHteId ||
+         (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
+         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
       );
-      const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
-      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked;
+      return isAssignedToCurrentHte;
     });
 
-    return specificList.length > 0 ? specificList : (currentCompany && currentCompany !== 'host training establishment' ? specificList : ojtList);
-  }, [employees, currentUser, currentEmp, hteUser, companyName, settings]);
+    return specificList;
+  }, [employees, currentUser, currentEmp, hteUser, settings]);
 
   // Compute rendered hours
   const traineeStats = useMemo(() => {
@@ -231,7 +229,21 @@ export function HTEDashboard() {
 
   // Recent time records for trainees with pagination
   const allRecentLogs = useMemo(() => {
+    const validTraineeIds = new Set<string>();
+    trainees.forEach((t) => {
+      if (t.id) validTraineeIds.add(t.id);
+      if (t.employeeId) validTraineeIds.add(t.employeeId.toLowerCase());
+      if (t.email) validTraineeIds.add(t.email.toLowerCase());
+    });
+
     return timeRecords
+      .filter((r) => {
+        if (validTraineeIds.size === 0) return false;
+        return (
+          validTraineeIds.has(r.employeeId) ||
+          (r.employeeId && validTraineeIds.has(r.employeeId.toLowerCase()))
+        );
+      })
       .map((r) => {
         const emp = employees.find(
           (e) =>
@@ -492,8 +504,16 @@ export function HTEDashboard() {
 
               {filteredTrainees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-slate-400">
-                    No trainees found matching your filter.
+                  <td colSpan={5} className="py-12 text-center">
+                    <div className="max-w-md mx-auto space-y-2">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+                        <Users size={24} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Trainees Deployed Yet</p>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Your university OJT Instructor will assign and deploy student interns to {companyName}. Once deployed, their profiles, rendered hours, and evaluation records will appear here.
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}

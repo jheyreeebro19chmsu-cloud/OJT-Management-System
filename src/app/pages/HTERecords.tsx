@@ -42,14 +42,52 @@ function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
 }
 
 export function HTERecords() {
-  const { timeRecords, employees, approveTimeRecord, disapproveTimeRecord } = useApp();
+  const { timeRecords, employees, approveTimeRecord, disapproveTimeRecord, currentUser, getCurrentEmployee } = useApp();
+  const currentEmp = getCurrentEmployee();
   const [viewMode, setViewMode] = useState<'daily' | 'monthly_dttr'>('daily');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
 
-  // Map employee info with records
+  const hteUser = React.useMemo(() => {
+    try {
+      const stored = localStorage.getItem('ojt_hte_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
+
+  const assignedTraineeIds = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach((e) => {
+      const isAssigned = Boolean(
+        currentHteId &&
+        (e.hteId === currentHteId ||
+         (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
+         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
+      );
+      if (isAssigned) {
+        if (e.id) set.add(e.id);
+        if (e.employeeId) set.add(e.employeeId.toLowerCase());
+        if (e.email) set.add(e.email.toLowerCase());
+      }
+    });
+    return set;
+  }, [employees, currentHteId, currentUser, currentEmp]);
+
+  // Map employee info with records (filtered to deployed trainees only)
   const enrichedRecords = useMemo(() => {
-    return timeRecords.map((r) => {
+    return timeRecords
+      .filter((r) => {
+        if (assignedTraineeIds.size === 0) return false;
+        return (
+          assignedTraineeIds.has(r.employeeId) ||
+          (r.employeeId && assignedTraineeIds.has(r.employeeId.toLowerCase()))
+        );
+      })
+      .map((r) => {
       const emp = employees.find(
         (e) =>
           e.id === r.employeeId ||
@@ -369,8 +407,18 @@ export function HTERecords() {
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    No DTR records found for this period.
+                  <td colSpan={9} className="py-14 text-center">
+                    <div className="max-w-md mx-auto space-y-2">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+                        <Clock size={24} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Time Records Found</p>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        {assignedTraineeIds.size === 0
+                          ? 'No student interns have been deployed to your establishment yet. Attendance logs will appear once trainees are assigned.'
+                          : 'No DTR attendance records match the selected date or search filter.'}
+                      </p>
+                    </div>
                   </td>
                 </tr>
               )}

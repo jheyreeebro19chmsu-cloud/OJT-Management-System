@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -86,6 +86,13 @@ export function AdminEmployees() {
   const [activeCategoryTab, setActiveCategoryTab] = useState<'student' | 'instructor' | 'hte' | 'pending' | 'documents' | 'all'>('student');
   const [assigningHte, setAssigningHte] = useState(false);
   const [selectedHteId, setSelectedHteId] = useState('');
+  const [batchDeployOpen, setBatchDeployOpen] = useState(false);
+  const [deployTargetHteId, setDeployTargetHteId] = useState('');
+  const [deploySelectedStudentIds, setDeploySelectedStudentIds] = useState<string[]>([]);
+  const [deployCourseFilter, setDeployCourseFilter] = useState('all');
+  const [deployStatusFilter, setDeployStatusFilter] = useState<'all' | 'unassigned' | 'assigned'>('unassigned');
+  const [deploySearch, setDeploySearch] = useState('');
+  const [isDeploying, setIsDeploying] = useState(false);
 
   const resolveEmpHomeAddress = (emp: Employee | null) => {
     if (!emp) return '';
@@ -266,6 +273,164 @@ export function AdminEmployees() {
     ]),
   };
 
+  const allAvailableHtes = useMemo(() => {
+    const map = new Map<string, {
+      id: string;
+      name: string;
+      email: string;
+      companyName: string;
+      companyAddress?: string;
+      lat?: number;
+      lng?: number;
+      radius?: number;
+      internCount: number;
+    }>();
+
+    (hostSupervisors || []).forEach((h) => {
+      const id = h.id || h.employeeId;
+      if (!id) return;
+      const key = id.toLowerCase();
+      map.set(key, {
+        id: h.id,
+        name: h.name || 'HTE Supervisor',
+        email: h.email || '',
+        companyName: h.companyName || 'Host Establishment',
+        companyAddress: h.companyAddress || h.registrationAddress || '',
+        lat: h.registrationLocation?.lat,
+        lng: h.registrationLocation?.lng,
+        radius: h.registrationRadius || h.registrationLocation?.radius || 50,
+        internCount: 0,
+      });
+    });
+
+    employees.forEach((e) => {
+      const isHte =
+        e.position === 'HTE Representative' ||
+        (e.position && e.position.toLowerCase().includes('hte')) ||
+        (e as any).role === 'hte';
+      if (!isHte) return;
+      const id = e.id || e.employeeId;
+      if (!id) return;
+      const key = id.toLowerCase();
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          id: e.id,
+          name: e.name || 'HTE Supervisor',
+          email: e.email || '',
+          companyName: e.companyName || 'Host Establishment',
+          companyAddress: e.companyAddress || e.registrationAddress || '',
+          lat: e.registrationLocation?.lat,
+          lng: e.registrationLocation?.lng,
+          radius: e.registrationRadius || e.registrationLocation?.radius || 50,
+          internCount: 0,
+        });
+      }
+    });
+
+    employees.forEach((e) => {
+      const isStudent = getEmployeeGroup(e) === 'student';
+      if (isStudent && e.hteId) {
+        const key = e.hteId.toLowerCase();
+        const found = map.get(key);
+        if (found) {
+          found.internCount += 1;
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
+  }, [hostSupervisors, employees]);
+
+  const deployableTrainees = useMemo(() => {
+    return filteredGroups.student.filter((t) => {
+      const matchesSearch =
+        !deploySearch ||
+        t.name.toLowerCase().includes(deploySearch.toLowerCase()) ||
+        (t.employeeId && t.employeeId.toLowerCase().includes(deploySearch.toLowerCase())) ||
+        (t.companyName && t.companyName.toLowerCase().includes(deploySearch.toLowerCase()));
+      const matchesCourse = deployCourseFilter === 'all' || t.course === deployCourseFilter;
+      const isAssigned = Boolean(t.hteId && t.companyName && !t.companyName.toLowerCase().includes('pending'));
+      const matchesStatus =
+        deployStatusFilter === 'all' ||
+        (deployStatusFilter === 'unassigned' && !isAssigned) ||
+        (deployStatusFilter === 'assigned' && isAssigned);
+      return matchesSearch && matchesCourse && matchesStatus;
+    });
+  }, [filteredGroups.student, deploySearch, deployCourseFilter, deployStatusFilter]);
+
+  const handleBatchDeploy = async () => {
+    if (!deployTargetHteId || deploySelectedStudentIds.length === 0) return;
+    const matchedHte = allAvailableHtes.find((h) => h.id === deployTargetHteId);
+    if (!matchedHte) {
+      toast.error('Selected HTE not found.');
+      return;
+    }
+
+    setIsDeploying(true);
+    try {
+      const hteZone = geofenceZones.find(
+        (z) =>
+          (z as any).employeeId === matchedHte.id ||
+          (z as any).employee_id === matchedHte.id ||
+          z.id === matchedHte.id ||
+          z.id === `station-${matchedHte.id}` ||
+          (matchedHte.companyName && z.name && z.name.toLowerCase().includes(matchedHte.companyName.toLowerCase()))
+      );
+
+      const targetLoc = hteZone && hteZone.lat && hteZone.lng
+        ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
+        : matchedHte.lat && matchedHte.lng
+        ? { lat: Number(matchedHte.lat), lng: Number(matchedHte.lng) }
+        : { lat: 10.74275, lng: 122.970168 };
+
+      const hteRadius = Math.max(20, Number(hteZone?.radius || matchedHte.radius || 40));
+      const hteAddress = hteZone?.address || matchedHte.companyAddress || `${matchedHte.companyName} Workplace Premises`;
+
+      for (const studentId of deploySelectedStudentIds) {
+        const student = employees.find((e) => e.id === studentId || e.employeeId === studentId);
+        if (!student) continue;
+
+        const updatedFields: any = {
+          hteId: matchedHte.id,
+          companyName: matchedHte.companyName,
+          companyAddress: hteAddress,
+          supervisorName: matchedHte.name,
+          registrationLocation: {
+            lat: Number(targetLoc.lat),
+            lng: Number(targetLoc.lng),
+            radius: hteRadius,
+          },
+          registrationRadius: hteRadius,
+          registrationAddress: hteAddress,
+        };
+
+        await updateEmployee(student.id, updatedFields);
+
+        addGeofenceZone({
+          id: student.id,
+          name: `${student.name} - Trainee Geofence (${matchedHte.companyName})`,
+          address: hteAddress,
+          lat: Number(targetLoc.lat),
+          lng: Number(targetLoc.lng),
+          radius: hteRadius,
+          active: true,
+          academicYear: student.academicYear || settings?.activeAcademicYear,
+          employeeId: student.id,
+        } as any);
+      }
+
+      toast.success(`Successfully deployed ${deploySelectedStudentIds.length} trainees to ${matchedHte.companyName}!`);
+      setBatchDeployOpen(false);
+      setDeploySelectedStudentIds([]);
+      setDeployTargetHteId('');
+    } catch (err: any) {
+      console.error('Batch deployment error:', err);
+      toast.error('Deployment failed: ' + (err?.message || 'Error'));
+    } finally {
+      setIsDeploying(false);
+    }
+  };
 
   const totalFiltered = Object.values(filteredGroups).reduce((sum, items) => sum + items.length, 0);
 
@@ -480,7 +645,22 @@ export function AdminEmployees() {
             <h3 className={`text-sm font-semibold ${isPendingGroup ? 'text-amber-900' : 'text-gray-800'}`}>{config.title}</h3>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.badge}`}>{items.length}</span>
           </div>
-          <span className="text-[11px] uppercase tracking-wide text-gray-400">{countLabel}</span>
+          <div className="flex items-center gap-2.5">
+            {group === 'student' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDeploySelectedStudentIds([]);
+                  setBatchDeployOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                <Building size={13} />
+                <span>Deploy Trainees to HTE</span>
+              </button>
+            )}
+            <span className="text-[11px] uppercase tracking-wide text-gray-400">{countLabel}</span>
+          </div>
         </div>
 
         {items.length === 0 ? (
@@ -1110,6 +1290,17 @@ export function AdminEmployees() {
           >
             <RefreshCw size={15} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
             <span>{isSyncing ? 'Syncing...' : 'Sync Database'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDeploySelectedStudentIds([]);
+              setBatchDeployOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm cursor-pointer"
+          >
+            <Building size={15} />
+            <span>Deploy Trainees to HTE</span>
           </button>
           <button
             onClick={openAdd}
@@ -1961,7 +2152,7 @@ export function AdminEmployees() {
                                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500"
                                   >
                                     <option value="">-- Choose Host Supervisor / Company --</option>
-                                    {hostSupervisors.map((h) => (
+                                    {allAvailableHtes.map((h) => (
                                       <option key={h.id} value={h.id}>
                                         {h.companyName} — {h.name} ({h.email})
                                       </option>
@@ -1972,7 +2163,7 @@ export function AdminEmployees() {
                                       type="button"
                                       disabled={!selectedHteId}
                                       onClick={() => {
-                                        const matchedHost = hostSupervisors.find((h) => h.id === selectedHteId);
+                                        const matchedHost = allAvailableHtes.find((h) => h.id === selectedHteId);
                                         if (!matchedHost) return;
 
                                         // Resolve HTE's official workplace coordinates from existing zones, supervisor profile, or default
@@ -1993,14 +2184,14 @@ export function AdminEmployees() {
 
                                         const targetLoc = hteZone && hteZone.lat && hteZone.lng
                                           ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
-                                          : matchedHost.registrationLocation?.lat && matchedHost.registrationLocation?.lng
-                                          ? { lat: Number(matchedHost.registrationLocation.lat), lng: Number(matchedHost.registrationLocation.lng) }
+                                          : matchedHost.lat && matchedHost.lng
+                                          ? { lat: Number(matchedHost.lat), lng: Number(matchedHost.lng) }
                                           : hteEmp?.registrationLocation?.lat && hteEmp?.registrationLocation?.lng
                                           ? { lat: Number(hteEmp.registrationLocation.lat), lng: Number(hteEmp.registrationLocation.lng) }
                                           : { lat: 10.74275, lng: 122.970168 };
 
-                                        const hteRadius = Math.max(20, Number(hteZone?.radius || matchedHost.registrationRadius || hteEmp?.registrationRadius || 40));
-                                        const hteAddress = hteZone?.address || matchedHost.companyAddress || matchedHost.registrationAddress || `${matchedHost.companyName} Workplace Premises`;
+                                        const hteRadius = Math.max(20, Number(hteZone?.radius || matchedHost.radius || hteEmp?.registrationRadius || 40));
+                                        const hteAddress = hteZone?.address || matchedHost.companyAddress || `${matchedHost.companyName} Workplace Premises`;
 
                                         const updatedFields: any = {
                                           hteId: matchedHost.id,
@@ -2050,6 +2241,25 @@ export function AdminEmployees() {
                                       <div>
                                         <p className="font-bold text-slate-900 text-sm">{selectedEmp.companyName}</p>
                                         <p className="text-slate-500 mt-0.5">Supervisor: {selectedEmp.supervisorName || 'N/A'}</p>
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (confirm(`Unassign ${selectedEmp.name} from ${selectedEmp.companyName}?`)) {
+                                              const updatedFields: any = {
+                                                hteId: null,
+                                                companyName: 'Pending Admin Assignment',
+                                                companyAddress: '',
+                                                supervisorName: 'Pending Admin Assignment',
+                                              };
+                                              await updateEmployee(selectedEmp.id, updatedFields);
+                                              setSelectedEmp((prev) => prev ? { ...prev, ...updatedFields } : null);
+                                              toast.success(`Unassigned ${selectedEmp.name} from HTE.`);
+                                            }
+                                          }}
+                                          className="text-[11px] font-bold text-rose-600 hover:text-rose-800 underline mt-1.5 cursor-pointer block"
+                                        >
+                                          Unassign from HTE
+                                        </button>
                                       </div>
                                       <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px] uppercase">
                                         Assigned
@@ -3317,6 +3527,243 @@ export function AdminEmployees() {
                   <p className="text-xs text-gray-600">Date Received</p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Trainee Deployment to HTE Modal */}
+      {batchDeployOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
+                  <Building className="text-blue-200" size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base">Deploy Trainees to HTE</h3>
+                  <p className="text-xs text-blue-200">
+                    Assign student interns to an approved Host Training Establishment with official workplace geofence
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchDeployOpen(false)}
+                className="p-2 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+              {/* Step 1: Select Target HTE */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">1</span>
+                    Select Host Training Establishment (HTE)
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {allAvailableHtes.length} partner establishments registered
+                  </span>
+                </div>
+
+                <select
+                  value={deployTargetHteId}
+                  onChange={(e) => setDeployTargetHteId(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer"
+                >
+                  <option value="">-- Choose Host Training Establishment --</option>
+                  {allAvailableHtes.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.companyName} — {h.name} ({h.internCount} currently assigned)
+                    </option>
+                  ))}
+                </select>
+
+                {(() => {
+                  const targetHte = allAvailableHtes.find((h) => h.id === deployTargetHteId);
+                  if (!targetHte) return null;
+                  return (
+                    <div className="p-3 bg-blue-50/80 rounded-xl border border-blue-200/80 text-xs text-blue-900 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-sm">{targetHte.companyName}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-blue-200 text-blue-800 font-bold text-[10px]">
+                          {targetHte.internCount} Interns Deployed
+                        </span>
+                      </div>
+                      <p className="text-blue-700">Representative: <strong>{targetHte.name}</strong> • {targetHte.email}</p>
+                      <p className="text-slate-600 text-[11px] flex items-center gap-1">
+                        <MapPin size={12} className="text-blue-600 shrink-0" />
+                        {targetHte.companyAddress || 'Official workplace address on file'}
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Step 2: Select Trainees to Deploy */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">2</span>
+                    Select Trainees to Deploy
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allIds = deployableTrainees.map((t) => t.id);
+                        setDeploySelectedStudentIds(allIds);
+                      }}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                    >
+                      Select All Filtered ({deployableTrainees.length})
+                    </button>
+                    <span className="text-slate-300">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setDeploySelectedStudentIds([])}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      value={deploySearch}
+                      onChange={(e) => setDeploySearch(e.target.value)}
+                      placeholder="Search trainee by name, ID..."
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <select
+                    value={deployStatusFilter}
+                    onChange={(e) => setDeployStatusFilter(e.target.value as any)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="unassigned">Unassigned Trainees Only</option>
+                    <option value="all">All Trainees</option>
+                    <option value="assigned">Already Assigned Trainees</option>
+                  </select>
+
+                  <select
+                    value={deployCourseFilter}
+                    onChange={(e) => setDeployCourseFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500 truncate"
+                  >
+                    <option value="all">All Programs / Courses</option>
+                    {departmentOptions.flatMap(d => getCoursesForDepartment(d)).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Trainees List Table */}
+                <div className="border border-slate-200 rounded-xl max-h-72 overflow-y-auto divide-y divide-slate-100">
+                  {deployableTrainees.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-400">
+                      No trainees found matching the selected filters.
+                    </div>
+                  ) : (
+                    deployableTrainees.map((student) => {
+                      const isSelected = deploySelectedStudentIds.includes(student.id);
+                      const isAssigned = Boolean(student.hteId && student.companyName && !student.companyName.toLowerCase().includes('pending'));
+                      return (
+                        <div
+                          key={student.id}
+                          onClick={() => {
+                            setDeploySelectedStudentIds((prev) =>
+                              prev.includes(student.id)
+                                ? prev.filter((id) => id !== student.id)
+                                : [...prev, student.id]
+                            );
+                          }}
+                          className={`flex items-center justify-between p-3 cursor-pointer transition-colors ${
+                            isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none"
+                            />
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">{student.name}</p>
+                              <p className="text-[11px] text-slate-500 font-mono">
+                                {student.employeeId || student.email} • {student.course || student.department || 'Trainee'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            {isAssigned ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                {student.companyName}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                Unassigned
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span>Selected for deployment: <strong>{deploySelectedStudentIds.length}</strong> trainees</span>
+                  <span>Total filtered: <strong>{deployableTrainees.length}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => setBatchDeployOpen(false)}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={!deployTargetHteId || deploySelectedStudentIds.length === 0 || isDeploying}
+                onClick={handleBatchDeploy}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isDeploying ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Deploying Trainees...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>
+                      Deploy {deploySelectedStudentIds.length} Trainees to{' '}
+                      {allAvailableHtes.find((h) => h.id === deployTargetHteId)?.companyName || 'HTE'}
+                    </span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

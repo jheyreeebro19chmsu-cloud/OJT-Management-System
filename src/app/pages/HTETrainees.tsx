@@ -103,24 +103,18 @@ export function HTETrainees() {
     });
   }, [employees, targetAY, defaultAY]);
 
-  // Show trainees based on filter scope (All trainees vs assigned to this HTE)
+  // Only trainees deployed to this HTE by the OJT Instructor
   const trainees = useMemo(() => {
-    if (filterScope === 'all') {
-      return allOjtTrainees;
-    }
-
     return allOjtTrainees.filter((e) => {
-      const isAssignedToCurrentHte = Boolean(e.hteId && currentHteId && e.hteId === currentHteId);
-      const isCompanyMatched = Boolean(
-        currentCompany &&
-        currentCompany !== 'host training establishment' &&
-        e.companyName &&
-        e.companyName.trim().toLowerCase() === currentCompany
+      const isAssignedToCurrentHte = Boolean(
+        currentHteId &&
+        (e.hteId === currentHteId ||
+         (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
+         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
       );
-      const isInstructorLinked = Boolean(e.instructorId && currentHteId && e.instructorId !== currentHteId);
-      return isAssignedToCurrentHte || isCompanyMatched || isInstructorLinked;
+      return isAssignedToCurrentHte;
     });
-  }, [allOjtTrainees, filterScope, currentHteId, currentCompany]);
+  }, [allOjtTrainees, currentHteId, currentUser, currentEmp]);
 
   // Calculate rendered hours for each trainee
   const traineeData = useMemo(() => {
@@ -268,41 +262,16 @@ export function HTETrainees() {
       </div>
 
       {/* Trainee Scope Tabs */}
+      {/* Trainee Filter Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFilterScope('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              filterScope === 'all'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Sparkles size={14} />
-            <span>All Registered Trainees</span>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-              filterScope === 'all' ? 'bg-blue-700 text-white' : 'bg-slate-200 text-slate-700'
-            }`}>
-              {allOjtTrainees.length}
+          <div className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-2">
+            <UserCheck size={14} className="text-blue-600" />
+            <span>Deployed to {companyName || 'My Establishment'}</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-600 text-white font-extrabold">
+              {trainees.length}
             </span>
-          </button>
-
-          <button
-            onClick={() => setFilterScope('assigned')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              filterScope === 'assigned'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <UserCheck size={14} />
-            <span>My Establishment</span>
-            {companyName && (
-              <span className="max-w-[120px] truncate text-[11px] opacity-80">
-                ({companyName})
-              </span>
-            )}
-          </button>
+          </div>
         </div>
 
         {selectedCourse !== 'all' && (
@@ -508,22 +477,16 @@ export function HTETrainees() {
         ))}
 
         {filteredTrainees.length === 0 && (
-          <div className="col-span-full py-16 text-center bg-white rounded-3xl border border-slate-200">
-            <Users size={36} className="mx-auto text-slate-300 mb-2" />
-            <h3 className="font-bold text-slate-700">No trainees found</h3>
-            <p className="text-xs text-slate-400 mt-1">
+          <div className="col-span-full py-16 px-4 text-center bg-white rounded-3xl border border-slate-200">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+              <Users size={28} />
+            </div>
+            <h3 className="font-bold text-slate-800 text-base">No Trainees Deployed Yet</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 leading-relaxed">
               {searchTerm || selectedCourse !== 'all'
-                ? 'Try adjusting your course or search filter'
-                : 'No student trainees registered yet'}
+                ? 'Try adjusting your course or search filter.'
+                : `Student interns will appear here once the university OJT Instructor deploys them to ${companyName || 'your establishment'}.`}
             </p>
-            {selectedCourse !== 'all' && (
-              <button
-                onClick={() => setSelectedCourse('all')}
-                className="mt-3 inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded-xl"
-              >
-                Show All Courses
-              </button>
-            )}
           </div>
         )}
       </div>
