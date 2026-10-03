@@ -72,7 +72,7 @@ L.Icon.Default.mergeOptions({
 const stepsTrainee = ['Personal Info', 'Company Info', 'School Info', 'Face Registration'];
 // Do NOT include face registration for OJT Instructor or HTE
 const stepsAdmin = ['Personal Info'];
-const stepsHTE = ['Company Info', 'Contact Info'];
+const stepsHTE = ['Company & Contact Info'];
 
 type LocationStatus = 'idle' | 'capturing' | 'captured' | 'denied' | 'error';
 type UserRole = 'trainee' | 'admin' | 'hte' | null;
@@ -408,12 +408,79 @@ export function Register() {
     }));
   };
 
+  const prefillHTEGoogleData = (
+    fullName: string,
+    email: string,
+    photoUrl?: string,
+    givenName?: string,
+    familyName?: string
+  ) => {
+    setRole('hte');
+    setStep(0);
+    setOauthPending(true);
+
+    let fName = givenName || '';
+    let lName = familyName || '';
+    let mInitial = '';
+    if (!fName && fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length === 1) {
+        fName = parts[0];
+      } else if (parts.length === 2) {
+        fName = parts[0];
+        lName = parts[1];
+      } else {
+        fName = parts.slice(0, -1).join(' ');
+        lName = parts[parts.length - 1];
+        if (parts.length > 2 && parts[1].length === 1) {
+          mInitial = parts[1].toUpperCase();
+        }
+      }
+    }
+
+    const defaultLat = 10.7410;
+    const defaultLng = 122.9702;
+    setRegistrationLocation({ lat: defaultLat, lng: defaultLng, accuracy: 15 });
+    setRegistrationAddress('Domingo Lizares Street, Purok Manpower, Zone 1, Talisay City, Negros Occidental');
+    if (photoUrl) {
+      setPhoto(photoUrl);
+      setGoogleAvatar(photoUrl);
+    }
+
+    const resolvedRepName = fullName || [fName, lName].filter(Boolean).join(' ') || 'HTE Representative';
+    const resolvedCompany = 'Host Training Establishment Partner';
+    const resolvedStreet = 'Domingo Lizares Street, Purok Manpower';
+    const resolvedAddress = `${resolvedStreet}, Zone 1, Talisay City, Negros Occidental`;
+
+    setForm((prev) => ({
+      ...prev,
+      name: resolvedRepName,
+      firstName: fName || prev.firstName || 'HTE',
+      lastName: lName || prev.lastName || 'Representative',
+      middleInitial: mInitial || prev.middleInitial || '',
+      contactPerson: resolvedRepName,
+      email: email || prev.email,
+      contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
+      companyName: prev.companyName || resolvedCompany,
+      companyAddress: prev.companyAddress || resolvedAddress,
+      supervisorName: prev.supervisorName || 'Training Supervisor',
+      position: 'HTE Representative',
+      country: 'PH',
+      region: 'Region VI (Western Visayas)',
+      province: 'Negros Occidental',
+      city: 'Talisay City',
+      barangay: 'Zone 1',
+      street: resolvedStreet,
+      birthdate: prev.birthdate || '1990-01-01',
+      age: prev.age || '36',
+    }));
+  };
+
   const selectRole = (nextRole: UserRole) => {
     if (oauthPending && (nextRole === 'admin' || nextRole === 'hte')) {
       const oauthEmail = localStorage.getItem('oauth_email') || form.email;
       const oauthName = localStorage.getItem('oauth_name') || form.name || [form.firstName, form.lastName].filter(Boolean).join(' ') || (nextRole === 'admin' ? 'OJT Instructor' : 'HTE Representative');
       const oauthPhoto = localStorage.getItem('oauth_photo') || googleAvatar || photo || '';
-      const oauthUserId = localStorage.getItem('oauth_user_id') || `user-${Date.now()}`;
 
       if (nextRole === 'admin') {
         prefillInstructorGoogleData(
@@ -428,27 +495,14 @@ export function Register() {
       }
 
       if (nextRole === 'hte') {
-        const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-        const hteUser = {
-          id: oauthUserId,
-          name: oauthName,
-          email: oauthEmail,
-          role: 'hte' as const,
-          employeeId,
-          photo: oauthPhoto,
-          faceRegistered: false,
-        };
-        setCurrentUser(hteUser);
-        localStorage.setItem('ojt_user', JSON.stringify(hteUser));
-        localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
-        localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
-        localStorage.removeItem('pending_oauth_role');
-        localStorage.removeItem('oauth_email');
-        localStorage.removeItem('oauth_name');
-        localStorage.removeItem('oauth_photo');
-        localStorage.removeItem('oauth_user_id');
-        toast.success(`Welcome, ${oauthName}! Direct access granted to HTE portal.`);
-        navigate('/hte');
+        prefillHTEGoogleData(
+          oauthName,
+          oauthEmail,
+          oauthPhoto,
+          localStorage.getItem('oauth_given_name') || '',
+          localStorage.getItem('oauth_family_name') || ''
+        );
+        toast.info('HTE company details pre-filled from Google. Please review and complete your registration.');
         return;
       }
     }
@@ -497,6 +551,8 @@ export function Register() {
     // go straight to login (which leads to the dashboard) like every other role.
     if (registrationComplete && role === 'admin') {
       navigate('/admin');
+    } else if (registrationComplete && role === 'hte') {
+      navigate('/hte');
     }
   }, [registrationComplete, role]);
 
@@ -591,32 +647,14 @@ export function Register() {
         toast.success(`Google verified! Review your instructor details below and create your account.`);
         return;
       } else if (h === 'hte' || pending === 'hte') {
-        const authEmail = oauthEmail || '';
-        const fullName = oauthName || 'HTE Representative';
-        const avatarUrl = oauthPhoto || '';
-        const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-        const hteUser = {
-          id: localStorage.getItem('oauth_user_id') || `hte-${Date.now()}`,
-          name: fullName,
-          email: authEmail,
-          role: 'hte' as const,
-          employeeId,
-          photo: avatarUrl,
-          faceRegistered: false,
-        };
-        setCurrentUser(hteUser);
-        localStorage.setItem('ojt_user', JSON.stringify(hteUser));
-        localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
-        localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
-        localStorage.removeItem('pending_oauth_role');
-        localStorage.removeItem('oauth_email');
-        localStorage.removeItem('oauth_name');
-        localStorage.removeItem('oauth_given_name');
-        localStorage.removeItem('oauth_family_name');
-        localStorage.removeItem('oauth_photo');
-        localStorage.removeItem('oauth_user_id');
-        toast.success(`Welcome, ${fullName}! Direct access granted to HTE portal.`);
-        navigate('/hte');
+        prefillHTEGoogleData(
+          oauthName || 'HTE Representative',
+          oauthEmail || '',
+          oauthPhoto || '',
+          oauthGivenName || '',
+          oauthFamilyName || ''
+        );
+        toast.success(`Google verified! Review your HTE company details below and create your account.`);
         return;
       } else if (h === 'trainee' || pending === 'trainee' || (pending as any) === 'employee') {
         setRole('trainee');
@@ -1006,56 +1044,6 @@ export function Register() {
     const empId =
       form.employeeId ||
       `${role === 'admin' ? 'ADM' : role === 'hte' ? 'HTE' : 'OJT'}-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`;
-
-    // If OAuth HTE flow pending, attempt HTE registration via backend
-    if (oauthPending && role === 'hte') {
-      try {
-        const parts = (form.name || '').trim().split(/\s+/);
-        const first_name = parts[0] || '';
-        const last_name = parts.slice(1).join(' ') || '';
-        const payload = {
-          email: form.email || form.username,
-          first_name: first_name || 'User',
-          last_name: last_name || '',
-          company_name: form.companyName || '',
-          company_address: form.companyAddress || '',
-          contact_person: form.contactPerson || '',
-          contact_phone: form.contactPhone || '',
-          // Include registration GPS location if available
-          ...(registrationLocation ? {
-            gps_latitude: registrationLocation.lat,
-            gps_longitude: registrationLocation.lng,
-            gps_accuracy: registrationLocation.accuracy,
-          } : {}),
-        };
-        const res = await authAPI.registerHTE(payload);
-        if (res?.data?.tokens) {
-          const user = (res.data as any)?.user;
-          if (user?.face_registration) {
-            setFaceRegistered(Boolean(user.face_registration.has_encoding));
-            if (user.face_registration.image_url) setPhoto(user.face_registration.image_url);
-          } else if (user?.avatar) {
-            setPhoto(user.avatar);
-          }
-          toast.success('Registration successful! Please log in.');
-          setOauthPending(false);
-          setIsSubmitting(false);
-          navigate('/login');
-          return;
-        } else {
-          throw new Error((res?.data as any)?.error || 'OAuth HTE registration failed');
-        }
-      } catch (err) {
-        console.error('HTE register (oauthPending) exception:', err);
-        const msg = (err as any)?.response?.data?.error || (err as any)?.message || String(err);
-        setSubmitError(msg);
-        toast.error('Registration failed: ' + msg);
-        setIsSubmitting(false);
-      }
-      setOauthPending(false);
-      // OAuth HTE path ended — do not fall through to registerEmployee
-      return;
-    }
 
     // ── Standard Supabase registration path ──────────────────────────────────
     // Validate required fields before proceeding
@@ -1533,17 +1521,16 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select Province');
         if (!hasValidCity) errors.push('Please select City/Municipality');
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter Barangay');
-        if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
-        else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
-      }
-      if (step === 1) {
         if (!hasEmail) errors.push('Please enter your contact email');
         if (emailExists) errors.push('Email is already in use. Please sign in or use another email.');
+        if (!form.contactPerson?.trim() && !form.name?.trim()) errors.push('Please enter Representative Name');
         if (!form.contactPhone?.trim()) {
           errors.push('Please enter your Philippine contact number (+639...)');
         } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
           errors.push('Please enter a valid Philippine mobile number (e.g. +639123456789)');
         }
+        if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
       }
     }
 
@@ -2047,6 +2034,18 @@ export function Register() {
                     </div>
                   </div>
                 )}
+
+                {role === 'hte' && oauthPending && (
+                  <div className="mb-4 p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl text-emerald-950 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in">
+                    <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-emerald-950 mb-0.5">Google HTE Account Verified!</p>
+                      <p className="text-emerald-800 leading-relaxed">
+                        Your information (Representative Name, Company Name, Address of the Company, and Phone Number) has been directly filled in. Review your details below and click <span className="font-extrabold text-emerald-950">Create HTE Account</span> to register.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {role === 'hte' ? (
                   <>
                     <div className="flex items-center gap-2 mb-4">
@@ -2276,6 +2275,19 @@ export function Register() {
                           </div>
                         )}
 
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Company Street Address / Building</label>
+                          <input
+                            value={form.street}
+                            onChange={(e) => {
+                              update('street', e.target.value);
+                              update('companyAddress', `${e.target.value}, ${form.barangay}, ${form.city}, ${form.province}`);
+                            }}
+                            placeholder="e.g. Domingo Lizares Street, Purok Manpower"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+
                         {/* Location Pinning & Map Box */}
                         <div className="mt-4 pt-3 border-t border-blue-100/60 space-y-2.5">
                           <div className="flex items-center justify-between">
@@ -2380,73 +2392,173 @@ export function Register() {
 
                       </div>
 
-                      {/* Account Security Card */}
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3.5 mt-4">
+                      {/* Representative & Contact Details Card */}
+                      <div className="bg-sky-50/50 rounded-2xl p-4 border border-sky-100/60 space-y-3.5 mt-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 bg-slate-200 rounded-md flex items-center justify-center">
-                            <Lock size={13} className="text-slate-700" />
+                          <div className="w-6 h-6 bg-sky-100 rounded-md flex items-center justify-center">
+                            <User size={13} className="text-sky-700" />
                           </div>
-                          <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider">Account Credentials</h3>
+                          <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider">Representative & Contact Details</h3>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
-                            <div className="relative">
-                              <input
-                                type={showPassword ? 'text' : 'password'}
-                                value={form.password}
-                                onChange={(e) => update('password', e.target.value)}
-                                placeholder="Min 8 chars"
-                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
-                                  attemptedNext && !isPasswordValid
-                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                    : 'border-gray-200 focus:ring-blue-500'
-                                }`}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-                              >
-                                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                              </button>
-                            </div>
-                            {attemptedNext && !form.password && (
-                              <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
-                            )}
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              Representative Name *
+                            </label>
+                            <input
+                              value={form.contactPerson || form.name}
+                              onChange={(e) => {
+                                update('contactPerson', e.target.value);
+                                update('name', e.target.value);
+                              }}
+                              placeholder="Full Name of Representative"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            />
                           </div>
 
                           <div>
-                            <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
-                            <div className="relative">
-                              <input
-                                type={showPassword ? 'text' : 'password'}
-                                value={form.confirmPassword}
-                                onChange={(e) => update('confirmPassword', e.target.value)}
-                                placeholder="Repeat password"
-                                className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
-                                  (form.confirmPassword && form.password !== form.confirmPassword) || (attemptedNext && !form.confirmPassword)
-                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                    : 'border-gray-200 focus:ring-blue-500'
-                                }`}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-                              >
-                                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                              </button>
-                            </div>
-                            {attemptedNext && !form.confirmPassword && (
-                              <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
-                            )}
-                            {form.confirmPassword && form.password !== form.confirmPassword && (
-                              <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              Email Address *
+                            </label>
+                            <input
+                              type="email"
+                              value={form.email}
+                              readOnly={oauthPending}
+                              onChange={(e) => update('email', e.target.value)}
+                              placeholder="your.email@company.com"
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
+                                oauthPending
+                                  ? 'bg-gray-100 border-gray-300 text-gray-600 cursor-not-allowed'
+                                  : 'bg-white border-gray-200 focus:ring-blue-500'
+                              }`}
+                            />
+                            {oauthPending && (
+                              <p className="text-[10px] text-green-700 font-semibold mt-1">✓ Verified via Google Account</p>
                             )}
                           </div>
                         </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">
+                              Contact Phone / Mobile (+639...) *
+                            </label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                                <Phone size={14} />
+                              </div>
+                              <input
+                                type="tel"
+                                value={form.contactPhone}
+                                onChange={(e) => {
+                                  let val = e.target.value;
+                                  let digits = val.replace(/[^\d+]/g, '');
+                                  if (digits.includes('+')) {
+                                    digits = '+' + digits.replace(/\+/g, '');
+                                  }
+                                  if (digits.startsWith('09')) {
+                                    digits = '+63' + digits.slice(1);
+                                  } else if (digits.startsWith('9')) {
+                                    digits = '+63' + digits;
+                                  } else if (digits.startsWith('639')) {
+                                    digits = '+' + digits;
+                                  }
+                                  if (digits.length > 13) {
+                                    digits = digits.slice(0, 13);
+                                  }
+                                  update('contactPhone', digits);
+                                }}
+                                placeholder="+639123456789"
+                                maxLength={13}
+                                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono tracking-wide"
+                              />
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1">Philippine mobile number (+639...)</p>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600 block mb-1">Position / Title</label>
+                            <input
+                              value={form.supervisorName}
+                              onChange={(e) => update('supervisorName', e.target.value)}
+                              placeholder="e.g. Training Supervisor / HR Manager"
+                              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Account Security Card */}
+                      {!oauthPending ? (
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3.5 mt-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 bg-slate-200 rounded-md flex items-center justify-center">
+                              <Lock size={13} className="text-slate-700" />
+                            </div>
+                            <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider">Account Credentials</h3>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Password *</label>
+                              <div className="relative">
+                                <input
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={form.password}
+                                  onChange={(e) => update('password', e.target.value)}
+                                  placeholder="Min 8 chars"
+                                  className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                    attemptedNext && !isPasswordValid
+                                      ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                      : 'border-gray-200 focus:ring-blue-500'
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                                >
+                                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                                </button>
+                              </div>
+                              {attemptedNext && !form.password && (
+                                <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">Confirm Password *</label>
+                              <div className="relative">
+                                <input
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={form.confirmPassword}
+                                  onChange={(e) => update('confirmPassword', e.target.value)}
+                                  placeholder="Repeat password"
+                                  className={`w-full pl-3 pr-8 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                    (form.confirmPassword && form.password !== form.confirmPassword) || (attemptedNext && !form.confirmPassword)
+                                      ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                      : 'border-gray-200 focus:ring-blue-500'
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                                >
+                                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                                </button>
+                              </div>
+                              {attemptedNext && !form.confirmPassword && (
+                                <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
+                              )}
+                              {form.confirmPassword && form.password !== form.confirmPassword && (
+                                <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
 
                         {/* Password strength checklist */}
                         {form.password && (
@@ -2491,7 +2603,6 @@ export function Register() {
                           </div>
                         )}
                       </div>
-                    </div>
                   </>
                 ) : (
                   <>
@@ -4075,7 +4186,7 @@ export function Register() {
                       ) : (
                         <>
                           <Check size={16} />
-                          <span>{role === 'admin' ? 'Create Instructor Account' : 'Complete Registration'}</span>
+                          <span>{role === 'admin' ? 'Create Instructor Account' : role === 'hte' ? 'Create HTE Account' : 'Complete Registration'}</span>
                         </>
                       )}
                     </button>

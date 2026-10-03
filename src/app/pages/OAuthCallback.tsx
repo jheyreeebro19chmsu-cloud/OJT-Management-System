@@ -249,7 +249,7 @@ export default function OAuthCallback() {
             employee_id: authUser.user_metadata?.employee_id || `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
             photo: photoUrl,
           };
-        } else if (!dbEmp && !dbHost && (authUser.user_metadata?.role === 'hte' || pendingRole === 'hte')) {
+        } else if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'hte') {
           dbHost = {
             id: authUser.id,
             name: fullName,
@@ -342,7 +342,7 @@ export default function OAuthCallback() {
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // CASE B: User DOES NOT EXIST -> DIRECT ACCESS FOR INSTRUCTOR & HTE!
+        // CASE B: User DOES NOT EXIST -> PRE-FILL & COMPLETE REGISTRATION
         // ═══════════════════════════════════════════════════════════════════════
         if (pendingRole === 'admin') {
           setIsSuccess(true);
@@ -361,64 +361,16 @@ export default function OAuthCallback() {
 
         if (pendingRole === 'hte') {
           setIsSuccess(true);
-          setStatusMessage(`Welcome, ${fullName}! Setting up your HTE portal...`);
-          const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-          const hteUser: User = {
-            id: authUser.id,
-            name: fullName,
-            email,
-            role: 'hte',
-            employeeId,
-            photo: photoUrl || '',
-            faceRegistered: false,
-          };
-          setCurrentUser(hteUser);
-          localStorage.setItem('ojt_user', JSON.stringify(hteUser));
-          localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
-          localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
-          localStorage.removeItem('pending_oauth_role');
-          localStorage.removeItem('oauth_email');
-          localStorage.removeItem('oauth_name');
-          localStorage.removeItem('oauth_photo');
-          localStorage.removeItem('oauth_user_id');
+          setStatusMessage(`Welcome, ${fullName}! Setting up your HTE registration details...`);
+          localStorage.setItem('pending_oauth_role', 'hte');
+          localStorage.setItem('oauth_email', email);
+          localStorage.setItem('oauth_name', fullName);
+          localStorage.setItem('oauth_given_name', givenName);
+          localStorage.setItem('oauth_family_name', familyName);
+          localStorage.setItem('oauth_photo', photoUrl || '');
+          localStorage.setItem('oauth_user_id', authUser.id);
 
-          if (isSupabaseConfigured()) {
-            try {
-              await supabase.from('host_supervisors').upsert({
-                id: authUser.id,
-                employee_id: employeeId,
-                name: fullName,
-                email,
-                company_name: 'Host Training Establishment',
-                contact_person: fullName,
-                is_approved: true,
-                active: true,
-              }, { onConflict: 'email' });
-
-              await supabase.from('employees').upsert({
-                id: authUser.id,
-                employee_id: employeeId,
-                name: fullName,
-                email,
-                position: 'HTE Representative',
-                role: 'hte',
-                academic_year: '2026-2027',
-                company_name: 'Host Training Establishment',
-                supervisor_name: fullName,
-                photo: photoUrl || null,
-                active: true,
-                application_status: 'approved',
-                documents_passed: true,
-                documents_status: 'passed',
-                face_registered: false,
-                required_hours: 0,
-              }, { onConflict: 'email' });
-            } catch (pErr) {
-              console.warn('OAuth HTE provisioning error:', pErr);
-            }
-          }
-
-          setTimeout(() => navigate('/hte', { replace: true }), 300);
+          setTimeout(() => navigate('/register?role=hte', { replace: true }), 300);
           return;
         }
 
