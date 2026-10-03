@@ -207,15 +207,16 @@ export function GeofenceMap({
   );
 
   // Attempt to safely retrieve user from context to enforce trainee view boundaries
+  let appContext: any = null;
   let appCurrentUser: any = null;
   let appCurrentEmployee: any = null;
   try {
-    const app = useApp();
-    appCurrentUser = app?.currentUser;
+    appContext = useApp();
+    appCurrentUser = appContext?.currentUser;
     appCurrentEmployee =
-      app?.getCurrentEmployee?.() ||
-      (appCurrentUser && app?.employees
-        ? app.employees.find(
+      appContext?.getCurrentEmployee?.() ||
+      (appCurrentUser && appContext?.employees
+        ? appContext.employees.find(
             (e: any) =>
               e.id === appCurrentUser.id ||
               (e.email && appCurrentUser.email && e.email.toLowerCase() === appCurrentUser.email.toLowerCase())
@@ -248,18 +249,47 @@ export function GeofenceMap({
       effectiveRole.includes('trainee') ||
       effectiveRole.includes('student'));
 
+  const resolveZonePhotoUrl = useCallback((zone: GeofenceZone): string | null => {
+    if (zone.photo) {
+      return getPhotoUrl(zone.photo);
+    }
+    if (appContext?.employees) {
+      const zoneEmpId = (zone.employeeId || (zone as any).employee_id || '').toLowerCase();
+      const rawSuffix = zone.id ? zone.id.replace(/^(station|personal|trainee|inst|hte)-/, '').toLowerCase() : '';
+      const zName = (zone.name || '').toLowerCase();
+      const personPrefix = (zone.name?.includes(' - ') ? zone.name.split(' - ')[0].trim() : zone.name || '').toLowerCase();
+      const matchedEmp = appContext.employees.find((e: any) =>
+        (zoneEmpId && (e.id?.toLowerCase() === zoneEmpId || e.employeeId?.toLowerCase() === zoneEmpId)) ||
+        (rawSuffix && (e.id?.toLowerCase() === rawSuffix || e.employeeId?.toLowerCase() === rawSuffix)) ||
+        (e.name && (zName.includes(e.name.toLowerCase()) || personPrefix.includes(e.name.toLowerCase()) || e.name.toLowerCase().includes(personPrefix)))
+      );
+      if (matchedEmp?.photo) {
+        return getPhotoUrl(matchedEmp.photo);
+      }
+    }
+
+    if (appContext?.hostSupervisors) {
+      const zoneEmpId = (zone.employeeId || (zone as any).employee_id || '').toLowerCase();
+      const matchedHost = appContext.hostSupervisors.find((h: any) =>
+        (zoneEmpId && (h.id?.toLowerCase() === zoneEmpId || h.employeeId?.toLowerCase() === zoneEmpId)) ||
+        (h.name && zone.name && zone.name.toLowerCase().includes(h.name.toLowerCase())) ||
+        (h.companyName && zone.name && zone.name.toLowerCase().includes(h.companyName.toLowerCase()))
+      );
+      if (matchedHost?.photo) {
+        return getPhotoUrl(matchedHost.photo);
+      }
+    }
+
+    if (appCurrentUser && appCurrentEmployee && (zone.employeeId === appCurrentEmployee.id || (zone as any).employee_id === appCurrentEmployee.id || zone.id === `station-${appCurrentEmployee.id}` || zone.id === `personal-${appCurrentEmployee.id}`)) {
+      return getPhotoUrl(appCurrentEmployee.photo || appCurrentUser.photo);
+    }
+
+    return null;
+  }, [appContext, appCurrentUser, appCurrentEmployee]);
+
   const getZoneMarkerIcon = useCallback(
     (zone: GeofenceZone, isDraggable: boolean) => {
-      if (isDraggable) return draggableZoneIcon;
-
-      // Extract photo and account
-      let photoUrl: string | null = null;
-      if (zone.photo) {
-        photoUrl = getPhotoUrl(zone.photo);
-      } else if (appCurrentUser && appCurrentEmployee && (zone.employeeId === appCurrentEmployee.id || zone.employee_id === appCurrentEmployee.id || zone.id === `station-${appCurrentEmployee.id}` || zone.id === `personal-${appCurrentEmployee.id}`)) {
-        photoUrl = getPhotoUrl(appCurrentEmployee.photo || appCurrentUser.photo);
-      }
-
+      const photoUrl = resolveZonePhotoUrl(zone);
       const name = zone.name || 'Geofence Zone';
       const initial = (name.replace(/[^a-zA-Z]/g, '')[0] || 'Z').toUpperCase();
       const zName = (zone.name || '').toLowerCase();
@@ -269,7 +299,7 @@ export function GeofenceMap({
           ? 'trainee'
           : zName.includes('instructor') || zName.includes('faculty') || zName.includes('admin')
           ? 'instructor'
-          : zName.includes('hte') || zName.includes('workplace')
+          : zName.includes('hte') || zName.includes('workplace') || zName.includes('printing')
           ? 'hte'
           : 'institutional');
 
@@ -290,22 +320,28 @@ export function GeofenceMap({
         ? `<img src="${photoUrl}" alt="${name.replace(/"/g, '&quot;')}" class="leaflet-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="leaflet-avatar-fallback" style="display:none; background:${borderColor};">${initial}</div>`
         : `<div class="leaflet-avatar-fallback" style="background:${borderColor};">${initial}</div>`;
 
+      const dragIndicator = isDraggable
+        ? `<div style="position: absolute; inset: -5px; border: 2.5px dashed ${borderColor}; border-radius: 9999px; pointer-events: none; opacity: 0.9; animation: spinDragRing 8s linear infinite;"></div>
+           <div style="position: absolute; top: -4px; right: -4px; width: 17px; height: 17px; background: #2563eb; color: #ffffff; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: bold; border: 1.5px solid #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.3); z-index: 10;">✥</div>`
+        : '';
+
       return L.divIcon({
         className: 'leaflet-avatar-marker-wrapper',
         html: `
-          <div class="leaflet-avatar-marker" style="--marker-border-color: ${borderColor};">
-            <div class="leaflet-avatar-circle" style="border-color: ${borderColor};">
+          <div class="leaflet-avatar-marker ${isDraggable ? 'is-draggable' : ''}" style="--marker-border-color: ${borderColor}; cursor: ${isDraggable ? 'grab' : 'pointer'};">
+            ${dragIndicator}
+            <div class="leaflet-avatar-circle" style="border-color: ${borderColor}; ${isDraggable ? 'box-shadow: 0 0 0 2px rgba(37,99,235,0.5), 0 6px 16px rgba(0,0,0,0.3);' : ''}">
               ${avatarInner}
             </div>
             <div class="leaflet-avatar-badge" style="background-color: ${borderColor};">${badgeEmoji}</div>
           </div>
         `,
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
-        popupAnchor: [0, -22],
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+        popupAnchor: [0, -25],
       });
     },
-    [draggableZoneIcon, appCurrentUser, appCurrentEmployee]
+    [resolveZonePhotoUrl]
   );
 
   const getLiveUserMarkerIcon = useCallback(() => {
@@ -629,20 +665,23 @@ export function GeofenceMap({
                           justifyContent: 'center',
                         }}
                       >
-                        {zone.photo ? (
-                          <img
-                            src={getPhotoUrl(zone.photo)}
-                            alt={zone.name}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>
-                            {(zone.name[0] || 'Z').toUpperCase()}
-                          </span>
-                        )}
+                        {(() => {
+                          const pUrl = resolveZonePhotoUrl(zone);
+                          return pUrl ? (
+                            <img
+                              src={pUrl}
+                              alt={zone.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>
+                              {(zone.name[0] || 'Z').toUpperCase()}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>

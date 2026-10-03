@@ -410,7 +410,12 @@ export function AdminGeofence() {
           : `zone-${z.id}`;
 
         // If zone belongs to an instructor, ensure name, address, and coordinates are based on campus station geofencing location
-        let zoneData: GeofenceZone = { ...z, active: z.active !== false };
+        let zoneData: GeofenceZone = {
+          ...z,
+          photo: z.photo || account?.photo,
+          userType: isInst ? 'instructor' : isHte ? 'hte' : 'trainee',
+          active: z.active !== false,
+        };
         if (isInst) {
           const instName = account?.name || (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || 'OJT Instructor');
           zoneData.name = `${instName} - Official Station`;
@@ -527,6 +532,8 @@ export function AdminGeofence() {
           lat: Number(regLat),
           lng: Number(regLng),
           radius: stationRadius,
+          photo: emp.photo,
+          userType: isInst ? 'instructor' : isHte ? 'hte' : 'trainee',
           active: true,
           academicYear: emp.academicYear || settings.activeAcademicYear,
         });
