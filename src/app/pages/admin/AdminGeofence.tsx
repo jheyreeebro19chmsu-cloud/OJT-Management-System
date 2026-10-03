@@ -105,19 +105,7 @@ export function AdminGeofence() {
     const id = (acc.id || '').toLowerCase();
     const role = ((acc as any).role || '').toLowerCase();
 
-    // Positive trainee indicators
-    if (
-      role === 'employee' ||
-      role === 'trainee' ||
-      normPos.includes('trainee') ||
-      normPos.includes('student') ||
-      normPos.includes('intern') ||
-      empId.startsWith('ojt-')
-    ) {
-      return true;
-    }
-
-    // Explicit Instructor / Admin indicators
+    // 1. Explicit Instructor / Admin indicators ALWAYS TAKE PRECEDENCE
     if (
       role === 'admin' ||
       role === 'instructor' ||
@@ -132,7 +120,7 @@ export function AdminGeofence() {
       return false;
     }
 
-    // Explicit HTE indicators
+    // 2. Explicit HTE indicators
     if (
       role === 'hte' ||
       role === 'host' ||
@@ -143,6 +131,18 @@ export function AdminGeofence() {
       id.startsWith('hte')
     ) {
       return false;
+    }
+
+    // 3. Positive trainee indicators
+    if (
+      role === 'employee' ||
+      role === 'trainee' ||
+      normPos.includes('trainee') ||
+      normPos.includes('student') ||
+      normPos.includes('intern') ||
+      empId.startsWith('ojt-')
+    ) {
+      return true;
     }
 
     return true;
@@ -167,38 +167,73 @@ export function AdminGeofence() {
     const normZonePrefix = personPrefix.toLowerCase();
     if (!normZonePrefix) return null;
 
-    // 1. Exact name match first
-    const exact = employees.find((e) => (e.name || '').toLowerCase().trim() === normZonePrefix);
-    if (exact) return exact;
+    const zoneNameLower = (zone.name || '').toLowerCase();
+    const impliesInstructor = zoneNameLower.includes('official station') || zoneNameLower.includes('instructor') || zoneNameLower.includes('faculty');
+    const impliesTrainee = zoneNameLower.includes('trainee') || zoneNameLower.includes('intern') || zoneNameLower.includes('student');
 
-    // 2. Exact word-set match
+    // 1. Exact name match, prioritizing role if implied by zone title
+    const exactMatches = employees.filter((e) => (e.name || '').toLowerCase().trim() === normZonePrefix);
+    if (exactMatches.length === 1) return exactMatches[0];
+    if (exactMatches.length > 1) {
+      if (impliesInstructor) {
+        const instMatch = exactMatches.find((e) => !isTraineeAccount(e));
+        if (instMatch) return instMatch;
+      }
+      if (impliesTrainee) {
+        const traineeMatch = exactMatches.find((e) => isTraineeAccount(e));
+        if (traineeMatch) return traineeMatch;
+      }
+      return exactMatches[0];
+    }
+
+    // 2. Exact word-set match, prioritizing role if implied
     const normZoneWords = normalizeName(personPrefix);
-    const matchByName = employees.find((e) => {
+    const matchesByName = employees.filter((e) => {
       if (!e.name) return false;
       return normalizeName(e.name) === normZoneWords;
     });
-    if (matchByName) return matchByName;
+    if (matchesByName.length === 1) return matchesByName[0];
+    if (matchesByName.length > 1) {
+      if (impliesInstructor) {
+        const instMatch = matchesByName.find((e) => !isTraineeAccount(e));
+        if (instMatch) return instMatch;
+      }
+      if (impliesTrainee) {
+        const traineeMatch = matchesByName.find((e) => isTraineeAccount(e));
+        if (traineeMatch) return traineeMatch;
+      }
+      return matchesByName[0];
+    }
 
     return null;
   };
 
   const isInstructorZone = (zone: any): boolean => {
     const acc = getAccountForZone(zone);
-    if (acc && isTraineeAccount(acc)) return false;
-    const normPos = acc?.position?.toLowerCase() || '';
-    const empId = acc?.employeeId?.toLowerCase() || '';
-    const accId = (acc?.id || '').toLowerCase();
+    if (acc) {
+      const normPos = (acc.position || '').toLowerCase();
+      const empId = (acc.employeeId || '').toLowerCase();
+      const accId = (acc.id || '').toLowerCase();
+      const role = ((acc as any).role || '').toLowerCase();
+      if (
+        role === 'admin' ||
+        role === 'instructor' ||
+        normPos.includes('instructor') ||
+        normPos.includes('faculty') ||
+        normPos.includes('admin') ||
+        empId.startsWith('adm-') ||
+        empId.startsWith('instr-') ||
+        accId.startsWith('adm') ||
+        accId.startsWith('instr')
+      ) {
+        return true;
+      }
+      if (isTraineeAccount(acc)) return false;
+    }
     const zoneName = (zone?.name || '').toLowerCase();
     const zoneId = (zone?.id || '').toLowerCase();
-    if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
+    if (zoneName.includes('trainee') || zoneName.includes('student') || zoneName.includes('intern')) return false;
     return Boolean(
-      normPos.includes('instructor') ||
-      normPos.includes('faculty') ||
-      normPos.includes('admin') ||
-      empId.startsWith('adm-') ||
-      empId.startsWith('instr-') ||
-      accId.startsWith('adm') ||
-      accId.startsWith('instr') ||
       zoneName.includes('instructor') ||
       zoneName.includes('official station') ||
       zoneName.includes('faculty') ||
@@ -208,17 +243,26 @@ export function AdminGeofence() {
   };
 
   const isHTEZone = (zone: any): boolean => {
+    if (isInstructorZone(zone)) return false;
     const acc = getAccountForZone(zone);
-    if (acc && isTraineeAccount(acc)) return false;
-    const normPos = acc?.position?.toLowerCase() || '';
-    const empId = acc?.employeeId?.toLowerCase() || '';
+    if (acc) {
+      const normPos = (acc.position || '').toLowerCase();
+      const empId = (acc.employeeId || '').toLowerCase();
+      const role = ((acc as any).role || '').toLowerCase();
+      if (
+        role === 'hte' ||
+        role === 'host' ||
+        normPos.includes('hte') ||
+        normPos.includes('host training') ||
+        empId.startsWith('hte-')
+      ) {
+        return true;
+      }
+      if (isTraineeAccount(acc)) return false;
+    }
     const zoneName = (zone?.name || '').toLowerCase();
     if (zoneName.includes('trainee') || zoneName.includes('student')) return false;
     return Boolean(
-      normPos.includes('hte') ||
-      normPos.includes('host training') ||
-      empId.startsWith('hte-') ||
-      (acc?.id && acc.id.toLowerCase().startsWith('hte')) ||
       zoneName.includes('hte') ||
       zoneName.includes('host training') ||
       zoneName.includes('partner workplace')
@@ -232,8 +276,12 @@ export function AdminGeofence() {
   };
 
   const isTraineeZone = (zone: any): boolean => {
+    if (isInstructorZone(zone)) return false;
+    if (isHTEZone(zone)) return false;
     const acc = getAccountForZone(zone);
-    if (acc && isTraineeAccount(acc)) return true;
+    if (acc) {
+      return isTraineeAccount(acc);
+    }
     const zoneName = (zone?.name || '').toLowerCase();
     const zoneId = (zone?.id || '').toLowerCase();
     return Boolean(
@@ -340,17 +388,20 @@ export function AdminGeofence() {
       )
       .forEach((z) => {
         const account = getAccountForZone(z);
-        const personName = account?.name || (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || '').trim();
-        const normPerson = normalizeName(personName);
-        const personKey = normPerson
-          ? `person-${normPerson}`
-          : account
-          ? `emp-${account.id}`
-          : `zone-${z.lat.toFixed(4)},${z.lng.toFixed(4)}`;
+        const isInst = isInstructorZone(z);
+        const isHte = isHTEZone(z);
+        const rolePrefix = isInst ? 'inst' : isHte ? 'hte' : 'trainee';
+        const personKey = account
+          ? `${rolePrefix}-${account.id}`
+          : (z.employeeId || z.employee_id)
+          ? `${rolePrefix}-${z.employeeId || z.employee_id}`
+          : `zone-${z.id}`;
 
-        // If zone belongs to an instructor, ensure address and coordinates are based on campus station geofencing location
+        // If zone belongs to an instructor, ensure name, address, and coordinates are based on campus station geofencing location
         let zoneData: GeofenceZone = { ...z, active: z.active !== false };
-        if (isInstructorZone(z)) {
+        if (isInst) {
+          const instName = account?.name || (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || 'OJT Instructor');
+          zoneData.name = `${instName} - Official Station`;
           const campusInfo = getCampusLocation(account?.campus || (account as any)?.schoolName || z.name);
           const rawAddr = (zoneData.address || '').toLowerCase();
           const isResidential =
@@ -401,26 +452,30 @@ export function AdminGeofence() {
       if (!emp.name || !emp.name.trim()) return;
       if (emp.name.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
 
-      const normEmp = normalizeName(emp.name);
-      const personKey = normEmp ? `person-${normEmp}` : `emp-${emp.id}`;
-
-      // If this person already has a configured geofence zone, do not create a redundant duplicate
-      if (zoneMap.has(personKey)) {
-        return;
-      }
-
       const isInst = Boolean(
         emp.position === 'OJT Instructor' ||
         (emp.position && emp.position.toLowerCase().includes('instructor')) ||
         (emp.employeeId && (emp.employeeId.startsWith('ADM-') || emp.employeeId.startsWith('INSTR-'))) ||
-        (emp.id && (emp.id.toLowerCase().startsWith('adm') || emp.id.toLowerCase().startsWith('instr')))
+        (emp.id && (emp.id.toLowerCase().startsWith('adm') || emp.id.toLowerCase().startsWith('instr'))) ||
+        emp.role === 'admin' ||
+        emp.role === 'instructor'
       );
       const isHte = Boolean(
         emp.position === 'HTE Representative' ||
         (emp.position && emp.position.toLowerCase().includes('hte')) ||
         (emp.employeeId && emp.employeeId.startsWith('HTE-')) ||
-        (emp.id && emp.id.toLowerCase().startsWith('hte'))
+        (emp.id && emp.id.toLowerCase().startsWith('hte')) ||
+        emp.role === 'hte' ||
+        emp.role === 'host'
       );
+
+      const rolePrefix = isInst ? 'inst' : isHte ? 'hte' : 'trainee';
+      const personKey = `${rolePrefix}-${emp.id}`;
+
+      // If this person already has a configured geofence zone, do not create a redundant duplicate
+      if (zoneMap.has(personKey)) {
+        return;
+      }
 
       const campusInfo = getCampusLocation(emp.campus);
       let regLat = isInst ? campusInfo.lat : (emp.registrationLocation?.lat ?? (emp as any)?.registration_lat ?? (emp as any)?.latitude);
