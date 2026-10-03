@@ -184,10 +184,9 @@ export default function OAuthCallback() {
         if (isSupabaseConfigured() && email) {
           try {
             const cleanEmail = email.trim().toLowerCase();
-            const [empByEmailRes, empByIdRes, empByUserIdRes, hostByEmailRes, hostByIdRes] = await Promise.allSettled([
+            const [empByEmailRes, empByIdRes, hostByEmailRes, hostByIdRes] = await Promise.allSettled([
               supabase.from('employees').select('*').ilike('email', cleanEmail).limit(1),
               supabase.from('employees').select('*').eq('id', authUser.id).limit(1),
-              supabase.from('employees').select('*').eq('user_id', authUser.id).limit(1),
               supabase.from('host_supervisors').select('*').ilike('email', cleanEmail).limit(1),
               supabase.from('host_supervisors').select('*').eq('id', authUser.id).limit(1),
             ]);
@@ -196,8 +195,6 @@ export default function OAuthCallback() {
               dbEmp = empByEmailRes.value.data[0];
             } else if (empByIdRes.status === 'fulfilled' && empByIdRes.value.data?.[0]) {
               dbEmp = empByIdRes.value.data[0];
-            } else if (empByUserIdRes.status === 'fulfilled' && empByUserIdRes.value.data?.[0]) {
-              dbEmp = empByUserIdRes.value.data[0];
             }
 
             if (hostByEmailRes.status === 'fulfilled' && hostByEmailRes.value.data?.[0]) {
