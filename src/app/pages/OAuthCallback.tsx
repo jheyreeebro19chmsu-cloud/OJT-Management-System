@@ -238,8 +238,8 @@ export default function OAuthCallback() {
           } catch {}
         }
 
-        // Fallback to authUser user_metadata if role was already set
-        if (!dbEmp && !dbHost && (authUser.user_metadata?.role === 'admin' || pendingRole === 'admin')) {
+        // Fallback to authUser user_metadata if role was already set in user metadata
+        if (!dbEmp && !dbHost && authUser.user_metadata?.role === 'admin') {
           dbEmp = {
             id: authUser.id,
             name: fullName,
@@ -346,53 +346,16 @@ export default function OAuthCallback() {
         // ═══════════════════════════════════════════════════════════════════════
         if (pendingRole === 'admin') {
           setIsSuccess(true);
-          setStatusMessage(`Welcome, Instructor ${fullName}! Setting up your workspace...`);
-          const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-          const adminUser: User = {
-            id: authUser.id,
-            name: fullName,
-            email,
-            role: 'admin',
-            employeeId,
-            photo: photoUrl || '',
-            faceRegistered: false,
-          };
-          setCurrentUser(adminUser);
-          localStorage.setItem('ojt_user', JSON.stringify(adminUser));
-          localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
-          localStorage.removeItem('pending_oauth_role');
-          localStorage.removeItem('oauth_email');
-          localStorage.removeItem('oauth_name');
-          localStorage.removeItem('oauth_photo');
-          localStorage.removeItem('oauth_user_id');
+          setStatusMessage(`Welcome, Instructor ${fullName}! Setting up your registration details...`);
+          localStorage.setItem('pending_oauth_role', 'admin');
+          localStorage.setItem('oauth_email', email);
+          localStorage.setItem('oauth_name', fullName);
+          localStorage.setItem('oauth_given_name', givenName);
+          localStorage.setItem('oauth_family_name', familyName);
+          localStorage.setItem('oauth_photo', photoUrl || '');
+          localStorage.setItem('oauth_user_id', authUser.id);
 
-          if (isSupabaseConfigured()) {
-            try {
-              await supabase.from('employees').upsert({
-                id: authUser.id,
-                employee_id: employeeId,
-                name: fullName,
-                email,
-                position: 'OJT Instructor',
-                role: 'admin',
-                academic_year: '2026-2027',
-                department: 'College of Computer Studies',
-                campus: 'Talisay Campus',
-                school_name: 'Carlos Hilado Memorial State University',
-                photo: photoUrl || null,
-                active: true,
-                application_status: 'approved',
-                documents_passed: true,
-                documents_status: 'passed',
-                face_registered: false,
-                required_hours: 0,
-              }, { onConflict: 'email' });
-            } catch (pErr) {
-              console.warn('OAuth admin provisioning error:', pErr);
-            }
-          }
-
-          setTimeout(() => navigate('/admin', { replace: true }), 300);
+          setTimeout(() => navigate('/register?role=admin', { replace: true }), 300);
           return;
         }
 

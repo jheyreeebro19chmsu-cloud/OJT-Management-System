@@ -346,6 +346,68 @@ export function Register() {
 
   // registration flow continues below
 
+  const prefillInstructorGoogleData = (
+    fullName: string,
+    email: string,
+    photoUrl?: string,
+    givenName?: string,
+    familyName?: string
+  ) => {
+    setRole('admin');
+    setStep(0);
+    setOauthPending(true);
+
+    let fName = givenName || '';
+    let lName = familyName || '';
+    let mInitial = '';
+    if (!fName && fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length === 1) {
+        fName = parts[0];
+      } else if (parts.length === 2) {
+        fName = parts[0];
+        lName = parts[1];
+      } else {
+        fName = parts.slice(0, -1).join(' ');
+        lName = parts[parts.length - 1];
+        if (parts.length > 2 && parts[1].length === 1) {
+          mInitial = parts[1].toUpperCase();
+        }
+      }
+    }
+
+    const campusInfo = getCampusLocation('Talisay Campus');
+    setRegistrationLocation({ lat: campusInfo.lat, lng: campusInfo.lng });
+    setRegistrationAddress(campusInfo.address);
+    if (photoUrl) {
+      setPhoto(photoUrl);
+      setGoogleAvatar(photoUrl);
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      name: fullName || prev.name || 'OJT Instructor',
+      firstName: fName || prev.firstName || 'Instructor',
+      lastName: lName || prev.lastName || 'Faculty',
+      middleInitial: mInitial || prev.middleInitial || '',
+      email: email || prev.email,
+      contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
+      schoolName: 'Carlos Hilado Memorial State University',
+      campus: prev.campus || 'Talisay Campus',
+      department: prev.department || 'College of Computer Studies',
+      course: prev.course || 'Bachelor of Science in Information Technology',
+      birthdate: prev.birthdate || '1990-01-01',
+      age: prev.age || '36',
+      country: 'PH',
+      region: 'Region VI (Western Visayas)',
+      province: 'Negros Occidental',
+      city: 'Talisay City',
+      barangay: 'Zone 1',
+      street: 'Carlos Hilado Memorial State University, Mabini St',
+      position: 'OJT Instructor',
+    }));
+  };
+
   const selectRole = (nextRole: UserRole) => {
     if (oauthPending && (nextRole === 'admin' || nextRole === 'hte')) {
       const oauthEmail = localStorage.getItem('oauth_email') || form.email;
@@ -354,26 +416,14 @@ export function Register() {
       const oauthUserId = localStorage.getItem('oauth_user_id') || `user-${Date.now()}`;
 
       if (nextRole === 'admin') {
-        const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-        const adminUser = {
-          id: oauthUserId,
-          name: oauthName,
-          email: oauthEmail,
-          role: 'admin' as const,
-          employeeId,
-          photo: oauthPhoto,
-          faceRegistered: false,
-        };
-        setCurrentUser(adminUser);
-        localStorage.setItem('ojt_user', JSON.stringify(adminUser));
-        localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
-        localStorage.removeItem('pending_oauth_role');
-        localStorage.removeItem('oauth_email');
-        localStorage.removeItem('oauth_name');
-        localStorage.removeItem('oauth_photo');
-        localStorage.removeItem('oauth_user_id');
-        toast.success(`Welcome, Instructor ${oauthName}! Direct access granted.`);
-        navigate('/admin');
+        prefillInstructorGoogleData(
+          oauthName,
+          oauthEmail,
+          oauthPhoto,
+          localStorage.getItem('oauth_given_name') || '',
+          localStorage.getItem('oauth_family_name') || ''
+        );
+        toast.info('Instructor information pre-filled from Google. Please review and complete your registration.');
         return;
       }
 
@@ -446,7 +496,7 @@ export function Register() {
     // Instructor registration no longer shows a QR/enrollment screen —
     // go straight to login (which leads to the dashboard) like every other role.
     if (registrationComplete && role === 'admin') {
-      navigate('/login');
+      navigate('/admin');
     }
   }, [registrationComplete, role]);
 
@@ -462,66 +512,7 @@ export function Register() {
       const oauthFamilyName = localStorage.getItem('oauth_family_name');
       const oauthPhoto = localStorage.getItem('oauth_photo');
 
-      if (h === 'admin' || pending === 'admin') {
-        const authEmail = oauthEmail || '';
-        const fullName = oauthName || 'OJT Instructor';
-        const avatarUrl = oauthPhoto || '';
-        const employeeId = `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-        const adminUser = {
-          id: localStorage.getItem('oauth_user_id') || `adm-${Date.now()}`,
-          name: fullName,
-          email: authEmail,
-          role: 'admin' as const,
-          employeeId,
-          photo: avatarUrl,
-          faceRegistered: false,
-        };
-        setCurrentUser(adminUser);
-        localStorage.setItem('ojt_user', JSON.stringify(adminUser));
-        localStorage.setItem('ojt_current_user', JSON.stringify(adminUser));
-        localStorage.removeItem('pending_oauth_role');
-        localStorage.removeItem('oauth_email');
-        localStorage.removeItem('oauth_name');
-        localStorage.removeItem('oauth_given_name');
-        localStorage.removeItem('oauth_family_name');
-        localStorage.removeItem('oauth_photo');
-        localStorage.removeItem('oauth_user_id');
-        toast.success(`Welcome, Instructor ${fullName}! Direct access granted.`);
-        navigate('/admin');
-        return;
-      } else if (h === 'hte' || pending === 'hte') {
-        const authEmail = oauthEmail || '';
-        const fullName = oauthName || 'HTE Representative';
-        const avatarUrl = oauthPhoto || '';
-        const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-        const hteUser = {
-          id: localStorage.getItem('oauth_user_id') || `hte-${Date.now()}`,
-          name: fullName,
-          email: authEmail,
-          role: 'hte' as const,
-          employeeId,
-          photo: avatarUrl,
-          faceRegistered: false,
-        };
-        setCurrentUser(hteUser);
-        localStorage.setItem('ojt_user', JSON.stringify(hteUser));
-        localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
-        localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
-        localStorage.removeItem('pending_oauth_role');
-        localStorage.removeItem('oauth_email');
-        localStorage.removeItem('oauth_name');
-        localStorage.removeItem('oauth_given_name');
-        localStorage.removeItem('oauth_family_name');
-        localStorage.removeItem('oauth_photo');
-        localStorage.removeItem('oauth_user_id');
-        toast.success(`Welcome, ${fullName}! Direct access granted to HTE portal.`);
-        navigate('/hte');
-        return;
-      } else if (h === 'trainee' || pending === 'trainee' || (pending as any) === 'employee') {
-        setRole('trainee');
-      }
-
-      // Check if user with this OAuth email ALREADY exists in the system
+      // 1. Check if user with this OAuth email ALREADY exists in the system -> direct sign in
       if (oauthEmail) {
         const cleanOauthEmail = oauthEmail.trim().toLowerCase();
         const existingEmp = employees.find((e) => (e.email || '').trim().toLowerCase() === cleanOauthEmail);
@@ -586,51 +577,49 @@ export function Register() {
           navigate('/hte', { replace: true });
           return;
         }
+      }
 
-        // Also check Supabase directly in case in-memory employees list is still loading
-        if (isSupabaseConfigured()) {
-          supabase
-            .from('employees')
-            .select('*')
-            .ilike('email', cleanOauthEmail)
-            .limit(1)
-            .then(({ data: dbEmps }) => {
-              if (dbEmps && dbEmps.length > 0) {
-                const dbEmp = dbEmps[0];
-                const isInst =
-                  dbEmp.role === 'admin' ||
-                  dbEmp.position === 'OJT Instructor' ||
-                  (dbEmp.position && (dbEmp.position.toLowerCase().includes('instructor') || dbEmp.position.toLowerCase().includes('admin')));
-                const isHte =
-                  dbEmp.role === 'hte' ||
-                  (dbEmp.position && dbEmp.position.toLowerCase().includes('hte'));
-                const userRole: AuthUser['role'] = isInst ? 'admin' : isHte ? 'hte' : 'employee';
-                const resolvedUser: AuthUser = {
-                  id: dbEmp.id,
-                  name: dbEmp.name,
-                  email: dbEmp.email,
-                  role: userRole,
-                  photo: dbEmp.photo || oauthPhoto || '',
-                  employeeId: dbEmp.employee_id || dbEmp.id,
-                  faceRegistered: Boolean(dbEmp.face_registered),
-                };
-                setCurrentUser(resolvedUser);
-                localStorage.setItem('ojt_user', JSON.stringify(resolvedUser));
-                localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
-                if (userRole === 'hte') localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
-                localStorage.removeItem('pending_oauth_role');
-                localStorage.removeItem('oauth_email');
-                localStorage.removeItem('oauth_name');
-                localStorage.removeItem('oauth_given_name');
-                localStorage.removeItem('oauth_family_name');
-                localStorage.removeItem('oauth_photo');
-                localStorage.removeItem('oauth_user_id');
-                toast.success(`Welcome back, ${dbEmp.name}! Signing you in...`);
-                navigate(userRole === 'admin' ? '/admin' : userRole === 'hte' ? '/hte' : '/app', { replace: true });
-              }
-            })
-            .catch(console.warn);
-        }
+      // 2. New Instructor Registration: Pre-fill all required information directly and be ready to create account
+      if (h === 'admin' || pending === 'admin') {
+        prefillInstructorGoogleData(
+          oauthName || 'OJT Instructor',
+          oauthEmail || '',
+          oauthPhoto || '',
+          oauthGivenName || '',
+          oauthFamilyName || ''
+        );
+        toast.success(`Google verified! Review your instructor details below and create your account.`);
+        return;
+      } else if (h === 'hte' || pending === 'hte') {
+        const authEmail = oauthEmail || '';
+        const fullName = oauthName || 'HTE Representative';
+        const avatarUrl = oauthPhoto || '';
+        const employeeId = `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+        const hteUser = {
+          id: localStorage.getItem('oauth_user_id') || `hte-${Date.now()}`,
+          name: fullName,
+          email: authEmail,
+          role: 'hte' as const,
+          employeeId,
+          photo: avatarUrl,
+          faceRegistered: false,
+        };
+        setCurrentUser(hteUser);
+        localStorage.setItem('ojt_user', JSON.stringify(hteUser));
+        localStorage.setItem('ojt_hte_user', JSON.stringify(hteUser));
+        localStorage.setItem('ojt_current_user', JSON.stringify(hteUser));
+        localStorage.removeItem('pending_oauth_role');
+        localStorage.removeItem('oauth_email');
+        localStorage.removeItem('oauth_name');
+        localStorage.removeItem('oauth_given_name');
+        localStorage.removeItem('oauth_family_name');
+        localStorage.removeItem('oauth_photo');
+        localStorage.removeItem('oauth_user_id');
+        toast.success(`Welcome, ${fullName}! Direct access granted to HTE portal.`);
+        navigate('/hte');
+        return;
+      } else if (h === 'trainee' || pending === 'trainee' || (pending as any) === 'employee') {
+        setRole('trainee');
       }
 
       if (oauthEmail || oauthName || oauthGivenName || oauthFamilyName) {
@@ -2046,6 +2035,18 @@ export function Register() {
                     <ArrowLeft size={12} /> Switch Role
                   </button>
                 </div>
+
+                {role === 'admin' && oauthPending && (
+                  <div className="mb-4 p-3.5 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl text-purple-900 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in">
+                    <CheckCircle2 size={18} className="text-purple-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-purple-900 mb-0.5">Google Instructor Account Verified!</p>
+                      <p className="text-purple-700 leading-relaxed">
+                        Your information (Name, Address, Phone Number, Campus, Department, and Course) has been directly filled in. Review your details below and click <span className="font-extrabold text-purple-900">Create Instructor Account</span> to register.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {role === 'hte' ? (
                   <>
                     <div className="flex items-center gap-2 mb-4">
@@ -4074,7 +4075,7 @@ export function Register() {
                       ) : (
                         <>
                           <Check size={16} />
-                          <span>Complete Registration</span>
+                          <span>{role === 'admin' ? 'Create Instructor Account' : 'Complete Registration'}</span>
                         </>
                       )}
                     </button>
