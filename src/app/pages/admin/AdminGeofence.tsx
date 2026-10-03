@@ -775,6 +775,12 @@ export function AdminGeofence() {
     toast.success(`✓ Permanently saved new geofence position for "${zName}"!`);
   };
 
+  const handleSaveDrag = async () => {
+    if (dragZoneId && dragCoords) {
+      await handleZoneDragEnd(dragZoneId, dragCoords.lat, dragCoords.lng);
+    }
+  };
+
   const handleCancelDrag = () => {
     setDragZoneId(null);
     setDragCoords(null);
