@@ -3131,7 +3131,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!newZone) return;
 
     setGeofenceZones((prev) => {
-      const updated = [...prev.filter((z) => z.id !== newZone.id), newZone];
+      const updated = [
+        ...prev.filter(
+          (z) =>
+            z.id !== newZone.id &&
+            z.id !== `station-${newZone.id}` &&
+            z.id !== `trainee-${newZone.id}` &&
+            (!newZone.employeeId || ((z as any).employeeId !== newZone.employeeId && (z as any).employee_id !== newZone.employeeId))
+        ),
+        newZone,
+      ];
       saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
       return updated;
     });
@@ -3143,7 +3152,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const sanitizedCreated = sanitizeGeofenceZone(created || newZone);
           if (sanitizedCreated) {
             setGeofenceZones((prev) => {
-              const updated = [...prev.filter((z) => z.id !== tempId && z.id !== sanitizedCreated.id), sanitizedCreated];
+              const updated = [
+                ...prev.filter(
+                  (z) =>
+                    z.id !== tempId &&
+                    z.id !== sanitizedCreated.id &&
+                    z.id !== `station-${tempId}` &&
+                    (!sanitizedCreated.employeeId || ((z as any).employeeId !== sanitizedCreated.employeeId && (z as any).employee_id !== sanitizedCreated.employeeId))
+                ),
+                sanitizedCreated,
+              ];
               saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
               return updated;
             });

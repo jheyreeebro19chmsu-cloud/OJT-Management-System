@@ -468,7 +468,9 @@ export function AdminEmployees() {
       department: emp.department || '',
       position: emp.position || 'OJT Trainee',
       companyName: emp.companyName || '',
+      companyAddress: (emp as any).companyAddress || (emp as any).registrationAddress || '',
       supervisorName: emp.supervisorName || '',
+      hteId: emp.hteId || '',
       schoolName: emp.schoolName || 'Carlos Hilado Memorial State University',
       campus: emp.campus || '',
       course: emp.course || '',
@@ -491,7 +493,46 @@ export function AdminEmployees() {
       toast.error('Full Name is required');
       return;
     }
-    const updatedFields: Partial<Employee> = {
+
+    const matchedHost = allAvailableHtes.find(
+      (h) =>
+        (editForm.hteId && h.id === editForm.hteId) ||
+        (editForm.companyName && h.companyName && h.companyName.toLowerCase().trim() === editForm.companyName.toLowerCase().trim())
+    );
+
+    let targetLoc: { lat: number; lng: number } | undefined = undefined;
+    let hteRadius = 40;
+    let hteAddress = editForm.companyAddress || '';
+
+    if (matchedHost) {
+      const hteZone = geofenceZones.find(
+        (z) =>
+          (z as any).employeeId === matchedHost.id ||
+          (z as any).employee_id === matchedHost.id ||
+          z.id === matchedHost.id ||
+          z.id === `station-${matchedHost.id}` ||
+          (matchedHost.companyName && z.name && z.name.toLowerCase().includes(matchedHost.companyName.toLowerCase()))
+      );
+      const hteEmp = employees.find(
+        (e) =>
+          e.id === matchedHost.id ||
+          e.employeeId === matchedHost.id ||
+          (matchedHost.companyName && e.companyName && e.companyName.toLowerCase() === matchedHost.companyName.toLowerCase())
+      );
+
+      targetLoc = hteZone && hteZone.lat && hteZone.lng
+        ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
+        : matchedHost.lat && matchedHost.lng
+        ? { lat: Number(matchedHost.lat), lng: Number(matchedHost.lng) }
+        : hteEmp?.registrationLocation?.lat && hteEmp?.registrationLocation?.lng
+        ? { lat: Number(hteEmp.registrationLocation.lat), lng: Number(hteEmp.registrationLocation.lng) }
+        : { lat: 10.74275, lng: 122.970168 };
+
+      hteRadius = Math.max(20, Number(hteZone?.radius || matchedHost.radius || hteEmp?.registrationRadius || 40));
+      hteAddress = hteZone?.address || matchedHost.companyAddress || `${matchedHost.companyName} Workplace Premises`;
+    }
+
+    const updatedFields: any = {
       name: editForm.name.trim(),
       email: editForm.email.trim(),
       contactPhone: editForm.contactPhone.trim(),
@@ -500,8 +541,10 @@ export function AdminEmployees() {
       employeeId: editForm.employeeId.trim(),
       department: editForm.department,
       position: editForm.position,
-      companyName: editForm.companyName.trim(),
-      supervisorName: editForm.supervisorName.trim(),
+      companyName: matchedHost ? matchedHost.companyName : editForm.companyName.trim(),
+      companyAddress: hteAddress || editForm.companyAddress || (selectedEmp as any).companyAddress,
+      supervisorName: matchedHost ? matchedHost.name : editForm.supervisorName.trim(),
+      hteId: matchedHost ? matchedHost.id : (editForm.hteId || null),
       schoolName: editForm.schoolName,
       campus: editForm.campus,
       course: editForm.course,
@@ -517,7 +560,32 @@ export function AdminEmployees() {
       approvalStatus: editForm.approvalStatus,
     };
 
+    if (targetLoc && matchedHost) {
+      updatedFields.registrationLocation = {
+        lat: Number(targetLoc.lat),
+        lng: Number(targetLoc.lng),
+        radius: hteRadius,
+      };
+      updatedFields.registrationRadius = hteRadius;
+      updatedFields.registrationAddress = hteAddress;
+    }
+
     await updateEmployee(selectedEmp.id, updatedFields);
+
+    if (targetLoc && matchedHost) {
+      addGeofenceZone({
+        id: selectedEmp.id,
+        name: `${editForm.name.trim()} - Trainee Geofence (${matchedHost.companyName})`,
+        address: hteAddress,
+        lat: Number(targetLoc.lat),
+        lng: Number(targetLoc.lng),
+        radius: hteRadius,
+        active: true,
+        academicYear: editForm.academicYear || settings?.activeAcademicYear,
+        employeeId: selectedEmp.id,
+      } as any);
+    }
+
     setSelectedEmp((prev) => (prev ? { ...prev, ...updatedFields } : null));
     toast.success(`Account for ${editForm.name} updated successfully!`);
     setModalMode('view');
@@ -2229,7 +2297,7 @@ export function AdminEmployees() {
                                     <button
                                       type="button"
                                       disabled={!selectedHteId}
-                                      onClick={() => {
+                                      onClick={async () => {
                                         const matchedHost = allAvailableHtes.find((h) => h.id === selectedHteId);
                                         if (!matchedHost) return;
 
@@ -2274,7 +2342,7 @@ export function AdminEmployees() {
                                           registrationAddress: hteAddress,
                                         };
 
-                                        updateEmployee(selectedEmp.id, updatedFields);
+                                        await updateEmployee(selectedEmp.id, updatedFields);
 
                                         addGeofenceZone({
                                           id: selectedEmp.id,
@@ -2898,28 +2966,69 @@ export function AdminEmployees() {
                         </select>
                       </div>
 
-                      {/* Company Name / HTE */}
-                      <div>
-                        <label className="text-xs font-semibold text-gray-700 block mb-1">Host Company / HTE</label>
-                        <input
-                          type="text"
-                          value={editForm.companyName}
-                          onChange={(e) => updEdit('companyName', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
-                          placeholder="Host Training Establishment"
-                        />
-                      </div>
+                      {/* Designated HTE / Host Training Establishment */}
+                      <div className="sm:col-span-2 space-y-2 p-3.5 bg-blue-50/60 rounded-2xl border border-blue-100">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-blue-950 block">
+                            Designated Host Training Establishment (HTE) & Workplace Geofence
+                          </label>
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-full">
+                            Auto-syncs GPS
+                          </span>
+                        </div>
+                        <select
+                          value={editForm.hteId || ''}
+                          onChange={(e) => {
+                            const chosenId = e.target.value;
+                            updEdit('hteId', chosenId);
+                            const matched = allAvailableHtes.find((h) => h.id === chosenId);
+                            if (matched) {
+                              updEdit('companyName', matched.companyName);
+                              updEdit('supervisorName', matched.name);
+                              const hteZone = geofenceZones.find(
+                                (z) =>
+                                  (z as any).employeeId === matched.id ||
+                                  (z as any).employee_id === matched.id ||
+                                  z.id === matched.id ||
+                                  z.id === `station-${matched.id}` ||
+                                  (matched.companyName && z.name && z.name.toLowerCase().includes(matched.companyName.toLowerCase()))
+                              );
+                              const addr = hteZone?.address || matched.companyAddress || `${matched.companyName} Workplace Premises`;
+                              updEdit('companyAddress', addr);
+                            }
+                          }}
+                          className="w-full px-3 py-2 border border-blue-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                        >
+                          <option value="">-- Choose Registered HTE Supervisor / Company --</option>
+                          {allAvailableHtes.map((h) => (
+                            <option key={h.id} value={h.id}>
+                              {h.companyName} — {h.name} ({h.email})
+                            </option>
+                          ))}
+                        </select>
 
-                      {/* Supervisor Name */}
-                      <div>
-                        <label className="text-xs font-semibold text-gray-700 block mb-1">HTE Supervisor</label>
-                        <input
-                          type="text"
-                          value={editForm.supervisorName}
-                          onChange={(e) => updEdit('supervisorName', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
-                          placeholder="Supervisor Full Name"
-                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-700 block mb-1">Company / Workplace Name</label>
+                            <input
+                              type="text"
+                              value={editForm.companyName}
+                              onChange={(e) => updEdit('companyName', e.target.value)}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                              placeholder="Host Training Establishment"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-700 block mb-1">HTE Supervisor Name</label>
+                            <input
+                              type="text"
+                              value={editForm.supervisorName}
+                              onChange={(e) => updEdit('supervisorName', e.target.value)}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none bg-white"
+                              placeholder="Supervisor Full Name"
+                            />
+                          </div>
+                        </div>
                       </div>
 
                       {/* Required Hours */}

@@ -408,8 +408,14 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
       updatedRegLoc.lat = updates.registrationLocation.lat ?? null;
       updatedRegLoc.lng = updates.registrationLocation.lng ?? null;
     }
-    if (regRadius) {
+    const regRadius = updates.registrationRadius ?? updates.registrationLocation?.radius;
+    if (regRadius !== undefined && regRadius !== null) {
       updatedRegLoc.radius = Math.max(20, Number(regRadius));
+      supabaseUpdates.registration_radius = Math.max(20, Number(regRadius));
+    }
+    if (updates.registrationAddress !== undefined) {
+      updatedRegLoc.address = updates.registrationAddress;
+      supabaseUpdates.registration_address = updates.registrationAddress;
     }
     if (updates.contactPhone !== undefined || updates.phone !== undefined || updates.telephone !== undefined) {
       const pVal = updates.contactPhone ?? updates.phone ?? updates.telephone;
