@@ -398,7 +398,13 @@ export function AdminEvaluations() {
       <CHMSUEvaluationSheet
         trainee={selectedEmp}
         companyName={selectedEmp.companyName || 'Host Training Establishment'}
-        supervisorName={ev.evaluatorName || ev.evaluatedBy || selectedEmp.supervisorName || 'OJT Supervisor'}
+        supervisorName={
+          (selectedEmp.companyName || '').toLowerCase().includes('concentrix')
+            ? 'Jhey Ree C Ebro'
+            : (selectedEmp.companyName || '').toLowerCase().includes('printing')
+            ? 'Yzel B. Norte'
+            : ev.evaluatorName || ev.evaluatedBy || selectedEmp.supervisorName || 'OJT Supervisor'
+        }
         instructorName={instructorName}
         evaluationDate={ev.evaluatedAt}
         ratings={viewRatings}
