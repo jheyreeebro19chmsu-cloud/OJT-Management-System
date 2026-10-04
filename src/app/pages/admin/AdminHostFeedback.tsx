@@ -77,12 +77,34 @@ export function AdminHostFeedback() {
     updateEvaluation,
     settings,
     currentUser,
+    hostSupervisors = [],
   } = useApp();
 
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedItemForView, setSelectedItemForView] = useState<UnifiedFeedbackItem | null>(null);
+
+  // Helper to ensure supervisor strictly matches the 2 official supervisors: Jhey Ree C Ebro (Concentrix) and Yzel B. Norte (Printing Services)
+  const getOfficialSupervisorName = (company?: string, rawSupervisor?: string): string => {
+    const normComp = (company || '').trim().toLowerCase();
+    if (normComp.includes('concentrix')) {
+      return 'Jhey Ree C Ebro';
+    }
+    if (normComp.includes('printing')) {
+      return 'Yzel B. Norte';
+    }
+    const matchedHost = hostSupervisors.find(
+      (h) => h.companyName && normComp.includes(h.companyName.toLowerCase().trim())
+    );
+    if (matchedHost?.name) return matchedHost.name;
+
+    const normRaw = (rawSupervisor || '').trim().toLowerCase();
+    if (normRaw.includes('ebro') || normRaw.includes('jhey')) return 'Jhey Ree C Ebro';
+    if (normRaw.includes('norte') || normRaw.includes('yzel')) return 'Yzel B. Norte';
+
+    return rawSupervisor?.trim() || 'HTE Supervisor';
+  };
 
   // Compute Instructor Name for official sheet signature
   const instructorName = useMemo(() => {
@@ -106,6 +128,9 @@ export function AdminHostFeedback() {
       handledEmployeeIds.add(hf.employeeId);
       const ev = evaluations.find((e) => e.employeeId === hf.employeeId);
       const emp = employees.find((e) => e.id === hf.employeeId);
+
+      const resolvedCompany = hf.hostCompany || emp?.companyName || 'Host Training Establishment';
+      const resolvedHostName = getOfficialSupervisorName(resolvedCompany, hf.hostName || emp?.supervisorName);
 
       const overall = hf.overallScore || (ev ? ev.overallScore : 0);
       const grade: 'Excellent' | 'Very Good' | 'Good' | 'Satisfactory' | 'Needs Improvement' =
@@ -132,8 +157,8 @@ export function AdminHostFeedback() {
         sourceId: hf.id,
         sourceType: ev ? 'both' : 'feedback',
         employeeId: hf.employeeId,
-        hostName: hf.hostName || emp?.supervisorName || 'HTE Supervisor',
-        hostCompany: hf.hostCompany || emp?.companyName || 'Host Training Establishment',
+        hostName: resolvedHostName,
+        hostCompany: resolvedCompany,
         hostPosition: hf.hostPosition || 'Supervisor',
         hostEmail: hf.hostEmail,
         attendanceScore: hf.attendanceScore ?? ev?.attendanceScore ?? 85,
@@ -161,6 +186,8 @@ export function AdminHostFeedback() {
       if (ev.status === 'draft') return; // Exclude non-submitted drafts
 
       const emp = employees.find((e) => e.id === ev.employeeId);
+      const resolvedCompany = emp?.companyName || 'Host Training Establishment';
+      const resolvedHostName = getOfficialSupervisorName(resolvedCompany, ev.evaluatedBy || emp?.supervisorName);
       const overall = ev.overallScore;
 
       const status: 'submitted' | 'reviewed' | 'archived' =
@@ -171,8 +198,8 @@ export function AdminHostFeedback() {
         sourceId: ev.id,
         sourceType: 'evaluation',
         employeeId: ev.employeeId,
-        hostName: ev.evaluatedBy || emp?.supervisorName || 'HTE Supervisor',
-        hostCompany: emp?.companyName || 'Host Training Establishment',
+        hostName: resolvedHostName,
+        hostCompany: resolvedCompany,
         hostPosition: 'Supervisor',
         hostEmail: undefined,
         attendanceScore: ev.attendanceScore,
