@@ -215,8 +215,8 @@ export function AdminGeofence() {
       const found = hostSupervisors.find((h) => h.id === targetId || h.employeeId === targetId);
       if (found) return found;
     }
-    if (zone.id?.startsWith('station-')) {
-      const cleanId = zone.id.replace('station-', '');
+    if (zone.id?.startsWith('station-') || zone.id?.startsWith('hte-')) {
+      const cleanId = zone.id.replace('station-', '').replace('hte-', '');
       const found = hostSupervisors.find((h) => h.id === cleanId || h.employeeId === cleanId);
       if (found) return found;
     }
@@ -224,6 +224,17 @@ export function AdminGeofence() {
     if (directHost) return directHost;
 
     const zoneName = (zone?.name || '').toLowerCase();
+    // NEVER match host supervisor by company name if zone is a trainee or instructor station
+    if (
+      zoneName.includes('trainee') ||
+      zoneName.includes('student') ||
+      zoneName.includes('intern') ||
+      zoneName.includes('instructor') ||
+      zoneName.includes('official station')
+    ) {
+      return null;
+    }
+
     const matched = hostSupervisors.find((h) => {
       if (h.companyName && zoneName.includes(h.companyName.toLowerCase())) return true;
       if (h.name && zoneName.includes(h.name.toLowerCase())) return true;
@@ -268,9 +279,13 @@ export function AdminGeofence() {
 
   const isHTEZone = (zone: any): boolean => {
     if (isInstructorZone(zone)) return false;
+    const zoneName = (zone?.name || '').toLowerCase();
+    if (zoneName.includes('trainee') || zoneName.includes('student') || zoneName.includes('intern')) return false;
+
     if (getHostForZone(zone)) return true;
     const acc = getAccountForZone(zone);
     if (acc) {
+      if (isTraineeAccount(acc)) return false;
       const normPos = (acc.position || '').toLowerCase();
       const empId = (acc.employeeId || '').toLowerCase();
       const role = ((acc as any).role || '').toLowerCase();
@@ -283,17 +298,13 @@ export function AdminGeofence() {
       ) {
         return true;
       }
-      if (isTraineeAccount(acc)) return false;
     }
-    const zoneName = (zone?.name || '').toLowerCase();
     const zoneEmpId = (zone?.employeeId || zone?.employee_id || '').toLowerCase();
-    if (zoneName.includes('trainee') || zoneName.includes('student') || zoneName.includes('intern')) return false;
 
-    // Check if zone matches any hostSupervisor by employee_id or company name
+    // Check if zone matches any hostSupervisor by employee_id or contact name
     const matchesHost = hostSupervisors.some(
       (h) =>
         (zoneEmpId && (h.id.toLowerCase() === zoneEmpId || h.employeeId?.toLowerCase() === zoneEmpId)) ||
-        (h.companyName && zoneName.includes(h.companyName.toLowerCase())) ||
         (h.name && zoneName.includes(h.name.toLowerCase()))
     );
     if (matchesHost) return true;
@@ -301,8 +312,7 @@ export function AdminGeofence() {
     return Boolean(
       zoneName.includes('hte') ||
       zoneName.includes('host training') ||
-      zoneName.includes('partner workplace') ||
-      zoneName.includes('printing services')
+      zoneName.includes('partner workplace')
     );
   };
 
@@ -428,6 +438,13 @@ export function AdminGeofence() {
         const host = getHostForZone(z);
         const isInst = isInstructorZone(z);
         const isHte = isHTEZone(z) || Boolean(host);
+        const isTrainee = !isInst && !isHte && (isTraineeZone(z) || Boolean(account && isTraineeAccount(account)));
+
+        // Skip orphaned trainee zones that have no matching active employee account
+        if (isTrainee && !account && !z.employeeId && !z.employee_id) {
+          return;
+        }
+
         const rolePrefix = isInst ? 'inst' : isHte ? 'hte' : 'trainee';
         const personKey = account
           ? `${rolePrefix}-${account.id}`
@@ -586,11 +603,24 @@ export function AdminGeofence() {
       const personKey = `hte-${host.id}`;
       if (zoneMap.has(personKey)) return;
 
+      // Skip duplicate HTE workplace pin if an official zone for this company already exists in zoneMap
+      const normCompany = (host.companyName || '').trim().toLowerCase();
+      if (normCompany) {
+        const companyAlreadyPresent = Array.from(zoneMap.values()).some((existingZ) => {
+          if (existingZ.userType !== 'hte') return false;
+          const exName = (existingZ.name || '').toLowerCase();
+          const exComp = (existingZ.companyName || '').toLowerCase();
+          return exComp === normCompany || exName.includes(normCompany);
+        });
+        if (companyAlreadyPresent) return;
+      }
+
       const wpInfo = getHteWorkplaceInfo(host.id, host.companyName);
       if (wpInfo && Number.isFinite(wpInfo.lat) && Number.isFinite(wpInfo.lng)) {
         zoneMap.set(personKey, {
           id: `station-${host.id}`,
           name: `${host.name} - ${host.companyName || 'HTE Workplace'}`,
+          companyName: host.companyName,
           address: wpInfo.address,
           lat: wpInfo.lat,
           lng: wpInfo.lng,

@@ -1022,7 +1022,12 @@ export async function deleteGeofenceZone(id: string): Promise<boolean> {
       await supabase.from('geofence_zones').delete().eq('id', id);
     }
 
-    const cleanId = id.startsWith('personal-') ? id.replace('personal-', '') : id;
+    const cleanId = id
+      .replace(/^personal-/, '')
+      .replace(/^station-/, '')
+      .replace(/^hte-/, '')
+      .replace(/^inst-/, '')
+      .replace(/^trainee-/, '');
     if (cleanId !== id && isValidUUID(cleanId)) {
       await supabase.from('geofence_zones').delete().eq('id', cleanId);
     }
