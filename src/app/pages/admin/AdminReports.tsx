@@ -54,6 +54,7 @@ import { MonthlyDTTRView } from '../../components/MonthlyDTTRView';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 import { getPaginationWindow } from '../../utils/pagination';
 import { AdvancedAnalyticsDashboard } from '../../components/analytics/AdvancedAnalyticsDashboard';
+import { REQUIRED_TRAINEE_DOC_KEYS } from '../../data/documentRequirements';
 
 export const GRADE_BADGES: Record<string, { bg: string; text: string; border: string }> = {
   Excellent: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
@@ -1648,15 +1649,33 @@ export function AdminReports() {
                         {/* 5. Status Badges Column */}
                         <td className="py-3.5 px-4 border-r border-slate-150">
                           <div className="flex flex-col gap-1 items-start">
-                            {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
-                              <span className="text-[10.5px] font-bold flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-md">
-                                <FileCheck size={11} className="text-emerald-600" /> Docs: Passed
-                              </span>
-                            ) : (
-                              <span className="text-[10.5px] font-bold flex items-center gap-1 text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-md">
-                                <FileText size={11} className="text-amber-600" /> Docs: Pending
-                              </span>
-                            )}
+                            {(() => {
+                              const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
+                              ).length;
+                              const isFullyCertified = emp.documentsPassed !== false && emp.documentsStatus === 'passed';
+                              const isSubmitted = missingDocsCount === 0 && (emp.documentsStatus === 'submitted' || (!isFullyCertified && emp.documentsStatus !== 'pending'));
+
+                              if (isFullyCertified) {
+                                return (
+                                  <span className="text-[10.5px] font-bold flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-md">
+                                    <FileCheck size={11} className="text-emerald-600" /> Docs: Passed
+                                  </span>
+                                );
+                              }
+                              if (isSubmitted) {
+                                return (
+                                  <span className="text-[10.5px] font-bold flex items-center gap-1 text-blue-800 bg-blue-50 border border-blue-300 px-2.5 py-0.5 rounded-md">
+                                    <CheckCircle2 size={11} className="text-blue-600" /> Docs: Submitted
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-[10.5px] font-bold flex items-center gap-1 text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-md">
+                                  <FileText size={11} className="text-amber-600" /> Docs: Pending
+                                </span>
+                              );
+                            })()}
                             {emp.faceRegistered ? (
                               <span className="text-[10.5px] font-bold flex items-center gap-1 text-green-700 bg-green-50 border border-green-300 px-2.5 py-0.5 rounded-md">
                                 <Camera size={11} /> Face Enrolled

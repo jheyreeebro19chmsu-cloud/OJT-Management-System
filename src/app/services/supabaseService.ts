@@ -354,7 +354,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if ('registrationAddress' in updates) {
     supabaseUpdates.registration_address = updates.registrationAddress ?? null;
   }
-  const regRadius = updates.registrationLocation?.radius ?? updates.registrationRadius;
+  const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
   const hasRegLocUpdates =
     'registrationLocation' in updates ||
@@ -373,10 +373,32 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     updates.submittedDocuments !== undefined;
 
   if (hasRegLocUpdates) {
-    const existingRegLoc: any =
-      typeof updates.registrationLocation === 'object' && updates.registrationLocation !== null
-        ? { ...updates.registrationLocation }
-        : {};
+    let existingRegLoc: any = {};
+    try {
+      let fetchQuery = supabase.from('employees').select('registration_location').limit(1);
+      if (isUuid(id)) {
+        fetchQuery = fetchQuery.eq('id', id);
+      } else if (updates.email) {
+        fetchQuery = fetchQuery.eq('email', updates.email.trim().toLowerCase());
+      } else {
+        fetchQuery = fetchQuery.eq('employee_id', id);
+      }
+      const { data: empRow } = await fetchQuery.maybeSingle();
+      if (empRow?.registration_location && typeof empRow.registration_location === 'object') {
+        existingRegLoc = { ...empRow.registration_location };
+      }
+    } catch (e) {
+      console.warn('Could not fetch existing registration_location:', e);
+    }
+
+    if (typeof updates.registrationLocation === 'object' && updates.registrationLocation !== null) {
+      existingRegLoc = {
+        ...existingRegLoc,
+        lat: updates.registrationLocation.lat ?? existingRegLoc.lat ?? null,
+        lng: updates.registrationLocation.lng ?? existingRegLoc.lng ?? null,
+        radius: updates.registrationLocation.radius ?? existingRegLoc.radius ?? 40,
+      };
+    }
 
     const updatedRegLoc: any = {
       ...existingRegLoc,
@@ -406,12 +428,21 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     if (updates.province !== undefined) updatedRegLoc.province = updates.province;
     if (updates.documentsPassed !== undefined) updatedRegLoc.documentsPassed = updates.documentsPassed;
     if (updates.documentsStatus !== undefined) updatedRegLoc.documentsStatus = updates.documentsStatus;
-    if (updates.submittedDocuments !== undefined) updatedRegLoc.documents = sanitizeDocumentsForDb(updates.submittedDocuments);
+    if (updates.submittedDocuments !== undefined) {
+      updatedRegLoc.documents = sanitizeDocumentsForDb(updates.submittedDocuments);
+    } else if (updates.documentsPassed !== undefined && updatedRegLoc.documents) {
+      const targetDocStatus = updates.documentsPassed ? 'passed' : 'pending';
+      const synchronizedDocs: any = { ...updatedRegLoc.documents };
+      for (const k of Object.keys(synchronizedDocs)) {
+        if (synchronizedDocs[k] && typeof synchronizedDocs[k] === 'object') {
+          synchronizedDocs[k] = { ...synchronizedDocs[k], status: targetDocStatus };
+        }
+      }
+      updatedRegLoc.documents = synchronizedDocs;
+    }
 
     supabaseUpdates.registration_location = updatedRegLoc;
   }
-
-  const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
   let query = supabase.from('employees').update(supabaseUpdates);
   if (isUuid(id)) {

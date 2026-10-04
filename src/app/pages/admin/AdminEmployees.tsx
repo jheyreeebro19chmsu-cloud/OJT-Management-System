@@ -788,44 +788,58 @@ export function AdminEmployees() {
                   )}
                   {isTraineeGroup && !isPendingGroup ? (
                     <div className="flex flex-col gap-1 items-start">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openReview(emp);
-                        }}
-                        className={`text-[11px] font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer shadow-2xs ${
-                          emp.documentsPassed !== false && emp.documentsStatus !== 'pending'
-                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300'
-                            : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300 ring-1 ring-amber-300/60'
-                        }`}
-                        title="Click to Review Trainee Compliance Documents"
-                      >
-                        {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? (
-                          <>
-                            <FileCheck size={12} className="text-emerald-600" /> Docs: Passed
-                          </>
-                        ) : (
-                          <>
-                            <FileText size={12} className="text-amber-600 animate-pulse" /> Docs: Pending
-                          </>
-                        )}
-                      </button>
                       {(() => {
                         const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
                           (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
                         ).length;
-                        if (missingDocsCount > 0) {
-                          return (
-                            <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                              ⚠️ {missingDocsCount} Missing
-                            </span>
-                          );
-                        }
+                        const isFullyCertified = emp.documentsPassed !== false && emp.documentsStatus === 'passed';
+                        const isSubmittedPendingReview = missingDocsCount === 0 && (emp.documentsStatus === 'submitted' || (!isFullyCertified && emp.documentsStatus !== 'pending'));
+
                         return (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                            ✓ Complete
-                          </span>
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openReview(emp);
+                              }}
+                              className={`text-[11px] font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all cursor-pointer shadow-2xs ${
+                                isFullyCertified
+                                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300'
+                                  : isSubmittedPendingReview
+                                  ? 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300 ring-1 ring-blue-300/60'
+                                  : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300 ring-1 ring-amber-300/60'
+                              }`}
+                              title="Click to Review Trainee Compliance Documents"
+                            >
+                              {isFullyCertified ? (
+                                <>
+                                  <FileCheck size={12} className="text-emerald-600" /> Docs: Passed
+                                </>
+                              ) : isSubmittedPendingReview ? (
+                                <>
+                                  <CheckCircle2 size={12} className="text-blue-600" /> Docs: Submitted
+                                </>
+                              ) : (
+                                <>
+                                  <FileText size={12} className="text-amber-600 animate-pulse" /> Docs: Pending
+                                </>
+                              )}
+                            </button>
+                            {missingDocsCount > 0 ? (
+                              <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                ⚠️ {missingDocsCount} Missing
+                              </span>
+                            ) : (
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                isFullyCertified
+                                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                  : 'text-blue-700 bg-blue-50 border-blue-200'
+                              }`}>
+                                ✓ Complete ({REQUIRED_TRAINEE_DOCUMENTS.length}/{REQUIRED_TRAINEE_DOCUMENTS.length})
+                              </span>
+                            )}
+                          </>
                         );
                       })()}
                       {emp.faceRegistered ? (
@@ -981,17 +995,34 @@ export function AdminEmployees() {
                                 <button
                                   onClick={async () => {
                                     setOpenMenuId(null);
-                                    const newStatus = !(emp.documentsPassed !== false && emp.documentsStatus !== 'pending');
-                                    await updateEmployee(emp.id, {
-                                      documentsPassed: newStatus,
-                                      documentsStatus: newStatus ? 'passed' : 'pending',
+                                    const isCurrentlyPassed = emp.documentsPassed !== false && emp.documentsStatus === 'passed';
+                                    const willPass = !isCurrentlyPassed;
+                                    const currentDocs = emp.submittedDocuments || {};
+                                    const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                    const updatedDocs: TraineeDocuments = { ...currentDocs };
+                                    docKeys.forEach((k) => {
+                                      updatedDocs[k] = {
+                                        ...(currentDocs[k] || {
+                                          name: `${k}.pdf`,
+                                          type: 'application/pdf',
+                                          size: 0,
+                                          uploadedAt: new Date().toISOString(),
+                                        }),
+                                        status: willPass ? 'passed' : 'pending',
+                                      };
                                     });
-                                    toast.success(newStatus ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
+
+                                    await updateEmployee(emp.id, {
+                                      submittedDocuments: updatedDocs,
+                                      documentsPassed: willPass,
+                                      documentsStatus: willPass ? 'passed' : 'pending',
+                                    });
+                                    toast.success(willPass ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
                                   }}
                                   className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
                                 >
                                   <CheckCircle2 size={14} className="text-emerald-600" />
-                                  {emp.documentsPassed !== false && emp.documentsStatus !== 'pending' ? 'Set Docs as Pending' : 'Approve All Documents'}
+                                  {emp.documentsPassed !== false && emp.documentsStatus === 'passed' ? 'Set Docs as Pending' : 'Approve All Documents'}
                                 </button>
                               )}
 
@@ -1870,32 +1901,68 @@ export function AdminEmployees() {
                                   </span>
                                 </div>
                               ) : (
-                                <div className="flex flex-wrap gap-2 mt-2">
-                                  {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? (
-                                    <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
-                                      <FileCheck size={11} className="text-emerald-600" /> Documents: Passed
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold">
-                                      <FileText size={11} className="text-amber-600" /> Documents: Pending
-                                    </span>
-                                  )}
+                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                  {(() => {
+                                    const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                      (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
+                                    ).length;
+                                    const isPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus === 'passed';
+                                    const isSubmitted = missingCount === 0 && (selectedEmp.documentsStatus === 'submitted' || (!isPassed && selectedEmp.documentsStatus !== 'pending'));
+
+                                    if (isPassed) {
+                                      return (
+                                        <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+                                          <FileCheck size={11} className="text-emerald-600" /> Documents: Passed
+                                        </span>
+                                      );
+                                    }
+                                    if (isSubmitted) {
+                                      return (
+                                        <span className="text-xs flex items-center gap-1 text-blue-700 bg-blue-100 border border-blue-200 px-2.5 py-0.5 rounded-full font-bold">
+                                          <CheckCircle2 size={11} className="text-blue-600" /> Documents: Submitted
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="text-xs flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full font-bold">
+                                        <FileText size={11} className="text-amber-600" /> Documents: Pending
+                                      </span>
+                                    );
+                                  })()}
                                   <button
                                     type="button"
                                     onClick={async () => {
-                                      const newStatus = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' ? false : true;
+                                      const isCurrentlyPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus === 'passed';
+                                      const willPass = !isCurrentlyPassed;
+                                      const currentDocs = selectedEmp.submittedDocuments || {};
+                                      const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                      const updatedDocs: TraineeDocuments = { ...currentDocs };
+                                      docKeys.forEach((k) => {
+                                        updatedDocs[k] = {
+                                          ...(currentDocs[k] || {
+                                            name: `${k}.pdf`,
+                                            type: 'application/pdf',
+                                            size: 0,
+                                            uploadedAt: new Date().toISOString(),
+                                          }),
+                                          status: willPass ? 'passed' : 'pending',
+                                        };
+                                      });
+
                                       await updateEmployee(selectedEmp.id, {
-                                        documentsPassed: newStatus,
-                                        documentsStatus: newStatus ? 'passed' : 'pending',
+                                        submittedDocuments: updatedDocs,
+                                        documentsPassed: willPass,
+                                        documentsStatus: willPass ? 'passed' : 'pending',
                                       });
                                       setSelectedEmp({
                                         ...selectedEmp,
-                                        documentsPassed: newStatus,
-                                        documentsStatus: newStatus ? 'passed' : 'pending',
+                                        submittedDocuments: updatedDocs,
+                                        documentsPassed: willPass,
+                                        documentsStatus: willPass ? 'passed' : 'pending',
                                       });
-                                      toast.success(newStatus ? 'Registration documents marked as PASSED!' : 'Registration documents marked as PENDING');
+                                      toast.success(willPass ? 'Registration documents marked as PASSED!' : 'Registration documents marked as PENDING');
                                     }}
-                                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline ml-1"
+                                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline ml-1 cursor-pointer"
                                   >
                                     Toggle Status
                                   </button>
@@ -3000,7 +3067,7 @@ export function AdminEmployees() {
                     {(() => {
                       const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
                       const passedCount = docKeys.filter((k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed').length;
-                      const isFullyPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending' && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length;
+                      const isFullyPassed = (selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus === 'passed') || passedCount === REQUIRED_TRAINEE_DOCUMENTS.length;
 
                       return (
                         <div className={`p-4 rounded-2xl border transition-all ${
@@ -3016,7 +3083,7 @@ export function AdminEmployees() {
                               </div>
                               <p className="text-xs text-gray-600 mt-1">
                                 {isFullyPassed
-                                  ? 'All 9 compliance credentials verified. Trainee is certified for deployment.'
+                                  ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} compliance credentials verified. Trainee is certified for deployment.`
                                   : 'Review submitted attachments below. Mark individual documents as passed or approve all.'}
                               </p>
                             </div>
@@ -3053,7 +3120,7 @@ export function AdminEmployees() {
                                 });
                                 toast.success(
                                   willPass
-                                    ? `All 9 documents marked as PASSED for ${selectedEmp.name}!`
+                                    ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} documents marked as PASSED for ${selectedEmp.name}!`
                                     : `Documents marked as PENDING for ${selectedEmp.name}`
                                 );
                               }}
@@ -3063,7 +3130,7 @@ export function AdminEmployees() {
                                   : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
                               }`}
                             >
-                              {isFullyPassed ? 'Mark All as Pending' : '✓ Approve All 9 Documents'}
+                              {isFullyPassed ? 'Mark All as Pending' : `✓ Approve All ${REQUIRED_TRAINEE_DOCUMENTS.length} Documents`}
                             </button>
                           </div>
                         </div>

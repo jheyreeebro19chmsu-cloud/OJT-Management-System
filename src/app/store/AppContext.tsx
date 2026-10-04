@@ -2477,6 +2477,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           delete next.registrationAddress;
           delete next.registration_address;
         }
+        if (data.documentsPassed !== undefined && !data.submittedDocuments && next.submittedDocuments) {
+          const targetDocStatus = data.documentsPassed ? 'passed' : 'pending';
+          const syncedDocs: any = { ...next.submittedDocuments };
+          for (const k of Object.keys(syncedDocs)) {
+            if (syncedDocs[k] && typeof syncedDocs[k] === 'object') {
+              syncedDocs[k] = { ...syncedDocs[k], status: targetDocStatus };
+            }
+          }
+          next.submittedDocuments = syncedDocs;
+        }
         return next as Employee;
       }
       return e;

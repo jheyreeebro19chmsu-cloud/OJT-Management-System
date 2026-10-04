@@ -124,7 +124,12 @@ export function Documents() {
     const doc = getDocItem(k.key);
     return doc?.status === 'passed' && Boolean(doc?.dataUrl || doc?.name);
   }).length;
-  const isAllPassed = uploadedCount === totalRequired && passedCount === totalRequired;
+  const isAllPassed =
+    (uploadedCount === totalRequired && passedCount === totalRequired) ||
+    (employee?.documentsPassed !== false && employee?.documentsStatus === 'passed');
+  const isPendingVerification =
+    (employee?.documentsPassed === false || employee?.documentsStatus === 'pending') && uploadedCount > 0;
+  const isSubmittedAwaitingReview = uploadedCount === totalRequired && !isAllPassed && !isPendingVerification;
   const missingDocs = useMemo(() => {
     return allDocRequirements.filter((item) => {
       const doc = getDocItem(item.key);
@@ -337,6 +342,8 @@ export function Documents() {
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-sm ${
               isAllPassed
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : isSubmittedAwaitingReview
+                ? 'bg-blue-50 text-blue-700 border-blue-300'
                 : 'bg-amber-50 text-amber-800 border-amber-300'
             }`}
           >
@@ -344,6 +351,16 @@ export function Documents() {
               <>
                 <CheckCircle2 size={15} className="text-emerald-600 stroke-[2.5]" />
                 {totalRequired}/{totalRequired} Completed (Compliant)
+              </>
+            ) : isSubmittedAwaitingReview ? (
+              <>
+                <CheckCircle2 size={15} className="text-blue-600 stroke-[2.5]" />
+                {totalRequired}/{totalRequired} Submitted (Under Review)
+              </>
+            ) : isPendingVerification && missingCount === 0 ? (
+              <>
+                <Clock size={15} className="text-amber-600 animate-pulse" />
+                Action Required (Pending Review)
               </>
             ) : (
               <>
@@ -362,17 +379,29 @@ export function Documents() {
         className={`p-5 rounded-3xl border transition-all ${
           isAllPassed
             ? 'bg-gradient-to-br from-emerald-500/10 via-emerald-50 to-white border-emerald-200'
+            : isSubmittedAwaitingReview
+            ? 'bg-gradient-to-br from-blue-500/10 via-blue-50 to-white border-blue-200'
             : 'bg-gradient-to-br from-amber-500/10 via-amber-50 to-white border-amber-200'
         }`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              {isAllPassed ? '🎉 All Required Documents Submitted & Verified' : '⚠️ Action Required: Submit Missing Documents'}
+              {isAllPassed
+                ? '🎉 All Required Documents Submitted & Verified'
+                : isSubmittedAwaitingReview
+                ? '✓ All Required Documents Submitted (Under Review)'
+                : isPendingVerification && missingCount === 0
+                ? '⚠️ Action Required: Documents Pending Instructor Review'
+                : '⚠️ Action Required: Submit Missing Documents'}
             </h3>
             <p className="text-xs text-slate-600 mt-0.5">
               {isAllPassed
-                ? `Congratulations! You have fulfilled all ${totalRequired} registration document requirements. Your OJT Instructor can review them anytime.`
+                ? `Congratulations! You have fulfilled all ${totalRequired} registration document requirements. All documents have been verified and approved by your OJT Instructor.`
+                : isSubmittedAwaitingReview
+                ? `You have submitted all ${totalRequired} mandatory documents (${progressPercent}%). They are currently queued for OJT Instructor review.`
+                : isPendingVerification && missingCount === 0
+                ? `All ${totalRequired} documents are uploaded. Your OJT Instructor has requested verification or revisions. Please check document feedback.`
                 : `You have submitted ${uploadedCount} of ${totalRequired} documents (${progressPercent}%). Please upload the remaining ${missingCount} document${missingCount > 1 ? 's' : ''} to maintain full compliance.`}
             </p>
           </div>
@@ -452,14 +481,30 @@ export function Documents() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="p-4 rounded-3xl bg-emerald-500/10 border border-emerald-300 text-emerald-950 flex items-center gap-3 shadow-xs"
+          className={`p-4 rounded-3xl border flex items-center gap-3 shadow-xs ${
+            isAllPassed
+              ? 'bg-emerald-500/10 border-emerald-300 text-emerald-950'
+              : 'bg-blue-500/10 border-blue-300 text-blue-950'
+          }`}
         >
-          <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+          <div className={`w-9 h-9 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-sm ${
+            isAllPassed ? 'bg-emerald-600' : 'bg-blue-600'
+          }`}>
             <CheckCircle2 size={20} />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold text-emerald-900">All OJT Requirements Complete</h4>
-            <p className="text-[11px] text-emerald-800">You have no missing or incomplete documentary requirements. Your coordinator will record final evaluations.</p>
+            <h4 className={`text-xs sm:text-sm font-bold ${
+              isAllPassed ? 'text-emerald-900' : 'text-blue-900'
+            }`}>
+              {isAllPassed ? 'All OJT Requirements Complete & Verified' : 'All OJT Requirements Uploaded (Pending Coordinator Review)'}
+            </h4>
+            <p className={`text-[11px] ${
+              isAllPassed ? 'text-emerald-800' : 'text-blue-800'
+            }`}>
+              {isAllPassed
+                ? 'You have fulfilled all documentary compliance requirements. Your coordinator has approved your credentials.'
+                : 'All 10 required documents are safely in file. Your OJT Instructor will verify and certify your submissions.'}
+            </p>
           </div>
         </motion.div>
       )}
