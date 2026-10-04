@@ -10,6 +10,7 @@ import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
 import { TraineeLocationReminder } from './TraineeLocationReminder';
+import { TokenExpiryBadge } from './TokenExpiryBadge';
 
 
 const navItems = [
@@ -270,6 +271,9 @@ export function EmployeeLayout() {
             <div className="text-blue-300 text-[10px] truncate">{displayId}</div>
           </div>
         </div>
+        <div className="mb-2 px-1">
+          <TokenExpiryBadge theme="dark" className="w-full justify-center" />
+        </div>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
@@ -348,8 +352,9 @@ export function EmployeeLayout() {
               </div>
             </div>
 
-            {/* Right Header: Notification Bell */}
+            {/* Right Header: Token Expiry & Notification Bell */}
             <div className="flex items-center gap-2 relative">
+              <TokenExpiryBadge theme="dark" />
               <button
                 type="button"
                 onClick={() => setNotifTrayOpen((prev) => !prev)}

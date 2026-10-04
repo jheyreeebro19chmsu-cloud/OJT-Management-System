@@ -26,6 +26,7 @@ import { isSecurityApiConfigured } from '../services/securityApi';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { getPendingTraineeRequests, subscribeToPendingRequests } from '../services/accountSync';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
+import { TokenExpiryBadge } from './TokenExpiryBadge';
 
 
 const navItems = [
@@ -227,6 +228,9 @@ export function AdminLayout() {
               <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
             </div>
           </div>
+          <div className="mb-2 px-1">
+            <TokenExpiryBadge theme="dark" className="w-full justify-center" />
+          </div>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
@@ -319,6 +323,9 @@ export function AdminLayout() {
                     <div className="text-blue-300 text-xs truncate">{employee?.email || currentUser?.email || 'No email'}</div>
                   </div>
                 </div>
+                <div className="mb-2 px-1">
+                  <TokenExpiryBadge theme="dark" className="w-full justify-center" />
+                </div>
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-3 py-2 text-slate-300 hover:text-white hover:bg-[#1E3A66] rounded-xl transition-all text-sm font-medium cursor-pointer"
@@ -345,8 +352,9 @@ export function AdminLayout() {
                 CHMSU OJT System — Instructor
               </NavLink>
             </div>
-            <div className="hidden lg:flex items-center gap-2">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <TokenExpiryBadge theme="light" />
+              <div className="hidden sm:flex items-center gap-3">
                 <UserAvatar
                   photo={employee?.photo || currentUser?.photo}
                   name={employee?.name || currentUser?.name || 'OJT Instructor'}

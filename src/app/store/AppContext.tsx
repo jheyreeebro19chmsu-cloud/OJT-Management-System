@@ -253,6 +253,9 @@ interface AppContextType {
   login: (email: string, password: string) => Promise<User | null>;
   loginWithOAuthUser: (authUser: any, explicitRole?: 'admin' | 'hte' | 'trainee' | null) => Promise<User | null>;
   logout: () => void;
+  tokenExpiresAt: number | null;
+  tokenSecondsRemaining: number;
+  refreshToken: () => void;
   refreshData: () => Promise<void>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   registerEmployee: (data: RegisterEmployeeInput) => Promise<{ success: boolean; message?: string; employee?: Employee }>;
@@ -561,6 +564,29 @@ function cleanupStorageQuota(): void {
   }
 }
 
+export const TOKEN_LIFETIME_MS = 10 * 60 * 1000; // 10 minutes (600,000 ms)
+
+export function issueSessionToken(user?: User | null): { token: string; expiresAt: number } {
+  const expiresAt = Date.now() + TOKEN_LIFETIME_MS;
+  const header = typeof btoa !== 'undefined' ? btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' })) : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9';
+  const payload = typeof btoa !== 'undefined' ? btoa(JSON.stringify({
+    sub: user?.id || user?.employeeId || 'ojt-user',
+    email: user?.email,
+    role: user?.role,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(expiresAt / 1000),
+  })) : 'payload';
+  const mockSig = 'chmsu_ojt_token_sig';
+  const token = `${header}.${payload}.${mockSig}`;
+
+  try {
+    localStorage.setItem('ojt_jwt_access_token', token);
+    localStorage.setItem('ojt_token_expires_at', String(expiresAt));
+  } catch {}
+
+  return { token, expiresAt };
+}
+
 export function clearAuthStorage(): void {
   try {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
@@ -570,6 +596,7 @@ export function clearAuthStorage(): void {
     localStorage.removeItem('ojt_hte_company');
     localStorage.removeItem('ojt_jwt_access_token');
     localStorage.removeItem('ojt_jwt_refresh_token');
+    localStorage.removeItem('ojt_token_expires_at');
     localStorage.removeItem('sb-access-token');
     localStorage.removeItem('user');
     localStorage.removeItem('pending_oauth_role');
@@ -792,13 +819,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [useSupabase, setUseSupabase] = useState(() => isSupabaseConfigured());
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+  const [currentUser, setRawCurrentUser] = useState<User | null>(() => {
+    const expiryStr = typeof window !== 'undefined' ? localStorage.getItem('ojt_token_expires_at') : null;
+    if (expiryStr && Date.now() >= Number(expiryStr)) {
+      clearAuthStorage();
+      return null;
+    }
     const primary = loadFromStorage<User | null>(STORAGE_KEYS.CURRENT_USER, null);
-    if (primary) return primary;
+    if (primary) {
+      if (!expiryStr && typeof window !== 'undefined') {
+        issueSessionToken(primary);
+      }
+      return primary;
+    }
     const legacyUser = loadFromStorage<User | null>('ojt_user', null);
-    if (legacyUser) return legacyUser;
-    return loadFromStorage<User | null>('ojt_current_user', null);
+    if (legacyUser) {
+      if (!expiryStr && typeof window !== 'undefined') {
+        issueSessionToken(legacyUser);
+      }
+      return legacyUser;
+    }
+    const cur = loadFromStorage<User | null>('ojt_current_user', null);
+    if (cur && !expiryStr && typeof window !== 'undefined') {
+      issueSessionToken(cur);
+    }
+    return cur;
   });
+
+  const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const stored = localStorage.getItem('ojt_token_expires_at');
+    return stored ? Number(stored) : null;
+  });
+
+  const [tokenSecondsRemaining, setTokenSecondsRemaining] = useState<number>(() => {
+    if (typeof window === 'undefined') return 600;
+    const stored = localStorage.getItem('ojt_token_expires_at');
+    if (!stored) return 600;
+    return Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
+  });
+
+  const setCurrentUser = useCallback((userOrUpdater: User | null | ((prev: User | null) => User | null)) => {
+    setRawCurrentUser((prev) => {
+      const nextUser = typeof userOrUpdater === 'function' ? userOrUpdater(prev) : userOrUpdater;
+      if (nextUser) {
+        const currentExp = Number(localStorage.getItem('ojt_token_expires_at'));
+        if (!prev || prev.id !== nextUser.id || !currentExp || currentExp <= Date.now()) {
+          const issued = issueSessionToken(nextUser);
+          setTokenExpiresAt(issued.expiresAt);
+          setTokenSecondsRemaining(600);
+        }
+      } else {
+        setTokenExpiresAt(null);
+        setTokenSecondsRemaining(600);
+      }
+      return nextUser;
+    });
+  }, []);
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
     return stored;
@@ -1934,6 +2011,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     clearAuthStorage();
     setCurrentUser(null);
+    setTokenExpiresAt(null);
+    setTokenSecondsRemaining(600);
     if (useSupabase) {
       supabase.auth.signOut().catch((err) => {
         console.error('Error signing out from Supabase:', err);
@@ -1941,76 +2020,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // ── Automatic Inactivity Timeout (10 minutes) ───────────────────────────────
-  // Automatically logs out the account after 10 minutes of inactivity in browser or mobile app.
-  useEffect(() => {
+  const refreshToken = () => {
     if (!currentUser) return;
+    const issued = issueSessionToken(currentUser);
+    setTokenExpiresAt(issued.expiresAt);
+    setTokenSecondsRemaining(600);
+    toast.success('Session Token Renewed', {
+      description: 'Your 10-minute session token has been extended by 10 minutes.',
+      duration: 3000,
+    });
+  };
+
+  // ── 10-Minute Token Expiry & Automatic Logout ───────────────────────────────
+  // When 10 minutes have passed, the session token expires and the account is logged out automatically.
+  useEffect(() => {
+    if (!currentUser) {
+      setTokenExpiresAt(null);
+      setTokenSecondsRemaining(600);
+      return;
+    }
     if (typeof window === 'undefined') return;
     if ((window as any).Cypress) return; // Prevent premature logout during automated tests
 
-    const INACTIVITY_LIMIT_MS = 10 * 60 * 1000; // 10 minutes (600,000 ms)
-    const STORAGE_KEY = 'ojt_last_active_timestamp';
+    // Initialize or verify token expiry timestamp
+    let expTime = Number(localStorage.getItem('ojt_token_expires_at'));
+    if (!expTime || isNaN(expTime) || expTime <= Date.now()) {
+      const issued = issueSessionToken(currentUser);
+      expTime = issued.expiresAt;
+      setTokenExpiresAt(expTime);
+      setTokenSecondsRemaining(600);
+    } else {
+      setTokenExpiresAt(expTime);
+      setTokenSecondsRemaining(Math.max(0, Math.floor((expTime - Date.now()) / 1000)));
+    }
 
-    // Initialize last active timestamp
-    let lastActive = Number(localStorage.getItem(STORAGE_KEY)) || Date.now();
-    try {
-      localStorage.setItem(STORAGE_KEY, String(Date.now()));
-    } catch {}
+    let hasWarned1Min = false;
 
-    let lastWriteTime = Date.now();
-
-    const recordActivity = () => {
+    const checkTokenExpiry = () => {
+      const currentExpiry = Number(localStorage.getItem('ojt_token_expires_at')) || expTime;
       const now = Date.now();
-      lastActive = now;
-      // Throttle localStorage updates to once every 5 seconds to optimize performance & battery
-      if (now - lastWriteTime > 5000) {
-        lastWriteTime = now;
-        try {
-          localStorage.setItem(STORAGE_KEY, String(now));
-        } catch {}
-      }
-    };
+      const remainingMs = currentExpiry - now;
+      const remainingSec = Math.max(0, Math.floor(remainingMs / 1000));
+      setTokenSecondsRemaining(remainingSec);
 
-    const checkInactivity = () => {
-      const stored = Number(localStorage.getItem(STORAGE_KEY)) || lastActive;
-      const elapsed = Date.now() - stored;
-      if (elapsed >= INACTIVITY_LIMIT_MS) {
-        try {
-          localStorage.removeItem(STORAGE_KEY);
-        } catch {}
-        logout();
-        toast.info('Session expired', {
-          description: 'You have been automatically logged out due to 10 minutes of inactivity.',
+      // 1-minute warning notice
+      if (remainingSec <= 60 && remainingSec > 50 && !hasWarned1Min) {
+        hasWarned1Min = true;
+        toast.warning('Token Expiring Soon', {
+          description: 'Your 10-minute security token will expire in 1 minute. Please save your work.',
           duration: 6000,
+        });
+      }
+
+      // Automatically log out when 10 minutes have passed
+      if (remainingMs <= 0) {
+        logout();
+        toast.error('Session Expired', {
+          description: 'Your 10-minute session token has expired. You have been automatically logged out for security.',
+          duration: 8000,
         });
       }
     };
 
-    // User interaction events covering desktop browsers and mobile touch screens
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
-    events.forEach((ev) => {
-      window.addEventListener(ev, recordActivity, { passive: true });
-    });
+    // Check immediately on mount/focus
+    checkTokenExpiry();
 
-    // Check when user switches back to browser tab or resumes mobile app from background
+    // High-precision 1-second interval for countdown and auto-logout
+    const timerInterval = setInterval(checkTokenExpiry, 1000);
+
     const handleVisibilityOrFocus = () => {
       if (!document.hidden) {
-        checkInactivity();
+        checkTokenExpiry();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
-    // Periodic background check every 15 seconds while app is in foreground
-    const intervalId = setInterval(checkInactivity, 15000);
-
     return () => {
-      events.forEach((ev) => {
-        window.removeEventListener(ev, recordActivity);
-      });
+      clearInterval(timerInterval);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
-      clearInterval(intervalId);
     };
   }, [currentUser]);
 
@@ -4202,6 +4291,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         login,
         loginWithOAuthUser,
         logout,
+        tokenExpiresAt,
+        tokenSecondsRemaining,
+        refreshToken,
         refreshData,
         changeCurrentUserPassword,
         registerEmployee,

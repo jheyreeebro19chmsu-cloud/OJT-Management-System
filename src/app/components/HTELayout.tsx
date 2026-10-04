@@ -19,6 +19,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
+import { TokenExpiryBadge } from './TokenExpiryBadge';
 
 interface HTELayoutProps {
   children?: React.ReactNode;
@@ -184,6 +185,9 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="text-blue-300 text-[10px] truncate">{companyName}</div>
           </div>
         </div>
+        <div className="mb-2 px-1">
+          <TokenExpiryBadge theme="dark" className="w-full justify-center" />
+        </div>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
@@ -257,6 +261,11 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
                 <span className="w-1.5 h-1.5 bg-[#146B4D] rounded-full animate-pulse" />
                 <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
               </div>
+            </div>
+
+            {/* Right Header: Token Expiry Badge */}
+            <div className="flex items-center gap-2">
+              <TokenExpiryBadge theme="dark" />
             </div>
           </div>
         </header>
