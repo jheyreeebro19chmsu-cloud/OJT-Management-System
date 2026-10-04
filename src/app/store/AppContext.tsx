@@ -386,11 +386,14 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
       !zone.id.startsWith('personal-')
     );
 
-  // Strict deduplication (Geofence patch): prioritize employee_id to guarantee exactly 1 active zone per user
+  // Strict deduplication (Geofence patch): prioritize employee_id and normalized identity to guarantee exactly 1 active zone per workplace/user
   const seen = new Map<string, GeofenceZone>();
+  const nameToKey = new Map<string, string>();
+
   for (const z of valid) {
     const empId = z.employeeId || z.employee_id;
     const rawPerson = z.name.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name.trim();
+    const rawCompany = z.name.includes(' - ') ? z.name.split(' - ')[1]?.trim() : '';
     const normPerson = rawPerson
       .toLowerCase()
       .replace(/[^a-z0-9]/g, ' ')
@@ -398,12 +401,35 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
       .filter((w) => w.length > 1)
       .sort()
       .join(' ');
-    const key = empId ? `emp_${empId}` : (normPerson || `${z.lat.toFixed(3)},${z.lng.toFixed(3)}`);
+    const normCompany = (rawCompany || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1)
+      .sort()
+      .join(' ');
+
+    const nameIdentity = normCompany && normPerson ? `${normPerson}__${normCompany}` : normPerson;
+    let key = empId ? `emp_${empId}` : (nameIdentity ? `ident_${nameIdentity}` : `${z.lat.toFixed(3)},${z.lng.toFixed(3)}`);
+
+    // Cross-key resolution: If an identity was already recorded under an empId or vice versa, unify them
+    if (nameIdentity && nameToKey.has(nameIdentity)) {
+      key = nameToKey.get(nameIdentity)!;
+    } else if (nameIdentity) {
+      nameToKey.set(nameIdentity, key);
+    }
+
     if (!seen.has(key)) {
       seen.set(key, z);
     } else {
       const existing = seen.get(key)!;
-      if ((!existing.address || existing.address.length < 5) && z.address) {
+      // If existing is default campus coordinates (10.7410, 122.9702) and new has moved custom coordinates, prefer the moved one!
+      const isExistingDefault = Math.abs(existing.lat - 10.7410) < 0.0002 && Math.abs(existing.lng - 122.9702) < 0.0002;
+      const isNewCustom = Math.abs(z.lat - 10.7410) >= 0.0002 || Math.abs(z.lng - 122.9702) >= 0.0002;
+
+      if (isExistingDefault && isNewCustom) {
+        seen.set(key, z);
+      } else if (z.address && (!existing.address || existing.address.length < 5 || existing.address === 'Official Workplace GPS')) {
         seen.set(key, z);
       }
     }
@@ -2621,9 +2647,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateHostSupervisor = (id: string, data: Partial<HostSupervisor>) => {
     const updatedHosts = hostSupervisors.map((h) => (h.id === id || h.employeeId === id ? { ...h, ...data } : h));
     setHostSupervisors(updatedHosts);
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
-    }
+    saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
 
     const updatedHost = updatedHosts.find((h) => h.id === id || h.employeeId === id);
     if (updatedHost && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
@@ -2634,13 +2658,74 @@ export function AppProvider({ children }: { children: ReactNode }) {
               name: updatedHost.name || prev.name,
               email: updatedHost.email || prev.email,
               photo: updatedHost.photo || prev.photo,
+              companyAddress: updatedHost.companyAddress || (prev as any).companyAddress,
+              registrationLocation: (updatedHost as any).registrationLocation || (prev as any).registrationLocation,
             }
           : prev
       );
     }
 
+    // If registrationLocation is provided, also sync geofenceZones state directly
+    const regLoc = (data as any).registrationLocation;
+    if (regLoc && regLoc.lat && regLoc.lng && updatedHost) {
+      const zoneId = `station-${id}`;
+      const targetName = `${updatedHost.name} - ${updatedHost.companyName || 'HTE Workplace'}`;
+      const targetAddress = updatedHost.companyAddress || (updatedHost as any).registrationAddress || `${updatedHost.companyName} Workplace Premises`;
+      const targetRadius = Math.max(20, Number(regLoc.radius || (data as any).registrationRadius || 40));
+
+      setGeofenceZones((prev) => {
+        const cleanRawId = id.replace(/^(station|personal|trainee|inst|hte)-/, '');
+        const exists = prev.some(
+          (z) => z.id === id || z.id === zoneId || z.employeeId === id || z.employeeId === cleanRawId ||
+                 (z.name && updatedHost.companyName && z.name.toLowerCase().includes(updatedHost.companyName.toLowerCase()))
+        );
+
+        let updated: GeofenceZone[];
+        if (exists) {
+          updated = prev.map((z) => {
+            if (
+              z.id === id || z.id === zoneId || z.employeeId === id || z.employeeId === cleanRawId ||
+              (z.name && updatedHost.companyName && z.name.toLowerCase().includes(updatedHost.companyName.toLowerCase()))
+            ) {
+              return {
+                ...z,
+                lat: Number(regLoc.lat),
+                lng: Number(regLoc.lng),
+                radius: targetRadius,
+                address: targetAddress,
+                name: targetName,
+                employeeId: id,
+                employee_id: id,
+              };
+            }
+            return z;
+          });
+        } else {
+          updated = [
+            ...prev,
+            {
+              id: zoneId,
+              name: targetName,
+              address: targetAddress,
+              lat: Number(regLoc.lat),
+              lng: Number(regLoc.lng),
+              radius: targetRadius,
+              active: true,
+              academicYear: updatedHost.academicYear || settings?.activeAcademicYear,
+              employeeId: id,
+              employee_id: id,
+            },
+          ];
+        }
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, updated);
+        return updated;
+      });
+    }
+
     if (useSupabase) {
-      supabaseService.updateHostSupervisor(id, data);
+      supabaseService.updateHostSupervisor(id, data).catch((err) => {
+        console.warn('[AppContext] updateHostSupervisor notice:', err);
+      });
     }
   };
 

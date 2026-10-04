@@ -208,6 +208,30 @@ export function AdminGeofence() {
     return null;
   };
 
+  const getHostForZone = (zone: any): any | null => {
+    if (!zone) return null;
+    const targetId = zone.employeeId || zone.employee_id;
+    if (targetId) {
+      const found = hostSupervisors.find((h) => h.id === targetId || h.employeeId === targetId);
+      if (found) return found;
+    }
+    if (zone.id?.startsWith('station-')) {
+      const cleanId = zone.id.replace('station-', '');
+      const found = hostSupervisors.find((h) => h.id === cleanId || h.employeeId === cleanId);
+      if (found) return found;
+    }
+    const directHost = hostSupervisors.find((h) => h.id === zone.id || h.employeeId === zone.id);
+    if (directHost) return directHost;
+
+    const zoneName = (zone?.name || '').toLowerCase();
+    const matched = hostSupervisors.find((h) => {
+      if (h.companyName && zoneName.includes(h.companyName.toLowerCase())) return true;
+      if (h.name && zoneName.includes(h.name.toLowerCase())) return true;
+      return false;
+    });
+    return matched || null;
+  };
+
   const isInstructorZone = (zone: any): boolean => {
     const acc = getAccountForZone(zone);
     if (acc) {
@@ -244,6 +268,7 @@ export function AdminGeofence() {
 
   const isHTEZone = (zone: any): boolean => {
     if (isInstructorZone(zone)) return false;
+    if (getHostForZone(zone)) return true;
     const acc = getAccountForZone(zone);
     if (acc) {
       const normPos = (acc.position || '').toLowerCase();
@@ -400,11 +425,14 @@ export function AdminGeofence() {
       )
       .forEach((z) => {
         const account = getAccountForZone(z);
+        const host = getHostForZone(z);
         const isInst = isInstructorZone(z);
-        const isHte = isHTEZone(z);
+        const isHte = isHTEZone(z) || Boolean(host);
         const rolePrefix = isInst ? 'inst' : isHte ? 'hte' : 'trainee';
         const personKey = account
           ? `${rolePrefix}-${account.id}`
+          : host
+          ? `${rolePrefix}-${host.id}`
           : (z.employeeId || z.employee_id)
           ? `${rolePrefix}-${z.employeeId || z.employee_id}`
           : `zone-${z.id}`;
@@ -412,7 +440,7 @@ export function AdminGeofence() {
         // If zone belongs to an instructor, ensure name, address, and coordinates are based on campus station geofencing location
         let zoneData: GeofenceZone = {
           ...z,
-          photo: z.photo || account?.photo,
+          photo: z.photo || account?.photo || host?.photo,
           userType: isInst ? 'instructor' : isHte ? 'hte' : 'trainee',
           active: z.active !== false,
         };
@@ -433,6 +461,10 @@ export function AdminGeofence() {
             zoneData.address = campusInfo.address;
             zoneData.lat = campusInfo.lat;
             zoneData.lng = campusInfo.lng;
+          }
+        } else if (isHte && host) {
+          if (!zoneData.companyName && host.companyName) {
+            zoneData.companyName = host.companyName;
           }
         } else if (account && isTraineeAccount(account)) {
           // Trainee zone: ALWAYS preserve their own registered coordinates where they registered!
@@ -456,10 +488,18 @@ export function AdminGeofence() {
           zoneMap.set(personKey, zoneData);
         } else {
           const existing = zoneMap.get(personKey)!;
-          const isExistingGeneric = !existing.address || existing.address === 'Official Workplace GPS' || existing.address.includes('GPS Locked');
-          const isNewSpecific = Boolean(zoneData.address && zoneData.address !== 'Official Workplace GPS' && !zoneData.address.includes('GPS Locked'));
-          if (isExistingGeneric && isNewSpecific) {
+          // Prefer custom / non-default coordinates over default campus station coordinates (10.7410, 122.9702)
+          const isExistingDefault = Math.abs(existing.lat - 10.7410) < 0.0002 && Math.abs(existing.lng - 122.9702) < 0.0002;
+          const isNewCustom = Math.abs(zoneData.lat - 10.7410) >= 0.0002 || Math.abs(zoneData.lng - 122.9702) >= 0.0002;
+
+          if (isExistingDefault && isNewCustom) {
             zoneMap.set(personKey, zoneData);
+          } else {
+            const isExistingGeneric = !existing.address || existing.address === 'Official Workplace GPS' || existing.address.includes('GPS Locked');
+            const isNewSpecific = Boolean(zoneData.address && zoneData.address !== 'Official Workplace GPS' && !zoneData.address.includes('GPS Locked'));
+            if (isExistingGeneric && isNewSpecific) {
+              zoneMap.set(personKey, zoneData);
+            }
           }
         }
       });
@@ -540,6 +580,29 @@ export function AdminGeofence() {
       }
     });
 
+    // 3. Include registered Host Supervisors with GPS coordinates (skipping duplicates)
+    hostSupervisors.forEach((host: HostSupervisor) => {
+      if (!host.name || !host.name.trim()) return;
+      const personKey = `hte-${host.id}`;
+      if (zoneMap.has(personKey)) return;
+
+      const wpInfo = getHteWorkplaceInfo(host.id, host.companyName);
+      if (wpInfo && Number.isFinite(wpInfo.lat) && Number.isFinite(wpInfo.lng)) {
+        zoneMap.set(personKey, {
+          id: `station-${host.id}`,
+          name: `${host.name} - ${host.companyName || 'HTE Workplace'}`,
+          address: wpInfo.address,
+          lat: wpInfo.lat,
+          lng: wpInfo.lng,
+          radius: wpInfo.radius,
+          photo: host.photo,
+          userType: 'hte',
+          active: host.active !== false,
+          academicYear: host.academicYear || settings.activeAcademicYear,
+        });
+      }
+    });
+
     return Array.from(zoneMap.values());
   }, [geofenceZones, employees, settings.activeAcademicYear, hostSupervisors]);
 
@@ -607,13 +670,31 @@ export function AdminGeofence() {
 
   // Centralized coordinate & zone update to sync Supabase geofence_zones and employee records
   const saveZoneCoordinates = (zoneId: string, updatedData: Partial<GeofenceZone>) => {
-    const matchedZone = allCombinedZones.find((z) => z.id === zoneId);
+    const rawId = zoneId.replace(/^(station|personal|trainee|inst|hte)-/, '');
+    const matchedZone = allCombinedZones.find((z) => z.id === zoneId || z.id === rawId);
     const account = getAccountForZone(matchedZone || { id: zoneId });
+    const hostAccount = getHostForZone(matchedZone || { id: zoneId }) || hostSupervisors.find(
+      (h) =>
+        h.id === zoneId ||
+        h.id === rawId ||
+        h.employeeId === zoneId ||
+        h.employeeId === rawId ||
+        (account && (h.id === account.id || h.employeeId === account.id || h.email?.toLowerCase() === account.email?.toLowerCase())) ||
+        (matchedZone?.name && h.companyName && matchedZone.name.toLowerCase().includes(h.companyName.toLowerCase())) ||
+        (matchedZone?.name && h.name && matchedZone.name.toLowerCase().includes(h.name.toLowerCase()))
+    );
+
     const targetRadius = Math.max(20, Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS));
     const targetLat = Number(updatedData.lat ?? matchedZone?.lat ?? 10.741);
     const targetLng = Number(updatedData.lng ?? matchedZone?.lng ?? 122.9702);
     const targetAddress = updatedData.address || matchedZone?.address || 'Official Workplace GPS';
-    const targetName = updatedData.name || matchedZone?.name || (account ? `${account.name} - Trainee Geofence` : 'Geofence Zone');
+    const targetName = updatedData.name || matchedZone?.name || (
+      hostAccount
+        ? `${hostAccount.name} - ${hostAccount.companyName || 'HTE Workplace'}`
+        : account
+        ? `${account.name} - Trainee Geofence`
+        : 'Geofence Zone'
+    );
 
     if (account) {
       updateEmployee(account.id, {
@@ -628,9 +709,6 @@ export function AdminGeofence() {
     }
 
     // Also sync if this is a host supervisor establishment
-    const hostAccount = hostSupervisors.find(
-      (h) => h.id === zoneId || (account && (h.id === account.id || h.employeeId === account.id))
-    );
     if (hostAccount) {
       updateHostSupervisor(hostAccount.id, {
         registrationLocation: {
@@ -644,26 +722,40 @@ export function AdminGeofence() {
       });
     }
 
-    const realDbZone = geofenceZones.find(
+    const matchingDbZones = geofenceZones.filter(
       (z) =>
         z.id === zoneId ||
+        z.id === rawId ||
         (account && ((z as any).employeeId === account.id || (z as any).employee_id === account.id)) ||
-        (account && z.name && account.name && z.name.toLowerCase().includes(account.name.toLowerCase()))
+        (hostAccount && ((z as any).employeeId === hostAccount.id || (z as any).employee_id === hostAccount.id)) ||
+        (account && z.name && account.name && z.name.toLowerCase().includes(account.name.toLowerCase())) ||
+        (hostAccount && z.name && hostAccount.companyName && z.name.toLowerCase().includes(hostAccount.companyName.toLowerCase())) ||
+        (hostAccount && z.name && hostAccount.name && z.name.toLowerCase().includes(hostAccount.name.toLowerCase()))
     );
 
-    if (realDbZone) {
-      updateGeofenceZone(realDbZone.id, {
+    const targetEmpId = hostAccount?.id || account?.id || (matchedZone as any)?.employeeId || (matchedZone as any)?.employee_id;
+
+    if (matchingDbZones.length > 0) {
+      const primaryDbZone = matchingDbZones[0];
+      updateGeofenceZone(primaryDbZone.id, {
         ...updatedData,
         lat: targetLat,
         lng: targetLng,
         radius: targetRadius,
         address: targetAddress,
         name: targetName,
-        employeeId: account?.id,
+        employeeId: targetEmpId,
       } as any);
+
+      // Clean up any redundant duplicate zones for the exact same entity in DB
+      if (matchingDbZones.length > 1) {
+        matchingDbZones.slice(1).forEach((dup) => {
+          deleteGeofenceZone(dup.id);
+        });
+      }
     } else {
       addGeofenceZone({
-        id: account?.id || zoneId,
+        id: targetEmpId || rawId || zoneId,
         name: targetName,
         address: targetAddress,
         lat: targetLat,
@@ -671,7 +763,7 @@ export function AdminGeofence() {
         radius: targetRadius,
         active: updatedData.active ?? matchedZone?.active ?? true,
         academicYear: selectedAcademicYear !== 'all' ? selectedAcademicYear : settings.activeAcademicYear,
-        employeeId: account?.id,
+        employeeId: targetEmpId,
       } as any);
     }
   };

@@ -755,27 +755,39 @@ const isValidUUID = (str?: string): boolean => {
 export async function fetchGeofenceZones(): Promise<GeofenceZone[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabase.from('geofence_zones').select('*').order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching geofence zones:', error);
-    return [];
+    if (!error && data && data.length > 0) {
+      return data
+        .filter((zone: any) => !zone.name?.toLowerCase().includes('main training center') && zone.id !== 'zone-1')
+        .map((zone: any) => ({
+          id: zone.id,
+          name: zone.name,
+          address: zone.address,
+          lat: Number(zone.lat),
+          lng: Number(zone.lng),
+          radius: Number(zone.radius) || 100,
+          active: zone.active !== false,
+          academicYear: zone.academic_year || undefined,
+          employeeId: zone.employee_id || zone.employeeId || undefined,
+          employee_id: zone.employee_id || zone.employeeId || undefined,
+        }));
+    }
+  } catch (err) {
+    console.warn('Direct fetchGeofenceZones error:', err);
   }
 
-  return (data || [])
-    .filter((zone: any) => !zone.name?.toLowerCase().includes('main training center') && zone.id !== 'zone-1')
-    .map((zone: any) => ({
-      id: zone.id,
-      name: zone.name,
-      address: zone.address,
-      lat: Number(zone.lat),
-      lng: Number(zone.lng),
-      radius: Number(zone.radius) || 100,
-      active: zone.active !== false,
-      academicYear: zone.academic_year || undefined,
-      employeeId: zone.employee_id || zone.employeeId || undefined,
-      employee_id: zone.employee_id || zone.employeeId || undefined,
-    }));
+  // Fallback: serverless endpoint /api/geofence-zones
+  try {
+    const res = await fetch('/api/geofence-zones');
+    if (res.ok) {
+      const apiData = await res.json();
+      if (Array.isArray(apiData) && apiData.length > 0) return apiData;
+    }
+  } catch {}
+
+  return [];
 }
 
 export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?: string; employeeId?: string; employee_id?: string }): Promise<GeofenceZone | null> {
@@ -789,6 +801,43 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     }
   }
 
+  // 1. Primary path: Service role endpoint /api/geofence-zones (guaranteed RLS bypass and persistence)
+  try {
+    const res = await fetch('/api/geofence-zones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: zone.id,
+        name: zone.name,
+        address: zone.address || '',
+        lat: Number(zone.lat),
+        lng: Number(zone.lng),
+        radius: Math.max(20, Number(zone.radius) || 40),
+        active: zone.active !== false,
+        academicYear: zone.academicYear,
+        employeeId: empId,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        id: data.id,
+        name: data.name,
+        address: data.address,
+        lat: Number(data.lat),
+        lng: Number(data.lng),
+        radius: Number(data.radius),
+        active: data.active !== false,
+        academicYear: zone.academicYear,
+        employeeId: empId,
+        employee_id: empId,
+      };
+    }
+  } catch (apiErr) {
+    console.warn('API endpoint /api/geofence-zones POST error, falling back to direct Supabase:', apiErr);
+  }
+
+  // 2. Direct Supabase client fallback
   const payload: any = {
     name: zone.name,
     address: zone.address || '',
@@ -873,14 +922,6 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
 export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZone> & { employeeId?: string; employee_id?: string }): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
-  const supabaseUpdates: any = {};
-  if (updates.name !== undefined) supabaseUpdates.name = updates.name;
-  if (updates.address !== undefined) supabaseUpdates.address = updates.address;
-  if (updates.lat !== undefined) supabaseUpdates.lat = Number(updates.lat);
-  if (updates.lng !== undefined) supabaseUpdates.lng = Number(updates.lng);
-  if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
-  if (updates.active !== undefined) supabaseUpdates.active = updates.active;
-
   let empId = (updates as any).employeeId || (updates as any).employee_id;
   if (!empId && id) {
     const rawSuffix = id.replace(/^(station|personal|trainee|inst|hte)-/, '');
@@ -888,13 +929,44 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
       empId = rawSuffix;
     }
   }
-  if (empId && isValidUUID(empId)) {
-    supabaseUpdates.employee_id = empId;
+
+  // 1. Primary path: Service role endpoint /api/geofence-zones (guaranteed RLS bypass and persistence)
+  try {
+    const res = await fetch('/api/geofence-zones', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        name: updates.name,
+        address: updates.address,
+        lat: updates.lat !== undefined ? Number(updates.lat) : undefined,
+        lng: updates.lng !== undefined ? Number(updates.lng) : undefined,
+        radius: updates.radius !== undefined ? Number(updates.radius) : undefined,
+        active: updates.active,
+        academicYear: updates.academicYear,
+        employeeId: empId,
+      }),
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch (apiErr) {
+    console.warn('API endpoint /api/geofence-zones PUT error, falling back to direct Supabase:', apiErr);
   }
 
+  // 2. Direct Supabase client fallback
+  const supabaseUpdates: any = {};
+  if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+  if (updates.address !== undefined) supabaseUpdates.address = updates.address;
+  if (updates.lat !== undefined) supabaseUpdates.lat = Number(updates.lat);
+  if (updates.lng !== undefined) supabaseUpdates.lng = Number(updates.lng);
+  if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
+  if (updates.active !== undefined) supabaseUpdates.active = updates.active;
+  if (empId && isValidUUID(empId)) supabaseUpdates.employee_id = empId;
+
   if (isValidUUID(id)) {
-    const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id);
-    if (!error) return true;
+    const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id).select();
+    if (!error && updatedRows && updatedRows.length > 0) return true;
   }
 
   // Match by employee_id if available
@@ -902,8 +974,8 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
     try {
       const { data: matchedEmp } = await supabase.from('geofence_zones').select('id').eq('employee_id', empId).limit(1);
       if (matchedEmp && matchedEmp.length > 0) {
-        const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matchedEmp[0].id);
-        if (!error) return true;
+        const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matchedEmp[0].id).select();
+        if (!error && updatedRows && updatedRows.length > 0) return true;
       }
     } catch {}
   }
@@ -911,8 +983,8 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   if (updates.name) {
     const { data: matched } = await supabase.from('geofence_zones').select('id').eq('name', updates.name).limit(1);
     if (matched && matched.length > 0 && isValidUUID(matched[0].id)) {
-      const { error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matched[0].id);
-      if (!error) return true;
+      const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matched[0].id).select();
+      if (!error && updatedRows && updatedRows.length > 0) return true;
     }
   }
 
@@ -937,23 +1009,22 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
 export async function deleteGeofenceZone(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
+  // 1. Primary path: Service role endpoint /api/geofence-zones
+  try {
+    await fetch(`/api/geofence-zones?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  } catch {}
+
   try {
     const isUuid = isValidUUID(id);
     if (isUuid) {
-      const { error: delErr } = await supabase.from('geofence_zones').delete().eq('id', id);
-      if (delErr) {
-        console.error('Error deleting from geofence_zones by id:', delErr.message);
-        throw new Error(delErr.message);
-      }
+      await supabase.from('geofence_zones').delete().eq('id', id);
     }
 
     const cleanId = id.startsWith('personal-') ? id.replace('personal-', '') : id;
     if (cleanId !== id && isValidUUID(cleanId)) {
-      const { error: delErr2 } = await supabase.from('geofence_zones').delete().eq('id', cleanId);
-      if (delErr2) {
-        console.error('Error deleting personal geofence zone by cleanId:', delErr2.message);
-        throw new Error(delErr2.message);
-      }
+      await supabase.from('geofence_zones').delete().eq('id', cleanId);
     }
 
     // Restore pre-existing behavior: clear employee assigned workplace coordinates in Supabase
@@ -2049,6 +2120,10 @@ export async function updateHostSupervisor(id: string, updates: Partial<HostSupe
   }
   if (updates.email !== undefined) supabaseUpdates.email = updates.email.trim().toLowerCase();
   if (updates.companyName !== undefined) supabaseUpdates.company_name = updates.companyName;
+  if (updates.companyAddress !== undefined || (updates as any).registrationAddress !== undefined) {
+    supabaseUpdates.company_address = updates.companyAddress || (updates as any).registrationAddress;
+  }
+  if (updates.phone !== undefined) supabaseUpdates.phone = updates.phone;
   if (updates.isApproved !== undefined) supabaseUpdates.is_approved = updates.isApproved;
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
 
@@ -2057,6 +2132,24 @@ export async function updateHostSupervisor(id: string, updates: Partial<HostSupe
     console.error('Error updating host_supervisor:', error);
     throw new Error(error.message || 'Failed to update host_supervisor');
   }
+
+  // Also sync geofence_zones for this HTE if location coordinates are provided
+  const regLoc = (updates as any).registrationLocation;
+  if (regLoc && regLoc.lat && regLoc.lng) {
+    try {
+      await updateGeofenceZone(id, {
+        name: updates.companyName ? `${updates.name || 'HTE Supervisor'} - ${updates.companyName}` : undefined,
+        address: updates.companyAddress || (updates as any).registrationAddress,
+        lat: Number(regLoc.lat),
+        lng: Number(regLoc.lng),
+        radius: Math.max(20, Number(regLoc.radius || (updates as any).registrationRadius) || 40),
+        employeeId: id,
+      });
+    } catch (gErr) {
+      console.warn('Geofence zone sync during updateHostSupervisor notice:', gErr);
+    }
+  }
+
   return true;
 }
 

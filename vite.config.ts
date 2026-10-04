@@ -11,6 +11,53 @@ export default defineConfig({
     // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
+    {
+      name: 'dev-api-middleware',
+      configureServer(server) {
+        server.middlewares.use(async (req, res, next) => {
+          if (req.url && (req.url.startsWith('/api/geofence-zones') || req.url.startsWith('/api/time-records'))) {
+            const apiPath = req.url.startsWith('/api/geofence-zones') ? './api/geofence-zones.js' : './api/time-records.js';
+            try {
+              const { default: handler } = await import(apiPath);
+              let body = '';
+              req.on('data', (chunk) => { body += chunk; });
+              req.on('end', async () => {
+                if (body) {
+                  try {
+                    (req as any).body = JSON.parse(body);
+                  } catch {
+                    (req as any).body = body;
+                  }
+                }
+                const parsedUrl = new URL(req.url || '', 'http://localhost');
+                (req as any).query = Object.fromEntries(parsedUrl.searchParams.entries());
+                const mockedRes = {
+                  setHeader: (k: string, v: string) => res.setHeader(k, v),
+                  status: (code: number) => {
+                    res.statusCode = code;
+                    return {
+                      json: (data: any) => {
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify(data));
+                      },
+                      end: () => res.end(),
+                    };
+                  },
+                };
+                await handler(req, mockedRes);
+              });
+              return;
+            } catch (e: any) {
+              console.error(`Error in dev server ${apiPath}:`, e);
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: e.message }));
+              return;
+            }
+          }
+          next();
+        });
+      },
+    },
   ],
   resolve: {
     alias: {
