@@ -928,7 +928,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
-    return stored;
+    const filtered = stored.filter(
+      (e) => !e.name?.toLowerCase().includes('darius') && !e.email?.toLowerCase().includes('benales')
+    );
+    if (filtered.length !== stored.length) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, filtered);
+    }
+    return filtered;
   });
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(() => {
     const stored = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
@@ -936,7 +942,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [geofenceZones, setGeofenceZones] = useState<GeofenceZone[]>(() => {
     const stored = loadFromStorage<unknown>(STORAGE_KEYS.GEOFENCE_ZONES, []);
-    return sanitizeGeofenceZones(stored);
+    const sanitized = sanitizeGeofenceZones(stored);
+    const filtered = sanitized.filter(
+      (z) => !z.name?.toLowerCase().includes('darius') && !z.name?.toLowerCase().includes('benales')
+    );
+    if (filtered.length !== sanitized.length) {
+      saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
+    }
+    return filtered;
   });
   const [settings, setSettings] = useState<AppSettings>(() => {
     const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
@@ -976,7 +989,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   const [hostSupervisors, setHostSupervisors] = useState<HostSupervisor[]>(() => {
     const stored = loadFromStorage<HostSupervisor[]>(STORAGE_KEYS.HOST_SUPERVISORS, []);
-    return stored;
+    const filtered = stored.filter(
+      (h) => !h.name?.toLowerCase().includes('darius') && !h.email?.toLowerCase().includes('benales')
+    );
+    if (filtered.length !== stored.length) {
+      saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, filtered);
+    }
+    return filtered;
   });
   const [hostFeedback, setHostFeedback] = useState<HostFeedback[]>(() => {
     const stored = loadFromStorage<HostFeedback[]>(STORAGE_KEYS.HOST_FEEDBACK, []);
@@ -1134,9 +1153,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (isMounted && fb && fb.length > 0) setHostFeedback(fb);
             }),
             supabaseService.fetchHostSupervisors().then((sup) => {
-              if (isMounted && sup && sup.length > 0) {
-                setHostSupervisors(sup);
-                saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, sup);
+              if (isMounted && Array.isArray(sup)) {
+                const filtered = sup.filter(
+                  (h) => !h.name?.toLowerCase().includes('darius') && !h.email?.toLowerCase().includes('benales')
+                );
+                setHostSupervisors(filtered);
+                saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, filtered);
               }
             }),
           ]).finally(() => {

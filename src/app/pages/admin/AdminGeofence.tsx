@@ -441,6 +441,10 @@ export function AdminGeofence() {
         const isHte = isHTEZone(z) || Boolean(host);
         const isTrainee = !isInst && !isHte && (isTraineeZone(z) || Boolean(account && isTraineeAccount(account)));
 
+        if (z.name?.toLowerCase().includes('darius') || z.name?.toLowerCase().includes('benales')) {
+          return;
+        }
+
         // Skip orphaned trainee zones that have no matching active employee account
         if (isTrainee && !account && !z.employeeId && !z.employee_id) {
           return;
@@ -525,7 +529,12 @@ export function AdminGeofence() {
     // 2. Include registered Instructors, HTEs, and Trainees with GPS coordinates (skipping duplicates)
     employees.forEach((emp: Employee) => {
       if (!emp.name || !emp.name.trim()) return;
-      if (emp.name.toLowerCase().includes('rainer') || emp.companyName?.toLowerCase().includes('dooms')) return;
+      if (
+        emp.name.toLowerCase().includes('rainer') ||
+        emp.companyName?.toLowerCase().includes('dooms') ||
+        emp.name.toLowerCase().includes('darius') ||
+        emp.name.toLowerCase().includes('benales')
+      ) return;
 
       const isInst = Boolean(
         emp.position === 'OJT Instructor' ||
@@ -611,7 +620,13 @@ export function AdminGeofence() {
 
     // 3. Include registered Host Supervisors with GPS coordinates (skipping duplicates)
     hostSupervisors.forEach((host: HostSupervisor) => {
-      if (!host.name || !host.name.trim()) return;
+      if (
+        !host.name ||
+        !host.name.trim() ||
+        host.name.toLowerCase().includes('darius') ||
+        host.name.toLowerCase().includes('benales') ||
+        host.email?.toLowerCase().includes('benales')
+      ) return;
       const personKey = `hte-${host.id}`;
       if (zoneMap.has(personKey)) return;
 
