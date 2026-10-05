@@ -7,6 +7,7 @@ import { useApp } from '../../store/AppContext';
 import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire } from '../../types';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 import { getPhotoUrl } from '../../services/config';
+import { formatHoursAndMinutes } from './AdminEmployees';
 
 const GRADE_CONFIG: Record<Evaluation['grade'], { color: string; bg: string; border: string; min: number; label: string }> = {
   Excellent: { color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', min: 90, label: 'Excellent / Outstanding (90-100%)' },
@@ -580,7 +581,7 @@ export function AdminEvaluations() {
 
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 text-center">
-                      <p className="font-bold text-slate-800">{stats.totalHours.toFixed(0)} / {emp.requiredHours}h</p>
+                      <p className="font-bold text-slate-800">{formatHoursAndMinutes(stats.totalHours)} / {emp.requiredHours}h</p>
                       <p className="text-slate-400 text-[10px]">Rendered Hours</p>
                     </div>
                     <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 text-center">

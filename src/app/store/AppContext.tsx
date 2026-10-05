@@ -687,46 +687,95 @@ function sanitizeTimeRecords(records: TimeRecord[]): TimeRecord[] {
   }));
 }
 
-function mergeTimeRecords(remoteRecords: TimeRecord[], currentLocalRecords: TimeRecord[]): TimeRecord[] {
+function mergeTimeRecords(
+  remoteRecords: TimeRecord[],
+  currentLocalRecords: TimeRecord[],
+  employeesList?: Employee[]
+): TimeRecord[] {
   const sanitizedRemote = sanitizeTimeRecords(remoteRecords || []);
   if (sanitizedRemote.length === 0) {
     return sanitizeTimeRecords(currentLocalRecords || []);
   }
-  const remoteIds = new Set(sanitizedRemote.map((r) => r.id));
-  const remoteEmpDateMap = new Map<string, TimeRecord>();
-  sanitizedRemote.forEach((r) => {
-    const key = `${(r.employeeId || '').toLowerCase()}_${(r.date || '').split('T')[0].split(' ')[0]}`;
-    remoteEmpDateMap.set(key, r);
+
+  const employees = employeesList || loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+  const empIdToCodeMap = new Map<string, string>();
+  const empCodeToIdMap = new Map<string, string>();
+  employees.forEach((emp) => {
+    if (emp.id && emp.employeeId) {
+      empIdToCodeMap.set(emp.id.toLowerCase(), emp.employeeId.toLowerCase());
+      empCodeToIdMap.set(emp.employeeId.toLowerCase(), emp.id.toLowerCase());
+    }
   });
 
-  // Keep any local records that aren't yet in remoteRecords (e.g. pending sync, rec- timestamp IDs)
-  const localOnly = (currentLocalRecords || []).filter((localR) => {
-    if (remoteIds.has(localR.id)) return false;
-    const key = `${(localR.employeeId || '').toLowerCase()}_${(localR.date || '').split('T')[0].split(' ')[0]}`;
-    const remoteMatch = remoteEmpDateMap.get(key);
-    if (remoteMatch) {
-      // If remote has this employee+date, merge any more recent punch data from local into remote
-      if (!remoteMatch.timeOut && localR.timeOut) {
-        remoteMatch.timeOut = localR.timeOut;
-        remoteMatch.timeOutPhoto = cleanRecordPhoto(localR.timeOutPhoto) || cleanRecordPhoto(remoteMatch.timeOutPhoto);
-        remoteMatch.timeOutFaceVerified = localR.timeOutFaceVerified ?? remoteMatch.timeOutFaceVerified;
-        remoteMatch.totalHours = localR.totalHours || remoteMatch.totalHours;
-        remoteMatch.timeOutGeofenced = localR.timeOutGeofenced ?? remoteMatch.timeOutGeofenced;
+  const remoteIds = new Set(sanitizedRemote.map((r) => r.id));
+  const remoteEmpDateMap = new Map<string, TimeRecord>();
+  const empsWithRemote = new Set<string>();
+
+  sanitizedRemote.forEach((r) => {
+    const rawEmp = (r.employeeId || '').toLowerCase();
+    const datePart = (r.date || '').split('T')[0].split(' ')[0];
+    empsWithRemote.add(rawEmp);
+    const altEmp1 = empIdToCodeMap.get(rawEmp);
+    if (altEmp1) empsWithRemote.add(altEmp1);
+    const altEmp2 = empCodeToIdMap.get(rawEmp);
+    if (altEmp2) empsWithRemote.add(altEmp2);
+
+    remoteEmpDateMap.set(`${rawEmp}_${datePart}`, r);
+    if (altEmp1) remoteEmpDateMap.set(`${altEmp1}_${datePart}`, r);
+    if (altEmp2) remoteEmpDateMap.set(`${altEmp2}_${datePart}`, r);
+  });
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Keep only legitimate unsynced local records (e.g. today's live offline punch).
+  // Purge obsolete past-date mock/seed records for employees who already have authentic database records.
+  const localOnly = (currentLocalRecords || [])
+    .filter((localR) => {
+      if (remoteIds.has(localR.id)) return false;
+      const rawEmp = (localR.employeeId || '').toLowerCase();
+      const datePart = (localR.date || '').split('T')[0].split(' ')[0];
+      const key = `${rawEmp}_${datePart}`;
+      const remoteMatch = remoteEmpDateMap.get(key);
+
+      if (remoteMatch) {
+        if (!remoteMatch.timeOut && localR.timeOut) {
+          remoteMatch.timeOut = localR.timeOut;
+          remoteMatch.timeOutPhoto = cleanRecordPhoto(localR.timeOutPhoto) || cleanRecordPhoto(remoteMatch.timeOutPhoto);
+          remoteMatch.timeOutFaceVerified = localR.timeOutFaceVerified ?? remoteMatch.timeOutFaceVerified;
+          remoteMatch.totalHours = localR.totalHours || remoteMatch.totalHours;
+          remoteMatch.timeOutGeofenced = localR.timeOutGeofenced ?? remoteMatch.timeOutGeofenced;
+        }
+        if (!remoteMatch.timeIn && localR.timeIn) {
+          remoteMatch.timeIn = localR.timeIn;
+          remoteMatch.timeInPhoto = cleanRecordPhoto(localR.timeInPhoto) || cleanRecordPhoto(remoteMatch.timeInPhoto);
+          remoteMatch.timeInFaceVerified = localR.timeInFaceVerified ?? remoteMatch.timeInFaceVerified;
+          remoteMatch.timeInGeofenced = localR.timeInGeofenced ?? remoteMatch.timeInGeofenced;
+        }
+        return false;
       }
-      if (!remoteMatch.timeIn && localR.timeIn) {
-        remoteMatch.timeIn = localR.timeIn;
-        remoteMatch.timeInPhoto = cleanRecordPhoto(localR.timeInPhoto) || cleanRecordPhoto(remoteMatch.timeInPhoto);
-        remoteMatch.timeInFaceVerified = localR.timeInFaceVerified ?? remoteMatch.timeInFaceVerified;
-        remoteMatch.timeInGeofenced = localR.timeInGeofenced ?? remoteMatch.timeInGeofenced;
+
+      // Purge past mock/seed records if employee has authoritative records in Supabase
+      if (empsWithRemote.has(rawEmp) && datePart !== todayStr) {
+        return false;
       }
-      return false;
-    }
-    return true;
-  }).map((r) => ({
-    ...r,
-    timeInPhoto: cleanRecordPhoto(r.timeInPhoto),
-    timeOutPhoto: cleanRecordPhoto(r.timeOutPhoto),
-  }));
+
+      // Drop demo / mock / seed generated records
+      if (
+        localR.id.startsWith('demo-') ||
+        localR.id.startsWith('mock-') ||
+        localR.id.startsWith('seed-') ||
+        (localR as any).is_mock
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .map((r) => ({
+      ...r,
+      timeInPhoto: cleanRecordPhoto(r.timeInPhoto),
+      timeOutPhoto: cleanRecordPhoto(r.timeOutPhoto),
+    }));
 
   return [...sanitizedRemote, ...localOnly];
 }

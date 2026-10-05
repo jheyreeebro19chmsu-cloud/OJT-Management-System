@@ -40,6 +40,15 @@ const BLANK_FORM = {
   approvalStatus: 'approved' as 'pending' | 'approved' | 'rejected',
 };
 
+export function formatHoursAndMinutes(totalHours: number): string {
+  if (!totalHours || totalHours <= 0) return '0h';
+  const h = Math.floor(totalHours);
+  const m = Math.round((totalHours - h) * 60);
+  if (m === 0) return `${h}h`;
+  if (h === 0) return `${m}mins`;
+  return `${h}hr ${m}mins`;
+}
+
 export function AdminEmployees() {
   const {
     employees,
@@ -798,7 +807,7 @@ export function AdminEmployees() {
                     !isPendingGroup ? (
                       <div>
                         <div className="flex justify-between text-xs text-gray-500 mb-1">
-                          <span>{stats.totalHours.toFixed(0)}h</span>
+                          <span>{formatHoursAndMinutes(stats.totalHours)}</span>
                           <span>{Math.round(progress)}%</span>
                         </div>
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -1222,7 +1231,7 @@ export function AdminEmployees() {
                             <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
                           </div>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            {stats.totalHours.toFixed(0)} / {emp.requiredHours}h ({Math.round(progress)}%)
+                            {formatHoursAndMinutes(stats.totalHours)} / {emp.requiredHours}h ({Math.round(progress)}%)
                           </p>
                         </div>
                       )}
@@ -2171,7 +2180,7 @@ export function AdminEmployees() {
                                   <p className="text-xs text-gray-500">Late</p>
                                 </div>
                                 <div className="bg-blue-50 rounded-xl p-3 text-center">
-                                  <p className="font-bold text-blue-700">{stats.totalHours.toFixed(0)}h</p>
+                                  <p className="font-bold text-blue-700">{formatHoursAndMinutes(stats.totalHours)}</p>
                                   <p className="text-xs text-gray-500">Hours</p>
                                 </div>
                               </div>
