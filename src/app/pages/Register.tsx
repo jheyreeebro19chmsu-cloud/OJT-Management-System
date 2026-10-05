@@ -290,7 +290,37 @@ export function Register() {
   };
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
-  const [oauthPending, setOauthPending] = useState(false);
+  const [oauthPending, setOauthPending] = useState<boolean>(() => {
+    try {
+      return (
+        Boolean(localStorage.getItem('oauth_email')) ||
+        Boolean(localStorage.getItem('oauth_user_id')) ||
+        localStorage.getItem('oauth_is_google') === 'true' ||
+        sessionStorage.getItem('oauth_pending') === 'true'
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  const markGoogleAuth = (email?: string) => {
+    setOauthPending(true);
+    try {
+      localStorage.setItem('oauth_is_google', 'true');
+      sessionStorage.setItem('oauth_pending', 'true');
+      if (email) localStorage.setItem('oauth_email', email);
+    } catch {}
+  };
+
+  const isGoogleAuth = Boolean(
+    oauthPending ||
+    localStorage.getItem('oauth_is_google') === 'true' ||
+    localStorage.getItem('oauth_user_id') ||
+    localStorage.getItem('oauth_email') ||
+    sessionStorage.getItem('oauth_pending') === 'true' ||
+    (form.email && form.email.toLowerCase().endsWith('@gmail.com') && !form.password)
+  );
+
   const [googleAvatar, setGoogleAvatar] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
@@ -664,7 +694,7 @@ export function Register() {
       }
 
       if (oauthEmail || oauthName || oauthGivenName || oauthFamilyName) {
-        setOauthPending(true);
+        markGoogleAuth(oauthEmail || undefined);
         if (oauthEmail) update('email', oauthEmail);
         
         const parsed = parseGoogleFullName(oauthName || '', oauthGivenName, oauthFamilyName);
@@ -683,13 +713,21 @@ export function Register() {
         toast.info(`Google account connected (${oauthEmail || 'verified'}). Please complete your registration details.`);
       }
 
-      // Clear pending handoff markers for trainee
-      localStorage.removeItem('pending_oauth_role');
-      localStorage.removeItem('oauth_email');
-      localStorage.removeItem('oauth_name');
-      localStorage.removeItem('oauth_given_name');
-      localStorage.removeItem('oauth_family_name');
-      localStorage.removeItem('oauth_photo');
+      // Check active Supabase Google session on mount
+      if (isSupabaseConfigured()) {
+        supabase.auth.getSession().then(({ data: sessData }) => {
+          const sessUser = sessData?.session?.user;
+          if (sessUser) {
+            markGoogleAuth(sessUser.email || undefined);
+            if (sessUser.email && !form.email) update('email', sessUser.email);
+            const userPhoto = sessUser.user_metadata?.avatar_url || sessUser.user_metadata?.picture;
+            if (userPhoto) {
+              setGoogleAvatar(userPhoto);
+              setPhoto((p) => p || userPhoto);
+            }
+          }
+        }).catch(() => {});
+      }
     } catch {
       // ignore
     }
@@ -1056,7 +1094,7 @@ export function Register() {
         setIsSubmitting(false);
         return;
       }
-      if (!oauthPending && !form.password) {
+      if (!isGoogleAuth && !form.password) {
         setSubmitError('Password is required');
         setIsSubmitting(false);
         return;
@@ -1064,7 +1102,7 @@ export function Register() {
     }
 
     // Auto-generate secure password for Google OAuth users if left blank
-    const effectivePassword = form.password || (oauthPending ? `GoogleOAuth_${Math.random().toString(36).slice(-8)}!Aa1` : '');
+    const effectivePassword = form.password || (isGoogleAuth ? `GoogleOAuth_${Math.random().toString(36).slice(-8)}!Aa1` : '');
 
     // ── Validate and sanitize form data to prevent dirty data ──
     try {
@@ -1398,6 +1436,13 @@ export function Register() {
     setIsSubmitting(false);
     localStorage.removeItem('oauth_user_id');
     localStorage.removeItem('pending_oauth_role');
+    localStorage.removeItem('oauth_email');
+    localStorage.removeItem('oauth_name');
+    localStorage.removeItem('oauth_given_name');
+    localStorage.removeItem('oauth_family_name');
+    localStorage.removeItem('oauth_photo');
+    localStorage.removeItem('oauth_is_google');
+    sessionStorage.removeItem('oauth_pending');
 
     const isInstructor = role === 'admin';
     const isHte = role === 'hte';
@@ -1477,8 +1522,8 @@ export function Register() {
         if ((form.country === 'PH' || !form.country) && !hasValidProvince) errors.push('Please select your Province');
         if (!hasValidCity) errors.push('Please select your City/Municipality');
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
-        if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
-        else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
+        if (!isGoogleAuth && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        else if (isGoogleAuth && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
       }
     }
 
@@ -1488,9 +1533,9 @@ export function Register() {
         if (!form.firstName?.trim()) errors.push('Please enter your First Name');
         if (!hasEmail) errors.push('Please enter your Email Address');
         if (emailExists) errors.push('Email is already registered. Please sign in or use another email.');
-        if (!oauthPending && !hasValidPassword) {
+        if (!isGoogleAuth && !hasValidPassword) {
           errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
-        } else if (oauthPending && form.password && !hasValidPassword) {
+        } else if (isGoogleAuth && form.password && !hasValidPassword) {
           errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
         }
         if (!form.contactPhone?.trim()) {
@@ -1541,8 +1586,8 @@ export function Register() {
         } else if (form.contactPhone.replace(/[^\d]/g, '').length < 10) {
           errors.push('Please enter a valid Philippine mobile number (e.g. +639123456789)');
         }
-        if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
-        else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
+        if (!isGoogleAuth && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
+        else if (isGoogleAuth && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
         if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
           errors.push('Please acquire your establishment GPS location or click "Adjust Pin" on the map to set your workplace geofence.');
         }
@@ -1566,7 +1611,7 @@ export function Register() {
   const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(form.password);
   const hasLength = (form.password || '').length >= 8;
   const passwordsMatch = Boolean(form.password && form.password === form.confirmPassword);
-  const isPasswordValid = oauthPending
+  const isPasswordValid = isGoogleAuth
     ? (!form.password || Boolean(hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch))
     : Boolean(hasUpper && hasLower && hasSpecial && hasLength && passwordsMatch);
   const isPhoneValid = Boolean(form.contactPhone?.trim() && form.contactPhone.replace(/[^\d]/g, '').length >= 10);
@@ -2023,7 +2068,7 @@ export function Register() {
                     }`}>
                       {role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee'}
                     </span>
-                    {oauthPending && (
+                    {isGoogleAuth && (
                       <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200 font-medium truncate max-w-xs">
                         Google: {form.email}
                       </span>
@@ -2628,7 +2673,7 @@ export function Register() {
                         </div>
                         <h2 className="font-bold text-gray-800">Personal Information</h2>
                       </div>
-                      {oauthPending && (
+                      {isGoogleAuth && (
                         <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
                           From Google
                         </span>
@@ -2698,9 +2743,9 @@ export function Register() {
                       <div>
                         <label className="text-xs font-semibold text-gray-600 flex items-center justify-between mb-1">
                           <span>Email Address *</span>
-                          {oauthPending && (
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
-                              Verified by Google
+                          {isGoogleAuth && (
+                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-1">
+                              <CheckCircle2 size={10} /> Verified by Google
                             </span>
                           )}
                         </label>
@@ -2710,9 +2755,9 @@ export function Register() {
                           onChange={(e) => { update('email', e.target.value); setEmailTaken(null); }}
                           onBlur={() => checkEmailExists(form.email)}
                           placeholder="your@email.com"
-                          readOnly={oauthPending}
+                          readOnly={isGoogleAuth}
                           className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
-                            oauthPending ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-gray-200' : 'bg-gray-50'
+                            isGoogleAuth ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-gray-200' : 'bg-gray-50'
                           } ${
                             (attemptedNext && !isEmailValid) || emailTaken
                               ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
@@ -2728,109 +2773,137 @@ export function Register() {
                         ) : null}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">
-                            Password {oauthPending ? '(Optional with Google)' : '*'}
-                          </label>
-                          <div className="relative">
-                            <input
-                              type={showPassword ? 'text' : 'password'}
-                              value={form.password}
-                              onChange={(e) => update('password', e.target.value)}
-                              placeholder={oauthPending ? 'Optional for Google login' : 'Min 8 characters'}
-                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                                (!oauthPending && attemptedNext && !isPasswordValid) || (oauthPending && form.password && !isPasswordValid)
-                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                  : 'border-gray-200 focus:ring-blue-500'
-                              }`}
-                            />
-                          </div>
-                          {oauthPending ? (
-                            <p className="text-[10px] text-gray-500 mt-1">Leave blank to use Google Sign-in only</p>
-                          ) : (
-                            attemptedNext && !form.password && (
-                              <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
-                            )
-                          )}
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-gray-600 block mb-1">
-                            Confirm Password {oauthPending ? '(Optional)' : '*'}
-                          </label>
-                          <input
-                            type={showPassword ? 'text' : 'password'}
-                            value={form.confirmPassword}
-                            onChange={(e) => update('confirmPassword', e.target.value)}
-                            placeholder={oauthPending ? 'Repeat if set above' : 'Repeat password'}
-                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                              (form.confirmPassword && form.password !== form.confirmPassword) || (!oauthPending && attemptedNext && !form.confirmPassword)
-                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                : 'border-gray-200 focus:ring-blue-500'
-                            }`}
-                          />
-                          {!oauthPending && attemptedNext && !form.confirmPassword && (
-                            <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
-                          )}
-                          {form.confirmPassword && form.password !== form.confirmPassword && (
-                            <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 px-1">
-                        <input
-                          type="checkbox"
-                          id="show-pw"
-                          checked={showPassword}
-                          onChange={() => setShowPassword(!showPassword)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">
-                          Show passwords
-                        </label>
-                      </div>
-
-                      {form.password && (
-                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-200">
-                          <p className="font-semibold text-slate-700 mb-0.5">Password Strength Checklist:</p>
-                          <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                            <div className="flex items-center gap-1">
-                              <span className={/[A-Z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
-                                {/[A-Z]/.test(form.password) ? "✓" : "○"}
-                              </span>
-                              <span className={/[A-Z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Uppercase letter</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className={/[a-z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
-                                {/[a-z]/.test(form.password) ? "✓" : "○"}
-                              </span>
-                              <span className={/[a-z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Lowercase letter</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
-                                {/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "✓" : "○"}
-                              </span>
-                              <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Special character</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className={form.password.length >= 8 ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
-                                {form.password.length >= 8 ? "✓" : "○"}
-                              </span>
-                              <span className={form.password.length >= 8 ? "text-green-700 font-medium" : "text-gray-500"}>At least 8 chars</span>
-                            </div>
-                            {form.confirmPassword && (
-                              <div className="flex items-center gap-1 col-span-2 border-t border-slate-200/50 pt-1 mt-1">
-                                <span className={form.password === form.confirmPassword ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
-                                  {form.password === form.confirmPassword ? "✓" : "✗"}
-                                </span>
-                                <span className={form.password === form.confirmPassword ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
-                                  {form.password === form.confirmPassword ? "Passwords match" : "Passwords do not match"}
-                                </span>
+                      {/* Password credentials or Google Auth card */}
+                      {isGoogleAuth ? (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50 via-sky-50 to-indigo-50 border border-blue-200 text-blue-950 shadow-xs space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-white border border-blue-200 flex items-center justify-center shadow-xs shrink-0">
+                                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                                </svg>
                               </div>
-                            )}
+                              <div className="min-w-0">
+                                <h4 className="font-bold text-xs text-blue-950 flex items-center gap-1.5">
+                                  <span>Password Managed by Google</span>
+                                  <CheckCircle2 size={13} className="text-blue-600 shrink-0" />
+                                </h4>
+                                <p className="text-[11px] text-blue-800 leading-snug mt-0.5 truncate">
+                                  Sign in authenticated via {form.email || 'Google Account'}. No separate password required.
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-wider bg-blue-200/80 text-blue-900 px-2.5 py-0.5 rounded-full border border-blue-300 shrink-0">
+                              Google Sign-In
+                            </span>
                           </div>
                         </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">
+                                Password *
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={form.password}
+                                  onChange={(e) => update('password', e.target.value)}
+                                  placeholder="Min 8 characters"
+                                  className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                                    attemptedNext && !isPasswordValid
+                                      ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                      : 'border-gray-200 focus:ring-blue-500'
+                                  }`}
+                                />
+                              </div>
+                              {attemptedNext && !form.password && (
+                                <p className="text-xs text-red-500 mt-1 font-medium">Please enter a password</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-gray-600 block mb-1">
+                                Confirm Password *
+                              </label>
+                              <input
+                                type={showPassword ? 'text' : 'password'}
+                                value={form.confirmPassword}
+                                onChange={(e) => update('confirmPassword', e.target.value)}
+                                placeholder="Repeat password"
+                                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                                  (form.confirmPassword && form.password !== form.confirmPassword) || (attemptedNext && !form.confirmPassword)
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
+                              />
+                              {attemptedNext && !form.confirmPassword && (
+                                <p className="text-xs text-red-500 mt-1 font-medium">Please confirm your password</p>
+                              )}
+                              {form.confirmPassword && form.password !== form.confirmPassword && (
+                                <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 px-1">
+                            <input
+                              type="checkbox"
+                              id="show-pw"
+                              checked={showPassword}
+                              onChange={() => setShowPassword(!showPassword)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <label htmlFor="show-pw" className="text-xs text-gray-500 cursor-pointer">
+                              Show passwords
+                            </label>
+                          </div>
+
+                          {form.password && (
+                            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-[11px] animate-in fade-in slide-in-from-top-1 duration-200">
+                              <p className="font-semibold text-slate-700 mb-0.5">Password Strength Checklist:</p>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                                <div className="flex items-center gap-1">
+                                  <span className={/[A-Z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                    {/[A-Z]/.test(form.password) ? "✓" : "○"}
+                                  </span>
+                                  <span className={/[A-Z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Uppercase letter</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className={/[a-z]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                    {/[a-z]/.test(form.password) ? "✓" : "○"}
+                                  </span>
+                                  <span className={/[a-z]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Lowercase letter</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                    {/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "✓" : "○"}
+                                  </span>
+                                  <span className={/[!@#$%^&*(),.?":{}|<>]/.test(form.password) ? "text-green-700 font-medium" : "text-gray-500"}>Special character</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className={form.password.length >= 8 ? "text-green-600 font-bold" : "text-gray-300 font-bold"}>
+                                    {form.password.length >= 8 ? "✓" : "○"}
+                                  </span>
+                                  <span className={form.password.length >= 8 ? "text-green-700 font-medium" : "text-gray-500"}>At least 8 chars</span>
+                                </div>
+                                {form.confirmPassword && (
+                                  <div className="flex items-center gap-1 col-span-2 border-t border-slate-200/50 pt-1 mt-1">
+                                    <span className={form.password === form.confirmPassword ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
+                                      {form.password === form.confirmPassword ? "✓" : "✗"}
+                                    </span>
+                                    <span className={form.password === form.confirmPassword ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                                      {form.password === form.confirmPassword ? "Passwords match" : "Passwords do not match"}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {role === 'trainee' && (
