@@ -498,14 +498,19 @@ export function AdminEmployees() {
     );
 
     let targetLoc: { lat: number; lng: number } | undefined = undefined;
-    let hteRadius = 40;
+    const existingCustomRadius =
+      (editForm as any).registrationRadius ||
+      (selectedEmp?.registrationLocation as any)?.radius ||
+      selectedEmp?.registrationRadius ||
+      (selectedEmp as any)?.registration_radius;
+    let hteRadius = existingCustomRadius ? Math.max(20, Number(existingCustomRadius)) : 40;
     let hteAddress = editForm.companyAddress || '';
 
     if (matchedHost) {
       const hteLoc = resolveHteLocation(matchedHost, hostSupervisors, employees, geofenceZones);
       if (hteLoc) {
         targetLoc = { lat: hteLoc.lat, lng: hteLoc.lng };
-        hteRadius = hteLoc.radius;
+        hteRadius = existingCustomRadius ? Math.max(20, Number(existingCustomRadius)) : hteLoc.radius;
         hteAddress = hteLoc.address;
       }
     }

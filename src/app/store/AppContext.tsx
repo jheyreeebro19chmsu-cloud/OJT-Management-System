@@ -2814,14 +2814,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const hteLoc = resolveHteLocation(updatedEmployee, hostSupervisors, employees, geofenceZones);
 
         if (hteLoc) {
+          const customRadius =
+            (data.registrationLocation as any)?.radius ||
+            (data as any)?.registrationRadius ||
+            (updatedEmployee.registrationLocation as any)?.radius ||
+            (updatedEmployee as any)?.registrationRadius ||
+            (updatedEmployee as any)?.registration_radius;
+          const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
+
+          const targetLat = (data.registrationLocation as any)?.lat ?? updatedEmployee.registrationLocation?.lat ?? hteLoc.lat;
+          const targetLng = (data.registrationLocation as any)?.lng ?? updatedEmployee.registrationLocation?.lng ?? hteLoc.lng;
+          const targetAddress = (data as any)?.registrationAddress || (data.registrationLocation as any)?.address || updatedEmployee.registrationAddress || hteLoc.address;
+
           const stationZoneId = `station-${id}`;
           const stationZone: GeofenceZone = {
             id: stationZoneId,
             name: `${updatedEmployee.name} - Trainee Geofence (${hteLoc.companyName})`,
-            address: hteLoc.address,
-            lat: hteLoc.lat,
-            lng: hteLoc.lng,
-            radius: hteLoc.radius,
+            address: targetAddress,
+            lat: Number(targetLat),
+            lng: Number(targetLng),
+            radius: targetRadius,
             active: true,
             userType: 'trainee',
             academicYear: updatedEmployee.academicYear || settings?.activeAcademicYear,

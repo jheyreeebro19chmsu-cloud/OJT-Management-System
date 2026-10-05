@@ -124,13 +124,27 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         // Trainees without an assigned HTE must NOT fall back to personal registration coordinates or campus
         return [];
       }
+      const traineeStationZone = validConfiguredZones.find(
+        (z) =>
+          z.id === `station-${employee.id}` ||
+          z.id === employee.id ||
+          (z as any).employeeId === employee.id ||
+          (z as any).employee_id === employee.id
+      );
+      const customRadius =
+        (employee.registrationLocation as any)?.radius ||
+        employee.registrationRadius ||
+        (employee as any)?.registration_radius ||
+        traineeStationZone?.radius;
+      const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
+
       const assignedWorkplaceZone: GeofenceZone = {
         id: `station-hte-${employee?.hteId || employee?.id || 'assigned'}`,
         name: `${hteLoc.companyName} Workplace Premises`,
         address: hteLoc.address,
         lat: hteLoc.lat,
         lng: hteLoc.lng,
-        radius: hteLoc.radius,
+        radius: targetRadius,
         active: true,
         userType: 'hte',
       };

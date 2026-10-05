@@ -486,7 +486,13 @@ export function AdminGeofence() {
           if (hteInfo) {
             zoneData.lat = hteInfo.lat;
             zoneData.lng = hteInfo.lng;
-            zoneData.radius = hteInfo.radius;
+            // Prioritize custom / adjusted radius on the zone or trainee's account over the default HTE radius
+            const customTraineeRadius =
+              z.radius ||
+              (account.registrationLocation as any)?.radius ||
+              (account as any)?.registrationRadius ||
+              (account as any)?.registration_radius;
+            zoneData.radius = customTraineeRadius ? Math.max(20, Number(customTraineeRadius)) : hteInfo.radius;
             zoneData.address = hteInfo.address;
             zoneData.name = `${account.name} - Trainee Geofence (${hteInfo.companyName})`;
           } else {
@@ -497,9 +503,12 @@ export function AdminGeofence() {
               zoneData.lat = Number(regLat);
               zoneData.lng = Number(regLng);
             }
-            if (regLoc?.radius || (account as any)?.registrationRadius) {
-              zoneData.radius = Math.max(20, Number(regLoc?.radius || (account as any)?.registrationRadius || zoneData.radius || 40));
-            }
+            const customTraineeRadius =
+              z.radius ||
+              regLoc?.radius ||
+              (account as any)?.registrationRadius ||
+              (account as any)?.registration_radius;
+            zoneData.radius = Math.max(20, Number(customTraineeRadius || zoneData.radius || 40));
             if (!zoneData.address && (account.registrationAddress || account.companyAddress)) {
               zoneData.address = account.registrationAddress || account.companyAddress || zoneData.address;
             }
@@ -575,7 +584,12 @@ export function AdminGeofence() {
         if (hteInfo) {
           regLat = hteInfo.lat;
           regLng = hteInfo.lng;
-          stationRadius = hteInfo.radius;
+          // Prioritize custom adjusted radius on trainee account over default HTE radius
+          const customRadius =
+            (emp.registrationLocation as any)?.radius ||
+            (emp as any)?.registrationRadius ||
+            (emp as any)?.registration_radius;
+          stationRadius = customRadius ? Math.max(20, Number(customRadius)) : hteInfo.radius;
           stationAddr = hteInfo.address;
         } else if (regLat == null || regLng == null) {
           regLat = campusInfo.lat;
