@@ -664,13 +664,17 @@ export function HTETrainees() {
                 <div>
                   <span className="text-slate-400 font-semibold block">Contact / Telephone Number:</span>
                   {(() => {
+                    let regLocAny = selectedProfileTrainee.registrationLocation as any;
+                    if (typeof regLocAny === 'string') {
+                      try { regLocAny = JSON.parse(regLocAny); } catch {}
+                    }
                     const phone =
                       selectedProfileTrainee.contactPhone ||
                       selectedProfileTrainee.phone ||
                       selectedProfileTrainee.telephone ||
-                      (selectedProfileTrainee.registrationLocation as any)?.contactPhone ||
-                      (selectedProfileTrainee.registrationLocation as any)?.phone ||
-                      (selectedProfileTrainee.registrationLocation as any)?.telephone;
+                      regLocAny?.contactPhone ||
+                      regLocAny?.phone ||
+                      regLocAny?.telephone;
                     return phone ? (
                       <a
                         href={`tel:${phone}`}
@@ -688,7 +692,10 @@ export function HTETrainees() {
                   <span className="text-slate-400 font-semibold block">Residential Address (Home):</span>
                   {(() => {
                     const isCoordString = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
-                    const regLocAny = selectedProfileTrainee.registrationLocation as any;
+                    let regLocAny = selectedProfileTrainee.registrationLocation as any;
+                    if (typeof regLocAny === 'string') {
+                      try { regLocAny = JSON.parse(regLocAny); } catch {}
+                    }
                     const resAddr =
                       selectedProfileTrainee.residentialAddress ||
                       regLocAny?.residentialAddress ||

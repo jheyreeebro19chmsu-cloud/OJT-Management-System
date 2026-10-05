@@ -1156,12 +1156,12 @@ export function Register() {
     // Proceed with standard employee registration for admin and other roles
     const buildAddrFromForm = () => {
       const parts = [] as string[];
+      if (form.street) parts.push(form.street);
       if (form.barangay === 'other' && form.barangayManual) {
         parts.push(form.barangayManual);
       } else if (form.barangay) {
         parts.push(form.barangay);
       }
-      if (form.street) parts.push(form.street);
       if (form.city) parts.push(form.city);
       if (form.province) parts.push(form.province);
       if (form.region) parts.push(form.region);
@@ -1205,6 +1205,10 @@ export function Register() {
         employeeId: empId,
         address: residentialAddress,
         residentialAddress: residentialAddress,
+        street: form.street || undefined,
+        barangay: (form.barangay === 'other' ? form.barangayManual : form.barangay) || undefined,
+        city: form.city || undefined,
+        province: form.province || undefined,
         phone: form.contactPhone || undefined,
         telephone: form.contactPhone || undefined,
         contactPhone: form.contactPhone || undefined,
@@ -1266,6 +1270,10 @@ export function Register() {
             requiredHours: role === 'admin' || role === 'hte' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
             address: residentialAddress,
             residentialAddress: residentialAddress,
+            street: form.street || undefined,
+            barangay: (form.barangay === 'other' ? form.barangayManual : form.barangay) || undefined,
+            city: form.city || undefined,
+            province: form.province || undefined,
             registrationLocation: registrationLocation || undefined,
             registrationAddress: computedRegistrationAddress,
             photo: photo || (existing ? existing.photo : undefined),

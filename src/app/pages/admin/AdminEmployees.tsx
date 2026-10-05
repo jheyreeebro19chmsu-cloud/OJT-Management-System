@@ -134,7 +134,10 @@ export function AdminEmployees() {
   const resolveEmpHomeAddress = (emp: Employee | null) => {
     if (!emp) return '';
     const isC = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
-    const regAny = (emp as any)?.registrationLocation;
+    let regAny = (emp as any)?.registrationLocation;
+    if (typeof regAny === 'string') {
+      try { regAny = JSON.parse(regAny); } catch {}
+    }
     return (
       emp.residentialAddress ||
       regAny?.residentialAddress ||
@@ -150,7 +153,10 @@ export function AdminEmployees() {
 
   const resolveEmpPhone = (emp: Employee | null) => {
     if (!emp) return '';
-    const regAny = (emp as any)?.registrationLocation;
+    let regAny = (emp as any)?.registrationLocation;
+    if (typeof regAny === 'string') {
+      try { regAny = JSON.parse(regAny); } catch {}
+    }
     return emp.contactPhone || emp.phone || emp.telephone || regAny?.contactPhone || regAny?.phone || regAny?.telephone || '';
   };
 
@@ -2231,7 +2237,7 @@ export function AdminEmployees() {
                           {(isInstructor
                             ? [
                                 { label: 'Email', val: selectedEmp.email },
-                                { label: 'Contact Phone', val: selectedEmp.contactPhone || selectedEmp.phone || 'Not specified' },
+                                { label: 'Contact Phone', val: resolveEmpPhone(selectedEmp) || 'Not specified' },
                                 { label: 'Faculty ID', val: selectedEmp.employeeId },
                                 { label: 'Department', val: selectedEmp.department || 'College of Computer Studies' },
                                 { label: 'School', val: selectedEmp.schoolName || 'Carlos Hilado Memorial State University' },
@@ -2241,7 +2247,7 @@ export function AdminEmployees() {
                             : isHTE
                             ? [
                                 { label: 'Email', val: selectedEmp.email },
-                                { label: 'Contact Phone', val: selectedEmp.contactPhone || selectedEmp.phone || 'Not specified' },
+                                { label: 'Contact Phone', val: resolveEmpPhone(selectedEmp) || 'Not specified' },
                                 { label: 'Supervisor ID', val: selectedEmp.employeeId },
                                 { label: 'Company', val: selectedEmp.companyName || 'Host Training Establishment' },
                                 { label: 'Department', val: selectedEmp.department || 'Internship Division' },

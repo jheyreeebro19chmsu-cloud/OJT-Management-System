@@ -190,7 +190,10 @@ export function Profile() {
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const [faceCaptureOpen, setFaceCaptureOpen] = useState(false);
 
-  const initialRegLoc = (employee as any)?.registrationLocation;
+  let initialRegLoc = (employee as any)?.registrationLocation;
+  if (typeof initialRegLoc === 'string') {
+    try { initialRegLoc = JSON.parse(initialRegLoc); } catch {}
+  }
   const isCoordStr = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
   const initialPhone =
     employee.phone ||
@@ -228,7 +231,10 @@ export function Profile() {
 
   useEffect(() => {
     if (!editing && employee) {
-      const regAny = (employee as any)?.registrationLocation;
+      let regAny = (employee as any)?.registrationLocation;
+      if (typeof regAny === 'string') {
+        try { regAny = JSON.parse(regAny); } catch {}
+      }
       const isC = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
       const ph =
         employee.phone ||

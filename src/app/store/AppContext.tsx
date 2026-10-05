@@ -2540,8 +2540,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         // Update local React state and storage with newly registered profile (guarantees offline availability)
-        setEmployees((prev) => [created!, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
-        saveToStorage(STORAGE_KEYS.EMPLOYEES, [created!, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== created!.id)]);
+        const finalPhone = created.contactPhone || created.phone || cleanData.contactPhone || cleanData.phone;
+        const finalResidential = created.residentialAddress || created.address || cleanData.residentialAddress || cleanData.address;
+        const mergedCreated: Employee = {
+          ...cleanData,
+          ...created,
+          contactPhone: finalPhone,
+          phone: finalPhone,
+          telephone: finalPhone,
+          residentialAddress: finalResidential,
+          address: finalResidential,
+          street: created.street || cleanData.street,
+          barangay: created.barangay || cleanData.barangay,
+          city: created.city || cleanData.city,
+          province: created.province || cleanData.province,
+        };
+        setEmployees((prev) => [mergedCreated, ...prev.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== mergedCreated.id)]);
+        saveToStorage(STORAGE_KEYS.EMPLOYEES, [mergedCreated, ...employees.filter((e) => e.email.toLowerCase() !== cleanData.email.toLowerCase() && e.id !== mergedCreated.id)]);
 
         // Cross-role sync: If registering an HTE supervisor, persist host supervisor and auto-link matching trainees in this academic year
         if (isHTE) {
@@ -2709,6 +2724,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const updatedEmployees = employees.map((e) => {
       if (e.id === id || e.employeeId === id) {
         const next: any = { ...e, ...data };
+        if (data.contactPhone !== undefined || data.phone !== undefined || (data as any).telephone !== undefined) {
+          const pVal = data.contactPhone ?? data.phone ?? (data as any).telephone;
+          next.contactPhone = pVal;
+          next.phone = pVal;
+          next.telephone = pVal;
+        }
+        if (data.residentialAddress !== undefined || data.address !== undefined) {
+          const aVal = data.residentialAddress ?? data.address;
+          next.residentialAddress = aVal;
+          next.address = aVal;
+        }
         if ('registrationLocation' in data && !data.registrationLocation) {
           delete next.registrationLocation;
           delete next.registration_lat;
@@ -2772,6 +2798,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         telephone: (updatedEmployee as any)?.telephone || (data as any)?.telephone,
         residentialAddress: updatedEmployee?.residentialAddress || data.residentialAddress,
         address: updatedEmployee?.address || data.address,
+        street: updatedEmployee?.street || data.street,
+        barangay: updatedEmployee?.barangay || data.barangay,
+        city: updatedEmployee?.city || data.city,
+        province: updatedEmployee?.province || data.province,
         registrationLocation: updatedEmployee?.registrationLocation,
         registrationAddress: updatedEmployee?.registrationAddress,
         submittedDocuments: updatedEmployee?.submittedDocuments,

@@ -23,6 +23,8 @@ export const EMPLOYEE_CORE_COLUMNS = [
   'name',
   'employee_id',
   'email',
+  'phone',
+  'contact_phone',
   'department',
   'position',
   'company_name',
@@ -61,16 +63,26 @@ export async function fetchEmployees(): Promise<Employee[]> {
     }
 
     if (error) {
-      console.warn('Optimized fetchEmployees query notice, trying fallback columns:', error.message);
+      console.warn('Optimized fetchEmployees query notice, trying fallback columns with phone:', error.message);
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('employees')
-        .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
+        .select('id, name, employee_id, email, phone, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
         .order('created_at', { ascending: false });
 
       if (!fallbackError && fallbackData) {
         return fallbackData.map(transformSupabaseEmployee);
       }
-      console.error('Error fetching employees fallback:', fallbackError);
+
+      console.warn('Trying minimal columns fallback:', fallbackError?.message);
+      const { data: minimalData, error: minimalError } = await supabase
+        .from('employees')
+        .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
+        .order('created_at', { ascending: false });
+
+      if (!minimalError && minimalData) {
+        return minimalData.map(transformSupabaseEmployee);
+      }
+      console.error('Error fetching employees fallback:', minimalError);
     }
   } catch (err) {
     console.error('fetchEmployees exception:', err);
@@ -251,6 +263,8 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     name: employee.name,
     employee_id: employee.employeeId,
     email: employee.email.trim().toLowerCase(),
+    phone: phoneVal,
+    contact_phone: phoneVal,
     department: employee.department || 'College of Computer Studies',
     position: employee.position || 'OJT Trainee',
     company_name: employee.companyName || 'N/A',
@@ -294,11 +308,22 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     supabaseEmployee.id = employee.id;
   }
 
-  const { data, error } = await supabase
+  let upsertResult = await supabase
     .from('employees')
     .upsert([supabaseEmployee], { onConflict: 'email' })
     .select()
     .single();
+
+  if (upsertResult.error && (upsertResult.error.message.includes('contact_phone') || upsertResult.error.message.includes('column'))) {
+    delete supabaseEmployee.contact_phone;
+    upsertResult = await supabase
+      .from('employees')
+      .upsert([supabaseEmployee], { onConflict: 'email' })
+      .select()
+      .single();
+  }
+
+  const { data, error } = upsertResult;
 
   if (error) {
     console.error('Error creating employee in Supabase:', error);
@@ -384,45 +409,55 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
         fetchQuery = fetchQuery.eq('employee_id', id);
       }
       const { data: empRow } = await fetchQuery.maybeSingle();
-      if (empRow?.registration_location && typeof empRow.registration_location === 'object') {
+    if (empRow?.registration_location) {
+      if (typeof empRow.registration_location === 'string') {
+        try {
+          existingRegLoc = JSON.parse(empRow.registration_location);
+        } catch {}
+      } else if (typeof empRow.registration_location === 'object') {
         existingRegLoc = { ...empRow.registration_location };
       }
-    } catch (e) {
-      console.warn('Could not fetch existing registration_location:', e);
     }
+  } catch (e) {
+    console.warn('Could not fetch existing registration_location:', e);
+  }
 
-    if (typeof updates.registrationLocation === 'object' && updates.registrationLocation !== null) {
-      existingRegLoc = {
-        ...existingRegLoc,
-        lat: updates.registrationLocation.lat ?? existingRegLoc.lat ?? null,
-        lng: updates.registrationLocation.lng ?? existingRegLoc.lng ?? null,
-        radius: updates.registrationLocation.radius ?? existingRegLoc.radius ?? 40,
-      };
-    }
-
-    const updatedRegLoc: any = {
+  if (typeof updates.registrationLocation === 'object' && updates.registrationLocation !== null) {
+    existingRegLoc = {
       ...existingRegLoc,
+      lat: updates.registrationLocation.lat ?? existingRegLoc.lat ?? null,
+      lng: updates.registrationLocation.lng ?? existingRegLoc.lng ?? null,
+      radius: updates.registrationLocation.radius ?? existingRegLoc.radius ?? 40,
     };
+  }
 
-    if ('registrationLocation' in updates && updates.registrationLocation) {
-      updatedRegLoc.lat = updates.registrationLocation.lat ?? null;
-      updatedRegLoc.lng = updates.registrationLocation.lng ?? null;
+  const updatedRegLoc: any = {
+    ...existingRegLoc,
+  };
+
+  if ('registrationLocation' in updates && updates.registrationLocation) {
+    updatedRegLoc.lat = updates.registrationLocation.lat ?? null;
+    updatedRegLoc.lng = updates.registrationLocation.lng ?? null;
+  }
+  const regRadius = updates.registrationRadius ?? updates.registrationLocation?.radius;
+  if (regRadius !== undefined && regRadius !== null) {
+    updatedRegLoc.radius = Math.max(20, Number(regRadius));
+    supabaseUpdates.registration_radius = Math.max(20, Number(regRadius));
+  }
+  if (updates.registrationAddress !== undefined) {
+    updatedRegLoc.address = updates.registrationAddress;
+    supabaseUpdates.registration_address = updates.registrationAddress;
+  }
+  if (updates.contactPhone !== undefined || updates.phone !== undefined || updates.telephone !== undefined) {
+    const pVal = updates.contactPhone ?? updates.phone ?? updates.telephone;
+    updatedRegLoc.phone = pVal;
+    updatedRegLoc.contactPhone = pVal;
+    updatedRegLoc.telephone = pVal;
+    if (pVal !== undefined) {
+      supabaseUpdates.phone = pVal;
+      supabaseUpdates.contact_phone = pVal;
     }
-    const regRadius = updates.registrationRadius ?? updates.registrationLocation?.radius;
-    if (regRadius !== undefined && regRadius !== null) {
-      updatedRegLoc.radius = Math.max(20, Number(regRadius));
-      supabaseUpdates.registration_radius = Math.max(20, Number(regRadius));
-    }
-    if (updates.registrationAddress !== undefined) {
-      updatedRegLoc.address = updates.registrationAddress;
-      supabaseUpdates.registration_address = updates.registrationAddress;
-    }
-    if (updates.contactPhone !== undefined || updates.phone !== undefined || updates.telephone !== undefined) {
-      const pVal = updates.contactPhone ?? updates.phone ?? updates.telephone;
-      updatedRegLoc.phone = pVal;
-      updatedRegLoc.contactPhone = pVal;
-      updatedRegLoc.telephone = pVal;
-    }
+  }
     if (updates.residentialAddress !== undefined || updates.address !== undefined) {
       const aVal = updates.residentialAddress ?? updates.address;
       updatedRegLoc.residentialAddress = aVal;
@@ -1898,7 +1933,12 @@ export async function deleteHostFeedback(id: string): Promise<boolean> {
 // ─── Transform Helpers ───────────────────────────────────────────────────────
 
 export function transformSupabaseEmployee(data: any): Employee {
-  const regLoc = data.registration_location;
+  let regLoc = data.registration_location;
+  if (typeof regLoc === 'string') {
+    try {
+      regLoc = JSON.parse(regLoc);
+    } catch {}
+  }
 
   // Filter out raw GPS coordinates if stored as an address string
   const isCoordString = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
@@ -1914,14 +1954,16 @@ export function transformSupabaseEmployee(data: any): Employee {
   const rawResidential =
     regLoc?.residentialAddress ||
     regLoc?.homeAddress ||
+    data.residential_address ||
+    data.residentialAddress ||
     (!isCoordString(regLoc?.address) ? regLoc?.address : undefined) ||
     (!isCoordString(data.address) ? data.address : undefined);
 
   const compositeResidential = [
-    regLoc?.street,
-    regLoc?.barangay,
-    regLoc?.city,
-    regLoc?.province,
+    regLoc?.street || data.street,
+    regLoc?.barangay || data.barangay,
+    regLoc?.city || data.city,
+    regLoc?.province || data.province,
   ].filter(Boolean).join(', ');
 
   const finalResidential = rawResidential || (compositeResidential ? compositeResidential : undefined);
@@ -1976,10 +2018,10 @@ export function transformSupabaseEmployee(data: any): Employee {
     telephone: phoneVal,
     residentialAddress: finalResidential,
     address: finalResidential,
-    street: regLoc?.street || undefined,
-    barangay: regLoc?.barangay || undefined,
-    city: regLoc?.city || undefined,
-    province: regLoc?.province || undefined,
+    street: regLoc?.street || data.street || undefined,
+    barangay: regLoc?.barangay || data.barangay || undefined,
+    city: regLoc?.city || data.city || undefined,
+    province: regLoc?.province || data.province || undefined,
     instructorId: data.instructor_id,
     hteId: data.hte_id,
     linkedAt: data.linked_at,
