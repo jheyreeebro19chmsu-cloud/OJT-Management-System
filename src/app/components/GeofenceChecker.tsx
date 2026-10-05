@@ -106,6 +106,9 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       const instStation = validConfiguredZones.find(
         (z) =>
           z.id === `station-${employee.id}` ||
+          z.id === employee.id ||
+          (z as any).employeeId === employee.id ||
+          (z as any).employee_id === employee.id ||
           (z.name && employee.name && z.name.toLowerCase().includes(employee.name.toLowerCase()) && z.name.toLowerCase().includes('official station'))
       );
       if (instStation) {

@@ -466,16 +466,8 @@ export function AdminGeofence() {
           const instName = account?.name || (z.name?.includes(' - ') ? z.name.split(' - ')[0].trim() : z.name || 'OJT Instructor');
           zoneData.name = `${instName} - Official Station`;
           const campusInfo = getCampusLocation(account?.campus || (account as any)?.schoolName || z.name);
-          const rawAddr = (zoneData.address || '').toLowerCase();
-          const isResidential =
-            rawAddr.includes('lantad') ||
-            rawAddr.includes('banago') ||
-            rawAddr.includes('silay') ||
-            rawAddr.includes('bacolod') ||
-            rawAddr.includes('region vi') ||
-            (!rawAddr.includes('chmsu') && !rawAddr.includes('campus') && !rawAddr.includes('carlos hilado'));
-
-          if (!zoneData.address || isResidential) {
+          // Only fall back to campus location if no coordinates are specified on this zone
+          if (!zoneData.lat || !zoneData.lng || !Number.isFinite(Number(zoneData.lat)) || !Number.isFinite(Number(zoneData.lng))) {
             zoneData.address = campusInfo.address;
             zoneData.lat = campusInfo.lat;
             zoneData.lng = campusInfo.lng;
@@ -561,12 +553,12 @@ export function AdminGeofence() {
       }
 
       const campusInfo = getCampusLocation(emp.campus);
-      let regLat = isInst ? campusInfo.lat : (emp.registrationLocation?.lat ?? (emp as any)?.registration_lat ?? (emp as any)?.latitude);
-      let regLng = isInst ? campusInfo.lng : (emp.registrationLocation?.lng ?? (emp as any)?.registration_lng ?? (emp as any)?.longitude);
-      let stationRadius = isInst ? campusInfo.radius : ((emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || GEOFENCE_RADIUS_METERS);
-      let stationAddr = isInst
-        ? campusInfo.address
-        : (emp.registrationAddress || emp.companyAddress || 'Trainee Registered Station');
+      const savedLat = emp.registrationLocation?.lat ?? (emp as any)?.registration_lat ?? (emp as any)?.latitude;
+      const savedLng = emp.registrationLocation?.lng ?? (emp as any)?.registration_lng ?? (emp as any)?.longitude;
+      let regLat = savedLat != null && Number.isFinite(Number(savedLat)) ? Number(savedLat) : (isInst ? campusInfo.lat : null);
+      let regLng = savedLng != null && Number.isFinite(Number(savedLng)) ? Number(savedLng) : (isInst ? campusInfo.lng : null);
+      let stationRadius = (emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || (isInst ? campusInfo.radius : GEOFENCE_RADIUS_METERS);
+      let stationAddr = emp.registrationAddress || (isInst ? campusInfo.address : (emp.companyAddress || 'Trainee Registered Station'));
 
       // For Trainees: strictly use their assigned HTE establishment location!
       if (!isInst && !isHte) {
@@ -749,6 +741,8 @@ export function AdminGeofence() {
     const targetName = updatedData.name || matchedZone?.name || (
       isHte && hostAccount
         ? `${hostAccount.name} - ${hostAccount.companyName || 'HTE Workplace'}`
+        : isInst && account
+        ? `${account.name} - Official Station`
         : account
         ? `${account.name} - Trainee Geofence`
         : 'Geofence Zone'
@@ -918,11 +912,28 @@ export function AdminGeofence() {
       });
     }
 
+    if (account && currentUser && (currentUser.id === account.id || currentUser.employeeId === account.employeeId)) {
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          registrationLocation: {
+            lat: targetLat,
+            lng: targetLng,
+            radius: targetRadius,
+          },
+          registrationRadius: targetRadius,
+          registrationAddress: targetAddress,
+        } as any;
+      });
+    }
+
     const matchingDbZones = geofenceZones.filter(
       (z) =>
         z.id === zoneId ||
         z.id === rawId ||
-        (account && ((z as any).employeeId === account.id || (z as any).employee_id === account.id))
+        (account && ((z as any).employeeId === account.id || (z as any).employee_id === account.id)) ||
+        (isInst && account && z.name && z.name.toLowerCase().includes(account.name.toLowerCase()) && z.name.toLowerCase().includes('official station'))
     );
 
     const targetEmpId = account?.id || (matchedZone as any)?.employeeId || (matchedZone as any)?.employee_id;
@@ -1453,8 +1464,8 @@ export function AdminGeofence() {
 
         <GeofenceMap
           zones={displayZones}
-          picking={Boolean(showAdd || (editId && !dragZoneId))}
-          pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : undefined}
+          picking={Boolean(showAdd || editId || dragZoneId)}
+          pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : (dragCoords ? { lat: dragCoords.lat, lng: dragCoords.lng } : undefined)}
           pickedRadius={Number(form.radius) || GEOFENCE_RADIUS_METERS}
           focusCoords={focusCoords}
           className="h-80"
@@ -1469,6 +1480,11 @@ export function AdminGeofence() {
           onPick={async (lat, lng) => {
             const safeLat = Number(lat.toFixed(6));
             const safeLng = Number(lng.toFixed(6));
+            if (dragZoneId) {
+              setDragCoords({ lat: safeLat, lng: safeLng });
+              await handleZoneDragEnd(dragZoneId, safeLat, safeLng);
+              return;
+            }
             upd('lat', safeLat);
             upd('lng', safeLng);
             try {
