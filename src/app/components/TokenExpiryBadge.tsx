@@ -22,8 +22,8 @@ export function TokenExpiryBadge({
   const seconds = tokenSecondsRemaining % 60;
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  const isUrgent = tokenSecondsRemaining <= 60; // 1 minute remaining
-  const isWarning = tokenSecondsRemaining <= 120 && !isUrgent; // 2 minutes remaining
+  const isUrgent = tokenSecondsRemaining <= 30; // 30 seconds remaining
+  const isWarning = tokenSecondsRemaining <= 60 && !isUrgent; // 1 minute remaining
 
   const handleRefresh = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -42,7 +42,7 @@ export function TokenExpiryBadge({
             ? 'bg-amber-50 text-amber-700 border-amber-300 ring-1 ring-amber-400/30 animate-pulse'
             : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200/70'
         } ${className}`}
-        title={`Session Security Token: Automatically logs out when 10 minutes have passed. (${formattedTime} remaining)`}
+        title={`Session Security: Automatically logs out after 3 minutes of inactivity. (${formattedTime} remaining)`}
       >
         {isUrgent ? (
           <AlertTriangle size={13} className="text-rose-600 shrink-0" />
@@ -57,7 +57,7 @@ export function TokenExpiryBadge({
             type="button"
             onClick={handleRefresh}
             className="p-0.5 rounded-full hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors ml-0.5 cursor-pointer"
-            title="Extend session by 10 minutes"
+            title="Extend session by 3 minutes"
           >
             <RefreshCw size={11} className={isRefreshing ? 'animate-spin text-blue-600' : ''} />
           </button>
@@ -76,7 +76,7 @@ export function TokenExpiryBadge({
           ? 'bg-amber-500/20 text-amber-200 border-amber-400/50 ring-1 ring-amber-400/30 animate-pulse'
           : 'bg-[#0E1D35]/70 text-blue-100 border-[#1E3A66] hover:bg-[#0E1D35]'
       } ${className}`}
-      title={`Session Security Token: Automatically logs out when 10 minutes have passed. (${formattedTime} remaining)`}
+      title={`Session Security: Automatically logs out after 3 minutes of inactivity. (${formattedTime} remaining)`}
     >
       {isUrgent ? (
         <AlertTriangle size={13} className="text-rose-400 shrink-0" />
@@ -91,7 +91,7 @@ export function TokenExpiryBadge({
           type="button"
           onClick={handleRefresh}
           className="p-0.5 rounded-full hover:bg-white/10 text-blue-300 hover:text-white transition-colors ml-0.5 cursor-pointer"
-          title="Extend session by 10 minutes"
+          title="Extend session by 3 minutes"
         >
           <RefreshCw size={11} className={isRefreshing ? 'animate-spin text-emerald-400' : ''} />
         </button>

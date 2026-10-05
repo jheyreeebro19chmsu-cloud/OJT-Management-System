@@ -565,7 +565,7 @@ function cleanupStorageQuota(): void {
   }
 }
 
-export const TOKEN_LIFETIME_MS = 10 * 60 * 1000; // 10 minutes (600,000 ms)
+export const TOKEN_LIFETIME_MS = 3 * 60 * 1000; // 3 minutes of inactivity (180,000 ms)
 
 export function issueSessionToken(user?: User | null): { token: string; expiresAt: number } {
   const expiresAt = Date.now() + TOKEN_LIFETIME_MS;
@@ -854,9 +854,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
 
   const [tokenSecondsRemaining, setTokenSecondsRemaining] = useState<number>(() => {
-    if (typeof window === 'undefined') return 600;
+    if (typeof window === 'undefined') return 180;
     const stored = localStorage.getItem('ojt_token_expires_at');
-    if (!stored) return 600;
+    if (!stored) return 180;
     return Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
   });
 
@@ -868,11 +868,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!prev || prev.id !== nextUser.id || !currentExp || currentExp <= Date.now()) {
           const issued = issueSessionToken(nextUser);
           setTokenExpiresAt(issued.expiresAt);
-          setTokenSecondsRemaining(600);
+          setTokenSecondsRemaining(180);
         }
       } else {
         setTokenExpiresAt(null);
-        setTokenSecondsRemaining(600);
+        setTokenSecondsRemaining(180);
       }
       return nextUser;
     });
@@ -2052,7 +2052,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearAuthStorage();
     setCurrentUser(null);
     setTokenExpiresAt(null);
-    setTokenSecondsRemaining(600);
+    setTokenSecondsRemaining(180);
     if (useSupabase) {
       supabase.auth.signOut().catch((err) => {
         console.error('Error signing out from Supabase:', err);
@@ -2064,19 +2064,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     const issued = issueSessionToken(currentUser);
     setTokenExpiresAt(issued.expiresAt);
-    setTokenSecondsRemaining(600);
-    toast.success('Session Token Renewed', {
-      description: 'Your 10-minute session token has been extended by 10 minutes.',
+    setTokenSecondsRemaining(180);
+    toast.success('Session Extended', {
+      description: 'Your session has been extended by 3 minutes.',
       duration: 3000,
     });
   };
 
-  // ── 10-Minute Token Expiry & Automatic Logout ───────────────────────────────
-  // When 10 minutes have passed, the session token expires and the account is logged out automatically.
+  // ── 3-Minute Inactivity / Token Expiry & Automatic Logout ───────────────────
+  // If the system is not controlled or used for 3 minutes by any of the 3 user roles
+  // (Instructor, HTE, Trainee), the session expires and the account is logged out automatically.
+  // Active user interaction (mousemove, mousedown, keydown, touchstart, scroll, click)
+  // refreshes the inactivity timer to prevent disruption while working.
   useEffect(() => {
     if (!currentUser) {
       setTokenExpiresAt(null);
-      setTokenSecondsRemaining(600);
+      setTokenSecondsRemaining(180);
       return;
     }
     if (typeof window === 'undefined') return;
@@ -2088,35 +2091,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const issued = issueSessionToken(currentUser);
       expTime = issued.expiresAt;
       setTokenExpiresAt(expTime);
-      setTokenSecondsRemaining(600);
+      setTokenSecondsRemaining(180);
     } else {
       setTokenExpiresAt(expTime);
       setTokenSecondsRemaining(Math.max(0, Math.floor((expTime - Date.now()) / 1000)));
     }
 
-    let hasWarned1Min = false;
+    let hasWarned30Sec = false;
+    let lastActivityTime = Date.now();
+
+    // Reset inactivity timer whenever system is controlled or used by the user
+    const resetActivity = () => {
+      const now = Date.now();
+      // Throttle activity resets to at most once every 1.5 seconds to conserve performance
+      if (now - lastActivityTime > 1500) {
+        lastActivityTime = now;
+        const newExpiry = now + TOKEN_LIFETIME_MS;
+        try {
+          localStorage.setItem('ojt_token_expires_at', String(newExpiry));
+        } catch {}
+        setTokenExpiresAt(newExpiry);
+        hasWarned30Sec = false;
+      }
+    };
+
+    // User activity listeners: triggers when user controls or interacts with system
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    activityEvents.forEach((ev) => {
+      window.addEventListener(ev, resetActivity, { passive: true });
+    });
 
     const checkTokenExpiry = () => {
-      const currentExpiry = Number(localStorage.getItem('ojt_token_expires_at')) || expTime;
+      const currentExpiry = Number(localStorage.getItem('ojt_token_expires_at')) || (Date.now() + TOKEN_LIFETIME_MS);
       const now = Date.now();
       const remainingMs = currentExpiry - now;
       const remainingSec = Math.max(0, Math.floor(remainingMs / 1000));
       setTokenSecondsRemaining(remainingSec);
 
-      // 1-minute warning notice
-      if (remainingSec <= 60 && remainingSec > 50 && !hasWarned1Min) {
-        hasWarned1Min = true;
-        toast.warning('Token Expiring Soon', {
-          description: 'Your 10-minute security token will expire in 1 minute. Please save your work.',
+      // 30-second warning before auto-logout
+      if (remainingSec <= 30 && remainingSec > 20 && !hasWarned30Sec) {
+        hasWarned30Sec = true;
+        toast.warning('Inactivity Warning', {
+          description: 'No activity detected. You will be logged out in 30 seconds due to inactivity. Move your mouse or press any key to stay logged in.',
           duration: 6000,
         });
       }
 
-      // Automatically log out when 10 minutes have passed
+      // Automatically log out when 3 minutes of inactivity have elapsed
       if (remainingMs <= 0) {
         logout();
         toast.error('Session Expired', {
-          description: 'Your 10-minute session token has expired. You have been automatically logged out for security.',
+          description: 'You have been automatically logged out because the system was not used for 3 minutes.',
           duration: 8000,
         });
       }
@@ -2125,7 +2150,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Check immediately on mount/focus
     checkTokenExpiry();
 
-    // High-precision 1-second interval for countdown and auto-logout
+    // 1-second interval for countdown and auto-logout
     const timerInterval = setInterval(checkTokenExpiry, 1000);
 
     const handleVisibilityOrFocus = () => {
@@ -2138,6 +2163,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return () => {
       clearInterval(timerInterval);
+      activityEvents.forEach((ev) => {
+        window.removeEventListener(ev, resetActivity);
+      });
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
     };

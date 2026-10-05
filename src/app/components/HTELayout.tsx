@@ -185,9 +185,6 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
             <div className="text-blue-300 text-[10px] truncate">{companyName}</div>
           </div>
         </div>
-        <div className="mb-2 px-1">
-          <TokenExpiryBadge theme="dark" className="w-full justify-center" />
-        </div>
         <button
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
