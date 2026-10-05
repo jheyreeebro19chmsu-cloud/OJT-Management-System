@@ -416,7 +416,7 @@ export function Dashboard() {
         dataUrl: finalUrl,
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        status: 'passed',
+        status: 'pending',
       };
 
       const updatedDocs: TraineeDocuments = {
@@ -425,17 +425,17 @@ export function Dashboard() {
       };
 
       const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
-      const newIsAllPassed = newUploadedCount === totalRequired;
+      const allPassed = newUploadedCount === totalRequired && docKeys.every((k) => updatedDocs[k]?.status === 'passed');
 
       updateEmployee(currentEmp.id, {
         submittedDocuments: updatedDocs,
-        documentsPassed: newIsAllPassed,
-        documentsStatus: newIsAllPassed ? 'passed' : 'partial',
+        documentsPassed: allPassed,
+        documentsStatus: allPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial',
       });
 
       setDashboardUploadingKey(null);
       const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
-      toast.success(`${meta?.title || 'Document'} submitted & marked as PASSED!`);
+      toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
     };
 
     reader.onerror = () => {

@@ -1220,8 +1220,8 @@ export function Register() {
         active: true,
         approvalStatus: 'approved',
         applicationStatus: 'approved',
-        documentsPassed: role === 'trainee' ? (hasAnyDocs ? isAllDocsPassed : false) : undefined,
-        documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : undefined,
+        documentsPassed: role === 'trainee' ? false : undefined,
+        documentsStatus: role === 'trainee' ? (uploadedDocsCount === docKeys.length ? 'submitted' : hasAnyDocs ? 'partial' : 'pending') : undefined,
         submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : undefined,
         // Registration location & address strictly bound to device GPS establishment or campus station
         registrationLocation: role === 'admin' ? { lat: campusInfo.lat, lng: campusInfo.lng } : (registrationLocation || undefined),
@@ -1280,8 +1280,8 @@ export function Register() {
             faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
             active: true,
             submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : (existing ? existing.submittedDocuments : undefined),
-            documentsPassed: role === 'trainee' ? isAllDocsPassed : (existing ? existing.documentsPassed : true),
-            documentsStatus: role === 'trainee' ? (isAllDocsPassed ? 'passed' : hasAnyDocs ? 'pending' : 'incomplete') : (existing ? existing.documentsStatus : 'passed'),
+            documentsPassed: role === 'trainee' ? (existing?.documentsPassed === true && existing?.documentsStatus === 'passed' && uploadedDocsCount === docKeys.length) : (existing ? existing.documentsPassed : true),
+            documentsStatus: role === 'trainee' ? (existing?.documentsPassed === true && existing?.documentsStatus === 'passed' && uploadedDocsCount === docKeys.length ? 'passed' : (uploadedDocsCount === docKeys.length ? 'submitted' : hasAnyDocs ? 'partial' : 'pending')) : (existing ? existing.documentsStatus : 'passed'),
           };
 
           // Write to Supabase database (with offline fallback)

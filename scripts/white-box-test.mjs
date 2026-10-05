@@ -1771,6 +1771,158 @@ const clearFaceAttempt = simulateBiometricVerify({
 assert('Clear bare face with light background successfully verifies biometrics', clearFaceAttempt.matched === true && clearFaceAttempt.confidence === 100);
 
 // ----------------------------------------------------------------------------
+// MODULE 20: TRAINEE CLEARANCE DOCUMENTS COMPLETION & PENDING RETENTION
+// ----------------------------------------------------------------------------
+printSectionHeader('20. WHITE BOX TESTS: Trainee Documents Incomplete -> Pending Retention');
+
+const REQUIRED_DOC_KEYS = [
+  'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
+  'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+];
+
+function simulateTransformEmployee(data) {
+  const regLoc = typeof data.registration_location === 'string'
+    ? JSON.parse(data.registration_location)
+    : data.registration_location || {};
+  const submittedDocs = regLoc.documents || data.submitted_documents || undefined;
+  const resolvedRole = data.role || (
+    data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor'))
+      ? 'admin'
+      : data.position === 'HTE Representative' || data.position === 'Training Supervisor' || (data.position && String(data.position).toLowerCase().includes('hte'))
+        ? 'hte'
+        : 'employee'
+  );
+  const isTrainee = resolvedRole === 'employee' || resolvedRole === 'trainee';
+
+  if (!isTrainee) {
+    return {
+      documentsPassed: data.documents_passed !== undefined ? Boolean(data.documents_passed) : regLoc.documentsPassed !== undefined ? Boolean(regLoc.documentsPassed) : true,
+      documentsStatus: data.documents_status || regLoc.documentsStatus || 'passed',
+      submittedDocuments: submittedDocs,
+    };
+  }
+
+  const uploadedDocsCount = submittedDocs
+    ? REQUIRED_DOC_KEYS.filter((k) => {
+        const d = submittedDocs[k];
+        return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
+      }).length
+    : 0;
+  const passedDocsCount = submittedDocs
+    ? REQUIRED_DOC_KEYS.filter((k) => {
+        const d = submittedDocs[k];
+        return d?.status === 'passed' && Boolean(d && (d.dataUrl || d.name || d.fileUrl));
+      }).length
+    : 0;
+
+  const isAllCompleted = uploadedDocsCount === REQUIRED_DOC_KEYS.length;
+  const isAllPassed = isAllCompleted && passedDocsCount === REQUIRED_DOC_KEYS.length;
+
+  let finalDocsPassed = false;
+  let finalDocsStatus = 'pending';
+
+  if (!isAllCompleted) {
+    finalDocsPassed = false;
+    finalDocsStatus = (data.documents_status === 'rejected' || regLoc.documentsStatus === 'rejected')
+      ? 'rejected'
+      : uploadedDocsCount > 0
+        ? (data.documents_status === 'partial' ? 'partial' : 'pending')
+        : 'pending';
+  } else {
+    const explicitPassed = (data.documents_passed === true || regLoc.documentsPassed === true || data.documents_status === 'passed' || regLoc.documentsStatus === 'passed');
+    if (isAllPassed || explicitPassed) {
+      finalDocsPassed = true;
+      finalDocsStatus = 'passed';
+    } else {
+      finalDocsPassed = false;
+      finalDocsStatus = data.documents_status || regLoc.documentsStatus || 'submitted';
+    }
+  }
+
+  return {
+    documentsPassed: finalDocsPassed,
+    documentsStatus: finalDocsStatus,
+    submittedDocuments: submittedDocs,
+  };
+}
+
+// Test 20.1: Trainee with 0 documents must remain pending (NOT passed) upon reopening system
+const zeroDocsTrainee = simulateTransformEmployee({
+  id: 'trainee-001',
+  role: 'employee',
+  position: 'OJT Trainee',
+  registration_location: null,
+  submitted_documents: null,
+});
+assert('Trainee with 0 documents retains documentsPassed: false upon reload', zeroDocsTrainee.documentsPassed === false);
+assert('Trainee with 0 documents retains documentsStatus: "pending" upon reload', zeroDocsTrainee.documentsStatus === 'pending');
+
+// Test 20.2: Trainee with partial documents (e.g., 4 of 10) must remain pending/partial (NOT passed)
+const partialDocsTrainee = simulateTransformEmployee({
+  id: 'trainee-002',
+  role: 'employee',
+  position: 'OJT Trainee',
+  registration_location: {
+    documents: {
+      pledgeOfConduct: { name: 'pledge.pdf', dataUrl: 'data:pdf' },
+      medical: { name: 'med.pdf', dataUrl: 'data:pdf' },
+      enrolmentForm: { name: 'cor.pdf', dataUrl: 'data:pdf' },
+      consent: { name: 'consent.pdf', dataUrl: 'data:pdf' },
+    }
+  },
+});
+assert('Trainee with partial documents retains documentsPassed: false', partialDocsTrainee.documentsPassed === false);
+assert('Trainee with partial documents retains documentsStatus: "pending" or "partial" (never "passed")', partialDocsTrainee.documentsStatus !== 'passed' && (partialDocsTrainee.documentsStatus === 'pending' || partialDocsTrainee.documentsStatus === 'partial'));
+
+// Test 20.3: Legacy database row with null documents_passed does NOT flip incomplete trainee to passed: true
+const legacyDbRow = simulateTransformEmployee({
+  id: 'trainee-legacy',
+  role: 'employee',
+  position: 'OJT Trainee',
+  documents_passed: null,
+  documents_status: null,
+});
+assert('Incomplete legacy trainee with null database status strictly defaults to false', legacyDbRow.documentsPassed === false);
+assert('Incomplete legacy trainee strictly defaults to pending status', legacyDbRow.documentsStatus === 'pending');
+
+// Test 20.4: Trainee with all 10 documents uploaded but not certified yet is submitted/pending review
+const tenDocsPending = {};
+REQUIRED_DOC_KEYS.forEach(k => {
+  tenDocsPending[k] = { name: `${k}.pdf`, dataUrl: `data:${k}`, status: 'pending' };
+});
+const allUploadedTrainee = simulateTransformEmployee({
+  id: 'trainee-003',
+  role: 'employee',
+  position: 'OJT Trainee',
+  registration_location: { documents: tenDocsPending, documentsPassed: false, documentsStatus: 'submitted' },
+});
+assert('All 10 uploaded documents awaiting review retains documentsPassed: false', allUploadedTrainee.documentsPassed === false);
+assert('All 10 uploaded documents awaiting review retains status "submitted"', allUploadedTrainee.documentsStatus === 'submitted');
+
+// Test 20.5: Trainee with all 10 documents explicitly certified as passed resolves to passed: true
+const tenDocsApproved = {};
+REQUIRED_DOC_KEYS.forEach(k => {
+  tenDocsApproved[k] = { name: `${k}.pdf`, dataUrl: `data:${k}`, status: 'passed' };
+});
+const certifiedTrainee = simulateTransformEmployee({
+  id: 'trainee-004',
+  role: 'employee',
+  position: 'OJT Trainee',
+  registration_location: { documents: tenDocsApproved, documentsPassed: true, documentsStatus: 'passed' },
+});
+assert('All 10 approved documents resolves documentsPassed: true', certifiedTrainee.documentsPassed === true);
+assert('All 10 approved documents resolves documentsStatus: "passed"', certifiedTrainee.documentsStatus === 'passed');
+
+// Test 20.6: OJT Instructor is not subjected to trainee document completion requirements
+const instructorUser = simulateTransformEmployee({
+  id: 'inst-001',
+  role: 'admin',
+  position: 'OJT Instructor',
+});
+assert('Instructor account defaults documentsPassed: true', instructorUser.documentsPassed === true);
+assert('Instructor account defaults documentsStatus: "passed"', instructorUser.documentsStatus === 'passed');
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

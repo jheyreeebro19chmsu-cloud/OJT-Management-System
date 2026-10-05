@@ -125,11 +125,16 @@ export function Documents() {
     return doc?.status === 'passed' && Boolean(doc?.dataUrl || doc?.name);
   }).length;
   const isAllPassed =
-    (uploadedCount === totalRequired && passedCount === totalRequired) ||
-    (employee?.documentsPassed !== false && employee?.documentsStatus === 'passed');
+    uploadedCount === totalRequired &&
+    (passedCount === totalRequired || (employee?.documentsPassed === true && employee?.documentsStatus === 'passed'));
   const isPendingVerification =
-    (employee?.documentsPassed === false || employee?.documentsStatus === 'pending') && uploadedCount > 0;
-  const isSubmittedAwaitingReview = uploadedCount === totalRequired && !isAllPassed && !isPendingVerification;
+    !isAllPassed &&
+    (employee?.documentsPassed === false ||
+      employee?.documentsStatus === 'pending' ||
+      employee?.documentsStatus === 'partial' ||
+      employee?.documentsStatus === 'incomplete' ||
+      uploadedCount < totalRequired);
+  const isSubmittedAwaitingReview = uploadedCount === totalRequired && !isAllPassed;
   const missingDocs = useMemo(() => {
     return allDocRequirements.filter((item) => {
       const doc = getDocItem(item.key);
@@ -261,16 +266,13 @@ export function Documents() {
       };
 
       const newUploadedCount = allDocRequirements.filter((k) => Boolean(updatedDocs[k.key]?.dataUrl || updatedDocs[k.key]?.name)).length;
-      const allPreviouslyPassed = allDocRequirements.every((k) =>
-        k.key === docKey ? true : updatedDocs[k.key]?.status === 'passed'
-      );
-      const newIsAllPassed = newUploadedCount === totalRequired && allPreviouslyPassed;
+      const allDocsPassed = newUploadedCount === totalRequired && allDocRequirements.every((k) => updatedDocs[k.key]?.status === 'passed');
 
       if (employee) {
         updateEmployee(employee.id, {
           submittedDocuments: updatedDocs,
-          documentsPassed: newIsAllPassed,
-          documentsStatus: newUploadedCount === totalRequired ? 'submitted' : 'partial',
+          documentsPassed: allDocsPassed,
+          documentsStatus: allDocsPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial',
         });
       }
 

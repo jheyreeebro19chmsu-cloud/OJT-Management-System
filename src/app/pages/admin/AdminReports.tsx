@@ -1653,7 +1653,7 @@ export function AdminReports() {
                               const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
                                 (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
                               ).length;
-                              const isFullyCertified = emp.documentsPassed !== false && emp.documentsStatus === 'passed';
+                              const isFullyCertified = missingDocsCount === 0 && emp.documentsPassed === true && emp.documentsStatus === 'passed';
                               const isSubmitted = missingDocsCount === 0 && (emp.documentsStatus === 'submitted' || (!isFullyCertified && emp.documentsStatus !== 'pending'));
 
                               if (isFullyCertified) {

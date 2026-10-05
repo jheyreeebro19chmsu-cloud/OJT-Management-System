@@ -34,8 +34,8 @@ const BLANK_FORM = {
   requiredHours: 486,
   academicYear: '2026-2027',
   residentialAddress: '',
-  documentsPassed: true,
-  documentsStatus: 'passed' as 'passed' | 'pending' | 'partial',
+  documentsPassed: false,
+  documentsStatus: 'pending' as 'passed' | 'pending' | 'partial',
   active: true,
   approvalStatus: 'approved' as 'pending' | 'approved' | 'rejected',
 };
@@ -513,8 +513,19 @@ export function AdminEmployees() {
       requiredHours: emp.requiredHours ?? 486,
       academicYear: emp.academicYear || settings?.activeAcademicYear || '2026-2027',
       residentialAddress: resolveEmpHomeAddress(emp) || '',
-      documentsPassed: emp.documentsPassed !== false && emp.documentsStatus !== 'pending',
-      documentsStatus: (emp.documentsStatus as any) || (emp.documentsPassed !== false ? 'passed' : 'pending'),
+      documentsPassed: (() => {
+        const isTrainee = emp.role === 'employee' || emp.role === 'trainee' || (!emp.position?.toLowerCase().includes('instructor') && !emp.position?.toLowerCase().includes('hte') && emp.position !== 'Administrator');
+        if (!isTrainee) return emp.documentsPassed !== false;
+        const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name).length;
+        return missingCount === 0 && emp.documentsPassed === true && emp.documentsStatus === 'passed';
+      })(),
+      documentsStatus: (() => {
+        const isTrainee = emp.role === 'employee' || emp.role === 'trainee' || (!emp.position?.toLowerCase().includes('instructor') && !emp.position?.toLowerCase().includes('hte') && emp.position !== 'Administrator');
+        if (!isTrainee) return (emp.documentsStatus as any) || 'passed';
+        const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name).length;
+        if (missingCount > 0) return 'pending';
+        return (emp.documentsStatus as any) || 'pending';
+      })(),
       active: emp.active !== false,
       approvalStatus: emp.approvalStatus || 'approved',
     });
@@ -884,7 +895,7 @@ export function AdminEmployees() {
                         const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
                           (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
                         ).length;
-                        const isFullyCertified = emp.documentsPassed !== false && emp.documentsStatus === 'passed';
+                        const isFullyCertified = missingDocsCount === 0 && emp.documentsPassed === true && emp.documentsStatus === 'passed';
                         const isSubmittedPendingReview = missingDocsCount === 0 && (emp.documentsStatus === 'submitted' || (!isFullyCertified && emp.documentsStatus !== 'pending'));
 
                         return (
@@ -1087,7 +1098,10 @@ export function AdminEmployees() {
                                 <button
                                   onClick={async () => {
                                     setOpenMenuId(null);
-                                    const isCurrentlyPassed = emp.documentsPassed !== false && emp.documentsStatus === 'passed';
+                                    const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                      (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
+                                    ).length;
+                                    const isCurrentlyPassed = missingDocsCount === 0 && emp.documentsPassed === true && emp.documentsStatus === 'passed';
                                     const willPass = !isCurrentlyPassed;
                                     const currentDocs = emp.submittedDocuments || {};
                                     const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
@@ -1114,7 +1128,7 @@ export function AdminEmployees() {
                                   className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
                                 >
                                   <CheckCircle2 size={14} className="text-emerald-600" />
-                                  {emp.documentsPassed !== false && emp.documentsStatus === 'passed' ? 'Set Docs as Pending' : 'Approve All Documents'}
+                                  {isCurrentlyPassed ? 'Set Docs as Pending' : 'Approve All Documents'}
                                 </button>
                               )}
 
@@ -2002,7 +2016,7 @@ export function AdminEmployees() {
                                     const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
                                       (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
                                     ).length;
-                                    const isPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus === 'passed';
+                                    const isPassed = missingCount === 0 && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
                                     const isSubmitted = missingCount === 0 && (selectedEmp.documentsStatus === 'submitted' || (!isPassed && selectedEmp.documentsStatus !== 'pending'));
 
                                     if (isPassed) {
@@ -2028,7 +2042,10 @@ export function AdminEmployees() {
                                   <button
                                     type="button"
                                     onClick={async () => {
-                                      const isCurrentlyPassed = selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus === 'passed';
+                                      const missingDocs = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                        (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
+                                      ).length;
+                                      const isCurrentlyPassed = missingDocs === 0 && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
                                       const willPass = !isCurrentlyPassed;
                                       const currentDocs = selectedEmp.submittedDocuments || {};
                                       const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
@@ -2436,28 +2453,36 @@ export function AdminEmployees() {
                                     {REQUIRED_TRAINEE_DOCUMENTS.length} Official Compliance Documents Required for Trainee Activation & Deployment
                                   </p>
                                 </div>
-                                <span
-                                  className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                                    selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                      ? 'bg-green-100 text-green-700 border-green-200'
-                                      : 'bg-amber-100 text-amber-700 border-amber-200'
-                                  }`}
-                                >
-                                  {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                    ? `${REQUIRED_TRAINEE_DOCUMENTS.length}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed (Compliant)`
-                                    : `${REQUIRED_TRAINEE_DOC_KEYS.filter((k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed').length}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed`}
-                                </span>
+                                {(() => {
+                                  const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                    (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
+                                  ).length;
+                                  const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                    (k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed'
+                                  ).length;
+                                  const isCompliant = missingCount === 0 && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
+
+                                  return (
+                                    <span
+                                      className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                                        isCompliant
+                                          ? 'bg-green-100 text-green-700 border-green-200'
+                                          : 'bg-amber-100 text-amber-700 border-amber-200'
+                                      }`}
+                                    >
+                                      {isCompliant
+                                        ? `${REQUIRED_TRAINEE_DOCUMENTS.length}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed (Compliant)`
+                                        : `${passedCount}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed (Pending)`}
+                                    </span>
+                                  );
+                                })()}
                               </div>
 
                               {/* The 9 Standard Documents Grid */}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                 {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                                   const doc = selectedEmp.submittedDocuments?.[docItem.key];
-                                  const isPassed = doc
-                                    ? doc.status === 'passed'
-                                    : selectedEmp.submittedDocuments
-                                    ? false
-                                    : selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                                  const isPassed = doc ? doc.status === 'passed' : false;
                                   const hasFile = !!doc?.dataUrl;
                                   const IconComponent = docItem.icon;
                                   return (
@@ -2589,63 +2614,75 @@ export function AdminEmployees() {
                               </div>
 
                               {/* Bulk Toggle All Documents Action */}
-                              <div className="flex items-center justify-between pt-1 border-t border-violet-100">
-                                <p className="text-[11px] text-violet-700 font-medium">
-                                  Status:{' '}
-                                  <span className="font-bold">
-                                    {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                      ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} Required Documents Certified`
-                                      : 'Pending Verification of Registration Documents'}
-                                  </span>
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    const willPass = !(selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending');
-                                    const targetStatus: 'passed' | 'pending' = willPass ? 'passed' : 'pending';
-                                    const currentDocs = selectedEmp.submittedDocuments || {};
-                                    const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
-                                    const updatedDocs: TraineeDocuments = { ...currentDocs };
-                                    docKeys.forEach((k) => {
-                                      updatedDocs[k] = {
-                                        ...(currentDocs[k] || {
-                                          name: `${k}.pdf`,
-                                          type: 'application/pdf',
-                                          size: 0,
-                                          uploadedAt: new Date().toISOString(),
-                                        }),
-                                        status: targetStatus,
-                                      };
-                                    });
+                              {(() => {
+                                const missingDocs = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                  (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
+                                ).length;
+                                const passedDocs = REQUIRED_TRAINEE_DOC_KEYS.filter(
+                                  (k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed'
+                                ).length;
+                                const isCertified = missingDocs === 0 && passedDocs === REQUIRED_TRAINEE_DOCUMENTS.length && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
 
-                                    await updateEmployee(selectedEmp.id, {
-                                      submittedDocuments: updatedDocs,
-                                      documentsPassed: willPass,
-                                      documentsStatus: willPass ? 'passed' : 'pending',
-                                    });
-                                    setSelectedEmp({
-                                      ...selectedEmp,
-                                      submittedDocuments: updatedDocs,
-                                      documentsPassed: willPass,
-                                      documentsStatus: willPass ? 'passed' : 'pending',
-                                    });
-                                    toast.success(
-                                      willPass
-                                        ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} required documents marked as PASSED!`
-                                        : 'Documents marked as PENDING verification.'
-                                    );
-                                  }}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-                                    selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                                      : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
-                                  }`}
-                                >
-                                  {selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending'
-                                    ? 'Set All as Pending'
-                                    : `✓ Approve All ${REQUIRED_TRAINEE_DOCUMENTS.length} Documents`}
-                                </button>
-                              </div>
+                                return (
+                                  <div className="flex items-center justify-between pt-1 border-t border-violet-100">
+                                    <p className="text-[11px] text-violet-700 font-medium">
+                                      Status:{' '}
+                                      <span className="font-bold">
+                                        {isCertified
+                                          ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} Required Documents Certified`
+                                          : 'Pending Verification of Registration Documents'}
+                                      </span>
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const willPass = !isCertified;
+                                        const targetStatus: 'passed' | 'pending' = willPass ? 'passed' : 'pending';
+                                        const currentDocs = selectedEmp.submittedDocuments || {};
+                                        const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                        const updatedDocs: TraineeDocuments = { ...currentDocs };
+                                        docKeys.forEach((k) => {
+                                          updatedDocs[k] = {
+                                            ...(currentDocs[k] || {
+                                              name: `${k}.pdf`,
+                                              type: 'application/pdf',
+                                              size: 0,
+                                              uploadedAt: new Date().toISOString(),
+                                            }),
+                                            status: targetStatus,
+                                          };
+                                        });
+
+                                        await updateEmployee(selectedEmp.id, {
+                                          submittedDocuments: updatedDocs,
+                                          documentsPassed: willPass,
+                                          documentsStatus: willPass ? 'passed' : 'pending',
+                                        });
+                                        setSelectedEmp({
+                                          ...selectedEmp,
+                                          submittedDocuments: updatedDocs,
+                                          documentsPassed: willPass,
+                                          documentsStatus: willPass ? 'passed' : 'pending',
+                                        });
+                                        toast.success(
+                                          willPass
+                                            ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} required documents marked as PASSED!`
+                                            : 'Documents marked as PENDING verification.'
+                                        );
+                                      }}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                                        isCertified
+                                          ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                          : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
+                                      }`}
+                                    >
+                                      {isCertified
+                                        ? 'Set All as Pending'
+                                        : `✓ Approve All ${REQUIRED_TRAINEE_DOCUMENTS.length} Documents`}
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
 
@@ -3185,8 +3222,9 @@ export function AdminEmployees() {
                     {/* Compliance Overview Card & Bulk Approval */}
                     {(() => {
                       const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                      const missingCount = docKeys.filter((k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name).length;
                       const passedCount = docKeys.filter((k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed').length;
-                      const isFullyPassed = (selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus === 'passed') || passedCount === REQUIRED_TRAINEE_DOCUMENTS.length;
+                      const isFullyPassed = missingCount === 0 && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
 
                       return (
                         <div className={`p-4 rounded-2xl border transition-all ${
@@ -3260,11 +3298,7 @@ export function AdminEmployees() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                         const doc = selectedEmp.submittedDocuments?.[docItem.key];
-                        const isPassed = doc
-                          ? doc.status === 'passed'
-                          : selectedEmp.submittedDocuments
-                          ? false
-                          : selectedEmp.documentsPassed !== false && selectedEmp.documentsStatus !== 'pending';
+                        const isPassed = doc ? doc.status === 'passed' : false;
                         const hasFile = Boolean(doc?.dataUrl);
 
                         return (

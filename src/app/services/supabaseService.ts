@@ -298,8 +298,41 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
       barangay: employee.barangay || null,
       city: employee.city || null,
       province: employee.province || null,
-      documentsPassed: employee.documentsPassed !== undefined ? employee.documentsPassed : true,
-      documentsStatus: employee.documentsStatus || 'passed',
+      documentsPassed: (() => {
+        const isTrainee = !employee.position || (!employee.position.toLowerCase().includes('instructor') && !employee.position.toLowerCase().includes('hte') && employee.position !== 'Administrator');
+        if (!isTrainee) return employee.documentsPassed !== undefined ? employee.documentsPassed : true;
+        const REQUIRED_KEYS = [
+          'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
+          'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+        ];
+        const uploadedCount = employee.submittedDocuments
+          ? REQUIRED_KEYS.filter((k) => {
+              const d = (employee.submittedDocuments as any)?.[k];
+              return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
+            }).length
+          : 0;
+        const isAllComplete = uploadedCount === REQUIRED_KEYS.length;
+        return isAllComplete && Boolean(employee.documentsPassed);
+      })(),
+      documentsStatus: (() => {
+        const isTrainee = !employee.position || (!employee.position.toLowerCase().includes('instructor') && !employee.position.toLowerCase().includes('hte') && employee.position !== 'Administrator');
+        if (!isTrainee) return employee.documentsStatus || 'passed';
+        const REQUIRED_KEYS = [
+          'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
+          'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+        ];
+        const uploadedCount = employee.submittedDocuments
+          ? REQUIRED_KEYS.filter((k) => {
+              const d = (employee.submittedDocuments as any)?.[k];
+              return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
+            }).length
+          : 0;
+        const isAllComplete = uploadedCount === REQUIRED_KEYS.length;
+        if (!isAllComplete) {
+          return employee.documentsStatus === 'rejected' ? 'rejected' : uploadedCount > 0 ? (employee.documentsStatus === 'partial' ? 'partial' : 'pending') : 'pending';
+        }
+        return employee.documentsStatus || 'submitted';
+      })(),
       documents: sanitizeDocumentsForDb(employee.submittedDocuments),
     },
   };
@@ -2027,17 +2060,81 @@ export function transformSupabaseEmployee(data: any): Employee {
     linkedAt: data.linked_at,
     applicationStatus: data.application_status || data.approval_status || 'approved',
     approvalStatus: data.application_status || data.approval_status || 'approved',
-    documentsPassed:
-      data.documents_passed !== undefined
-        ? Boolean(data.documents_passed)
-        : regLoc?.documentsPassed !== undefined
-          ? Boolean(regLoc.documentsPassed)
-          : true,
-    documentsStatus:
-      data.documents_status ||
-      regLoc?.documentsStatus ||
-      (data.documents_passed === false ? 'pending' : 'passed'),
-    submittedDocuments: regLoc?.documents || data.submitted_documents || undefined,
+    ...(() => {
+      const resolvedRole = data.role || (
+        data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor'))
+          ? 'admin'
+          : data.position === 'HTE Representative' || data.position === 'Training Supervisor' || (data.position && String(data.position).toLowerCase().includes('hte'))
+            ? 'hte'
+            : 'employee'
+      );
+      const isTrainee = resolvedRole === 'employee' || resolvedRole === 'trainee';
+      const submittedDocs = regLoc?.documents || data.submitted_documents || undefined;
+
+      if (!isTrainee) {
+        return {
+          documentsPassed:
+            data.documents_passed !== undefined
+              ? Boolean(data.documents_passed)
+              : regLoc?.documentsPassed !== undefined
+                ? Boolean(regLoc.documentsPassed)
+                : true,
+          documentsStatus:
+            data.documents_status ||
+            regLoc?.documentsStatus ||
+            'passed',
+          submittedDocuments: submittedDocs,
+        };
+      }
+
+      const REQUIRED_KEYS = [
+        'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
+        'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+      ];
+      const uploadedDocsCount = submittedDocs
+        ? REQUIRED_KEYS.filter((k) => {
+            const d = (submittedDocs as any)[k];
+            return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
+          }).length
+        : 0;
+      const passedDocsCount = submittedDocs
+        ? REQUIRED_KEYS.filter((k) => {
+            const d = (submittedDocs as any)[k];
+            return d?.status === 'passed' && Boolean(d && (d.dataUrl || d.name || d.fileUrl));
+          }).length
+        : 0;
+
+      const isAllCompleted = uploadedDocsCount === REQUIRED_KEYS.length;
+      const isAllPassed = isAllCompleted && passedDocsCount === REQUIRED_KEYS.length;
+
+      let finalDocsPassed = false;
+      let finalDocsStatus: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial' = 'pending';
+
+      // STRICT RULE: If trainee has NOT completed all 10 required documents, it MUST be pending and NOT passed!
+      if (!isAllCompleted) {
+        finalDocsPassed = false;
+        finalDocsStatus = (data.documents_status === 'rejected' || regLoc?.documentsStatus === 'rejected')
+          ? 'rejected'
+          : uploadedDocsCount > 0
+            ? (data.documents_status === 'partial' ? 'partial' : 'pending')
+            : 'pending';
+      } else {
+        const explicitPassed = (data.documents_passed === true || regLoc?.documentsPassed === true || data.documents_status === 'passed' || regLoc?.documentsStatus === 'passed');
+        if (isAllPassed || explicitPassed) {
+          finalDocsPassed = true;
+          finalDocsStatus = 'passed';
+        } else {
+          finalDocsPassed = false;
+          finalDocsStatus = data.documents_status || regLoc?.documentsStatus || 'submitted';
+        }
+      }
+
+      return {
+        documentsPassed: finalDocsPassed,
+        documentsStatus: finalDocsStatus,
+        submittedDocuments: submittedDocs,
+      };
+    })(),
   };
 }
 
