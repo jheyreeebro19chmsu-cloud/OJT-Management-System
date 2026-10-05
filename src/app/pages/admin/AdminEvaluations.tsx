@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../../store/AppContext';
-import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire } from '../../types';
+import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire, isQuestionnaireAnswered } from '../../types';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 import { getPhotoUrl } from '../../services/config';
 import { formatHoursAndMinutes } from './AdminEmployees';
@@ -196,6 +196,25 @@ export function AdminEvaluations() {
       );
       setCommentsSuggestions(existing.commentsSuggestions || existing.recommendations || '');
       setQuestionnaire(existing.questionnaire || {});
+    } else {
+      setRatings(getDefaultRatings());
+      setRatingComments({ workHabits: '', workSkills: '', socialSkills: '' });
+      setCommentsSuggestions('');
+      setQuestionnaire({
+        companyAddress: emp.department || '',
+        contactPerson: emp.supervisorName || 'OJT Supervisor',
+        trainingDateFrom: '',
+        trainingDateTo: '',
+        dateOfEvaluation: new Date().toISOString().split('T')[0],
+        dateOfLastEvaluation: '',
+        employabilityStatus: 'OJT Trainee',
+        employedCompanyName: '',
+        allowanceSalary: '',
+        telephoneNo: emp.phone || '',
+        department: emp.department || 'IT Department',
+        position: 'ON - THE - JOB TRAINEE',
+        otherDeptAssigned: 'None',
+      });
     }
     setViewMode('view');
   };
@@ -387,13 +406,12 @@ export function AdminEvaluations() {
   // ── Evaluation Form Screen (View / Printable Sheet) ─────────────────
   if (viewMode === 'view' && selectedEmp) {
     const ev = selectedEmp ? getEmployeeEvaluation(selectedEmp) : undefined;
-    if (!ev) return null;
-    const viewRatings = ev.ratings || ratings;
-    const viewComments = ev.ratingComments || ratingComments;
-    const viewSuggestions = ev.commentsSuggestions || ev.recommendations || commentsSuggestions;
-    const viewOverall = ev.overallRating || (ev.overallScore ? ev.overallScore / 20 : overallRating);
-    const viewGrade = ev.grade || grade;
-    const viewQuestionnaire = ev.questionnaire || questionnaire;
+    const viewRatings = ev?.ratings || ratings;
+    const viewComments = ev?.ratingComments || ratingComments;
+    const viewSuggestions = ev?.commentsSuggestions || ev?.recommendations || commentsSuggestions;
+    const viewOverall = ev?.overallRating || (ev?.overallScore ? ev.overallScore / 20 : overallRating);
+    const viewGrade = ev?.grade || grade;
+    const viewQuestionnaire = ev?.questionnaire || questionnaire;
 
     return (
       <CHMSUEvaluationSheet
@@ -404,10 +422,10 @@ export function AdminEvaluations() {
             ? 'Jhey Ree C Ebro'
             : (selectedEmp.companyName || '').toLowerCase().includes('printing')
             ? 'Yzel B. Norte'
-            : ev.evaluatorName || ev.evaluatedBy || selectedEmp.supervisorName || 'OJT Supervisor'
+            : ev?.evaluatorName || ev?.evaluatedBy || selectedEmp.supervisorName || 'OJT Supervisor'
         }
         instructorName={instructorName}
-        evaluationDate={ev.evaluatedAt}
+        evaluationDate={ev?.evaluatedAt}
         ratings={viewRatings}
         ratingComments={viewComments}
         commentsSuggestions={viewSuggestions}
@@ -415,10 +433,10 @@ export function AdminEvaluations() {
         grade={viewGrade}
         questionnaire={viewQuestionnaire}
         isReadOnly={true}
-        status={ev.status}
+        status={ev?.status || 'draft'}
         role="instructor"
-        onPassToHte={() => handlePassToHte(ev.id, selectedEmp || undefined)}
-        onMarkDoneViewed={() => handleMarkDoneViewed(ev.id)}
+        onPassToHte={() => handlePassToHte(ev?.id, selectedEmp || undefined)}
+        onMarkDoneViewed={ev?.id ? () => handleMarkDoneViewed(ev.id) : undefined}
         onClose={() => setViewMode('list')}
       />
     );
@@ -466,15 +484,16 @@ export function AdminEvaluations() {
               ];
               activeEmployees.forEach((emp) => {
                 const ev = getEmployeeEvaluation(emp);
+                const isAnswered = isQuestionnaireAnswered(ev?.questionnaire);
                 csvRows.push([
                   emp.name,
                   emp.employeeId,
                   emp.companyName,
                   emp.department,
-                  ev ? `${ev.overallScore}%` : 'N/A',
-                  ev ? ev.grade : 'Not Evaluated',
-                  ev ? ev.evaluatedAt : 'N/A',
-                  ev ? ev.status : 'Pending',
+                  ev && isAnswered ? `${ev.overallScore}%` : 'N/A',
+                  ev && isAnswered ? ev.grade : 'Awaiting Questionnaire',
+                  ev && isAnswered ? ev.evaluatedAt : 'N/A',
+                  !isAnswered ? 'Awaiting Questionnaire' : ev?.status || 'Pending',
                 ]);
               });
               const csvContent = csvRows.map((e) => e.join(',')).join('\n');
@@ -547,36 +566,66 @@ export function AdminEvaluations() {
                       <p className="text-xs text-slate-500 font-medium">{emp.course} • {emp.schoolName}</p>
                       <p className="text-xs text-blue-600 font-semibold mt-0.5">{emp.companyName || 'Host Training Establishment'}</p>
                     </div>
-                    {ev && gc && (
-                      <div className="text-right">
-                        <span className={`inline-block text-xs font-extrabold px-3 py-1 rounded-full border ${gc.bg} ${gc.color} ${gc.border}`}>
-                          {ev.grade} ({ev.overallScore}%)
-                        </span>
-                        <p className="text-[10px] uppercase font-bold mt-1">
-                          {ev.status === 'reviewed_by_instructor' ? (
-                            <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                              <CheckCircle2 size={10} /> Done Viewed &amp; Approved
+                    {(() => {
+                      const isAnswered = isQuestionnaireAnswered(ev?.questionnaire);
+                      if (!isAnswered) {
+                        return (
+                          <div className="text-right">
+                            <span className="inline-flex items-center gap-1 text-xs font-extrabold px-3 py-1 rounded-full border bg-amber-50 text-amber-800 border-amber-300">
+                              <Clock size={12} /> Awaiting Trainee Questionnaire
                             </span>
-                          ) : ev.status === 'submitted_to_instructor' || ev.status === 'final' ? (
-                            <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                              <Award size={10} /> Ratings Submitted by HTE
-                            </span>
-                          ) : ev.status === 'passed_to_hte' ? (
-                            <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                              <Clock size={10} /> Passed to HTE (Awaiting Ratings)
-                            </span>
-                          ) : ev.status === 'submitted_by_trainee' ? (
-                            <span className="text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                              <FileText size={10} /> Questionnaire Received — Pass to HTE
-                            </span>
-                          ) : (
-                            <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                              Draft
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    )}
+                            <p className="text-[10px] uppercase font-bold mt-1 text-amber-600">
+                              Questionnaire Not Answered
+                            </p>
+                          </div>
+                        );
+                      }
+                      if (ev && gc) {
+                        return (
+                          <div className="text-right">
+                            {ev.status === 'submitted_by_trainee' || ev.status === 'passed_to_hte' ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-extrabold px-3 py-1 rounded-full border bg-sky-50 text-sky-800 border-sky-300">
+                                <FileText size={12} /> Questionnaire Answered
+                              </span>
+                            ) : (
+                              <span className={`inline-block text-xs font-extrabold px-3 py-1 rounded-full border ${gc.bg} ${gc.color} ${gc.border}`}>
+                                {ev.grade} ({ev.overallScore}%)
+                              </span>
+                            )}
+                            <p className="text-[10px] uppercase font-bold mt-1">
+                              {ev.status === 'reviewed_by_instructor' ? (
+                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <CheckCircle2 size={10} /> Done Viewed &amp; Approved
+                                </span>
+                              ) : ev.status === 'submitted_to_instructor' || ev.status === 'final' ? (
+                                <span className="text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <Award size={10} /> Ratings Submitted by HTE
+                                </span>
+                              ) : ev.status === 'passed_to_hte' ? (
+                                <span className="text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <Clock size={10} /> Passed to HTE (Awaiting Ratings)
+                                </span>
+                              ) : ev.status === 'submitted_by_trainee' ? (
+                                <span className="text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <FileText size={10} /> Questionnaire Received — Pass to HTE
+                                </span>
+                              ) : (
+                                <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  Draft
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="text-right">
+                          <span className="inline-flex items-center gap-1 text-xs font-extrabold px-3 py-1 rounded-full border bg-amber-50 text-amber-800 border-amber-300">
+                            <Clock size={12} /> Awaiting Trainee Questionnaire
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -607,29 +656,44 @@ export function AdminEvaluations() {
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap gap-2">
-                {ev ? (
-                  <>
-                    <button
-                      onClick={() => viewEval(emp)}
-                      className="flex-1 min-w-[90px] flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                    >
-                      <FileText size={14} />
-                      View Form
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedEmp(emp);
-                        setViewMode('view');
-                        setTimeout(() => window.print(), 250);
-                      }}
-                      className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer"
-                      title="Print Official Hard Copy"
-                    >
-                      <Printer size={13} />
-                      <span>Print</span>
-                    </button>
+                <button
+                  onClick={() => viewEval(emp)}
+                  className="flex-1 min-w-[90px] flex items-center justify-center gap-1.5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  <FileText size={14} />
+                  View Form
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedEmp(emp);
+                    setViewMode('view');
+                    setTimeout(() => window.print(), 250);
+                  }}
+                  className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                  title="Print Official Hard Copy"
+                >
+                  <Printer size={13} />
+                  <span>Print</span>
+                </button>
 
-                    {(ev.status === 'submitted_by_trainee' || ev.status === 'draft') && (
+                {!isQuestionnaireAnswered(ev?.questionnaire) ? (
+                  <>
+                    <div className="flex-1 min-w-[200px] flex items-center justify-center gap-1.5 py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold">
+                      <Clock size={14} />
+                      Awaiting Trainee Questionnaire
+                    </div>
+                    <button
+                      onClick={() => handlePassToHte(ev?.id, emp)}
+                      className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-sky-600/20 cursor-pointer"
+                      title="Forward to HTE Supervisor for rating"
+                    >
+                      <Building size={13} />
+                      Pass to HTE
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {(ev?.status === 'submitted_by_trainee' || ev?.status === 'draft') && (
                       <button
                         onClick={() => handlePassToHte(ev.id, emp)}
                         className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-sky-600/20 cursor-pointer"
@@ -640,7 +704,7 @@ export function AdminEvaluations() {
                       </button>
                     )}
 
-                    {(ev.status === 'submitted_to_instructor' || ev.status === 'final') && (
+                    {(ev?.status === 'submitted_to_instructor' || ev?.status === 'final') && (
                       <button
                         onClick={() => handleMarkDoneViewed(ev.id)}
                         className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20 cursor-pointer"
@@ -650,21 +714,6 @@ export function AdminEvaluations() {
                         Done Viewed &amp; Approved
                       </button>
                     )}
-                  </>
-                ) : (
-                  <>
-                    <div className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold">
-                      <Clock size={14} />
-                      Awaiting Trainee Questionnaire
-                    </div>
-                    <button
-                      onClick={() => handlePassToHte(undefined, emp)}
-                      className="px-3.5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                      title="Initialize and pass directly to HTE for evaluation"
-                    >
-                      <Building size={13} />
-                      Pass to HTE
-                    </button>
                   </>
                 )}
               </div>

@@ -232,6 +232,22 @@ export interface EvaluationQuestionnaire {
   q9_ojtSuggestionsRecommendations?: string;
 }
 
+export function isQuestionnaireAnswered(q?: EvaluationQuestionnaire | null): boolean {
+  if (!q) return false;
+  const questions = [
+    q.q1_dutiesBriefly,
+    q.q2_strongestPerformanceArea,
+    q.q3_areasImprovedMost,
+    q.q4_areasNeedImprovement,
+    q.q5_situationChallengedMost,
+    q.q6_howOvercameChallenge,
+    q.q7_whatLearnedFromExperience,
+    q.q8_isQualifiedLinkage,
+    q.q9_ojtSuggestionsRecommendations,
+  ];
+  return questions.some((ans) => typeof ans === 'string' && ans.trim().length > 0);
+}
+
 export interface Evaluation {
   id: string;
   employeeId: string;

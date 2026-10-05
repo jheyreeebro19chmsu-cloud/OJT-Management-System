@@ -1923,6 +1923,123 @@ assert('Instructor account defaults documentsPassed: true', instructorUser.docum
 assert('Instructor account defaults documentsStatus: "passed"', instructorUser.documentsStatus === 'passed');
 
 // ----------------------------------------------------------------------------
+// 21. WHITE BOX TESTS: Evaluation Questionnaire Answered Verification & Workflow
+// ----------------------------------------------------------------------------
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  21. WHITE BOX TESTS: Evaluation Questionnaire Answered Verification  ${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+function isQuestionnaireAnswered(q) {
+  if (!q) return false;
+  const questions = [
+    q.q1_dutiesBriefly,
+    q.q2_strongestPerformanceArea,
+    q.q3_areasImprovedMost,
+    q.q4_areasNeedImprovement,
+    q.q5_situationChallengedMost,
+    q.q6_howOvercameChallenge,
+    q.q7_whatLearnedFromExperience,
+    q.q8_isQualifiedLinkage,
+    q.q9_ojtSuggestionsRecommendations,
+  ];
+  return questions.some((ans) => typeof ans === 'string' && ans.trim().length > 0);
+}
+
+// Test 21.1: Undefined or empty questionnaire is strictly un-answered
+assert('Null or undefined questionnaire resolves isQuestionnaireAnswered: false', isQuestionnaireAnswered(null) === false && isQuestionnaireAnswered(undefined) === false);
+assert('Empty questionnaire object resolves isQuestionnaireAnswered: false', isQuestionnaireAnswered({}) === false);
+
+// Test 21.2: Metadata only without questionnaire questions answered resolves to false
+assert('Company particulars only without question responses resolves to false', isQuestionnaireAnswered({
+  companyAddress: 'Talisay City',
+  contactPerson: 'Supervisor Name',
+  telephoneNo: '09123456789'
+}) === false);
+
+// Test 21.3: Whitespace only questions resolve to false
+assert('Questions with whitespace only resolve to false', isQuestionnaireAnswered({
+  q1_dutiesBriefly: '   \n\t  ',
+  q2_strongestPerformanceArea: '  '
+}) === false);
+
+// Test 21.4: Answering any of the 9 official CHMSU questions resolves to true
+assert('Answering q1_dutiesBriefly resolves isQuestionnaireAnswered: true', isQuestionnaireAnswered({
+  q1_dutiesBriefly: 'Assisted in full-stack web development and database management.'
+}) === true);
+
+assert('Answering q5_situationChallengedMost resolves isQuestionnaireAnswered: true', isQuestionnaireAnswered({
+  q5_situationChallengedMost: 'Managing high concurrency server deployments under tight deadlines.'
+}) === true);
+
+// Test 21.5: Instructor Evaluation Card workflow status resolution
+function resolveInstructorCardStatus(ev) {
+  const answered = isQuestionnaireAnswered(ev?.questionnaire);
+  if (!answered) {
+    return {
+      topBadge: 'Awaiting Trainee Questionnaire',
+      showGradeBadge: false,
+      canMarkApproved: false,
+      actionButtonLabel: 'Awaiting Trainee Questionnaire',
+    };
+  }
+  if (ev.status === 'submitted_to_instructor' || ev.status === 'final') {
+    return {
+      topBadge: 'Ratings Submitted by HTE',
+      showGradeBadge: true,
+      canMarkApproved: true,
+      actionButtonLabel: 'Done Viewed & Approved',
+    };
+  }
+  if (ev.status === 'reviewed_by_instructor') {
+    return {
+      topBadge: 'Done Viewed & Approved',
+      showGradeBadge: true,
+      canMarkApproved: false,
+      actionButtonLabel: null,
+    };
+  }
+  return {
+    topBadge: 'Questionnaire Received — Pass to HTE',
+    showGradeBadge: false,
+    canMarkApproved: false,
+    actionButtonLabel: 'Pass to HTE',
+  };
+}
+
+const emptyFormEval = {
+  id: 'eval-dummy-1',
+  employeeId: 'trainee-shaneth',
+  overallScore: 95.2,
+  grade: 'Excellent',
+  status: 'final', // Legacy or seeded database status
+  questionnaire: {} // Empty form
+};
+
+const resolvedEmpty = resolveInstructorCardStatus(emptyFormEval);
+assert('Empty form with legacy final status strictly displays "Awaiting Trainee Questionnaire"', resolvedEmpty.topBadge === 'Awaiting Trainee Questionnaire');
+assert('Empty form strictly hides fake grade badge', resolvedEmpty.showGradeBadge === false);
+assert('Empty form strictly blocks "Done Viewed & Approved"', resolvedEmpty.canMarkApproved === false);
+assert('Empty form displays "Awaiting Trainee Questionnaire" action pill', resolvedEmpty.actionButtonLabel === 'Awaiting Trainee Questionnaire');
+
+// Test 21.6: Answered form submitted by HTE unlocks ratings and instructor approval
+const answeredHteEval = {
+  id: 'eval-dummy-2',
+  employeeId: 'trainee-shaneth',
+  overallScore: 95.2,
+  grade: 'Excellent',
+  status: 'submitted_to_instructor',
+  questionnaire: {
+    q1_dutiesBriefly: 'Handled printing operations and graphic layout verification.',
+    q7_whatLearnedFromExperience: 'Learned client management and production efficiency.'
+  }
+};
+
+const resolvedAnswered = resolveInstructorCardStatus(answeredHteEval);
+assert('Answered questionnaire with HTE ratings displays "Ratings Submitted by HTE"', resolvedAnswered.topBadge === 'Ratings Submitted by HTE');
+assert('Answered questionnaire shows verified grade badge', resolvedAnswered.showGradeBadge === true);
+assert('Answered questionnaire enables "Done Viewed & Approved"', resolvedAnswered.canMarkApproved === true);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

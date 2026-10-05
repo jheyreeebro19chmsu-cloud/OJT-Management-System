@@ -11,6 +11,7 @@ import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
 import { TraineeLocationReminder } from './TraineeLocationReminder';
 import { TokenExpiryBadge } from './TokenExpiryBadge';
+import { isQuestionnaireAnswered } from '../types';
 
 
 const navItems = [
@@ -130,10 +131,7 @@ export function EmployeeLayout() {
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
   );
 
-  const isQuestionnaireAnswered = Boolean(
-    traineeEvaluation?.questionnaire?.q1_dutiesBriefly ||
-    traineeEvaluation?.questionnaire?.contactPerson
-  );
+  const isQuestionnaireDone = isQuestionnaireAnswered(traineeEvaluation?.questionnaire);
 
   const activeAnnouncements = getActiveAnnouncements
     ? getActiveAnnouncements('employee')
@@ -234,12 +232,12 @@ export function EmployeeLayout() {
                   {(item as any).isEvalNav && (
                     <span
                       className={`ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                        isQuestionnaireAnswered
+                        isQuestionnaireDone
                           ? 'bg-[#146B4D]/30 text-emerald-300 border border-[#146B4D]/50'
                           : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
                       }`}
                     >
-                      {isQuestionnaireAnswered ? 'Answered' : 'Pending'}
+                      {isQuestionnaireDone ? 'Answered' : 'Pending'}
                     </span>
                   )}
                   {(item as any).isAnnounceNav && activeAnnouncementCount > 0 && (

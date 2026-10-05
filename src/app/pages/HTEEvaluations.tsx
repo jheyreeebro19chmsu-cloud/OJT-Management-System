@@ -30,7 +30,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
-import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire } from '../types';
+import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionnaire, isQuestionnaireAnswered } from '../types';
 import { getPhotoUrl } from '../services/config';
 import { CHMSUEvaluationSheet } from '../components/CHMSUEvaluationSheet';
 import { getPaginationWindow } from '../utils/pagination';
@@ -764,7 +764,7 @@ export function HTEEvaluations() {
                     </td>
 
                     <td className="px-4 py-3">
-                      {evalData ? (
+                      {evalData && isQuestionnaireAnswered(evalData.questionnaire) ? (
                         <div className="flex flex-col gap-1 items-start">
                           {gradeInfo && (evalData.status === 'submitted_to_instructor' || evalData.status === 'reviewed_by_instructor') && (
                             <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${gradeInfo.bg} ${gradeInfo.border} ${gradeInfo.color}`}>
@@ -803,7 +803,7 @@ export function HTEEvaluations() {
 
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {evalData && (evalData.status === 'submitted_to_instructor' || evalData.status === 'reviewed_by_instructor') ? (
+                        {evalData && isQuestionnaireAnswered(evalData.questionnaire) && (evalData.status === 'submitted_to_instructor' || evalData.status === 'reviewed_by_instructor') ? (
                           <>
                             <button
                               onClick={() => viewEval(emp)}
