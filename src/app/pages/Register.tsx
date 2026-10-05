@@ -1505,9 +1505,6 @@ export function Register() {
         if (!hasValidCity) errors.push('Please select your City/Municipality');
         if ((form.country === 'PH' || !form.country) && !hasValidBarangay) errors.push('Please enter your Barangay');
         if (!form.street?.trim()) errors.push('Please enter your Street Address / House Number / Subd.');
-        if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
-          errors.push('Please acquire your device GPS location or click "Adjust Pin" on the map to set your workplace geofence.');
-        }
       }
       if (step === 1) {
         // Company fields are optional for initial trainee enrollment
@@ -1546,6 +1543,9 @@ export function Register() {
         }
         if (!oauthPending && !hasValidPassword) errors.push('Valid password required (8+ chars, uppercase, lowercase, special character, and matching confirm password)');
         else if (oauthPending && form.password && !hasValidPassword) errors.push('Password must be at least 8 chars with uppercase, lowercase, special character, and matching confirm password');
+        if (!registrationLocation || typeof registrationLocation.lat !== 'number' || typeof registrationLocation.lng !== 'number') {
+          errors.push('Please acquire your establishment GPS location or click "Adjust Pin" on the map to set your workplace geofence.');
+        }
       }
     }
 
