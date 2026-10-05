@@ -51,6 +51,8 @@ export function formatHoursAndMinutes(totalHours: number): string {
 
 export function AdminEmployees() {
   const {
+    currentUser,
+    getCurrentEmployee,
     employees,
     timeRecords,
     geofenceZones,
@@ -99,6 +101,35 @@ export function AdminEmployees() {
   const [deployStatusFilter, setDeployStatusFilter] = useState<'all' | 'unassigned' | 'assigned'>('unassigned');
   const [deploySearch, setDeploySearch] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
+
+  const currentEmp = getCurrentEmployee();
+  const isLoggedInInstructor = useMemo(() => {
+    let cachedRole = '';
+    let cachedPosition = '';
+    let cachedName = '';
+    try {
+      const uStr = localStorage.getItem('ojt_current_user') || localStorage.getItem('ojt_user') || localStorage.getItem('user');
+      if (uStr) {
+        const u = JSON.parse(uStr);
+        cachedRole = u.role || '';
+        cachedPosition = u.position || '';
+        cachedName = u.name || '';
+      }
+    } catch {}
+
+    const role = (currentUser?.role || currentEmp?.role || cachedRole || '').toLowerCase();
+    const position = ((currentUser as any)?.position || currentEmp?.position || cachedPosition || '').toLowerCase();
+    const name = (currentUser?.name || currentEmp?.name || cachedName || '').toLowerCase();
+    const empId = (currentUser?.employeeId || currentEmp?.employeeId || '').toLowerCase();
+
+    return (
+      role === 'instructor' ||
+      position.includes('instructor') ||
+      position.includes('faculty') ||
+      name.includes('instructor') ||
+      empId.startsWith('instr-')
+    );
+  }, [currentUser, currentEmp]);
 
   const resolveEmpHomeAddress = (emp: Employee | null) => {
     if (!emp) return '';
@@ -698,7 +729,7 @@ export function AdminEmployees() {
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.badge}`}>{items.length}</span>
           </div>
           <div className="flex items-center gap-2.5">
-            {group === 'student' && (
+            {group === 'student' && !isLoggedInInstructor && (
               <button
                 type="button"
                 onClick={() => {
@@ -1358,43 +1389,47 @@ export function AdminEmployees() {
               ))}
             </select>
           </div>
-          <button
-            onClick={async () => {
-              try {
-                setIsSyncing(true);
-                await refreshData();
-                toast.success('Database synchronized successfully!');
-              } catch {
-                toast.error('Failed to sync database');
-              } finally {
-                setIsSyncing(false);
-              }
-            }}
-            disabled={isSyncing}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-60 cursor-pointer"
-            title="Sync latest trainee and instructor records from database"
-          >
-            <RefreshCw size={15} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
-            <span>{isSyncing ? 'Syncing...' : 'Sync Database'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setDeploySelectedStudentIds([]);
-              setBatchDeployOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm cursor-pointer"
-          >
-            <Building size={15} />
-            <span>Deploy Trainees to HTE</span>
-          </button>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus size={15} />
-            Add Trainee / Account
-          </button>
+          {!isLoggedInInstructor && (
+            <>
+              <button
+                onClick={async () => {
+                  try {
+                    setIsSyncing(true);
+                    await refreshData();
+                    toast.success('Database synchronized successfully!');
+                  } catch {
+                    toast.error('Failed to sync database');
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }}
+                disabled={isSyncing}
+                className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-60 cursor-pointer"
+                title="Sync latest trainee and instructor records from database"
+              >
+                <RefreshCw size={15} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
+                <span>{isSyncing ? 'Syncing...' : 'Sync Database'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeploySelectedStudentIds([]);
+                  setBatchDeployOpen(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm cursor-pointer"
+              >
+                <Building size={15} />
+                <span>Deploy Trainees to HTE</span>
+              </button>
+              <button
+                onClick={openAdd}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-xl text-sm font-medium hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
+              >
+                <Plus size={15} />
+                Add Trainee / Account
+              </button>
+            </>
+          )}
         </div>
       </div>
 
