@@ -289,21 +289,43 @@ export function Documents() {
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveDoc = (docKey: keyof TraineeDocuments) => {
+  const handleRemoveDoc = (docKey: string) => {
     const updatedDocs: TraineeDocuments = { ...submittedDocs };
-    delete updatedDocs[docKey];
+    delete (updatedDocs as any)[docKey];
+    if (docKey === 'consent') delete (updatedDocs as any).parent_consent;
+    if (docKey === 'moa') delete (updatedDocs as any).endorsement;
+    if (docKey === 'medical') delete (updatedDocs as any).clearance;
+    for (const k of Object.keys(updatedDocs)) {
+      if (k.toLowerCase() === docKey.toLowerCase()) {
+        delete (updatedDocs as any)[k];
+      }
+    }
 
-    const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
+    try {
+      localStorage.removeItem(`ojt_doc_${empId}_${docKey}`);
+      localStorage.removeItem(`ojt_doc_${docKey}`);
+      localStorage.removeItem(`ojt_doc_current_${docKey}`);
+    } catch {}
+
+    const remainingCount = allDocRequirements.filter((req) => {
+      const doc =
+        updatedDocs[req.key as keyof TraineeDocuments] ||
+        (req.key === 'consent' ? (updatedDocs as any).parent_consent : undefined) ||
+        (req.key === 'moa' ? (updatedDocs as any).endorsement : undefined) ||
+        (req.key === 'medical' ? (updatedDocs as any).clearance : undefined);
+      return Boolean(doc?.dataUrl || doc?.name);
+    }).length;
 
     if (employee) {
       updateEmployee(employee.id, {
         submittedDocuments: updatedDocs,
         documentsPassed: false,
-        documentsStatus: newUploadedCount > 0 ? 'partial' : 'incomplete',
+        documentsStatus: remainingCount > 0 ? 'partial' : 'incomplete',
       });
     }
 
-    const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
+    const meta = allDocRequirements.find((d) => d.key === docKey);
     toast.info(`${meta?.title || 'Document'} removed. Status changed to PENDING.`);
   };
 
@@ -634,11 +656,15 @@ export function Documents() {
 
                       <button
                         type="button"
-                        onClick={() => handleRemoveDoc(item.key)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveDoc(item.key);
+                        }}
+                        className="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors shrink-0 cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center touch-manipulation"
                         title="Remove file"
+                        aria-label={`Remove ${item.title}`}
                       >
-                        <Trash2 size={15} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
 
@@ -710,7 +736,11 @@ export function Documents() {
                       type="file"
                       id={`replace-doc-${item.key}`}
                       accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => onSelectFile(item.key, e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        onSelectFile(item.key, item.title, file);
+                        e.target.value = '';
+                      }}
                       className="hidden"
                       disabled={isUploading}
                     />
@@ -730,7 +760,11 @@ export function Documents() {
                       type="file"
                       id={`upload-doc-${item.key}`}
                       accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => onSelectFile(item.key, e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        onSelectFile(item.key, item.title, file);
+                        e.target.value = '';
+                      }}
                       className="hidden"
                       disabled={isUploading}
                     />
@@ -820,10 +854,10 @@ export function Documents() {
                 </button>
                 <button
                   type="button"
-                  disabled={uploadingKey === submitDialog.key}
+                  disabled={uploadingKey === submitDialog.docKey}
                   onClick={() => {
                     handleFileUpload(
-                      submitDialog.key,
+                      submitDialog.docKey,
                       submitDialog.file,
                       submitDialog.description,
                       submitDialog.notes
@@ -831,7 +865,7 @@ export function Documents() {
                   }}
                   className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all"
                 >
-                  {uploadingKey === submitDialog.key ? (
+                  {uploadingKey === submitDialog.docKey ? (
                     <>
                       <RefreshCw size={14} className="animate-spin" /> Uploading...
                     </>
@@ -883,6 +917,20 @@ export function Documents() {
                       <Download size={13} /> Download
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previewDoc?.key) {
+                        handleRemoveDoc(previewDoc.key);
+                        setPreviewDoc(null);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    title="Remove file"
+                  >
+                    <Trash2 size={13} /> Remove
+                  </button>
 
                   <button
                     type="button"

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   User,
   Building,
+  Building2,
   GraduationCap,
   Camera,
   MapPin,

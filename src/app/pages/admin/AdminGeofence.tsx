@@ -51,7 +51,7 @@ const BLANK_ZONE = {
 type ZoneTypeFilter = 'all' | 'trainee' | 'instructor' | 'hte' | 'institutional' | 'out_of_region';
 
 export function AdminGeofence() {
-  const { currentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, updateHostSupervisor, settings, hostSupervisors = [] } = useApp();
+  const { currentUser, setCurrentUser, geofenceZones, addGeofenceZone, updateGeofenceZone, deleteGeofenceZone, employees, updateEmployee, updateHostSupervisor, settings, hostSupervisors = [] } = useApp();
   const navigate = useNavigate();
 
   // Trainee role guard: Trainees are strictly forbidden from accessing or managing geofences
