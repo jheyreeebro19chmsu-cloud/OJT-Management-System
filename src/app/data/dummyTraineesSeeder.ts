@@ -95,67 +95,76 @@ export function generate120DemoTrainees(): GeneratedDemoData {
     hteId: hte.id,
   });
 
-  // 2. Generate 120 Trainees with realistic bell-curve distribution
-  // 120 total:
-  // - Stage 1 (Newly Started / 20-80h): 24 trainees (20%)
-  // - Stage 2 (Mid-OJT / 200-380h): 54 trainees (45%)
-  // - Stage 3 (Advanced / 480-570h): 30 trainees (25%)
-  // - Stage 4 (Completed / 600h): 6 trainees (5%)
-  // - Stage 5 (Irregular / At-Risk / 40-120h): 6 trainees (5%)
+  // 2. Generate 120 Trainees with unique, randomized rendered hours for every trainee
+  const usedTotalHours = new Set<number>();
 
-  const stages: { stage: number; targetHours: number; daysCount: number; category: string }[] = [];
+  function getUniqueTarget(min: number, max: number, usedSet: Set<number>): number {
+    let attempts = 0;
+    while (attempts < 2000) {
+      const steps = Math.floor(Math.random() * Math.max(1, (max - min) * 4));
+      const val = Math.round((min + steps * 0.25) * 100) / 100;
+      if (!usedSet.has(val)) {
+        usedSet.add(val);
+        return val;
+      }
+      attempts++;
+    }
+    let fallback = Math.round(min * 100) / 100;
+    while (usedSet.has(fallback)) {
+      fallback = Math.round((fallback + 0.25) * 100) / 100;
+    }
+    usedSet.add(fallback);
+    return fallback;
+  }
 
-  // Stage 1: 24 trainees
+  const stages: { stage: number; targetHours: number; category: string }[] = [];
+
+  // Stage 1: 24 trainees (16h to 88h - newly started)
   for (let i = 0; i < 24; i++) {
-    const targetHours = 20 + Math.floor(Math.random() * 60); // 20 - 79 hrs
+    const targetHours = getUniqueTarget(16, 88, usedTotalHours);
     stages.push({
       stage: 1,
       targetHours,
-      daysCount: Math.ceil(targetHours / 8),
       category: 'Newly Started (Onboarding)',
     });
   }
 
-  // Stage 2: 54 trainees
+  // Stage 2: 54 trainees (185h to 395h - midway progressing)
   for (let i = 0; i < 54; i++) {
-    const targetHours = 200 + Math.floor(Math.random() * 180); // 200 - 379 hrs
+    const targetHours = getUniqueTarget(185, 395, usedTotalHours);
     stages.push({
       stage: 2,
       targetHours,
-      daysCount: Math.ceil(targetHours / 8),
       category: 'Mid-OJT (Actively Progressing)',
     });
   }
 
-  // Stage 3: 30 trainees
+  // Stage 3: 30 trainees (420h to 585h - advanced)
   for (let i = 0; i < 30; i++) {
-    const targetHours = 480 + Math.floor(Math.random() * 95); // 480 - 574 hrs
+    const targetHours = getUniqueTarget(420, 585, usedTotalHours);
     stages.push({
       stage: 3,
       targetHours,
-      daysCount: Math.ceil(targetHours / 8),
       category: 'Advanced (Near Completion)',
     });
   }
 
-  // Stage 4: 6 trainees
+  // Stage 4: 6 trainees (600h to 615h - completed)
   for (let i = 0; i < 6; i++) {
-    const targetHours = 600 + Math.floor(Math.random() * 12); // 600 - 611 hrs
+    const targetHours = getUniqueTarget(600, 615, usedTotalHours);
     stages.push({
       stage: 4,
       targetHours,
-      daysCount: 75,
       category: 'Completed (OJT Finished)',
     });
   }
 
-  // Stage 5: 6 trainees (At-Risk / Sporadic)
+  // Stage 5: 6 trainees (35h to 140h - irregular / at-risk)
   for (let i = 0; i < 6; i++) {
-    const targetHours = 40 + Math.floor(Math.random() * 70); // 40 - 109 hrs (falling behind)
+    const targetHours = getUniqueTarget(35, 140, usedTotalHours);
     stages.push({
       stage: 5,
       targetHours,
-      daysCount: Math.ceil(targetHours / 6), // irregular/fewer hours per day
       category: 'At-Risk (Irregular / Falling Behind)',
     });
   }
@@ -237,43 +246,71 @@ export function generate120DemoTrainees(): GeneratedDemoData {
 
     trainees.push(trainee);
 
-    // 3. Generate Realistic DTR Time Records for this Trainee
+    // 3. Generate Realistic DTR Time Records for this Trainee with randomized daily hours
     let accumulatedHours = 0;
     const currentDate = new Date(baseStartDate);
+    let dayIdx = 0;
 
-    for (let day = 0; day < stageConfig.daysCount && accumulatedHours < stageConfig.targetHours; day++) {
+    while (accumulatedHours < stageConfig.targetHours && dayIdx < 95) {
+      dayIdx++;
       // Advance to next business day (skip Sat/Sun)
       currentDate.setDate(currentDate.getDate() + 1);
       if (currentDate.getDay() === 0) currentDate.setDate(currentDate.getDate() + 1); // skip Sun
       if (currentDate.getDay() === 6) currentDate.setDate(currentDate.getDate() + 2); // skip Sat
 
+      if (stageConfig.stage === 5 && Math.random() < 0.25) {
+        continue;
+      }
+
+      const remaining = Math.round((stageConfig.targetHours - accumulatedHours) * 100) / 100;
+      if (remaining <= 0) break;
+
+      let dayHours: number;
+      if (remaining <= 8.75) {
+        dayHours = remaining;
+      } else {
+        const dailyOptions = [7.25, 7.5, 7.75, 8.0, 8.0, 8.25, 8.5, 8.75];
+        dayHours = dailyOptions[Math.floor(Math.random() * dailyOptions.length)];
+        if (dayHours > remaining) {
+          dayHours = remaining;
+        }
+      }
+
+      dayHours = Math.round(dayHours * 100) / 100;
+      accumulatedHours = Math.round((accumulatedHours + dayHours) * 100) / 100;
+
       const dateStr = currentDate.toISOString().split('T')[0];
 
-      // Realistic random jitter on arrival and departure times
-      const arrivalMin = Math.floor(Math.random() * 20); // 07:45 - 08:05
-      const departureMin = Math.floor(Math.random() * 30); // 17:00 - 17:30
+      // Compute realistic clock-in and clock-out times
+      const startMinute = Math.floor(Math.random() * 25);
+      const startSecond = Math.floor(Math.random() * 60);
+      let inH = 7;
+      let inM = 45 + startMinute;
+      if (inM >= 60) {
+        inH = 8;
+        inM -= 60;
+      }
+      const inTotalSec = (inH * 3600) + (inM * 60) + startSecond;
+      const checkInTime = `${String(inH).padStart(2, '0')}:${String(inM).padStart(2, '0')}:${String(startSecond).padStart(2, '0')}`;
 
-      const checkInHour = 7 + (arrivalMin > 10 ? 1 : 0);
-      const checkInMinute = (arrivalMin % 60).toString().padStart(2, '0');
+      const outTotalSec = Math.round(inTotalSec + ((dayHours + 1.0) * 3600));
+      const outH = Math.floor(outTotalSec / 3600) % 24;
+      const outM = Math.floor((outTotalSec % 3600) / 60);
+      const outS = outTotalSec % 60;
+      const checkOutTime = `${String(outH).padStart(2, '0')}:${String(outM).padStart(2, '0')}:${String(outS).padStart(2, '0')}`;
 
-      const checkOutHour = 17;
-      const checkOutMinute = departureMin.toString().padStart(2, '0');
-
-      const checkInTime = `${checkInHour.toString().padStart(2, '0')}:${checkInMinute}:00`;
-      const checkOutTime = `${checkOutHour.toString().padStart(2, '0')}:${checkOutMinute}:00`;
-
-      // 8 hours standard work day (minus 1 hour lunch)
-      const dayHours = stageConfig.stage === 5 && day % 3 === 0 ? 5.5 : 8.0;
-      accumulatedHours += dayHours;
+      const isLate = (inH === 8 && inM > 15) || inH > 8;
+      const status = isLate ? 'late' : (dayHours > 8.0 ? 'overtime' : 'present');
 
       timeRecords.push({
-        id: `dtr-demo-${studentNumStr}-${day + 1}`,
+        id: `dtr-demo-${studentNumStr}-${dayIdx}`,
         employeeId: employeeId,
         date: dateStr,
         timeIn: checkInTime,
         timeOut: checkOutTime,
         hours: dayHours,
-        status: 'present',
+        totalHours: dayHours,
+        status: status as any,
         notes: `Duty rendered at ${hte.department}`,
         timeInLocation: {
           lat: hte.lat + (Math.random() - 0.5) * 0.0001,

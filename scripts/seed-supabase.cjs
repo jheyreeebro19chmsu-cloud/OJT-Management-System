@@ -221,41 +221,91 @@ async function seedSupabase() {
     }
     console.log(`[OK] ${insertedEmployees.length} Trainees/Employees registered in Supabase.`);
 
-    // 5. Time Records
-    console.log('[*] Seeding time_records...');
-    for (const emp of insertedEmployees) {
-      const dates = [];
-      const now = new Date();
-      for (let i = 1; i <= 7; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        if (d.getDay() !== 0 && d.getDay() !== 6) {
-          dates.push(d.toISOString().split('T')[0]);
-        }
-      }
+    // 5. Time Records with Unique Randomized Rendered Hours
+    console.log('[*] Seeding time_records with unique randomized rendered hours...');
+    const usedHours = new Set();
+    const targetBands = [
+      [35, 80],    // early stage
+      [120, 190],  // mid-early
+      [230, 310],  // mid-late
+      [360, 460]   // advanced
+    ];
 
-      for (const dt of dates) {
+    for (let idx = 0; idx < insertedEmployees.length; idx++) {
+      const emp = insertedEmployees[idx];
+      const band = targetBands[idx % targetBands.length];
+      
+      // Determine unique target hours
+      let targetHours;
+      let attempts = 0;
+      do {
+        const raw = band[0] + Math.random() * (band[1] - band[0]);
+        targetHours = Math.round(raw * 4) / 4;
+        attempts++;
+      } while (usedHours.has(targetHours) && attempts < 100);
+      usedHours.add(targetHours);
+
+      // Distribute target hours across realistic workdays
+      let hoursLeft = targetHours;
+      let dayOffset = 1;
+      const now = new Date();
+
+      while (hoursLeft > 0.05 && dayOffset < 90) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - dayOffset);
+        dayOffset++;
+
+        // Skip weekends
+        if (d.getDay() === 0 || d.getDay() === 6) continue;
+
+        const dtStr = d.toISOString().split('T')[0];
+        
+        let dailyShift;
+        if (hoursLeft <= 8.5) {
+          dailyShift = Math.round(hoursLeft * 4) / 4;
+        } else {
+          const shiftVariation = [7.25, 7.5, 7.75, 8.0, 8.25, 8.5];
+          dailyShift = shiftVariation[Math.floor(Math.random() * shiftVariation.length)];
+          dailyShift = Math.min(dailyShift, hoursLeft);
+        }
+
+        if (dailyShift < 0.25) break;
+        hoursLeft = Math.round((hoursLeft - dailyShift) * 100) / 100;
+
+        // Realistic clock-in between 07:45 and 08:08
+        const inMin = Math.floor(Math.random() * 24); // 0..23
+        const inTotalMins = 7 * 60 + 45 + inMin; // 07:45 - 08:08
+        const inH = Math.floor(inTotalMins / 60);
+        const inM = inTotalMins % 60;
+        const timeInStr = `${String(inH).padStart(2, '0')}:${String(inM).padStart(2, '0')}:00`;
+
+        // Lunch break of 60 mins: time_out = inTotalMins + (dailyShift * 60) + 60
+        const outTotalMins = Math.round(inTotalMins + (dailyShift * 60) + 60);
+        const outH = Math.floor(outTotalMins / 60);
+        const outM = outTotalMins % 60;
+        const timeOutStr = `${String(outH).padStart(2, '0')}:${String(outM).padStart(2, '0')}:00`;
+
         const tr = {
           employee_id: emp.id,
-          date: dt,
-          time_in: '07:55:00',
-          time_out: '17:05:00',
-          time_in_lat: 10.6765,
-          time_in_lng: 122.9509,
-          time_out_lat: 10.6765,
-          time_out_lng: 122.9509,
+          date: dtStr,
+          time_in: timeInStr,
+          time_out: timeOutStr,
+          time_in_lat: emp.registration_lat || 10.6765,
+          time_in_lng: emp.registration_lng || 122.9509,
+          time_out_lat: emp.registration_lat || 10.6765,
+          time_out_lng: emp.registration_lng || 122.9509,
           time_in_geofenced: true,
           time_out_geofenced: true,
           time_in_face_verified: true,
           time_out_face_verified: true,
-          total_hours: 8.0,
+          total_hours: dailyShift,
           status: 'present',
           notes: 'Standard workday shift completed.'
         };
         await supabase.from('time_records').upsert(tr, { onConflict: 'employee_id,date' });
       }
     }
-    console.log('[OK] Time records (DTR) generated for employees.');
+    console.log(`[OK] Time records generated with distinct randomized hours for each trainee.`);
 
     // 6. Announcements
     console.log('[*] Seeding announcements...');

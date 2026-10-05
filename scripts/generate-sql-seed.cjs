@@ -85,15 +85,56 @@ ON CONFLICT (id) DO UPDATE SET
   radius = EXCLUDED.radius;
 `;
 
-// Distribution stages
-const stages = [];
-for (let i = 0; i < 24; i++) stages.push({ stage: 1, targetHours: 25 + (i * 2), days: Math.ceil((25 + (i * 2)) / 8) }); // 20% newly started (25 - 71 hrs)
-for (let i = 0; i < 54; i++) stages.push({ stage: 2, targetHours: 200 + (i * 3), days: Math.ceil((200 + (i * 3)) / 8) }); // 45% midway (200 - 359 hrs)
-for (let i = 0; i < 30; i++) stages.push({ stage: 3, targetHours: 480 + (i * 3), days: Math.ceil((480 + (i * 3)) / 8) }); // 25% advanced (480 - 567 hrs)
-for (let i = 0; i < 6; i++) stages.push({ stage: 4, targetHours: 600, days: 75 }); // 5% completed (600 hrs)
-for (let i = 0; i < 6; i++) stages.push({ stage: 5, targetHours: 50 + (i * 10), days: Math.ceil((50 + (i * 10)) / 6) }); // 5% at-risk (50 - 100 hrs)
+// Distribution stages with completely unique, randomized rendered hours for every trainee
+const usedTotalHours = new Set();
 
-// Shuffle slightly
+function getUniqueTarget(min, max, usedSet) {
+  let attempts = 0;
+  while (attempts < 2000) {
+    const steps = Math.floor(Math.random() * Math.max(1, (max - min) * 4));
+    const val = Math.round((min + steps * 0.25) * 100) / 100;
+    if (!usedSet.has(val)) {
+      usedSet.add(val);
+      return val;
+    }
+    attempts++;
+  }
+  let fallback = Math.round(min * 100) / 100;
+  while (usedSet.has(fallback)) {
+    fallback = Math.round((fallback + 0.25) * 100) / 100;
+  }
+  usedSet.add(fallback);
+  return fallback;
+}
+
+const stages = [];
+// 24 newly started trainees: 16.0h to 88.0h (randomized, unique)
+for (let i = 0; i < 24; i++) {
+  const target = getUniqueTarget(16, 88, usedTotalHours);
+  stages.push({ stage: 1, targetHours: target });
+}
+// 54 mid-OJT trainees: 185.0h to 395.0h (randomized, unique)
+for (let i = 0; i < 54; i++) {
+  const target = getUniqueTarget(185, 395, usedTotalHours);
+  stages.push({ stage: 2, targetHours: target });
+}
+// 30 advanced trainees: 420.0h to 585.0h (randomized, unique)
+for (let i = 0; i < 30; i++) {
+  const target = getUniqueTarget(420, 585, usedTotalHours);
+  stages.push({ stage: 3, targetHours: target });
+}
+// 6 completed trainees: 600.0h to 615.0h (randomized, unique)
+for (let i = 0; i < 6; i++) {
+  const target = getUniqueTarget(600, 615, usedTotalHours);
+  stages.push({ stage: 4, targetHours: target });
+}
+// 6 at-risk / sporadic trainees: 35.0h to 140.0h (randomized, unique)
+for (let i = 0; i < 6; i++) {
+  const target = getUniqueTarget(35, 140, usedTotalHours);
+  stages.push({ stage: 5, targetHours: target });
+}
+
+// Shuffle stages so trainees in the list have organic, non-sequential progress
 for (let i = stages.length - 1; i > 0; i--) {
   const j = Math.floor(Math.random() * (i + 1));
   [stages[i], stages[j]] = [stages[j], stages[i]];
@@ -144,16 +185,58 @@ const baseDate = new Date('2026-06-16T08:00:00Z');
 trainees.forEach((t) => {
   let accHours = 0;
   const d = new Date(baseDate);
+  let dayIdx = 0;
 
-  for (let day = 0; day < t.stageCfg.days && accHours < t.stageCfg.targetHours; day++) {
+  while (accHours < t.stageCfg.targetHours && dayIdx < 95) {
+    dayIdx++;
     d.setDate(d.getDate() + 1);
-    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
-    if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1); // skip Sun
+    if (d.getDay() === 6) d.setDate(d.getDate() + 2); // skip Sat
+
+    if (t.stageCfg.stage === 5 && Math.random() < 0.25) {
+      continue;
+    }
+
+    const remaining = Math.round((t.stageCfg.targetHours - accHours) * 100) / 100;
+    if (remaining <= 0) break;
+
+    let dayHours;
+    if (remaining <= 8.75) {
+      dayHours = remaining;
+    } else {
+      const dailyOptions = [7.25, 7.5, 7.75, 8.0, 8.0, 8.25, 8.5, 8.75];
+      dayHours = dailyOptions[Math.floor(Math.random() * dailyOptions.length)];
+      if (dayHours > remaining) {
+        dayHours = remaining;
+      }
+    }
+
+    dayHours = Math.round(dayHours * 100) / 100;
+    accHours = Math.round((accHours + dayHours) * 100) / 100;
 
     const dateStr = d.toISOString().split('T')[0];
-    const hours = (t.stageCfg.stage === 5 && day % 3 === 0) ? 5.5 : 8.0;
-    accHours += hours;
-    const recId = `dtr-demo-${t.empId.slice(-3)}-${day + 1}`;
+
+    // Compute realistic clock-in and clock-out times
+    const startMinute = Math.floor(Math.random() * 25);
+    const startSecond = Math.floor(Math.random() * 60);
+    let inH = 7;
+    let inM = 45 + startMinute;
+    if (inM >= 60) {
+      inH = 8;
+      inM -= 60;
+    }
+    const inTotalSec = (inH * 3600) + (inM * 60) + startSecond;
+    const timeInStr = `${String(inH).padStart(2, '0')}:${String(inM).padStart(2, '0')}:${String(startSecond).padStart(2, '0')}`;
+
+    const outTotalSec = Math.round(inTotalSec + ((dayHours + 1.0) * 3600));
+    const outH = Math.floor(outTotalSec / 3600) % 24;
+    const outM = Math.floor((outTotalSec % 3600) / 60);
+    const outS = outTotalSec % 60;
+    const timeOutStr = `${String(outH).padStart(2, '0')}:${String(outM).padStart(2, '0')}:${String(outS).padStart(2, '0')}`;
+
+    const isLate = (inH === 8 && inM > 15) || inH > 8;
+    const status = isLate ? 'late' : (dayHours > 8.0 ? 'overtime' : 'present');
+    const recId = `dtr-demo-${t.empId.slice(-3)}-${dayIdx}`;
 
     sql += `
 INSERT INTO public.time_records (
@@ -161,7 +244,7 @@ INSERT INTO public.time_records (
   time_in_lat, time_in_lng, time_out_lat, time_out_lng, time_in_geofenced, time_out_geofenced,
   time_in_face_verified, time_out_face_verified
 ) VALUES (
-  '${recId}', '${t.empId}', '${dateStr}', '08:00:00', '17:00:00', ${hours}, 'present', 'Duty rendered at Printing Services',
+  '${recId}', '${t.empId}', '${dateStr}', '${timeInStr}', '${timeOutStr}', ${dayHours}, '${status}', 'Duty rendered at Printing Services',
   ${HTE_3.lat}, ${HTE_3.lng}, ${HTE_3.lat}, ${HTE_3.lng}, true, true, true, true
 ) ON CONFLICT (id) DO NOTHING;`;
   }
