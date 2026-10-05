@@ -179,14 +179,14 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
         lng: Number(matchedHteZone.lng),
         radius: Math.max(20, Number(matchedHteZone.radius || 40)),
       });
-    } else if (regLoc?.lat && regLoc?.lng) {
-      // Strictly rely on where account was registered with instructor-configured radius
+    } else if (hasCompany) {
+      // Default to designated HTE workplace location
       targetCoords.push({
-        lat: Number(regLoc.lat),
-        lng: Number(regLoc.lng),
-        radius: Math.max(20, Number(regLoc.radius || dynamicRadius)),
+        lat: pCompany.includes('printing') ? 10.74275 : 10.7412,
+        lng: pCompany.includes('printing') ? 122.970168 : 122.9691,
+        radius: 40,
       });
-    } else {
+    }
       // 2. Geofence zones from Supabase fallback only if no registered account location
       try {
         const zones = await mobileDb.getGeofenceZones();

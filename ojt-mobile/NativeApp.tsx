@@ -254,42 +254,38 @@ export default function NativeApp({ onSwitchToWeb }: { onSwitchToWeb?: () => voi
         name: stationZone.name || userProfile?.companyName || 'Assigned HTE Workplace',
         lat: Number(stationZone.lat),
         lng: Number(stationZone.lng),
-        radius: Math.max(20, Number(stationZone.radius || 300)),
+        radius: Math.max(20, Number(stationZone.radius || 40)),
       });
-    } else {
-      // Profile registration location fallback
-      const regLoc =
-        userProfile?.registration_location ||
-        userProfile?.registrationLocation ||
-        (userProfile?.registration_lat && userProfile?.registration_lng
-          ? { lat: userProfile.registration_lat, lng: userProfile.registration_lng }
-          : null);
-      if (regLoc?.lat && regLoc?.lng) {
+    }
+
+    // 2. Add HTE company matching zones
+    const compName = (userProfile?.companyName || userProfile?.company_name || '').trim().toLowerCase();
+    const hasValidComp = compName && compName !== 'n/a' && !compName.includes('pending');
+    if (hasValidComp) {
+      allZones.forEach((z) => {
+        if (z.lat && z.lng && z.id !== `station-${empId}`) {
+          const isCompany = z.name && z.name.toLowerCase().includes(compName);
+          if (isCompany) {
+            targetCoordsList.push({
+              name: z.name || `${userProfile?.companyName} Workplace`,
+              lat: Number(z.lat),
+              lng: Number(z.lng),
+              radius: Math.max(20, Number(z.radius || 40)),
+            });
+          }
+        }
+      });
+
+      // Default HTE coordinates fallback if no zone records exist yet
+      if (targetCoordsList.length === 0) {
         targetCoordsList.push({
-          name: userProfile?.companyName || userProfile?.company_name || 'Assigned OJT Workplace',
-          lat: Number(regLoc.lat),
-          lng: Number(regLoc.lng),
-          radius: Math.max(20, Number(regLoc.radius || 300)),
+          name: `${userProfile?.companyName} Workplace Premises`,
+          lat: compName.includes('printing') ? 10.74275 : 10.7412,
+          lng: compName.includes('printing') ? 122.970168 : 122.9691,
+          radius: 40,
         });
       }
     }
-
-    // 2. Add other company matching zones
-    allZones.forEach((z) => {
-      if (z.lat && z.lng && z.id !== `station-${empId}`) {
-        const isPersonal = z.id === `personal-${empId}` || z.id === `geo-trainee-${empId}`;
-        const isCompany =
-          userProfile?.companyName && z.name && z.name.toLowerCase().includes(userProfile.companyName.toLowerCase());
-        if (isPersonal || isCompany) {
-          targetCoordsList.push({
-            name: z.name || 'OJT Geofence Zone',
-            lat: z.lat,
-            lng: z.lng,
-            radius: z.radius || 300,
-          });
-        }
-      }
-    });
 
     // 3. Campus default
     if (targetCoordsList.length === 0) {

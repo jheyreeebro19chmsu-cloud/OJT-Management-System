@@ -59,6 +59,7 @@ import { createEmployee as createEmployeeDb } from '../services/supabaseService'
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
+import { resolveHteLocation, isInvalidHteCompany } from '../utils/hteLocation';
 import { getAbsoluteUrl } from '../services/config';
 import { validateRegistrationData, validateSentenceLimit } from '../utils/validation';
 
@@ -164,7 +165,7 @@ export function parseGoogleFullName(fullName: string, givenName?: string | null,
 }
 
 export function Register() {
-  const { registerEmployee, updateEmployee, employees, hostSupervisors, settings, addGeofenceZone, setCurrentUser } = useApp();
+  const { registerEmployee, updateEmployee, employees, hostSupervisors, geofenceZones, settings, addGeofenceZone, setCurrentUser } = useApp();
   const navigate = useNavigate();
   const [role, setRole] = useState<UserRole>(null);
   const [step, setStep] = useState(0);
@@ -1246,10 +1247,10 @@ export function Register() {
             updateEmployee(existing.id, updatedPayload);
           }
 
-          const hasCoords = role === 'admin' || (registrationLocation?.lat && registrationLocation?.lng);
+          const hasCoords = (role === 'admin') || (role === 'hte' && Boolean(registrationLocation?.lat && registrationLocation?.lng));
           if (hasCoords) {
             try {
-              const zoneName = role === 'admin' ? `${composedName} - Official Station` : role === 'hte' ? `${composedName} - ${form.companyName || 'HTE Workplace'}` : `${composedName} - Registered Account Geofence`;
+              const zoneName = role === 'admin' ? `${composedName} - Official Station` : `${composedName} - ${form.companyName || 'HTE Workplace'}`;
               const zoneAddr = role === 'admin'
                 ? campusInfo.address
                 : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
@@ -1264,7 +1265,7 @@ export function Register() {
                 academicYear: settings.activeAcademicYear,
                 employeeId: empToUpdateId,
                 photo: photo || (existing ? existing.photo : undefined),
-                userType: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'trainee',
+                userType: role === 'admin' ? 'instructor' : 'hte',
               });
             } catch (zoneErr) {
               console.warn('Geofence zone repair registration notice:', zoneErr);
@@ -1331,29 +1332,41 @@ export function Register() {
     }
 
     // Ensure geofence zone appears in Instructor Geofence Zones monitoring
-    const hasRegCoords = (registrationLocation?.lat && registrationLocation?.lng) || role === 'admin';
+    const isInstRole = role === 'admin';
+    const isHteRole = role === 'hte';
+    // Trainees only get a station if explicitly deployed/linked to an official HTE
+    const hteLoc = (!isInstRole && !isHteRole && form.companyName && !isInvalidHteCompany(form.companyName))
+      ? resolveHteLocation({ companyName: form.companyName }, hostSupervisors, employees, geofenceZones)
+      : null;
+    const hasRegCoords = isInstRole || (isHteRole && Boolean(registrationLocation?.lat && registrationLocation?.lng)) || Boolean(hteLoc);
     if (hasRegCoords) {
       try {
-        const zoneName = role === 'admin'
+        const zoneName = isInstRole
           ? `${composedName} - Official Station`
-          : role === 'hte'
+          : isHteRole
           ? `${composedName} - ${form.companyName || 'HTE Workplace'}`
-          : `${composedName} - Trainee Geofence (${form.companyName || 'Assigned Workplace'})`;
-        const zoneAddr = role === 'admin'
+          : `${composedName} - Trainee Geofence (${hteLoc?.companyName || 'Assigned Workplace'})`;
+        const zoneAddr = isInstRole
           ? campusInfo.address
+          : hteLoc
+          ? hteLoc.address
           : computedRegistrationAddress || `${registrationLocation?.lat.toFixed(6)}, ${registrationLocation?.lng.toFixed(6)}`;
+        const zoneLat = isInstRole ? campusInfo.lat : hteLoc ? hteLoc.lat : registrationLocation!.lat;
+        const zoneLng = isInstRole ? campusInfo.lng : hteLoc ? hteLoc.lng : registrationLocation!.lng;
+        const zoneRadius = isInstRole ? campusInfo.radius : hteLoc ? hteLoc.radius : 40;
+
         addGeofenceZone({
           id: `station-${newEmp.id}`,
           name: zoneName,
           address: zoneAddr,
-          lat: role === 'admin' ? campusInfo.lat : registrationLocation!.lat,
-          lng: role === 'admin' ? campusInfo.lng : registrationLocation!.lng,
-          radius: role === 'admin' ? campusInfo.radius : 100,
+          lat: zoneLat,
+          lng: zoneLng,
+          radius: zoneRadius,
           active: true,
           academicYear: settings.activeAcademicYear,
           employeeId: newEmp.id,
           photo: photo,
-          userType: role === 'admin' ? 'instructor' : role === 'hte' ? 'hte' : 'trainee',
+          userType: isInstRole ? 'instructor' : isHteRole ? 'hte' : 'trainee',
         });
       } catch (zoneErr) {
         console.warn('Geofence zone registration notice:', zoneErr);
@@ -3297,200 +3310,213 @@ export function Register() {
                         />
                       </div>
 
-                      {/* High-Accuracy GPS Geofence Verification Card */}
-                      <div className="mt-4 space-y-3">
-                        <div className={`border rounded-2xl p-4 transition-all ${
-                          locationStatus === 'capturing'
-                            ? 'bg-blue-50/70 border-blue-200 text-blue-900'
-                            : locationStatus === 'denied'
-                            ? 'bg-amber-50 border-amber-300 text-amber-900'
-                            : locationStatus === 'error'
-                            ? 'bg-rose-50 border-rose-300 text-rose-950'
-                            : registrationLocation
-                            ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
-                            : 'bg-gray-50 border-gray-200 text-gray-800'
-                        }`}>
-                          <div className="flex flex-col gap-3">
-                            <div className="flex items-start gap-3 min-w-0">
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                                locationStatus === 'capturing'
-                                  ? 'bg-blue-100 text-blue-600'
-                                  : locationStatus === 'denied'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : locationStatus === 'error'
-                                  ? 'bg-rose-100 text-rose-700'
-                                  : 'bg-emerald-100 text-emerald-700'
-                              }`}>
-                                {locationStatus === 'capturing' ? (
-                                  <Loader className="animate-spin" size={20} />
-                                ) : (
-                                  <Navigation size={20} />
-                                )}
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h4 className="font-bold text-sm">
-                                    {locationStatus === 'capturing'
-                                      ? 'Acquiring Real-Time Device GPS...'
-                                      : locationStatus === 'denied'
-                                      ? 'GPS Location Access Required'
-                                      : locationStatus === 'error'
-                                      ? 'GPS Signal Not Detected'
-                                      : registrationLocation
-                                      ? 'Real-Time GPS Location Locked'
-                                      : 'Awaiting Real-Time GPS Detection'}
-                                  </h4>
-                                  {registrationLocation && (
-                                    <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
-                                      ±{Math.round(registrationLocation.accuracy || 10)}m Accuracy
-                                    </span>
-                                  )}
-                                </div>
-
-                                <p className="text-xs mt-1 opacity-85 leading-relaxed">
-                                  {locationStatus === 'capturing'
-                                    ? 'Connecting to your device GPS sensor to detect your live physical coordinates...'
-                                    : locationStatus === 'denied'
-                                    ? 'Browser location access was denied. Please allow GPS permissions in your browser or click "Adjust Pin" on the map.'
-                                    : locationStatus === 'error'
-                                    ? 'Could not acquire live satellite GPS from your device. Click "Recalibrate GPS" or use "Adjust Pin" on the map.'
-                                    : registrationLocation
-                                    ? 'Your live physical GPS location is locked and will be used as your official attendance geofence.'
-                                    : 'Click "Recalibrate GPS" to acquire real-time coordinates, or use "Adjust Pin" to set location on the map.'}
-                                </p>
-
-                                {(locationStatus === 'denied' || locationStatus === 'error') && !registrationLocation && (
-                                  <div className="mt-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
-                                        setLocationStatus('captured');
-                                        setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
-                                        toast.info('Using CHMSU Talisay Campus coordinates as fallback.');
-                                      }}
-                                      className="text-xs text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
-                                    >
-                                      Or click here to use CHMSU Talisay Campus as fallback
-                                    </button>
-                                  </div>
-                                )}
-
-                                {registrationLocation && (
-                                  <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
-                                    <span className="font-mono font-semibold bg-white/90 px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-800 shrink-0">
-                                      📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
-                                    </span>
-                                    {registrationAddress && registrationAddress !== `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` && (
-                                      <span className="text-emerald-900 font-medium truncate max-w-full text-[11px] block">
-                                        {registrationAddress}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                      {/* Trainee HTE Deployment Notice vs HTE Representative GPS Verification */}
+                      {role === 'trainee' ? (
+                        <div className="mt-4 p-4 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-950 shadow-xs space-y-2">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                              <Building2 size={20} />
                             </div>
-
-                            {/* GPS Control Buttons - Clean Action Bar Inside Card */}
-                            <div className="flex items-center gap-2 pt-2.5 border-t border-emerald-200/50 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => captureLocation()}
-                                disabled={locationStatus === 'capturing'}
-                                className="px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
-                                title="Acquire a fresh, high-accuracy satellite fix"
-                              >
-                                <RefreshCw size={12} className={locationStatus === 'capturing' ? 'animate-spin text-blue-600' : 'text-gray-500'} />
-                                Recalibrate GPS
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowLocationMap(true);
-                                  setPickingLocation(!pickingLocation);
-                                }}
-                                className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
-                                  pickingLocation
-                                    ? 'bg-blue-600 border-blue-700 text-white'
-                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                                }`}
-                                title="Click on map to pin your exact workplace building"
-                              >
-                                <Crosshair size={12} className={pickingLocation ? 'text-white' : 'text-blue-600'} />
-                                {pickingLocation ? 'Done Pinning' : 'Adjust Pin'}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setShowLocationMap(!showLocationMap)}
-                                className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all shadow-xs cursor-pointer"
-                              >
-                                {showLocationMap ? 'Hide Map' : 'View Map'}
-                              </button>
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-bold text-sm text-blue-950">Official HTE Workplace Geofencing</h4>
+                              <p className="text-xs text-blue-800 mt-1 leading-relaxed">
+                                Trainees are not required to set an attendance geofence at registration. Your official <strong>Host Training Establishment (HTE)</strong> workplace premises and geofence boundary will be assigned and deployed by your university <strong>OJT Instructor</strong>.
+                              </p>
+                              <div className="mt-2.5 pt-2 border-t border-blue-200/60 flex items-center gap-2 text-[11px] text-blue-900 font-semibold">
+                                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                                <span>Once your instructor deploys you, your official attendance station will activate automatically at your HTE premises.</span>
+                              </div>
                             </div>
                           </div>
                         </div>
+                      ) : (
+                        <div className="mt-4 space-y-3">
+                          <div className={`border rounded-2xl p-4 transition-all ${
+                            locationStatus === 'capturing'
+                              ? 'bg-blue-50/70 border-blue-200 text-blue-900'
+                              : locationStatus === 'denied'
+                              ? 'bg-amber-50 border-amber-300 text-amber-900'
+                              : locationStatus === 'error'
+                              ? 'bg-rose-50 border-rose-300 text-rose-950'
+                              : registrationLocation
+                              ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+                              : 'bg-gray-50 border-gray-200 text-gray-800'
+                          }`}>
+                            <div className="flex flex-col gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                  locationStatus === 'capturing'
+                                    ? 'bg-blue-100 text-blue-600'
+                                    : locationStatus === 'denied'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : locationStatus === 'error'
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }`}>
+                                  {locationStatus === 'capturing' ? (
+                                    <Loader className="animate-spin" size={20} />
+                                  ) : (
+                                    <Navigation size={20} />
+                                  )}
+                                </div>
 
-                        {pickingLocation && (
-                          <div className="mt-3 p-2 bg-blue-100/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center gap-2">
-                            <Crosshair size={14} className="text-blue-700 shrink-0 animate-pulse" />
-                            <span>Pinpoint mode active: Click anywhere on the map to place your exact official workplace pin.</span>
-                          </div>
-                        )}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="font-bold text-sm">
+                                      {locationStatus === 'capturing'
+                                        ? 'Acquiring Real-Time Device GPS...'
+                                        : locationStatus === 'denied'
+                                        ? 'GPS Location Access Required'
+                                        : locationStatus === 'error'
+                                        ? 'GPS Signal Not Detected'
+                                        : registrationLocation
+                                        ? 'Establishment GPS Location Locked'
+                                        : 'Awaiting Establishment GPS Detection'}
+                                    </h4>
+                                    {registrationLocation && (
+                                      <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                                        ±{Math.round(registrationLocation.accuracy || 10)}m Accuracy
+                                      </span>
+                                    )}
+                                  </div>
 
-                        {attemptedNext && role === 'trainee' && !registrationLocation && (
-                          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
-                            <AlertCircle size={16} className="text-red-600 shrink-0" />
-                            <span>GPS Geofence Required: Please acquire a high-accuracy GPS satellite fix or click &quot;Adjust Pin&quot; to mark your attendance location.</span>
-                          </div>
-                        )}
+                                  <p className="text-xs mt-1 opacity-85 leading-relaxed">
+                                    {locationStatus === 'capturing'
+                                      ? 'Connecting to your device GPS sensor to detect establishment coordinates...'
+                                      : locationStatus === 'denied'
+                                      ? 'Browser location access was denied. Please allow GPS permissions in your browser or click "Adjust Pin" on the map.'
+                                      : locationStatus === 'error'
+                                      ? 'Could not acquire live satellite GPS. Click "Recalibrate GPS" or use "Adjust Pin" on the map.'
+                                      : registrationLocation
+                                      ? 'Your establishment location is locked and will be used as the official workplace geofence for interns.'
+                                      : 'Click "Recalibrate GPS" to acquire coordinates, or use "Adjust Pin" to set location on the map.'}
+                                  </p>
 
-                        {/* Interactive Geofence Map Preview */}
-                        <AnimatePresence>
-                          {showLocationMap && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 230, opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
-                            >
-                              <div className="h-56 w-full relative">
-                                <GeofenceMap
-                                  zones={[]}
-                                  picking={pickingLocation}
-                                  onPick={handleMapPick}
-                                  pickedCoords={registrationLocation}
-                                  focusCoords={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng } : undefined}
-                                  liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
-                                  liveUserPhoto={photo || googleAvatar}
-                                  className="h-56 w-full"
-                                />
-                              </div>
+                                  {(locationStatus === 'denied' || locationStatus === 'error') && !registrationLocation && (
+                                    <div className="mt-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setRegistrationLocation(DEFAULT_CAMPUS_LOCATION);
+                                          setLocationStatus('captured');
+                                          setRegistrationAddress('Carlos Hilado Memorial State University (CHMSU Talisay Campus)');
+                                          toast.info('Using CHMSU Talisay Campus coordinates as fallback.');
+                                        }}
+                                        className="text-xs text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
+                                      >
+                                        Or click here to use CHMSU Talisay Campus as fallback
+                                      </button>
+                                    </div>
+                                  )}
 
-                              <div className="absolute top-3 right-3 z-[1100] pointer-events-none flex items-center gap-2">
-                                <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-emerald-200 flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                                  <span className="font-bold text-emerald-700">Official Geofence</span>
                                   {registrationLocation && (
-                                    <span className="text-gray-600 font-mono text-[11px] ml-1">
-                                      {registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}
-                                    </span>
+                                    <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                                      <span className="font-mono font-semibold bg-white/90 px-2 py-0.5 rounded-md border border-emerald-200 text-emerald-800 shrink-0">
+                                        📍 {registrationLocation.lat.toFixed(6)}, {registrationLocation.lng.toFixed(6)}
+                                      </span>
+                                      {registrationAddress && registrationAddress !== `${registrationLocation.lat.toFixed(6)}, ${registrationLocation.lng.toFixed(6)}` && (
+                                        <span className="text-emerald-900 font-medium truncate max-w-full text-[11px] block">
+                                          {registrationAddress}
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               </div>
 
-                              <div className="absolute bottom-3 left-3 z-[1100] pointer-events-none">
-                                <div className="bg-white/95 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[11px] text-gray-700 shadow border border-gray-200 flex items-center gap-1.5 font-medium">
-                                  <MapPin size={12} className="text-blue-600" />
-                                  <span>{pickingLocation ? 'Click map to pin official workplace' : 'Attendance locked within 100m perimeter'}</span>
-                                </div>
+                              {/* GPS Control Buttons */}
+                              <div className="flex items-center gap-2 pt-2.5 border-t border-emerald-200/50 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => captureLocation()}
+                                  disabled={locationStatus === 'capturing'}
+                                  className="px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                                  title="Acquire a fresh, high-accuracy satellite fix"
+                                >
+                                  <RefreshCw size={12} className={locationStatus === 'capturing' ? 'animate-spin text-blue-600' : 'text-gray-500'} />
+                                  Recalibrate GPS
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowLocationMap(true);
+                                    setPickingLocation(!pickingLocation);
+                                  }}
+                                  className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                                    pickingLocation
+                                      ? 'bg-blue-600 border-blue-700 text-white'
+                                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                  }`}
+                                  title="Click on map to pin your exact workplace building"
+                                >
+                                  <Crosshair size={12} className={pickingLocation ? 'text-white' : 'text-blue-600'} />
+                                  {pickingLocation ? 'Done Pinning' : 'Adjust Pin'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setShowLocationMap(!showLocationMap)}
+                                  className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-all shadow-xs cursor-pointer"
+                                >
+                                  {showLocationMap ? 'Hide Map' : 'View Map'}
+                                </button>
                               </div>
-                            </motion.div>
+                            </div>
+                          </div>
+
+                          {pickingLocation && (
+                            <div className="mt-3 p-2 bg-blue-100/70 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center gap-2">
+                              <Crosshair size={14} className="text-blue-700 shrink-0 animate-pulse" />
+                              <span>Pinpoint mode active: Click anywhere on the map to place your exact official workplace pin.</span>
+                            </div>
                           )}
-                        </AnimatePresence>
-                      </div>
+
+                          {/* Interactive Geofence Map Preview */}
+                          <AnimatePresence>
+                            {showLocationMap && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 230, opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden rounded-2xl border border-gray-200 shadow-inner relative"
+                              >
+                                <div className="h-56 w-full relative">
+                                  <GeofenceMap
+                                    zones={[]}
+                                    picking={pickingLocation}
+                                    onPick={handleMapPick}
+                                    pickedCoords={registrationLocation}
+                                    focusCoords={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng } : undefined}
+                                    liveUser={registrationLocation ? { lat: registrationLocation.lat, lng: registrationLocation.lng, accuracy: (registrationLocation as any).accuracy } : null}
+                                    liveUserPhoto={photo || googleAvatar}
+                                    className="h-56 w-full"
+                                  />
+                                </div>
+
+                                <div className="absolute top-3 right-3 z-[1100] pointer-events-none flex items-center gap-2">
+                                  <div className="bg-white/95 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs text-gray-800 shadow border border-emerald-200 flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                    <span className="font-bold text-emerald-700">Official Geofence</span>
+                                    {registrationLocation && (
+                                      <span className="text-gray-600 font-mono text-[11px] ml-1">
+                                        {registrationLocation.lat.toFixed(5)}, {registrationLocation.lng.toFixed(5)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="absolute bottom-3 left-3 z-[1100] pointer-events-none">
+                                  <div className="bg-white/95 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[11px] text-gray-700 shadow border border-gray-200 flex items-center gap-1.5 font-medium">
+                                    <MapPin size={12} className="text-blue-600" />
+                                    <span>{pickingLocation ? 'Click map to pin official workplace' : 'Attendance locked within 100m perimeter'}</span>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

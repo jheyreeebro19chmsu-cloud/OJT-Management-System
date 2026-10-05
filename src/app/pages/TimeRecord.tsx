@@ -17,6 +17,7 @@ import { uploadFacePhoto } from '../services/supabaseService';
 import { formatTime, calculateTotalHours, getAttendanceStatus, getCurrentLocation, getDTRSessionDate } from '../utils/geo';
 import { authAPI } from '../services/authApi';
 import type { TimeRecord as TimeRecordType } from '../types';
+import { isInvalidHteCompany } from '../utils/hteLocation';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
@@ -185,9 +186,7 @@ export function TimeRecord() {
     currentUser?.role !== 'admin';
   const hasValidHte = Boolean(
     employee?.companyName &&
-    employee.companyName.trim().length > 0 &&
-    employee.companyName.toLowerCase() !== 'n/a' &&
-    !employee.companyName.toLowerCase().includes('pending')
+    !isInvalidHteCompany(employee.companyName)
   );
 
   // Late threshold evaluation

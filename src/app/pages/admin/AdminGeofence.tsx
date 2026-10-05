@@ -35,6 +35,7 @@ import { useApp } from '../../store/AppContext';
 import { GeofenceZone, Employee } from '../../types';
 import { GEOFENCE_RADIUS_METERS, reverseGeocode, isWithinNegrosOccidental } from '../../utils/geo';
 import { getCampusLocation } from '../../utils/campusLocations';
+import { resolveHteLocation, isInvalidHteCompany } from '../../utils/hteLocation';
 import { getPhotoUrl } from '../../services/config';
 import { getPaginationWindow } from '../../utils/pagination';
 
@@ -484,20 +485,28 @@ export function AdminGeofence() {
             zoneData.companyName = host.companyName;
           }
         } else if (account && isTraineeAccount(account)) {
-          // Trainee zone: ALWAYS preserve their own registered coordinates where they registered!
-          // If the zone's lat/lng are missing or 0, retrieve directly from their registrationLocation
-          const regLoc = account.registrationLocation;
-          const regLat = regLoc?.lat ?? (account as any)?.registration_lat;
-          const regLng = regLoc?.lng ?? (account as any)?.registration_lng;
-          if ((!zoneData.lat || !zoneData.lng) && regLat && regLng) {
-            zoneData.lat = Number(regLat);
-            zoneData.lng = Number(regLng);
-          }
-          if (regLoc?.radius || (account as any)?.registrationRadius) {
-            zoneData.radius = Math.max(20, Number(regLoc?.radius || (account as any)?.registrationRadius || zoneData.radius || 40));
-          }
-          if (!zoneData.address && (account.registrationAddress || account.companyAddress)) {
-            zoneData.address = account.registrationAddress || account.companyAddress || zoneData.address;
+          // Trainee zone: Trainees MUST be geofenced to their assigned HTE establishment location!
+          const hteInfo = resolveHteLocation(account, hostSupervisors, employees, geofenceZones);
+          if (hteInfo) {
+            zoneData.lat = hteInfo.lat;
+            zoneData.lng = hteInfo.lng;
+            zoneData.radius = hteInfo.radius;
+            zoneData.address = hteInfo.address;
+            zoneData.name = `${account.name} - Trainee Geofence (${hteInfo.companyName})`;
+          } else {
+            const regLoc = account.registrationLocation;
+            const regLat = regLoc?.lat ?? (account as any)?.registration_lat;
+            const regLng = regLoc?.lng ?? (account as any)?.registration_lng;
+            if ((!zoneData.lat || !zoneData.lng) && regLat && regLng) {
+              zoneData.lat = Number(regLat);
+              zoneData.lng = Number(regLng);
+            }
+            if (regLoc?.radius || (account as any)?.registrationRadius) {
+              zoneData.radius = Math.max(20, Number(regLoc?.radius || (account as any)?.registrationRadius || zoneData.radius || 40));
+            }
+            if (!zoneData.address && (account.registrationAddress || account.companyAddress)) {
+              zoneData.address = account.registrationAddress || account.companyAddress || zoneData.address;
+            }
           }
         }
 
@@ -559,28 +568,39 @@ export function AdminGeofence() {
         ? campusInfo.address
         : (emp.registrationAddress || emp.companyAddress || 'Trainee Registered Station');
 
-      // For Trainees: strictly use their own registered coordinates where they registered!
-      // Do NOT overwrite with a shared company workplace.
-
-      if (!isInst && (regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
-        const addrStr = String(emp.registrationAddress || (emp as any)?.registration_address);
-        const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-        if (match) {
-          regLat = parseFloat(match[1]);
-          regLng = parseFloat(match[2]);
+      // For Trainees: strictly use their assigned HTE establishment location!
+      if (!isInst && !isHte) {
+        const hteInfo = resolveHteLocation(emp, hostSupervisors, employees, geofenceZones);
+        if (hteInfo) {
+          regLat = hteInfo.lat;
+          regLng = hteInfo.lng;
+          stationRadius = hteInfo.radius;
+          stationAddr = hteInfo.address;
+        } else if (regLat == null || regLng == null) {
+          regLat = campusInfo.lat;
+          regLng = campusInfo.lng;
+        }
+      } else {
+        if ((regLat == null || regLng == null) && (emp.registrationAddress || (emp as any)?.registration_address)) {
+          const addrStr = String(emp.registrationAddress || (emp as any)?.registration_address);
+          const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+          if (match) {
+            regLat = parseFloat(match[1]);
+            regLng = parseFloat(match[2]);
+          }
+        }
+        if (regLat == null || regLng == null) {
+          regLat = campusInfo.lat;
+          regLng = campusInfo.lng;
         }
       }
-      // Ensure all trainees and staff have a monitorable geofence station (defaulting to campus station coordinates)
-      if (regLat == null || regLng == null) {
-        regLat = campusInfo.lat;
-        regLng = campusInfo.lng;
-      }
+
       if (regLat && regLng && Number.isFinite(Number(regLat)) && Number.isFinite(Number(regLng))) {
         const defaultName = isInst
           ? `${emp.name} - Official Station`
           : isHte
           ? `${emp.name} - ${emp.companyName || 'HTE Workplace'}`
-          : `${emp.name} - Trainee Geofence (${emp.companyName || 'Assigned Workplace'})`;
+          : `${emp.name} - Trainee Geofence (${emp.companyName && !isInvalidHteCompany(emp.companyName) ? emp.companyName : 'Assigned Workplace'})`;
 
         zoneMap.set(personKey, {
           id: `station-${emp.id}`,

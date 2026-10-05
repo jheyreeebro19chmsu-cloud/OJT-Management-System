@@ -8,6 +8,7 @@ import { checkGeofence as checkGeofenceApi, isSecurityApiConfigured } from '../s
 import { useApp } from '../store/AppContext';
 import type { GeofenceZone } from '../types';
 import { getCampusLocation } from '../utils/campusLocations';
+import { resolveHteLocation, isInvalidHteCompany } from '../utils/hteLocation';
 import {
   calculateDistance,
   formatDistance,
@@ -39,7 +40,7 @@ export interface GeofenceCheckerProps {
 }
 
 export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerProps) {
-  const { geofenceZones, settings, getCurrentEmployee } = useApp();
+  const { geofenceZones, settings, getCurrentEmployee, employees = [], hostSupervisors = [] } = useApp();
   const [result, setResult] = useState<GeofenceResult>({ state: 'idle' });
   const [watchCoords, setWatchCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
@@ -56,6 +57,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
   const isInstructor = userRole === 'instructor' || userRole === 'faculty' || userPos.includes('instructor') || userPos.includes('faculty');
   const isAdmin = userRole === 'admin' || userPos.includes('admin');
   const isStudent = !isHte && !isInstructor && !isAdmin;
+  const hasValidCompany = !isInvalidHteCompany(employee?.companyName);
 
   const activeZones = React.useMemo(() => {
     const validConfiguredZones = geofenceZones.filter(
@@ -113,125 +115,26 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     }
 
     // Trainee / Student: strictly resolve Assigned HTE Workplace zone
-    let assignedWorkplaceZone: GeofenceZone | null = null;
-    const empId = employee?.id || '';
-    const empName = (employee?.name || '').trim().toLowerCase();
-    const companyName = (employee?.companyName || '').trim().toLowerCase();
-    const hasValidCompany = companyName && companyName !== 'n/a' && companyName !== 'pending';
-
-    // 1. Direct match by employeeId, zone ID, or assignedZoneId
-    if (empId) {
-      const assignedZoneId = (employee as any)?.assignedZoneId;
-      assignedWorkplaceZone =
-        validConfiguredZones.find(
-          (z) =>
-            (z as any).employeeId === empId ||
-            (z as any).employee_id === empId ||
-            z.id === `station-${empId}` ||
-            (assignedZoneId && z.id === assignedZoneId)
-        ) || null;
-    }
-
-    // 2. Trainee profile registered coordinates (the basis of their attendance where they registered)
-    let regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat ?? (employee as any)?.latitude;
-    let regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng ?? (employee as any)?.longitude;
-    if ((regLat == null || regLng == null) && (employee?.registrationAddress || (employee as any)?.registration_address)) {
-      const addrStr = String(employee?.registrationAddress || (employee as any)?.registration_address);
-      const match = addrStr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-      if (match) {
-        regLat = parseFloat(match[1]);
-        regLng = parseFloat(match[2]);
-      }
-    }
-
-    const dynamicRadius = Math.max(
-      40,
-      Number(
-        employee?.registrationLocation?.radius ??
-        employee?.registrationRadius ??
-        (employee as any)?.registration_radius ??
-        (employee as any)?.geofenceRadius ??
-        GEOFENCE_RADIUS_METERS
-      ) || 40
-    );
-
-    if (
-      !assignedWorkplaceZone &&
-      regLat != null &&
-      regLng != null &&
-      Number.isFinite(Number(regLat)) &&
-      Number.isFinite(Number(regLng)) &&
-      isValidCoord(Number(regLat), Number(regLng))
-    ) {
-      assignedWorkplaceZone = {
-        id: `station-${empId || 'trainee'}`,
-        name: employee?.name ? `${employee.name} - Registered Geofence Station` : 'Registered Geofence Station',
-        address: employee?.registrationAddress || employee?.companyAddress || `${Number(regLat).toFixed(6)}, ${Number(regLng).toFixed(6)}`,
-        lat: Number(regLat),
-        lng: Number(regLng),
-        radius: dynamicRadius,
-        active: true,
-      };
-    }
-
-    // 3. Match by trainee name in zone name (e.g. "Jhey Ree Ebro - Trainee Geofence")
-    if (!assignedWorkplaceZone && empName) {
-      assignedWorkplaceZone =
-        validConfiguredZones.find((z) => {
-          const zName = (z.name || '').toLowerCase();
-          return (
-            zName.includes(empName) &&
-            (zName.includes('assigned workplace') ||
-              zName.includes('trainee geofence') ||
-              zName.includes('registered') ||
-              (hasValidCompany && zName.includes(companyName)))
-          );
-        }) || null;
-    }
-
-    // 4. Match by HTE company name in zone name only as secondary fallback
-    if (!assignedWorkplaceZone && hasValidCompany) {
-      assignedWorkplaceZone =
-        validConfiguredZones.find((z) => {
-          const zName = (z.name || '').toLowerCase();
-          return zName.includes(companyName) && !zName.includes('official station');
-        }) || null;
-    }
-
-    // 4b. If trainee has valid assigned HTE company, ensure designated workplace zone is formed so clock-in is never blocked
-    if (!assignedWorkplaceZone && hasValidCompany) {
-      const defaultHteCoords = companyName.includes('printing')
-        ? { lat: 10.74275, lng: 122.970168 }
-        : { lat: 10.7410, lng: 122.9702 };
-      assignedWorkplaceZone = {
-        id: `station-hte-${empId || 'assigned'}`,
-        name: `${employee?.companyName} Workplace Premises`,
-        address: employee?.companyAddress || `${employee?.companyName} Workplace Location`,
-        lat: defaultHteCoords.lat,
-        lng: defaultHteCoords.lng,
-        radius: dynamicRadius,
-        active: true,
-      };
-    }
-
-    if (assignedWorkplaceZone) {
-      if (isStudent) {
-        // Trainees: strictly view and check only their own assigned workplace geofence, not other users' geofencing
-        return [assignedWorkplaceZone];
-      }
-      // For instructors/faculty/admin/supervisors: put assigned/station zone at index 0, followed by all other zones
-      const otherZones = validConfiguredZones.filter(
-        (z) => z.id !== assignedWorkplaceZone!.id && z.name !== assignedWorkplaceZone!.name
-      );
-      return [assignedWorkplaceZone, ...otherZones];
-    }
-
-    // Trainees without an assigned HTE must NOT fall back to other users' stations or campus
     if (isStudent) {
-      return [];
+      const hteLoc = resolveHteLocation(employee, hostSupervisors, employees, validConfiguredZones);
+      if (!hteLoc) {
+        // Trainees without an assigned HTE must NOT fall back to personal registration coordinates or campus
+        return [];
+      }
+      const assignedWorkplaceZone: GeofenceZone = {
+        id: `station-hte-${employee?.hteId || employee?.id || 'assigned'}`,
+        name: `${hteLoc.companyName} Workplace Premises`,
+        address: hteLoc.address,
+        lat: hteLoc.lat,
+        lng: hteLoc.lng,
+        radius: hteLoc.radius,
+        active: true,
+        userType: 'hte',
+      };
+      return [assignedWorkplaceZone];
     }
 
-    // 5. Default Campus Location for faculty / instructors only
+    // Default Campus Location for faculty / instructors only
     const campusLoc = getCampusLocation(employee?.campus);
     const campusFallbackZone: GeofenceZone = {
       id: `campus-${employee?.campus || 'main'}`,
@@ -244,7 +147,7 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
     };
 
     return [campusFallbackZone, ...validConfiguredZones];
-  }, [geofenceZones, employee]);
+  }, [geofenceZones, employee, employees, hostSupervisors]);
 
   // Stable ref for activeZones to prevent any possible interval restart loops
   const activeZonesRef = useRef(activeZones);

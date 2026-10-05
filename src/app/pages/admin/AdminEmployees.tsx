@@ -14,10 +14,7 @@ import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../../dat
 import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper';
 import { isWithinNegrosOccidental } from '../../utils/geo';
 import { getPaginationWindow } from '../../utils/pagination';
-
-
-
-
+import { resolveHteLocation, isInvalidHteCompany } from '../../utils/hteLocation';
 type ModalMode = 'view' | 'add' | 'edit' | 'review' | null;
 
 const BLANK_FORM = {
@@ -350,7 +347,7 @@ export function AdminEmployees() {
         (t.employeeId && t.employeeId.toLowerCase().includes(deploySearch.toLowerCase())) ||
         (t.companyName && t.companyName.toLowerCase().includes(deploySearch.toLowerCase()));
       const matchesCourse = deployCourseFilter === 'all' || t.course === deployCourseFilter;
-      const isAssigned = Boolean(t.hteId && t.companyName && !t.companyName.toLowerCase().includes('pending'));
+      const isAssigned = Boolean(t.hteId && !isInvalidHteCompany(t.companyName));
       const matchesStatus =
         deployStatusFilter === 'all' ||
         (deployStatusFilter === 'unassigned' && !isAssigned) ||
@@ -369,23 +366,13 @@ export function AdminEmployees() {
 
     setIsDeploying(true);
     try {
-      const hteZone = geofenceZones.find(
-        (z) =>
-          (z as any).employeeId === matchedHte.id ||
-          (z as any).employee_id === matchedHte.id ||
-          z.id === matchedHte.id ||
-          z.id === `station-${matchedHte.id}` ||
-          (matchedHte.companyName && z.name && z.name.toLowerCase().includes(matchedHte.companyName.toLowerCase()))
-      );
-
-      const targetLoc = hteZone && hteZone.lat && hteZone.lng
-        ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
-        : matchedHte.lat && matchedHte.lng
-        ? { lat: Number(matchedHte.lat), lng: Number(matchedHte.lng) }
-        : { lat: 10.74275, lng: 122.970168 };
-
-      const hteRadius = Math.max(20, Number(hteZone?.radius || matchedHte.radius || 40));
-      const hteAddress = hteZone?.address || matchedHte.companyAddress || `${matchedHte.companyName} Workplace Premises`;
+      const hteLoc = resolveHteLocation(matchedHte, hostSupervisors, employees, geofenceZones) || {
+        lat: Number(matchedHte.lat) || 10.74275,
+        lng: Number(matchedHte.lng) || 122.970168,
+        radius: Math.max(20, Number(matchedHte.radius) || 40),
+        address: matchedHte.companyAddress || `${matchedHte.companyName} Workplace Premises`,
+        companyName: matchedHte.companyName,
+      };
 
       for (const studentId of deploySelectedStudentIds) {
         const student = employees.find((e) => e.id === studentId || e.employeeId === studentId);
@@ -394,29 +381,30 @@ export function AdminEmployees() {
         const updatedFields: any = {
           hteId: matchedHte.id,
           companyName: matchedHte.companyName,
-          companyAddress: hteAddress,
+          companyAddress: hteLoc.address,
           supervisorName: matchedHte.name,
           registrationLocation: {
-            lat: Number(targetLoc.lat),
-            lng: Number(targetLoc.lng),
-            radius: hteRadius,
+            lat: Number(hteLoc.lat),
+            lng: Number(hteLoc.lng),
+            radius: hteLoc.radius,
           },
-          registrationRadius: hteRadius,
-          registrationAddress: hteAddress,
+          registrationRadius: hteLoc.radius,
+          registrationAddress: hteLoc.address,
         };
 
         await updateEmployee(student.id, updatedFields);
 
         addGeofenceZone({
-          id: student.id,
+          id: `station-${student.id}`,
           name: `${student.name} - Trainee Geofence (${matchedHte.companyName})`,
-          address: hteAddress,
-          lat: Number(targetLoc.lat),
-          lng: Number(targetLoc.lng),
-          radius: hteRadius,
+          address: hteLoc.address,
+          lat: Number(hteLoc.lat),
+          lng: Number(hteLoc.lng),
+          radius: hteLoc.radius,
           active: true,
           academicYear: student.academicYear || settings?.activeAcademicYear,
           employeeId: student.id,
+          userType: 'trainee',
         } as any);
       }
 
@@ -505,31 +493,12 @@ export function AdminEmployees() {
     let hteAddress = editForm.companyAddress || '';
 
     if (matchedHost) {
-      const hteZone = geofenceZones.find(
-        (z) =>
-          (z as any).employeeId === matchedHost.id ||
-          (z as any).employee_id === matchedHost.id ||
-          z.id === matchedHost.id ||
-          z.id === `station-${matchedHost.id}` ||
-          (matchedHost.companyName && z.name && z.name.toLowerCase().includes(matchedHost.companyName.toLowerCase()))
-      );
-      const hteEmp = employees.find(
-        (e) =>
-          e.id === matchedHost.id ||
-          e.employeeId === matchedHost.id ||
-          (matchedHost.companyName && e.companyName && e.companyName.toLowerCase() === matchedHost.companyName.toLowerCase())
-      );
-
-      targetLoc = hteZone && hteZone.lat && hteZone.lng
-        ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
-        : matchedHost.lat && matchedHost.lng
-        ? { lat: Number(matchedHost.lat), lng: Number(matchedHost.lng) }
-        : hteEmp?.registrationLocation?.lat && hteEmp?.registrationLocation?.lng
-        ? { lat: Number(hteEmp.registrationLocation.lat), lng: Number(hteEmp.registrationLocation.lng) }
-        : { lat: 10.74275, lng: 122.970168 };
-
-      hteRadius = Math.max(20, Number(hteZone?.radius || matchedHost.radius || hteEmp?.registrationRadius || 40));
-      hteAddress = hteZone?.address || matchedHost.companyAddress || `${matchedHost.companyName} Workplace Premises`;
+      const hteLoc = resolveHteLocation(matchedHost, hostSupervisors, employees, geofenceZones);
+      if (hteLoc) {
+        targetLoc = { lat: hteLoc.lat, lng: hteLoc.lng };
+        hteRadius = hteLoc.radius;
+        hteAddress = hteLoc.address;
+      }
     }
 
     const updatedFields: any = {
@@ -574,7 +543,7 @@ export function AdminEmployees() {
 
     if (targetLoc && matchedHost) {
       addGeofenceZone({
-        id: selectedEmp.id,
+        id: `station-${selectedEmp.id}`,
         name: `${editForm.name.trim()} - Trainee Geofence (${matchedHost.companyName})`,
         address: hteAddress,
         lat: Number(targetLoc.lat),
@@ -583,6 +552,7 @@ export function AdminEmployees() {
         active: true,
         academicYear: editForm.academicYear || settings?.activeAcademicYear,
         employeeId: selectedEmp.id,
+        userType: 'trainee',
       } as any);
     }
 
@@ -792,30 +762,33 @@ export function AdminEmployees() {
                     <p className="text-xs text-gray-400">{isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || emp.position)}</p>
                     {isTraineeGroup && (
                       <div className="mt-1 flex flex-col gap-0.5">
-                        <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
-                          <Building size={11} className="text-blue-600 shrink-0" />
-                          HTE: {emp.companyName && !emp.companyName.toLowerCase().includes('pending') ? emp.companyName : 'Unassigned HTE'}
-                        </span>
                         {(() => {
-                          const latestRec = timeRecords.find(r => r.employeeId === emp.id || r.employeeId === emp.employeeId);
-                          if (latestRec?.timeInGeofenced) {
+                          const isDeployed = Boolean(emp.hteId && !isInvalidHteCompany(emp.companyName));
+                          if (isDeployed) {
                             return (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1 w-fit">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                Verified at HTE Premises
-                              </span>
-                            );
-                          }
-                          if (emp.registrationLocation?.lat) {
-                            return (
-                              <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 inline-flex items-center gap-1 w-fit">
-                                <MapPin size={10} className="text-blue-600" />
-                                HTE Geofenced ({emp.registrationLocation.radius || 40}m)
-                              </span>
+                              <>
+                                <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
+                                  <Building size={11} className="text-blue-600 shrink-0" />
+                                  HTE: {emp.companyName}
+                                </span>
+                                <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1 w-fit">
+                                  <MapPin size={10} className="text-emerald-600" />
+                                  Deployed to HTE ({emp.registrationLocation?.radius || 40}m)
+                                </span>
+                              </>
                             );
                           }
                           return (
-                            <span className="text-[10px] text-gray-400 italic">No HTE Geofence Pin</span>
+                            <>
+                              <span className="text-[11px] font-semibold text-amber-800 flex items-center gap-1">
+                                <Building size={11} className="text-amber-600 shrink-0" />
+                                HTE: Unassigned
+                              </span>
+                              <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-flex items-center gap-1 w-fit">
+                                <AlertTriangle size={10} className="text-amber-600" />
+                                Awaiting Instructor Deployment
+                              </span>
+                            </>
                           );
                         })()}
                       </div>
@@ -2301,59 +2274,41 @@ export function AdminEmployees() {
                                         const matchedHost = allAvailableHtes.find((h) => h.id === selectedHteId);
                                         if (!matchedHost) return;
 
-                                        // Resolve HTE's official workplace coordinates from existing zones, supervisor profile, or default
-                                        const hteZone = geofenceZones.find(
-                                          (z) =>
-                                            (z as any).employeeId === matchedHost.id ||
-                                            (z as any).employee_id === matchedHost.id ||
-                                            z.id === matchedHost.id ||
-                                            z.id === `station-${matchedHost.id}` ||
-                                            (matchedHost.companyName && z.name && z.name.toLowerCase().includes(matchedHost.companyName.toLowerCase()))
-                                        );
-                                        const hteEmp = employees.find(
-                                          (e) =>
-                                            e.id === matchedHost.id ||
-                                            e.employeeId === matchedHost.id ||
-                                            (matchedHost.companyName && e.companyName && e.companyName.toLowerCase() === matchedHost.companyName.toLowerCase())
-                                        );
-
-                                        const targetLoc = hteZone && hteZone.lat && hteZone.lng
-                                          ? { lat: Number(hteZone.lat), lng: Number(hteZone.lng) }
-                                          : matchedHost.lat && matchedHost.lng
-                                          ? { lat: Number(matchedHost.lat), lng: Number(matchedHost.lng) }
-                                          : hteEmp?.registrationLocation?.lat && hteEmp?.registrationLocation?.lng
-                                          ? { lat: Number(hteEmp.registrationLocation.lat), lng: Number(hteEmp.registrationLocation.lng) }
-                                          : { lat: 10.74275, lng: 122.970168 };
-
-                                        const hteRadius = Math.max(20, Number(hteZone?.radius || matchedHost.radius || hteEmp?.registrationRadius || 40));
-                                        const hteAddress = hteZone?.address || matchedHost.companyAddress || `${matchedHost.companyName} Workplace Premises`;
+                                        const hteLoc = resolveHteLocation(matchedHost, hostSupervisors, employees, geofenceZones) || {
+                                          lat: Number(matchedHost.lat) || 10.74275,
+                                          lng: Number(matchedHost.lng) || 122.970168,
+                                          radius: Math.max(20, Number(matchedHost.radius) || 40),
+                                          address: matchedHost.companyAddress || `${matchedHost.companyName} Workplace Premises`,
+                                          companyName: matchedHost.companyName,
+                                        };
 
                                         const updatedFields: any = {
                                           hteId: matchedHost.id,
                                           companyName: matchedHost.companyName,
-                                          companyAddress: hteAddress,
+                                          companyAddress: hteLoc.address,
                                           supervisorName: matchedHost.name,
                                           registrationLocation: {
-                                            lat: Number(targetLoc.lat),
-                                            lng: Number(targetLoc.lng),
-                                            radius: hteRadius,
+                                            lat: Number(hteLoc.lat),
+                                            lng: Number(hteLoc.lng),
+                                            radius: hteLoc.radius,
                                           },
-                                          registrationRadius: hteRadius,
-                                          registrationAddress: hteAddress,
+                                          registrationRadius: hteLoc.radius,
+                                          registrationAddress: hteLoc.address,
                                         };
 
                                         await updateEmployee(selectedEmp.id, updatedFields);
 
                                         addGeofenceZone({
-                                          id: selectedEmp.id,
+                                          id: `station-${selectedEmp.id}`,
                                           name: `${selectedEmp.name} - Trainee Geofence (${matchedHost.companyName})`,
-                                          address: hteAddress,
-                                          lat: Number(targetLoc.lat),
-                                          lng: Number(targetLoc.lng),
-                                          radius: hteRadius,
+                                          address: hteLoc.address,
+                                          lat: Number(hteLoc.lat),
+                                          lng: Number(hteLoc.lng),
+                                          radius: hteLoc.radius,
                                           active: true,
                                           academicYear: selectedEmp.academicYear || settings?.activeAcademicYear,
                                           employeeId: selectedEmp.id,
+                                          userType: 'trainee',
                                         } as any);
 
                                         setSelectedEmp((prev) => prev ? {
@@ -3855,7 +3810,7 @@ export function AdminEmployees() {
                   ) : (
                     deployableTrainees.map((student) => {
                       const isSelected = deploySelectedStudentIds.includes(student.id);
-                      const isAssigned = Boolean(student.hteId && student.companyName && !student.companyName.toLowerCase().includes('pending'));
+                      const isAssigned = Boolean(student.hteId && !isInvalidHteCompany(student.companyName));
                       return (
                         <div
                           key={student.id}
