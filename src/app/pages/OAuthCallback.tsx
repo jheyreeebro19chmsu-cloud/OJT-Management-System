@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, CheckCircle2, UserPlus } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, UserPlus, RefreshCw } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
 import { User } from '../types';
@@ -11,7 +11,41 @@ export default function OAuthCallback() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('Verifying Google credentials...');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const hasProcessedRef = useRef(false);
+
+  const handleRetryGoogle = async () => {
+    try {
+      setRetrying(true);
+      const searchParams = new URLSearchParams(window.location.search);
+      const targetRole = searchParams.get('role') || localStorage.getItem('pending_oauth_role') || 'hte';
+      localStorage.setItem('pending_oauth_role', targetRole);
+      const redirectOrigin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : 'https://chmsuojtmis.site';
+
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      const { error: retryErr } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${redirectOrigin}/oauth-callback?role=${targetRole}`,
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      });
+
+      if (retryErr) {
+        setError(retryErr.message);
+        setRetrying(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to retry Google Sign-In.');
+      setRetrying(false);
+    }
+  };
 
   useEffect(() => {
     if (hasProcessedRef.current) return;
@@ -35,12 +69,19 @@ export default function OAuthCallback() {
         const urlErrorDesc = searchParams.get('error_description') || hashParams.get('error_description');
 
         if (urlError || urlErrorDesc) {
-          const cleanMsg = urlErrorDesc
+          const rawMsg = urlErrorDesc
             ? decodeURIComponent(urlErrorDesc.replace(/\+/g, ' '))
             : urlError;
-          console.error('Google OAuth URL error:', cleanMsg);
+          console.error('Google OAuth URL error:', rawMsg);
           clearTimeout(watchdogTimer);
-          setError(`Google Sign-In notice: ${cleanMsg}`);
+
+          let friendlyMsg = rawMsg;
+          if (rawMsg?.toLowerCase().includes('unable to exchange external code')) {
+            friendlyMsg = 'The Google authorization code expired or could not be exchanged by the authentication server. This usually happens if the authorization timed out, the page was refreshed, or Google OAuth credentials in Supabase need verification.';
+          } else if (rawMsg) {
+            friendlyMsg = `Google Sign-In notice: ${rawMsg}`;
+          }
+          setError(friendlyMsg);
           return;
         }
 
@@ -412,19 +453,21 @@ export default function OAuthCallback() {
             <p className="text-xs text-slate-400 leading-relaxed">{error}</p>
           </div>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full pt-2">
+            <button
+              type="button"
+              onClick={handleRetryGoogle}
+              disabled={retrying}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl text-xs transition-colors shadow-md cursor-pointer"
+            >
+              <RefreshCw size={14} className={retrying ? 'animate-spin' : ''} />
+              <span>{retrying ? 'Connecting...' : 'Try Again with Google'}</span>
+            </button>
             <Link
               to="/login"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition-colors shadow-md"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold rounded-xl text-xs transition-colors shadow-md"
             >
               <ArrowLeft size={14} />
               <span>Return to Sign In</span>
-            </Link>
-            <Link
-              to="/register"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold rounded-xl text-xs transition-colors shadow-md"
-            >
-              <UserPlus size={14} />
-              <span>Sign Up with Google</span>
             </Link>
           </div>
         </div>
