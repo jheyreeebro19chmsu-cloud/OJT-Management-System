@@ -900,13 +900,20 @@ export function AdminEmployees() {
                     {isTraineeGroup && (
                       <div className="mt-1 flex flex-col gap-0.5">
                         {(() => {
-                          const isDeployed = Boolean(emp.hteId && !isInvalidHteCompany(emp.companyName));
-                          if (isDeployed) {
+                          const isDeployed = Boolean(
+                            (emp.hteId || (emp.companyName && !isInvalidHteCompany(emp.companyName))) &&
+                            !isInvalidHteCompany(emp.companyName)
+                          );
+                          const displayHteName = (emp.companyName && !isInvalidHteCompany(emp.companyName))
+                            ? emp.companyName
+                            : (emp.hteId && hteLookup[emp.hteId]?.companyName ? hteLookup[emp.hteId].companyName : null);
+
+                          if (isDeployed && displayHteName) {
                             return (
                               <>
                                 <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
                                   <Building size={11} className="text-blue-600 shrink-0" />
-                                  HTE: {emp.companyName}
+                                  HTE: {displayHteName}
                                 </span>
                                 <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1 w-fit">
                                   <MapPin size={10} className="text-emerald-600" />
@@ -2533,6 +2540,9 @@ export function AdminEmployees() {
                                           },
                                           registrationRadius: hteLoc.radius,
                                           registrationAddress: hteLoc.address,
+                                          active: true,
+                                          approvalStatus: 'approved',
+                                          applicationStatus: 'approved',
                                         };
 
                                         await updateEmployee(selectedEmp.id, updatedFields);
@@ -4066,7 +4076,13 @@ export function AdminEmployees() {
                   ) : (
                     deployableTrainees.map((student) => {
                       const isSelected = deploySelectedStudentIds.includes(student.id);
-                      const isAssigned = Boolean(student.hteId && !isInvalidHteCompany(student.companyName));
+                      const isAssigned = Boolean(
+                        (student.hteId || (student.companyName && !isInvalidHteCompany(student.companyName))) &&
+                        !isInvalidHteCompany(student.companyName)
+                      );
+                      const studentHteName = (student.companyName && !isInvalidHteCompany(student.companyName))
+                        ? student.companyName
+                        : (student.hteId && hteLookup[student.hteId]?.companyName ? hteLookup[student.hteId].companyName : null);
                       return (
                         <div
                           key={student.id}
@@ -4097,9 +4113,9 @@ export function AdminEmployees() {
                           </div>
 
                           <div className="text-right">
-                            {isAssigned ? (
+                            {isAssigned && studentHteName ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                                {student.companyName}
+                                {studentHteName}
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">

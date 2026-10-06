@@ -863,6 +863,51 @@ function mergeEvaluations(remoteEvaluations: Evaluation[], currentLocalEvaluatio
   return [...merged, ...localOnly];
 }
 
+function mergeEmployees(
+  remoteEmployees: Employee[],
+  localEmployees: Employee[]
+): Employee[] {
+  if (!remoteEmployees || remoteEmployees.length === 0) {
+    return localEmployees || [];
+  }
+  const localMap = new Map<string, Employee>();
+  (localEmployees || []).forEach((e) => {
+    if (e.id) localMap.set(e.id, e);
+    if (e.employeeId) localMap.set(e.employeeId, e);
+    if (e.email) localMap.set(e.email.toLowerCase(), e);
+  });
+
+  return remoteEmployees.map((remote) => {
+    const local = localMap.get(remote.id) || (remote.employeeId ? localMap.get(remote.employeeId) : undefined) || (remote.email ? localMap.get(remote.email.toLowerCase()) : undefined);
+    if (!local) return remote;
+
+    const hasRemoteHte = remote.companyName && !isInvalidHteCompany(remote.companyName);
+    const hasLocalHte = local.companyName && !isInvalidHteCompany(local.companyName);
+
+    // If local has valid HTE assignment but remote does not yet, preserve the assigned HTE
+    if (hasLocalHte && !hasRemoteHte) {
+      return {
+        ...remote,
+        companyName: local.companyName,
+        supervisorName: local.supervisorName || remote.supervisorName,
+        hteId: local.hteId || remote.hteId,
+        companyAddress: local.companyAddress || remote.companyAddress,
+        registrationLocation: local.registrationLocation || remote.registrationLocation,
+        registrationAddress: local.registrationAddress || remote.registrationAddress,
+        registrationRadius: local.registrationRadius || remote.registrationRadius,
+      };
+    }
+
+    return {
+      ...local,
+      ...remote,
+      hteId: remote.hteId || local.hteId,
+      companyName: remote.companyName || local.companyName,
+      supervisorName: remote.supervisorName || local.supervisorName,
+    };
+  });
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   cleanupStorageQuota();
   migrateGeofenceStorageOnce();
@@ -1065,8 +1110,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           Promise.allSettled([
             supabaseService.fetchEmployees().then((emp) => {
               if (isMounted && emp && emp.length > 0) {
-                setEmployees(emp);
-                saveToStorage(STORAGE_KEYS.EMPLOYEES, emp);
+                setEmployees((prev) => {
+                  const merged = mergeEmployees(emp, prev);
+                  saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
+                  return merged;
+                });
 
                 // Auto-discover academic years from loaded employees (e.g. '2026-2027')
                 const employeeAYs = Array.from(new Set(
@@ -1207,7 +1255,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchEmployees(),
             supabaseService.fetchGeofenceZones(),
           ]);
-          setEmployees(supabaseEmployees);
+          setEmployees((prev) => {
+            const merged = mergeEmployees(supabaseEmployees, prev);
+            saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
+            return merged;
+          });
           const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
           if (sanitizedZones.length > 0) {
             setGeofenceZones(sanitizedZones);
@@ -1283,7 +1335,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchHostSupervisors(),
           ]);
 
-          setEmployees(supabaseEmployees);
+          setEmployees((prev) => {
+            const merged = mergeEmployees(supabaseEmployees, prev);
+            saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
+            return merged;
+          });
           if (supabaseRecords.length > 0) {
             setTimeRecords((prev) => {
               const merged = mergeTimeRecords(supabaseRecords, prev);
@@ -1378,7 +1434,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchHostSupervisors(),
       ]);
 
-      if (supabaseEmployees && supabaseEmployees.length > 0) setEmployees(supabaseEmployees);
+      if (supabaseEmployees && supabaseEmployees.length > 0) {
+        setEmployees((prev) => {
+          const merged = mergeEmployees(supabaseEmployees, prev);
+          saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
+          return merged;
+        });
+      }
       if (supabaseRecords && supabaseRecords.length > 0) {
         setTimeRecords((prev) => {
           const merged = mergeTimeRecords(supabaseRecords, prev);
