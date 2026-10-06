@@ -2076,6 +2076,88 @@ const remainingSec = Math.floor((extendedExpiry - now) / 1000);
 assert('Extended session provides 1,200 seconds remaining', remainingSec === 1200);
 
 // ----------------------------------------------------------------------------
+// 23. WHITE BOX TESTS: HTE Dropdown Filter & Concentrix Trainee Viewing
+// ----------------------------------------------------------------------------
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  23. WHITE BOX TESTS: HTE Dropdown Filter & Concentrix Trainees       ${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+const mockTrainees = [
+  { id: 't-1', name: 'Maria Santos', companyName: 'Concentrix', academicYear: '2026-2027', active: true },
+  { id: 't-2', name: 'Juan Dela Cruz', companyName: 'Concentrix - Bacolod', academicYear: '2026-2027', active: true },
+  { id: 't-3', name: 'Alex Reyes', companyName: 'Concentrix Solutions Inc.', academicYear: '2026-2027', active: true },
+  { id: 't-4', name: 'Clara Diaz', companyName: 'Printing Services', academicYear: '2026-2027', active: true },
+  { id: 't-5', name: 'Ethan Ramos', companyName: 'Bacolod City Hall', academicYear: '2026-2027', active: true },
+  { id: 't-6', name: 'Sophia Lee', companyName: '', academicYear: '2026-2027', active: true },
+  { id: 't-7', name: 'Lucas Cruz', companyName: 'Unassigned', academicYear: '2026-2027', active: true },
+];
+
+function isInvalidHteCompanyTest(company) {
+  if (!company || typeof company !== 'string') return true;
+  const normalized = company.trim().toLowerCase();
+  return (
+    !normalized ||
+    normalized === 'unassigned' ||
+    normalized === 'n/a' ||
+    normalized === 'none' ||
+    normalized === 'pending' ||
+    normalized === 'no company yet'
+  );
+}
+
+function matchesHteFilterTest(emp, targetHte) {
+  if (targetHte === 'all') return true;
+  const rawComp = (emp.companyName || '').trim();
+  const isInvalid = !rawComp || isInvalidHteCompanyTest(rawComp);
+  if (targetHte === 'Unassigned') {
+    return isInvalid;
+  }
+  if (isInvalid) {
+    return false;
+  }
+  const empComp = rawComp.toLowerCase();
+  const target = targetHte.toLowerCase();
+  return empComp.includes(target) || target.includes(empComp);
+}
+
+// Test 23.1: "all" returns all trainees
+const allView = mockTrainees.filter((t) => matchesHteFilterTest(t, 'all'));
+assert('Selecting "All HTEs" displays all 7 trainees', allView.length === 7);
+
+// Test 23.2: Selecting "Concentrix" views all trainees at Concentrix
+const concentrixView = mockTrainees.filter((t) => matchesHteFilterTest(t, 'Concentrix'));
+assert('Selecting "Concentrix" finds exactly 3 Concentrix trainees', concentrixView.length === 3);
+assert('Concentrix view includes Maria Santos', concentrixView.some((t) => t.name === 'Maria Santos'));
+assert('Concentrix view includes Juan Dela Cruz (Concentrix - Bacolod)', concentrixView.some((t) => t.name === 'Juan Dela Cruz'));
+assert('Concentrix view includes Alex Reyes (Concentrix Solutions Inc.)', concentrixView.some((t) => t.name === 'Alex Reyes'));
+assert('Concentrix view does not include Clara Diaz from Printing Services', !concentrixView.some((t) => t.name === 'Clara Diaz'));
+assert('Concentrix view does not include unassigned trainees', !concentrixView.some((t) => t.name === 'Sophia Lee'));
+
+// Test 23.3: Selecting "Printing Services" views only Printing Services
+const printingView = mockTrainees.filter((t) => matchesHteFilterTest(t, 'Printing Services'));
+assert('Selecting "Printing Services" returns exactly 1 trainee', printingView.length === 1 && printingView[0].name === 'Clara Diaz');
+
+// Test 23.4: Selecting "Unassigned" returns trainees with empty or invalid HTE
+const unassignedView = mockTrainees.filter((t) => matchesHteFilterTest(t, 'Unassigned'));
+assert('Selecting "Unassigned" returns 2 unassigned trainees', unassignedView.length === 2);
+assert('Unassigned view includes empty company trainee', unassignedView.some((t) => t.name === 'Sophia Lee'));
+assert('Unassigned view includes literal "Unassigned" trainee', unassignedView.some((t) => t.name === 'Lucas Cruz'));
+
+// Test 23.5: Deriving HTE dropdown counts accurately
+const hteCounts = new Map();
+mockTrainees.forEach((t) => {
+  const raw = (t.companyName || '').trim();
+  if (!raw || isInvalidHteCompanyTest(raw)) {
+    hteCounts.set('Unassigned', (hteCounts.get('Unassigned') || 0) + 1);
+  } else {
+    hteCounts.set(raw, (hteCounts.get(raw) || 0) + 1);
+  }
+});
+assert('HTE count map has Unassigned count of 2', hteCounts.get('Unassigned') === 2);
+assert('HTE count map has Concentrix count of 1', hteCounts.get('Concentrix') === 1);
+assert('HTE count map has Concentrix - Bacolod count of 1', hteCounts.get('Concentrix - Bacolod') === 1);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

@@ -161,6 +161,7 @@ export function AdminEmployees() {
   };
 
   const [selectedYear, setSelectedYear] = useState(settings.activeAcademicYear || '2026-2027');
+  const [selectedHte, setSelectedHte] = useState<string>('all');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [pageByGroup, setPageByGroup] = useState<Record<string, number>>({
     pending: 1,
@@ -182,7 +183,7 @@ export function AdminEmployees() {
       instructor: 1,
       hte: 1,
     });
-  }, [search, selectedYear]);
+  }, [search, selectedYear, selectedHte]);
 
   const getEmployeeGroup = (emp?: Employee | null) => {
     if (!emp) return 'student';
@@ -225,6 +226,21 @@ export function AdminEmployees() {
     return empAY === selectedYear;
   };
 
+  const matchesHteFilter = (emp: Employee, targetHte: string) => {
+    if (targetHte === 'all') return true;
+    const rawComp = (emp.companyName || '').trim();
+    const isInvalid = !rawComp || isInvalidHteCompany(rawComp);
+    if (targetHte === 'Unassigned') {
+      return isInvalid;
+    }
+    if (isInvalid) {
+      return false;
+    }
+    const empComp = rawComp.toLowerCase();
+    const target = targetHte.toLowerCase();
+    return empComp.includes(target) || target.includes(empComp);
+  };
+
   const filteredGroups = {
     pending: deduplicateAccounts(
       employees.filter(
@@ -238,6 +254,7 @@ export function AdminEmployees() {
             // null active with non-approved status = awaiting review
             (e.active == null && e.applicationStatus !== 'approved')) &&
           matchesYear(e) &&
+          matchesHteFilter(e, selectedHte) &&
           ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
             (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
             (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -254,6 +271,7 @@ export function AdminEmployees() {
           e.applicationStatus !== 'unregistered' &&
           getEmployeeGroup(e) === 'student' &&
           matchesYear(e) &&
+          matchesHteFilter(e, selectedHte) &&
           ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
             (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
             (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -385,8 +403,41 @@ export function AdminEmployees() {
     return Array.from(map.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
   }, [hostSupervisors, employees]);
 
+  const hteDropdownOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    employees.forEach((e) => {
+      if (getEmployeeGroup(e) !== 'student') return;
+      if (!matchesYear(e)) return;
+      const rawComp = (e.companyName || '').trim();
+      if (!rawComp || isInvalidHteCompany(rawComp)) {
+        counts.set('Unassigned', (counts.get('Unassigned') || 0) + 1);
+      } else {
+        counts.set(rawComp, (counts.get(rawComp) || 0) + 1);
+      }
+    });
+
+    (allAvailableHtes || []).forEach((h) => {
+      const name = (h.companyName || '').trim();
+      if (name && !counts.has(name)) {
+        counts.set(name, 0);
+      }
+    });
+
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => {
+        if (a.name === 'Unassigned') return 1;
+        if (b.name === 'Unassigned') return -1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [employees, allAvailableHtes, selectedYear, settings?.academicYears, settings?.activeAcademicYear]);
+
   const deployableTrainees = useMemo(() => {
-    return filteredGroups.student.filter((t) => {
+    return employees.filter((t) => {
+      if (getEmployeeGroup(t) !== 'student') return false;
+      if (t.active === false || t.approvalStatus === 'pending' || t.applicationStatus === 'pending' || t.applicationStatus === 'unregistered') return false;
+      if (!matchesYear(t)) return false;
       const matchesSearch =
         !deploySearch ||
         t.name.toLowerCase().includes(deploySearch.toLowerCase()) ||
@@ -400,7 +451,7 @@ export function AdminEmployees() {
         (deployStatusFilter === 'assigned' && isAssigned);
       return matchesSearch && matchesCourse && matchesStatus;
     });
-  }, [filteredGroups.student, deploySearch, deployCourseFilter, deployStatusFilter]);
+  }, [employees, deploySearch, deployCourseFilter, deployStatusFilter, selectedYear, settings?.academicYears, settings?.activeAcademicYear]);
 
   const handleBatchDeploy = async () => {
     if (!deployTargetHteId || deploySelectedStudentIds.length === 0) return;
@@ -1574,14 +1625,74 @@ export function AdminEmployees() {
       </div>
 
       {activeCategoryTab !== 'documents' && (
-        <div className="relative">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, ID, course, company, or department..."
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          />
+        <div className="space-y-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, ID, course, company, or department..."
+                className="w-full pl-9 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-2xs"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                  title="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* HTE Dropdown Filter */}
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-2xs shrink-0">
+              <Building size={15} className="text-gray-400 shrink-0" />
+              <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">HTE:</span>
+              <select
+                value={selectedHte}
+                onChange={(e) => setSelectedHte(e.target.value)}
+                className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none cursor-pointer max-w-[210px]"
+                title="Filter trainees by Host Establishment"
+              >
+                <option value="all">All HTEs</option>
+                {hteDropdownOptions.map((h) => (
+                  <option key={h.name} value={h.name}>
+                    {h.name} ({h.count} {h.count === 1 ? 'Trainee' : 'Trainees'})
+                  </option>
+                ))}
+              </select>
+              {selectedHte !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedHte('all')}
+                  className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                  title="Reset HTE filter"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Active HTE Filter Indicator */}
+          {selectedHte !== 'all' && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-800">
+              <Building size={13} className="text-blue-600" />
+              <span>
+                Filtered by Host Establishment: <strong className="font-semibold text-blue-900">{selectedHte}</strong> ({filteredGroups.student.length} active {filteredGroups.student.length === 1 ? 'trainee' : 'trainees'})
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedHte('all')}
+                className="ml-auto text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+              >
+                Clear HTE Filter
+              </button>
+            </div>
+          )}
         </div>
       )}
 

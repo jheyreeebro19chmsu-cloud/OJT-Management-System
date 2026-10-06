@@ -1,4 +1,4 @@
-import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2, Download, RefreshCw } from 'lucide-react';
+import { Star, Users, X, Save, ChevronRight, Award, Clock, Check, Edit2, Trash2, AlertCircle, Printer, FileText, Building, GraduationCap, Calendar, CheckCircle2, Download, RefreshCw, Search, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, EvaluationQuestionna
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 import { getPhotoUrl } from '../../services/config';
 import { formatHoursAndMinutes } from './AdminEmployees';
+import { isInvalidHteCompany } from '../../utils/hteLocation';
 
 const GRADE_CONFIG: Record<Evaluation['grade'], { color: string; bg: string; border: string; min: number; label: string }> = {
   Excellent: { color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', min: 90, label: 'Excellent / Outstanding (90-100%)' },
@@ -38,6 +39,7 @@ function getDefaultRatings(): Record<string, number> {
 export function AdminEvaluations() {
   const {
     employees,
+    hostSupervisors,
     timeRecords,
     evaluations,
     addEvaluation,
@@ -50,6 +52,8 @@ export function AdminEvaluations() {
     refreshData,
   } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
+  const [selectedHte, setSelectedHte] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [ratings, setRatings] = useState<Record<string, number>>(getDefaultRatings);
   const [ratingComments, setRatingComments] = useState<Record<string, string>>({
@@ -100,7 +104,7 @@ export function AdminEvaluations() {
     return 'OJT INSTRUCTOR';
   }, [selectedEmp, employees, currentUser]);
 
-  const activeEmployees = useMemo(() => {
+  const baseActiveEmployees = useMemo(() => {
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
     const activeAY = settings?.activeAcademicYear || '2026-2027';
     return employees.filter((e) => {
@@ -112,6 +116,64 @@ export function AdminEvaluations() {
       return empAY === selectedAcademicYear;
     });
   }, [employees, selectedAcademicYear, settings?.academicYears, settings?.activeAcademicYear]);
+
+  // Derived list of unique HTE companies and trainees count
+  const hteOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    baseActiveEmployees.forEach((emp) => {
+      const rawComp = (emp.companyName || '').trim();
+      if (!rawComp || isInvalidHteCompany(rawComp)) {
+        counts.set('Unassigned', (counts.get('Unassigned') || 0) + 1);
+      } else {
+        counts.set(rawComp, (counts.get(rawComp) || 0) + 1);
+      }
+    });
+
+    (hostSupervisors || []).forEach((h) => {
+      const name = (h.companyName || '').trim();
+      if (name && !counts.has(name)) {
+        counts.set(name, 0);
+      }
+    });
+
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => {
+        if (a.name === 'Unassigned') return 1;
+        if (b.name === 'Unassigned') return -1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [baseActiveEmployees, hostSupervisors]);
+
+  const matchesHteFilter = (emp: Employee, targetHte: string) => {
+    if (targetHte === 'all') return true;
+    const rawComp = (emp.companyName || '').trim();
+    const isInvalid = !rawComp || isInvalidHteCompany(rawComp);
+    if (targetHte === 'Unassigned') {
+      return isInvalid;
+    }
+    if (isInvalid) {
+      return false;
+    }
+    const empComp = rawComp.toLowerCase();
+    const target = targetHte.toLowerCase();
+    return empComp.includes(target) || target.includes(empComp);
+  };
+
+  const filteredEmployees = useMemo(() => {
+    return baseActiveEmployees.filter((emp) => {
+      if (!matchesHteFilter(emp, selectedHte)) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        (emp.name || '').toLowerCase().includes(q) ||
+        (emp.employeeId || '').toLowerCase().includes(q) ||
+        (emp.companyName || '').toLowerCase().includes(q) ||
+        (emp.department || '').toLowerCase().includes(q)
+      );
+    });
+  }, [baseActiveEmployees, selectedHte, searchQuery]);
 
   const categoryStats = useMemo(() => {
     const stats: Record<string, number> = { workHabits: 4, workSkills: 4, socialSkills: 4 };
@@ -448,9 +510,12 @@ export function AdminEvaluations() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">OJT Trainee Performance Evaluations</h2>
-          <p className="text-sm text-gray-500">Official evaluation management for OJT trainees and intern performance reports</p>
+          <p className="text-sm text-gray-500">
+            {filteredEmployees.length} of {baseActiveEmployees.length} Trainees displayed • Official evaluation management &amp; performance reports
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Academic Year Filter */}
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
             <span className="text-xs font-semibold text-gray-500">AY:</span>
             <select
@@ -465,6 +530,46 @@ export function AdminEvaluations() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* HTE Dropdown Filter */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 shadow-sm">
+            <Building size={14} className="text-gray-400" />
+            <span className="text-xs font-semibold text-gray-500">HTE:</span>
+            <select
+              value={selectedHte}
+              onChange={(e) => setSelectedHte(e.target.value)}
+              className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none cursor-pointer max-w-[210px]"
+              title="Filter trainees by Host Training Establishment"
+            >
+              <option value="all">All HTEs ({baseActiveEmployees.length} Trainees)</option>
+              {hteOptions.map((h) => (
+                <option key={h.name} value={h.name}>
+                  {h.name} ({h.count} {h.count === 1 ? 'Trainee' : 'Trainees'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Trainee Search */}
+          <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search name, ID, HTE..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
 
           <button
@@ -482,7 +587,7 @@ export function AdminEvaluations() {
               const csvRows = [
                 ['Trainee Name', 'Employee ID', 'Company', 'Department', 'Overall Score', 'Grade', 'Evaluated At', 'Status'],
               ];
-              activeEmployees.forEach((emp) => {
+              filteredEmployees.forEach((emp) => {
                 const ev = getEmployeeEvaluation(emp);
                 const isAnswered = isQuestionnaireAnswered(ev?.questionnaire);
                 csvRows.push([
@@ -500,20 +605,49 @@ export function AdminEvaluations() {
               const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
               const link = document.createElement('a');
               link.href = url;
-              link.download = `OJT_Evaluations_Summary_${new Date().toISOString().split('T')[0]}.csv`;
+              const hteTag = selectedHte !== 'all' ? `_${selectedHte.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+              link.download = `OJT_Evaluations${hteTag}_${new Date().toISOString().split('T')[0]}.csv`;
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
               URL.revokeObjectURL(url);
-              toast.success('Evaluations summary CSV exported!');
+              toast.success(`Exported ${filteredEmployees.length} evaluation records to CSV!`);
             }}
             className="px-3.5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center gap-1.5 shadow-sm shrink-0"
           >
             <Download size={14} />
-            Export All CSV
+            Export CSV ({filteredEmployees.length})
           </button>
         </div>
       </div>
+
+      {/* Active Filter Pill */}
+      {(selectedHte !== 'all' || searchQuery) && (
+        <div className="flex items-center gap-2 px-3.5 py-2 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs text-blue-800">
+          <Filter size={13} className="text-blue-600" />
+          <span>
+            Filtering by:{' '}
+            {selectedHte !== 'all' && (
+              <strong className="font-semibold text-blue-900">HTE: {selectedHte}</strong>
+            )}
+            {selectedHte !== 'all' && searchQuery && ' • '}
+            {searchQuery && (
+              <strong className="font-semibold text-blue-900">Query: "{searchQuery}"</strong>
+            )}
+            {' '}({filteredEmployees.length} {filteredEmployees.length === 1 ? 'trainee' : 'trainees'} found)
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedHte('all');
+              setSearchQuery('');
+            }}
+            className="ml-auto text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+          >
+            Clear Filters
+          </button>
+        </div>
+      )}
 
       <div className="bg-blue-50 rounded-2xl p-4 flex items-start gap-3 border border-blue-100 shadow-sm">
         <AlertCircle size={18} className="text-blue-600 shrink-0 mt-0.5" />
@@ -527,7 +661,30 @@ export function AdminEvaluations() {
       </div>
 
       <div className="space-y-3">
-        {activeEmployees.map((emp) => {
+        {filteredEmployees.length === 0 ? (
+          <div className="bg-white rounded-2xl p-12 text-center border border-gray-100 shadow-sm">
+            <Building className="mx-auto h-12 w-12 text-slate-300 mb-3" />
+            <h3 className="text-sm font-bold text-slate-800">No trainees found for this filter</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              {selectedHte !== 'all'
+                ? `There are no trainees currently assigned to "${selectedHte}".`
+                : 'Try adjusting your search query or academic year.'}
+            </p>
+            {(selectedHte !== 'all' || searchQuery) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedHte('all');
+                  setSearchQuery('');
+                }}
+                className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-sm"
+              >
+                View All Trainees ({baseActiveEmployees.length})
+              </button>
+            )}
+          </div>
+        ) : (
+          filteredEmployees.map((emp) => {
           const ev = getEmployeeEvaluation(emp);
           const stats = getEmpStats(emp.id);
           const progress = Math.min((stats.totalHours / emp.requiredHours) * 100, 100);
@@ -719,7 +876,7 @@ export function AdminEvaluations() {
               </div>
             </motion.div>
           );
-        })}
+        }))}
       </div>
     </div>
   );
