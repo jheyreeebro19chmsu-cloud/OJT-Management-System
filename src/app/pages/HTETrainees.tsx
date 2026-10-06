@@ -390,7 +390,7 @@ export function HTETrainees() {
                   const photoUrl = getPhotoUrl(trainee.photo);
                   return (
                     <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 relative select-none">
-                      <GraduationCap size={22} className="text-blue-600" />
+                      <span className="font-bold text-lg text-blue-700">{trainee.name.charAt(0)}</span>
                       {photoUrl && (
                         <img
                           src={photoUrl}
@@ -584,7 +584,7 @@ export function HTETrainees() {
                   const photoUrl = getPhotoUrl(selectedProfileTrainee.photo);
                   return (
                     <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 overflow-hidden flex items-center justify-center shrink-0 shadow-sm relative select-none">
-                      <User size={28} className="text-blue-600" />
+                      <span className="font-bold text-xl text-blue-700">{selectedProfileTrainee.name.charAt(0)}</span>
                       {photoUrl && (
                         <img
                           src={photoUrl}

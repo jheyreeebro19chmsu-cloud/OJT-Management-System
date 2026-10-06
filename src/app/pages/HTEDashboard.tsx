@@ -446,11 +446,17 @@ export function HTEDashboard() {
                 <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                        {t.photo ? (
-                          <img src={getPhotoUrl(t.photo)} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <GraduationCap size={18} className="text-blue-600" />
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 relative select-none">
+                        <span className="font-bold text-sm text-blue-700">{t.name.charAt(0)}</span>
+                        {t.photo && (
+                          <img
+                            src={getPhotoUrl(t.photo)}
+                            alt=""
+                            className="w-full h-full object-cover absolute inset-0 z-10"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
                         )}
                       </div>
                       <div>

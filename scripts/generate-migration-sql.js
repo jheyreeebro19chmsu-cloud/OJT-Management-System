@@ -146,16 +146,27 @@ ON CONFLICT (id) DO UPDATE SET
         phone: phone,
       }).replace(/'/g, "''");
 
+      const course = 'Bachelor of Science in Information Systems';
+      const requiredHours = 486 + ((idx * 17 + (label === 'CONCENTRIX' ? 1 : 2) * 31) % (600 - 486 + 1));
+      const firstLetter = firstName.trim().charAt(0).toUpperCase();
+      const avatarColors = [
+        '2563eb', '4f46e5', '7c3aed', '0284c7', '0891b2',
+        '059669', '16a34a', 'd97706', 'ea580c', 'dc2626',
+        'db2777', '9333ea'
+      ];
+      const bgCol = avatarColors[(firstLetter.charCodeAt(0) + idx) % avatarColors.length];
+      const photoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(firstLetter)}&background=${bgCol}&color=fff&size=128&bold=true`;
+
       out += `INSERT INTO public.employees (
   employee_id, name, email, department, position, company_name, hte_id,
   supervisor_name, registration_address, registration_lat, registration_lng,
-  registration_location, active, application_status, campus,
-  instructor_id, academic_year, required_hours, rendered_hours
+  registration_location, active, application_status, campus, course,
+  photo, instructor_id, academic_year, required_hours, rendered_hours
 ) VALUES (
-  '${employeeId}', '${fullName.replace(/'/g, "''")}', '${email}', 'Information Technology', 'Intern Trainee', '${config.companyName}', '${config.id}',
+  '${employeeId}', '${fullName.replace(/'/g, "''")}', '${email}', 'College of Computer Studies', 'OJT Trainee', '${config.companyName}', '${config.id}',
   '${config.supervisorName}', '${config.address.replace(/'/g, "''")}', ${config.lat}, ${config.lng},
-  '${regLoc}', true, 'approved', 'Talisay (Main Campus)',
-  '${INSTRUCTOR_ID}', '2026-2027', 486, 0
+  '${regLoc}', true, 'approved', 'Talisay (Main Campus)', '${course}',
+  '${photoUrl}', '${INSTRUCTOR_ID}', '2026-2027', ${requiredHours}, 0
 )
 ON CONFLICT (employee_id) DO UPDATE SET
   name = EXCLUDED.name,
@@ -168,7 +179,10 @@ ON CONFLICT (employee_id) DO UPDATE SET
   registration_lng = EXCLUDED.registration_lng,
   registration_location = EXCLUDED.registration_location,
   active = EXCLUDED.active,
-  application_status = EXCLUDED.application_status;\n\n`;
+  application_status = EXCLUDED.application_status,
+  course = EXCLUDED.course,
+  photo = EXCLUDED.photo,
+  required_hours = EXCLUDED.required_hours;\n\n`;
     }
   }
 

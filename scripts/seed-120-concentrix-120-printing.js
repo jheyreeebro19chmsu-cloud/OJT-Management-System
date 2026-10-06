@@ -117,8 +117,21 @@ async function seedCompanyTrainees(config, prefixNum, count = 120) {
     const cleanNameSlug = `${fName.toLowerCase().replace(/[^a-z]/g, '')}.${lName.toLowerCase().replace(/[^a-z]/g, '')}`;
     const studentId = `${config.idPrefix}${String(num).padStart(3, '0')}`;
     const email = `${cleanNameSlug}.${config.codePrefix.toLowerCase()}${num}@chmsu.edu.ph`;
-    const course = COURSES[(i + prefixNum) % COURSES.length];
+    const course = 'Bachelor of Science in Information Systems';
     const uuid = generateUuid(prefixNum, num);
+
+    // Random required hours between 486 and 600
+    const requiredHours = 486 + Math.floor(Math.random() * (600 - 486 + 1));
+
+    // Profile picture into Letter according to the first letter of their name
+    const firstLetter = fName.trim().charAt(0).toUpperCase();
+    const avatarColors = [
+      '2563eb', '4f46e5', '7c3aed', '0284c7', '0891b2',
+      '059669', '16a34a', 'd97706', 'ea580c', 'dc2626',
+      'db2777', '9333ea'
+    ];
+    const bgCol = avatarColors[(firstLetter.charCodeAt(0) + i) % avatarColors.length];
+    const letterPhotoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(firstLetter)}&background=${bgCol}&color=fff&size=128&bold=true`;
 
     const empRecord = {
       id: uuid,
@@ -134,8 +147,8 @@ async function seedCompanyTrainees(config, prefixNum, count = 120) {
       course: course,
       start_date: '2026-06-15',
       end_date: '2026-11-20',
-      required_hours: 486,
-      photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fullName)}`,
+      required_hours: requiredHours,
+      photo: letterPhotoUrl,
       face_registered: true,
       active: true,
       hte_id: config.id,
