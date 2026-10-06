@@ -249,43 +249,78 @@ export function GeofenceMap({
       effectiveRole.includes('trainee') ||
       effectiveRole.includes('student'));
 
-  const resolveZonePhotoUrl = useCallback((zone: GeofenceZone): string | null => {
-    if (zone.photo) {
-      return getPhotoUrl(zone.photo);
+  const employeePhotoLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!appContext?.employees) return map;
+    for (const e of appContext.employees) {
+      if (e.photo) {
+        if (e.id) map.set(e.id.toLowerCase(), e.photo);
+        if (e.employeeId) map.set(e.employeeId.toLowerCase(), e.photo);
+        if (e.name) {
+          const lowerName = e.name.toLowerCase().trim();
+          map.set(lowerName, e.photo);
+          const firstPart = lowerName.split(' - ')[0].trim();
+          if (firstPart) map.set(firstPart, e.photo);
+        }
+      }
     }
-    if (appContext?.employees) {
+    return map;
+  }, [appContext?.employees]);
+
+  const hostPhotoLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!appContext?.hostSupervisors) return map;
+    for (const h of appContext.hostSupervisors) {
+      if (h.photo) {
+        if (h.id) map.set(h.id.toLowerCase(), h.photo);
+        if (h.employeeId) map.set(h.employeeId.toLowerCase(), h.photo);
+        if (h.name) map.set(h.name.toLowerCase(), h.photo);
+        if (h.companyName) map.set(h.companyName.toLowerCase(), h.photo);
+      }
+    }
+    return map;
+  }, [appContext?.hostSupervisors]);
+
+  const resolveZonePhotoUrl = useCallback(
+    (zone: GeofenceZone): string | null => {
+      if (zone.photo) {
+        return getPhotoUrl(zone.photo);
+      }
       const zoneEmpId = (zone.employeeId || (zone as any).employee_id || '').toLowerCase();
       const rawSuffix = zone.id ? zone.id.replace(/^(station|personal|trainee|inst|hte)-/, '').toLowerCase() : '';
       const zName = (zone.name || '').toLowerCase();
       const personPrefix = (zone.name?.includes(' - ') ? zone.name.split(' - ')[0].trim() : zone.name || '').toLowerCase();
-      const matchedEmp = appContext.employees.find((e: any) =>
-        (zoneEmpId && (e.id?.toLowerCase() === zoneEmpId || e.employeeId?.toLowerCase() === zoneEmpId)) ||
-        (rawSuffix && (e.id?.toLowerCase() === rawSuffix || e.employeeId?.toLowerCase() === rawSuffix)) ||
-        (e.name && (zName.includes(e.name.toLowerCase()) || personPrefix.includes(e.name.toLowerCase()) || e.name.toLowerCase().includes(personPrefix)))
-      );
-      if (matchedEmp?.photo) {
-        return getPhotoUrl(matchedEmp.photo);
+
+      const empPhoto =
+        employeePhotoLookup.get(zoneEmpId) ||
+        employeePhotoLookup.get(rawSuffix) ||
+        employeePhotoLookup.get(personPrefix) ||
+        employeePhotoLookup.get(zName);
+
+      if (empPhoto) return getPhotoUrl(empPhoto);
+
+      const hostPhoto =
+        hostPhotoLookup.get(zoneEmpId) ||
+        hostPhotoLookup.get(personPrefix) ||
+        hostPhotoLookup.get(zName);
+
+      if (hostPhoto) return getPhotoUrl(hostPhoto);
+
+      if (
+        appCurrentUser &&
+        appCurrentEmployee &&
+        (zone.employeeId === appCurrentEmployee.id ||
+          (zone as any).employee_id === appCurrentEmployee.id ||
+          zone.id === `station-${appCurrentEmployee.id}` ||
+          zone.id === `personal-${appCurrentEmployee.id}`)
+      ) {
+        return getPhotoUrl(appCurrentEmployee.photo || appCurrentUser.photo);
       }
-    }
 
-    if (appContext?.hostSupervisors) {
-      const zoneEmpId = (zone.employeeId || (zone as any).employee_id || '').toLowerCase();
-      const matchedHost = appContext.hostSupervisors.find((h: any) =>
-        (zoneEmpId && (h.id?.toLowerCase() === zoneEmpId || h.employeeId?.toLowerCase() === zoneEmpId)) ||
-        (h.name && zone.name && zone.name.toLowerCase().includes(h.name.toLowerCase())) ||
-        (h.companyName && zone.name && zone.name.toLowerCase().includes(h.companyName.toLowerCase()))
-      );
-      if (matchedHost?.photo) {
-        return getPhotoUrl(matchedHost.photo);
-      }
-    }
-
-    if (appCurrentUser && appCurrentEmployee && (zone.employeeId === appCurrentEmployee.id || (zone as any).employee_id === appCurrentEmployee.id || zone.id === `station-${appCurrentEmployee.id}` || zone.id === `personal-${appCurrentEmployee.id}`)) {
-      return getPhotoUrl(appCurrentEmployee.photo || appCurrentUser.photo);
-    }
-
-    return null;
-  }, [appContext, appCurrentUser, appCurrentEmployee]);
+      return null;
+    },
+    [employeePhotoLookup, hostPhotoLookup, appCurrentUser, appCurrentEmployee]
+  );
 
   const getZoneMarkerIcon = useCallback(
     (zone: GeofenceZone, isDraggable: boolean) => {
@@ -338,6 +373,46 @@ export function GeofenceMap({
         `,
         iconSize: [42, 42],
         iconAnchor: [21, 21],
+        popupAnchor: [0, -25],
+      });
+    },
+    [resolveZonePhotoUrl]
+  );
+
+  const getClusterMarkerIcon = useCallback(
+    (group: { primaryZone: GeofenceZone; zones: GeofenceZone[] }) => {
+      const count = group.zones.length;
+      const pZone = group.primaryZone;
+      const zName = (pZone.name || '').toLowerCase();
+      const isHte =
+        pZone.userType === 'hte' ||
+        zName.includes('workplace') ||
+        zName.includes('printing') ||
+        zName.includes('concentrix');
+
+      const borderColor = isHte ? '#f59e0b' : '#2563eb';
+      const bgEmoji = isHte ? '🏢' : '👥';
+      const photoUrl = resolveZonePhotoUrl(pZone);
+      const initial = (pZone.name?.replace(/[^a-zA-Z]/g, '')[0] || 'W').toUpperCase();
+
+      const avatarInner = photoUrl
+        ? `<img src="${photoUrl}" alt="${pZone.name?.replace(/"/g, '&quot;')}" class="leaflet-avatar-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="leaflet-avatar-fallback" style="display:none; background:${borderColor};">${initial}</div>`
+        : `<div class="leaflet-avatar-fallback" style="background:#0f172a; font-size:18px;">${bgEmoji}</div>`;
+
+      return L.divIcon({
+        className: 'leaflet-avatar-marker-wrapper',
+        html: `
+          <div class="leaflet-avatar-marker" style="--marker-border-color: ${borderColor}; cursor: pointer;">
+            <div class="leaflet-avatar-circle" style="border-color: ${borderColor}; background: #0f172a; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+              ${avatarInner}
+            </div>
+            <div style="position: absolute; top: -6px; right: -8px; min-width: 22px; height: 22px; padding: 0 5px; background: ${borderColor}; color: #ffffff; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; border: 2px solid #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.35); z-index: 20;">
+              ${count}
+            </div>
+          </div>
+        `,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
         popupAnchor: [0, -25],
       });
     },
@@ -438,6 +513,78 @@ export function GeofenceMap({
 
     return valid;
   }, [zones, isTrainee, appCurrentEmployee, appCurrentUser]);
+
+  // Group overlapping zones that share identical/near-identical coordinates (~10m)
+  // This reduces hundreds of redundant SVG Circles/DOM markers down to clean workplace cluster markers, eliminating map lag entirely.
+  const groupedZones = useMemo(() => {
+    const groups: {
+      key: string;
+      lat: number;
+      lng: number;
+      radius: number;
+      active: boolean;
+      primaryZone: GeofenceZone;
+      zones: GeofenceZone[];
+      isDraggable: boolean;
+    }[] = [];
+
+    const coordMap = new Map<string, (typeof groups)[0]>();
+
+    for (const zone of safeZones) {
+      const isIndividuallyDraggable = Boolean(
+        draggableZoneId === zone.id || (allZonesDraggable && !picking)
+      );
+
+      // If a zone is individually draggable, keep it standalone so it can be moved freely
+      if (isIndividuallyDraggable) {
+        groups.push({
+          key: `drag-${zone.id}`,
+          lat: zone.lat,
+          lng: zone.lng,
+          radius: Number(zone.radius) || 40,
+          active: zone.active,
+          primaryZone: zone,
+          zones: [zone],
+          isDraggable: true,
+        });
+        continue;
+      }
+
+      // Group co-located pins (within ~10m)
+      const coordKey = `${zone.lat.toFixed(4)}_${zone.lng.toFixed(4)}`;
+      const existing = coordMap.get(coordKey);
+
+      if (existing) {
+        existing.zones.push(zone);
+        if (
+          zone.userType === 'hte' ||
+          zone.userType === 'institutional' ||
+          (zone.name &&
+            !zone.name.toLowerCase().includes('trainee') &&
+            (zone.name.toLowerCase().includes('printing') ||
+              zone.name.toLowerCase().includes('concentrix') ||
+              zone.name.toLowerCase().includes('station')))
+        ) {
+          existing.primaryZone = zone;
+        }
+      } else {
+        const groupObj = {
+          key: coordKey,
+          lat: zone.lat,
+          lng: zone.lng,
+          radius: Number(zone.radius) || 40,
+          active: zone.active,
+          primaryZone: zone,
+          zones: [zone],
+          isDraggable: false,
+        };
+        coordMap.set(coordKey, groupObj);
+        groups.push(groupObj);
+      }
+    }
+
+    return groups;
+  }, [safeZones, draggableZoneId, allZonesDraggable, picking]);
 
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;
@@ -592,6 +739,7 @@ export function GeofenceMap({
         center={initialCenter}
         zoom={16}
         scrollWheelZoom
+        preferCanvas={true}
         className="w-full h-full relative z-0"
         style={{ width: '100%', height: '100%' }}
       >
@@ -600,20 +748,24 @@ export function GeofenceMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           updateWhenIdle={true}
-          keepBuffer={2}
+          updateWhenZooming={false}
+          keepBuffer={4}
           maxZoom={19}
         />
 
-        {safeZones.map((zone) => {
-          const isDraggable = (allZonesDraggable && !picking) || draggableZoneId === zone.id;
+        {groupedZones.map((group) => {
+          const zone = group.primaryZone;
+          const isSingle = group.zones.length === 1;
+          const isDraggable = group.isDraggable;
+
           return (
-            <React.Fragment key={zone.id}>
+            <React.Fragment key={group.key}>
               <Circle
-                center={[zone.lat, zone.lng]}
-                radius={Number(zone.radius) || 40}
+                center={[group.lat, group.lng]}
+                radius={Number(group.radius) || 40}
                 pathOptions={{
-                  color: isDraggable ? '#2563eb' : zone.active ? '#2563eb' : '#94a3b8',
-                  fillColor: isDraggable ? '#3b82f6' : zone.active ? '#3b82f6' : '#94a3b8',
+                  color: isDraggable ? '#2563eb' : group.active ? '#2563eb' : '#94a3b8',
+                  fillColor: isDraggable ? '#3b82f6' : group.active ? '#3b82f6' : '#94a3b8',
                   fillOpacity: isDraggable ? 0.35 : 0.18,
                   weight: isDraggable ? 3 : 2,
                   dashArray: isDraggable ? '6, 6' : undefined,
@@ -621,8 +773,8 @@ export function GeofenceMap({
                 }}
               />
               <Marker
-                position={[zone.lat, zone.lng]}
-                icon={getZoneMarkerIcon(zone, isDraggable)}
+                position={[group.lat, group.lng]}
+                icon={isSingle ? getZoneMarkerIcon(zone, isDraggable) : getClusterMarkerIcon(group)}
                 draggable={isDraggable}
                 eventHandlers={{
                   drag: (e: any) => {
@@ -642,81 +794,137 @@ export function GeofenceMap({
               >
                 <Popup className="leaflet-geofence-popup">
                   <div className="leaflet-popup-card">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                      <div
-                        style={{
-                          width: '34px',
-                          height: '34px',
-                          borderRadius: '9999px',
-                          overflow: 'hidden',
-                          backgroundColor: '#f1f5f9',
-                          flexShrink: 0,
-                          border: `2px solid ${
-                            zone.userType === 'trainee'
-                              ? '#10b981'
-                              : zone.userType === 'instructor'
-                              ? '#8b5cf6'
-                              : zone.userType === 'hte'
-                              ? '#f59e0b'
-                              : '#3b82f6'
-                          }`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        {(() => {
-                          const pUrl = resolveZonePhotoUrl(zone);
-                          return pUrl ? (
-                            <img
-                              src={pUrl}
-                              alt={zone.name}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
+                    {isSingle ? (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '9999px',
+                              overflow: 'hidden',
+                              backgroundColor: '#f1f5f9',
+                              flexShrink: 0,
+                              border: `2px solid ${
+                                zone.userType === 'trainee'
+                                  ? '#10b981'
+                                  : zone.userType === 'instructor'
+                                  ? '#8b5cf6'
+                                  : zone.userType === 'hte'
+                                  ? '#f59e0b'
+                                  : '#3b82f6'
+                              }`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {(() => {
+                              const pUrl = resolveZonePhotoUrl(zone);
+                              return pUrl ? (
+                                <img
+                                  src={pUrl}
+                                  alt={zone.name}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>
+                                  {(zone.name[0] || 'Z').toUpperCase()}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>
+                              {zone.name || 'Geofence Zone'}
+                            </p>
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                color:
+                                  zone.userType === 'trainee'
+                                    ? '#059669'
+                                    : zone.userType === 'instructor'
+                                    ? '#7c3aed'
+                                    : zone.userType === 'hte'
+                                    ? '#d97706'
+                                    : '#2563eb',
                               }}
-                            />
-                          ) : (
-                            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>
-                              {(zone.name[0] || 'Z').toUpperCase()}
+                            >
+                              {zone.userType ? `${zone.userType} geofence` : 'Official Zone'}
                             </span>
-                          );
-                        })()}
-                      </div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>
-                          {zone.name || 'Geofence Zone'}
+                          </div>
+                        </div>
+                        {isDraggable && (
+                          <p style={{ color: '#2563eb', fontWeight: 800, margin: '4px 0' }}>
+                            📍 Drag mode active: Drag this pin to relocate
+                          </p>
+                        )}
+                        <p>Radius: {Math.round(zone.radius || 40)}m</p>
+                        <p>
+                          Coordinates: {zone.lat.toFixed(5)}, {zone.lng.toFixed(5)}
                         </p>
-                        <span
-                          style={{
-                            fontSize: '9px',
-                            fontWeight: 800,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            color:
-                              zone.userType === 'trainee'
-                                ? '#059669'
-                                : zone.userType === 'instructor'
-                                ? '#7c3aed'
-                                : zone.userType === 'hte'
-                                ? '#d97706'
-                                : '#2563eb',
-                          }}
-                        >
-                          {zone.userType ? `${zone.userType} geofence` : 'Official Zone'}
-                        </span>
-                      </div>
-                    </div>
-                    {isDraggable && (
-                      <p style={{ color: '#2563eb', fontWeight: 800, margin: '4px 0' }}>
-                        📍 Drag mode active: Drag this pin to relocate
-                      </p>
+                        <p>Status: {zone.active ? 'Active' : 'Inactive'}</p>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '9999px',
+                              backgroundColor: '#0f172a',
+                              color: '#ffffff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '16px',
+                              flexShrink: 0,
+                              border: '2px solid #f59e0b',
+                            }}
+                          >
+                            🏢
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>
+                              {zone.name || 'Workplace Perimeter'}
+                            </p>
+                            <span style={{ fontSize: '10px', fontWeight: 700, color: '#f59e0b' }}>
+                              {group.zones.length} Trainees Deployed Here
+                            </span>
+                          </div>
+                        </div>
+                        <p>Radius: {Math.round(group.radius || 40)}m boundary</p>
+                        <p>
+                          Coordinates: {group.lat.toFixed(5)}, {group.lng.toFixed(5)}
+                        </p>
+                        <div style={{ maxHeight: '130px', overflowY: 'auto', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
+                          <p style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', margin: '0 0 4px 0', textTransform: 'uppercase' }}>
+                            Deployed Trainees ({group.zones.length}):
+                          </p>
+                          {group.zones.slice(0, 40).map((z, idx) => (
+                            <div key={z.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', fontSize: '11px', color: '#1e293b' }}>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px' }}>
+                                • {z.name?.split(' - ')[0] || z.name}
+                              </span>
+                              <span style={{ fontSize: '9px', color: '#10b981', fontWeight: 700 }}>Active</span>
+                            </div>
+                          ))}
+                          {group.zones.length > 40 && (
+                            <p style={{ fontSize: '10px', color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
+                              +{group.zones.length - 40} more trainees in this zone
+                            </p>
+                          )}
+                        </div>
+                      </>
                     )}
-                    <p>Radius: {Math.round(zone.radius || 40)}m</p>
-                    <p>
-                      Coordinates: {zone.lat.toFixed(5)}, {zone.lng.toFixed(5)}
-                    </p>
-                    <p>Status: {zone.active ? 'Active' : 'Inactive'}</p>
                   </div>
                 </Popup>
               </Marker>

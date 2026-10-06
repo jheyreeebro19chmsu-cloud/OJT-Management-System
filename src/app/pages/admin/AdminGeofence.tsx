@@ -1067,8 +1067,9 @@ export function AdminGeofence() {
     toast.info(`📍 Drag mode active for "${zone.name}". Move the marker on the map to relocate perimeter.`);
   };
 
-  const handleZoneDrag = (_zoneId: string, lat: number, lng: number) => {
-    setDragCoords({ lat, lng });
+  const handleZoneDrag = (_zoneId: string, _lat: number, _lng: number) => {
+    // Intentionally no-op during continuous dragging to preserve silky 60fps native Leaflet movement.
+    // Permanent coordinates are captured and saved on handleZoneDragEnd.
   };
 
   const handleZoneDragEnd = async (zoneId: string, lat: number, lng: number) => {
@@ -1498,7 +1499,7 @@ export function AdminGeofence() {
           pickedRadius={Number(form.radius) || GEOFENCE_RADIUS_METERS}
           focusCoords={focusCoords}
           className="h-80"
-          allZonesDraggable={true}
+          allZonesDraggable={false}
           draggableZoneId={dragZoneId}
           onZoneDrag={handleZoneDrag}
           onZoneDragEnd={handleZoneDragEnd}
