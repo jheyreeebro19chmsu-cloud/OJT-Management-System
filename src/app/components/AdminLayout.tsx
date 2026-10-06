@@ -32,11 +32,11 @@ const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/employees', label: 'OJT/Records', icon: Users, end: false },
   { to: '/admin/geofence', label: 'Geofence Zones', icon: MapPin, end: false },
-  { to: '/admin/reports', label: 'Reports', icon: BarChart2, end: false },
   { to: '/admin/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/admin/host-feedback', label: 'Host Feedback', icon: MessageSquare, end: false },
   { to: '/admin/announcements', label: 'Announcements', icon: Megaphone, end: false },
   { to: '/admin/academic-years', label: 'Academic Year', icon: Calendar, end: false },
+  { to: '/admin/reports', label: 'Reports', icon: BarChart2, end: false },
   { to: '/admin/settings', label: 'Settings', icon: Settings, end: false },
   { to: '/admin/profile', label: 'Profile', icon: User, end: false },
 ];

@@ -731,13 +731,15 @@ export function AdminEmployees() {
   };
 
   const handleApprove = (emp: Employee) => {
-    approveEmployee(emp.id);
     const isDeployed = isTraineeDeployed(emp);
     if (!isDeployed) {
-      toast.success(`${emp.name} approved! Deploy to an HTE to activate trainee placement.`);
-    } else {
-      toast.success(`${emp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
+      setDeploySelectedStudentIds([emp.id]);
+      setBatchDeployOpen(true);
+      toast.info(`Please select a Host Training Establishment (HTE) to deploy and enroll ${emp.name}.`);
+      return;
     }
+    approveEmployee(emp.id);
+    toast.success(`${emp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
   };
 
   const handleReject = (emp: Employee) => {
