@@ -511,37 +511,6 @@ export function AdminReports() {
     }
   };
 
-  const handleGenerateDemoRecord = () => {
-    const targetEmp =
-      selectedEmpId !== 'all'
-        ? traineeEmployees.find((e) => e.id === selectedEmpId) || traineeEmployees[0]
-        : traineeEmployees[0];
-
-    const d = new Date();
-    const monthStr = String(d.getMonth() + 1).padStart(2, '0');
-    const targetMonth = selectedMonth === 'all' ? `${d.getFullYear()}-${monthStr}` : selectedMonth;
-    const dateStr = `${targetMonth}-${String(d.getDate()).padStart(2, '0')}`;
-
-    addTimeRecord({
-      employeeId: targetEmp ? targetEmp.id : '20231379',
-      date: dateStr,
-      timeIn: '08:00:00',
-      timeOut: '17:00:00',
-      totalHours: 8.0,
-      status: 'present',
-      timeInFaceVerified: true,
-      timeOutFaceVerified: true,
-      timeInGeofenced: true,
-      timeOutGeofenced: true,
-      approvalStatus: 'pending',
-      academicYear: selectedAcademicYear === 'all' ? (settings?.activeAcademicYear || '2026-2027') : selectedAcademicYear,
-    });
-
-    setApprovalNotice(
-      `✓ Valid attendance record generated for ${targetEmp?.name || 'Trainee'}. Click "Approve" below to test!`
-    );
-    setTimeout(() => setApprovalNotice(null), 6000);
-  };
 
   const handleApproveWithFeedback = (recId: string, traineeName: string) => {
     approveTimeRecord(recId, 'Instructor');
@@ -1905,14 +1874,6 @@ export function AdminReports() {
                       </button>
                     </>
                   )}
-                  <button
-                    type="button"
-                    onClick={handleGenerateDemoRecord}
-                    title="Generate sample attendance log for testing DTR approval"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Clock size={12} /> + Add Demo Record
-                  </button>
                 </div>
               </div>
             </div>
@@ -1960,17 +1921,10 @@ export function AdminReports() {
                             <p className="font-bold text-gray-800 text-sm">No Attendance Records Found</p>
                             <p className="text-xs text-gray-400 mt-1">
                               {selectedApprovalStatus !== 'all'
-                                ? `No records currently marked as "${selectedApprovalStatus}". Try switching approval filter to "All" or add a demo record below to test.`
+                                ? `No records currently marked as "${selectedApprovalStatus}". Try switching approval filter to "All".`
                                 : 'No attendance check-ins recorded for the selected month/trainee yet.'}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleGenerateDemoRecord}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-                          >
-                            <CheckCircle size={14} /> Generate Demo Record to Test Approve
-                          </button>
                         </div>
                       </td>
                     </tr>
