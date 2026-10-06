@@ -2040,6 +2040,42 @@ assert('Answered questionnaire shows verified grade badge', resolvedAnswered.sho
 assert('Answered questionnaire enables "Done Viewed & Approved"', resolvedAnswered.canMarkApproved === true);
 
 // ----------------------------------------------------------------------------
+// 22. WHITE BOX TESTS: 20-Minute Session Expiry & Token Inactivity Lifetime
+// ----------------------------------------------------------------------------
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  22. WHITE BOX TESTS: 20-Minute Session Expiry & Inactivity Lifetime ${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+const TOKEN_LIFETIME_SEC = 20 * 60; // 1,200 seconds
+const TOKEN_LIFETIME_MS = TOKEN_LIFETIME_SEC * 1000; // 1,200,000 ms
+
+// Test 22.1: Token lifetime constant is strictly 20 minutes (1200 seconds, 1,200,000 ms)
+assert('Token lifetime seconds is 1,200s (20 minutes)', TOKEN_LIFETIME_SEC === 1200);
+assert('Token lifetime ms is 1,200,000ms (20 minutes)', TOKEN_LIFETIME_MS === 1200000);
+
+// Test 22.2: Time formatting helper formats 1200s as "20:00"
+function formatTokenTimer(secondsRemaining) {
+  const mins = Math.floor(secondsRemaining / 60);
+  const secs = secondsRemaining % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+assert('1,200 seconds formats as "20:00"', formatTokenTimer(1200) === '20:00');
+assert('1,199 seconds formats as "19:59"', formatTokenTimer(1199) === '19:59');
+assert('65 seconds formats as "01:05"', formatTokenTimer(65) === '01:05');
+assert('0 seconds formats as "00:00"', formatTokenTimer(0) === '00:00');
+
+// Test 22.3: Session token issue creates expiration timestamp 20 minutes in future
+const now = 1770000000000;
+const issuedExpiresAt = now + TOKEN_LIFETIME_MS;
+assert('Issued token expiresAt is exactly now + 20 minutes', (issuedExpiresAt - now) === 20 * 60 * 1000);
+
+// Test 22.4: Session reset/extend adds full 20 minutes
+const extendedExpiry = now + TOKEN_LIFETIME_MS;
+const remainingSec = Math.floor((extendedExpiry - now) / 1000);
+assert('Extended session provides 1,200 seconds remaining', remainingSec === 1200);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

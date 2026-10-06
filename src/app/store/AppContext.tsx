@@ -565,7 +565,8 @@ function cleanupStorageQuota(): void {
   }
 }
 
-export const TOKEN_LIFETIME_MS = 3 * 60 * 1000; // 3 minutes of inactivity (180,000 ms)
+export const TOKEN_LIFETIME_SEC = 20 * 60; // 20 minutes (1,200 seconds)
+export const TOKEN_LIFETIME_MS = TOKEN_LIFETIME_SEC * 1000; // 20 minutes of inactivity (1,200,000 ms)
 
 export function issueSessionToken(user?: User | null): { token: string; expiresAt: number } {
   const expiresAt = Date.now() + TOKEN_LIFETIME_MS;
@@ -903,9 +904,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
 
   const [tokenSecondsRemaining, setTokenSecondsRemaining] = useState<number>(() => {
-    if (typeof window === 'undefined') return 180;
+    if (typeof window === 'undefined') return TOKEN_LIFETIME_SEC;
     const stored = localStorage.getItem('ojt_token_expires_at');
-    if (!stored) return 180;
+    if (!stored) return TOKEN_LIFETIME_SEC;
     return Math.max(0, Math.floor((Number(stored) - Date.now()) / 1000));
   });
 
@@ -917,11 +918,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!prev || prev.id !== nextUser.id || !currentExp || currentExp <= Date.now()) {
           const issued = issueSessionToken(nextUser);
           setTokenExpiresAt(issued.expiresAt);
-          setTokenSecondsRemaining(180);
+          setTokenSecondsRemaining(TOKEN_LIFETIME_SEC);
         }
       } else {
         setTokenExpiresAt(null);
-        setTokenSecondsRemaining(180);
+        setTokenSecondsRemaining(TOKEN_LIFETIME_SEC);
       }
       return nextUser;
     });
@@ -2123,7 +2124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearAuthStorage();
     setCurrentUser(null);
     setTokenExpiresAt(null);
-    setTokenSecondsRemaining(180);
+    setTokenSecondsRemaining(TOKEN_LIFETIME_SEC);
     if (useSupabase) {
       supabase.auth.signOut().catch((err) => {
         console.error('Error signing out from Supabase:', err);
@@ -2135,22 +2136,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     const issued = issueSessionToken(currentUser);
     setTokenExpiresAt(issued.expiresAt);
-    setTokenSecondsRemaining(180);
+    setTokenSecondsRemaining(TOKEN_LIFETIME_SEC);
     toast.success('Session Extended', {
-      description: 'Your session has been extended by 3 minutes.',
+      description: 'Your session has been extended by 20 minutes.',
       duration: 3000,
     });
   };
 
-  // ── 3-Minute Inactivity / Token Expiry & Automatic Logout ───────────────────
-  // If the system is not controlled or used for 3 minutes by any of the 3 user roles
+  // ── 20-Minute Inactivity / Token Expiry & Automatic Logout ───────────────────
+  // If the system is not controlled or used for 20 minutes by any of the 3 user roles
   // (Instructor, HTE, Trainee), the session expires and the account is logged out automatically.
   // Active user interaction (mousemove, mousedown, keydown, touchstart, scroll, click)
   // refreshes the inactivity timer to prevent disruption while working.
   useEffect(() => {
     if (!currentUser) {
       setTokenExpiresAt(null);
-      setTokenSecondsRemaining(180);
+      setTokenSecondsRemaining(TOKEN_LIFETIME_SEC);
       return;
     }
     if (typeof window === 'undefined') return;
@@ -2162,7 +2163,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const issued = issueSessionToken(currentUser);
       expTime = issued.expiresAt;
       setTokenExpiresAt(expTime);
-      setTokenSecondsRemaining(180);
+      setTokenSecondsRemaining(TOKEN_LIFETIME_SEC);
     } else {
       setTokenExpiresAt(expTime);
       setTokenSecondsRemaining(Math.max(0, Math.floor((expTime - Date.now()) / 1000)));
@@ -2208,11 +2209,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // Automatically log out when 3 minutes of inactivity have elapsed
+      // Automatically log out when 20 minutes of inactivity have elapsed
       if (remainingMs <= 0) {
         logout();
         toast.error('Session Expired', {
-          description: 'You have been automatically logged out because the system was not used for 3 minutes.',
+          description: 'You have been automatically logged out because the system was not used for 20 minutes.',
           duration: 8000,
         });
       }
