@@ -187,10 +187,10 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: error.message });
       }
 
-      // If no rows updated and targetId is a valid UUID, attempt an insert
-      if ((!data || data.length === 0) && isUuid(targetId)) {
+      // If no rows updated, attempt an insert
+      if (!data || data.length === 0) {
         const insertPayload = {
-          id: targetId,
+          ...(targetId && isUuid(targetId) ? { id: targetId } : {}),
           ...dbPayload,
         };
         const { data: inserted, error: insertError } = await supabase
@@ -199,6 +199,7 @@ export default async function handler(req, res) {
           .select();
 
         if (insertError) {
+          console.error('api/employees insert error:', insertError);
           return res.status(500).json({ error: insertError.message });
         }
         return res.status(200).json({ success: true, data: inserted });

@@ -2555,14 +2555,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
+        const isTrainee = !isInstructor && !isHTE;
         const employeePayload = {
           ...cleanData,
           academicYear: targetAcademicYear,
           instructorId: isUuid(autoInstructorId) ? autoInstructorId : undefined,
-          hteId: isUuid(autoHteId) ? autoHteId : undefined,
-          applicationStatus: 'approved' as const,
-          approvalStatus: 'approved' as const,
-          active: true,
+          hteId: isTrainee ? undefined : (isUuid(autoHteId) ? autoHteId : undefined),
+          companyName: isTrainee
+            ? (cleanData.companyName && !isInvalidHteCompany(cleanData.companyName) ? cleanData.companyName : 'Pending Admin Assignment')
+            : cleanData.companyName,
+          supervisorName: isTrainee
+            ? (cleanData.supervisorName || 'Pending Admin Assignment')
+            : cleanData.supervisorName,
+          applicationStatus: isTrainee ? ('pending' as const) : ('approved' as const),
+          approvalStatus: isTrainee ? ('pending' as const) : ('approved' as const),
+          active: isTrainee ? false : true,
           ...(isUuid(authId) ? { id: authId } : {}),
         };
 

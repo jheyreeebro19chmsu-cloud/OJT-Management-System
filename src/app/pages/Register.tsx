@@ -1217,9 +1217,11 @@ export function Register() {
         requiredHours: role === 'admin' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
         faceRegistered,
         photo,
-        active: true,
-        approvalStatus: 'approved',
-        applicationStatus: 'approved',
+        active: role !== 'trainee',
+        approvalStatus: role === 'trainee' ? 'pending' : 'approved',
+        applicationStatus: role === 'trainee' ? 'pending' : 'approved',
+        companyName: role === 'hte' ? form.companyName : (role === 'admin' ? 'Carlos Hilado Memorial State University' : 'Pending Admin Assignment'),
+        supervisorName: role === 'hte' ? (form.supervisorName || form.contactPerson) : (role === 'admin' ? 'College Dean' : 'Pending Admin Assignment'),
         documentsPassed: role === 'trainee' ? false : undefined,
         documentsStatus: role === 'trainee' ? (uploadedDocsCount === docKeys.length ? 'submitted' : hasAnyDocs ? 'partial' : 'pending') : undefined,
         submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : undefined,
@@ -1264,8 +1266,8 @@ export function Register() {
             email: form.email,
             department: form.department,
             position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-            companyName: role === 'hte' ? form.companyName : (role === 'admin' ? 'Carlos Hilado Memorial State University' : (form.companyName || 'Pending Admin Assignment')),
-            supervisorName: role === 'hte' ? (form.supervisorName || form.contactPerson) : (role === 'admin' ? 'College Dean' : (form.supervisorName || 'Pending Admin Assignment')),
+            companyName: role === 'hte' ? form.companyName : (role === 'admin' ? 'Carlos Hilado Memorial State University' : 'Pending Admin Assignment'),
+            supervisorName: role === 'hte' ? (form.supervisorName || form.contactPerson) : (role === 'admin' ? 'College Dean' : 'Pending Admin Assignment'),
             companyAddress: form.companyAddress,
             contactPerson: form.contactPerson,
             contactPhone: form.contactPhone,
@@ -1287,7 +1289,9 @@ export function Register() {
             registrationAddress: computedRegistrationAddress,
             photo: photo || (existing ? existing.photo : undefined),
             faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
-            active: true,
+            active: role !== 'trainee',
+            approvalStatus: role === 'trainee' ? 'pending' : 'approved',
+            applicationStatus: role === 'trainee' ? 'pending' : 'approved',
             submittedDocuments: role === 'trainee' && hasAnyDocs ? documents : (existing ? existing.submittedDocuments : undefined),
             documentsPassed: role === 'trainee' ? (existing?.documentsPassed === true && existing?.documentsStatus === 'passed' && uploadedDocsCount === docKeys.length) : (existing ? existing.documentsPassed : true),
             documentsStatus: role === 'trainee' ? (existing?.documentsPassed === true && existing?.documentsStatus === 'passed' && uploadedDocsCount === docKeys.length ? 'passed' : (uploadedDocsCount === docKeys.length ? 'submitted' : hasAnyDocs ? 'partial' : 'pending')) : (existing ? existing.documentsStatus : 'passed'),
@@ -1485,7 +1489,11 @@ export function Register() {
 
     setRegisteredUser(resolvedUser);
     setRegistrationComplete(true);
-    toast.success('Registration successful! Your account is ready.');
+    if (role === 'trainee') {
+      toast.success('Registration submitted! Account saved in Pending Approval awaiting HTE deployment.');
+    } else {
+      toast.success('Registration successful! Your account is ready.');
+    }
   };
 
   const getValidationErrors = () => {
@@ -1700,22 +1708,36 @@ export function Register() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-sky-700 flex flex-col items-center justify-center px-4 py-8">
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl text-center">
-          <div className="w-16 h-16 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-emerald-200 shadow-xs">
-            <Check size={32} className="text-emerald-600" />
+          <div className={`w-16 h-16 ${role === 'trainee' ? 'bg-amber-100 border-amber-200' : 'bg-emerald-100 border-emerald-200'} rounded-3xl flex items-center justify-center mx-auto mb-4 border shadow-xs`}>
+            {role === 'trainee' ? (
+              <Clock size={32} className="text-amber-600" />
+            ) : (
+              <Check size={32} className="text-emerald-600" />
+            )}
           </div>
 
-          <h2 className="text-2xl font-black text-gray-900 mb-1">Registration Complete!</h2>
+          <h2 className="text-2xl font-black text-gray-900 mb-1">
+            {role === 'trainee' ? 'Registration Submitted!' : 'Registration Complete!'}
+          </h2>
           <p className="text-sm text-gray-600 mb-5">
-            Welcome to the CHMSU OJT Management System, <span className="font-bold text-gray-800">{displayName}</span>. Your account is verified and ready.
+            {role === 'trainee' ? (
+              <>
+                Welcome to the CHMSU OJT Management System, <span className="font-bold text-gray-800">{displayName}</span>. Your account is saved in the system and is currently in <strong className="text-amber-700">Pending Approval</strong> awaiting instructor deployment in an HTE.
+              </>
+            ) : (
+              <>
+                Welcome to the CHMSU OJT Management System, <span className="font-bold text-gray-800">{displayName}</span>. Your account is verified and ready.
+              </>
+            )}
           </p>
 
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-bold mb-6">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>{roleTitle}</span>
+          <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full ${role === 'trainee' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'} text-xs font-bold mb-6`}>
+            <span className={`w-2 h-2 rounded-full ${role === 'trainee' ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
+            <span>{role === 'trainee' ? 'Pending Approval • Awaiting HTE Deployment' : roleTitle}</span>
             {displayId && (
               <>
-                <span className="text-blue-300">•</span>
-                <span className="font-mono text-blue-700">{displayId}</span>
+                <span className={role === 'trainee' ? 'text-amber-300' : 'text-blue-300'}>•</span>
+                <span className={`font-mono ${role === 'trainee' ? 'text-amber-700' : 'text-blue-700'}`}>{displayId}</span>
               </>
             )}
           </div>

@@ -371,7 +371,28 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     console.warn('Existing employee lookup notice:', lookupErr);
   }
 
-  // 2. Multi-tier write strategy
+  // 1. Primary path: Service role endpoint /api/employees (bypasses RLS to guarantee persistence)
+  try {
+    const res = await fetch('/api/employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: supabaseEmployee.id || validUuid,
+        updates: supabaseEmployee,
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const rec = Array.isArray(json.data) ? json.data[0] : json.data;
+      if (rec) {
+        return transformSupabaseEmployee(rec);
+      }
+    }
+  } catch (apiErr) {
+    console.warn('createEmployee /api/employees error, falling back:', apiErr);
+  }
+
+  // 2. Direct Supabase Client fallback
   // Strategy A: Upsert on primary key 'id'
   let upsertResult = await supabase
     .from('employees')
@@ -2170,8 +2191,18 @@ export function transformSupabaseEmployee(data: any): Employee {
       return data.hte_id;
     })(),
     linkedAt: data.linked_at,
-    applicationStatus: data.application_status || data.approval_status || 'approved',
-    approvalStatus: data.application_status || data.approval_status || 'approved',
+    applicationStatus: data.application_status || data.approval_status || (
+      data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor')) ||
+      data.position === 'HTE Representative' || (data.position && String(data.position).toLowerCase().includes('hte'))
+        ? 'approved'
+        : 'pending'
+    ),
+    approvalStatus: data.approval_status || data.application_status || (
+      data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor')) ||
+      data.position === 'HTE Representative' || (data.position && String(data.position).toLowerCase().includes('hte'))
+        ? 'approved'
+        : 'pending'
+    ),
     ...(() => {
       const resolvedRole = data.role || (
         data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor'))
