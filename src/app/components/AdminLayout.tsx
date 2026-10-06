@@ -26,6 +26,7 @@ import { isSecurityApiConfigured } from '../services/securityApi';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { getPendingTraineeRequests, subscribeToPendingRequests } from '../services/accountSync';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
+import { preloadRoute, preloadAllAdminRoutes } from '../routes';
 
 
 const navItems = [
@@ -58,6 +59,16 @@ export function AdminLayout() {
       navigate('/hte', { replace: true });
     }
   }, [currentUser, navigate]);
+
+  useEffect(() => {
+    // Preload all primary admin routes during idle time so page navigation is instantaneous
+    if (typeof window !== 'undefined') {
+      const timer = setTimeout(() => {
+        preloadAllAdminRoutes();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Determine whether the current user is an instructor
   const isInstructor = Boolean(
@@ -192,6 +203,8 @@ export function AdminLayout() {
               to={to}
               end={end}
               onClick={() => setSidebarOpen(false)}
+              onMouseEnter={() => preloadRoute(to)}
+              onTouchStart={() => preloadRoute(to)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
                   isActive
@@ -285,6 +298,8 @@ export function AdminLayout() {
                     to={to}
                     end={end}
                     onClick={() => setSidebarOpen(false)}
+                    onMouseEnter={() => preloadRoute(to)}
+                    onTouchStart={() => preloadRoute(to)}
                     className={({ isActive }) =>
                       `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
                         isActive

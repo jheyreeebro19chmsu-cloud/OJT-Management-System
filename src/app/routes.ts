@@ -66,6 +66,53 @@ const TimeRecord = lazyWithRetry(() => import('./pages/TimeRecord').then(m => ({
 const Documents = lazyWithRetry(() => import('./pages/Documents').then(m => ({ default: m.Documents })), 'Documents');
 const TraineeEvaluation = lazyWithRetry(() => import('./pages/TraineeEvaluation').then(m => ({ default: m.TraineeEvaluation })), 'TraineeEvaluation');
 
+const routeLoaders: Record<string, () => Promise<any>> = {
+  '/admin': () => import('./pages/admin/AdminDashboard'),
+  '/admin/dashboard': () => import('./pages/admin/AdminDashboard'),
+  '/admin/employees': () => import('./pages/admin/AdminEmployees'),
+  '/admin/records': () => import('./pages/admin/AdminEmployees'),
+  '/admin/geofence': () => import('./pages/admin/AdminGeofence'),
+  '/admin/reports': () => import('./pages/admin/AdminReports'),
+  '/admin/evaluations': () => import('./pages/admin/AdminEvaluations'),
+  '/admin/host-feedback': () => import('./pages/admin/AdminHostFeedback'),
+  '/admin/announcements': () => import('./pages/admin/AdminAnnouncements'),
+  '/admin/academic-years': () => import('./pages/admin/AcademicYearManagement'),
+  '/admin/settings': () => import('./pages/admin/AdminSettings'),
+  '/admin/profile': () => import('./pages/AccountProfile'),
+  '/hte': () => import('./pages/HTEDashboard'),
+  '/hte/dashboard': () => import('./pages/HTEDashboard'),
+  '/hte/trainees': () => import('./pages/HTETrainees'),
+  '/hte/records': () => import('./pages/HTERecords'),
+  '/hte/evaluations': () => import('./pages/HTEEvaluations'),
+  '/hte/announcements': () => import('./pages/HTEAnnouncements'),
+  '/hte/settings': () => import('./pages/HTESettings'),
+  '/hte/profile': () => import('./pages/AccountProfile'),
+};
+
+export function preloadRoute(path: string) {
+  const loader = routeLoaders[path];
+  if (loader) {
+    loader().catch(() => {});
+  }
+}
+
+export function preloadAllAdminRoutes() {
+  const adminPaths = [
+    '/admin/employees',
+    '/admin/reports',
+    '/admin/geofence',
+    '/admin/evaluations',
+    '/admin/host-feedback',
+    '/admin/announcements',
+    '/admin/academic-years',
+    '/admin/settings',
+    '/admin/profile',
+  ];
+  for (const path of adminPaths) {
+    preloadRoute(path);
+  }
+}
+
 function RouteErrorFallback() {
   const error = useRouteError();
   let message = 'Something went wrong while loading this page.';
@@ -145,8 +192,9 @@ function SuspenseLayout({ children }: { children: React.ReactNode }) {
     {
       fallback: React.createElement(
         'div',
-        { className: 'flex items-center justify-center min-h-screen bg-slate-50' },
-        React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600' })
+        { className: 'flex flex-col items-center justify-center min-h-[340px] w-full p-8 text-slate-400' },
+        React.createElement('div', { className: 'w-7 h-7 rounded-full border-2 border-slate-200 border-t-purple-600 animate-spin mb-2.5' }),
+        React.createElement('span', { className: 'text-xs font-semibold text-slate-500' }, 'Loading page...')
       )
     },
     children

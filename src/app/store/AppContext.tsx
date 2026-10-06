@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { authAPI } from '../services/authApi';
 
@@ -1408,9 +1408,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [useSupabase]);
 
+  const lastRefreshTimeRef = useRef<number>(0);
+
   // Periodic polling & window focus auto-sync across all open tabs/devices
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (options?: { force?: boolean }) => {
     if (!useSupabase && !isSupabaseConfigured()) return;
+    const now = Date.now();
+    // Throttle automated refresh calls to at most once every 15 seconds unless explicitly forced
+    if (!options?.force && now - lastRefreshTimeRef.current < 15000) {
+      return;
+    }
+    lastRefreshTimeRef.current = now;
     try {
       const [
         supabaseEmployees,

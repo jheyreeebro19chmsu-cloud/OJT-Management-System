@@ -19,6 +19,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
+import { preloadRoute } from '../routes';
 
 interface HTELayoutProps {
   children?: React.ReactNode;
@@ -135,6 +136,8 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               to={to}
               end={end}
               onClick={() => isMobile && setSidebarOpen(false)}
+              onMouseEnter={() => preloadRoute(to)}
+              onTouchStart={() => preloadRoute(to)}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium ${
                   isActive
