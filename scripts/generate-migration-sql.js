@@ -161,12 +161,12 @@ ON CONFLICT (id) DO UPDATE SET
   employee_id, name, email, department, position, company_name, hte_id,
   supervisor_name, registration_address, registration_lat, registration_lng,
   registration_location, active, application_status, campus, course,
-  photo, instructor_id, academic_year, required_hours, rendered_hours
+  photo, instructor_id, academic_year, required_hours
 ) VALUES (
   '${employeeId}', '${fullName.replace(/'/g, "''")}', '${email}', 'College of Computer Studies', 'OJT Trainee', '${config.companyName}', '${config.id}',
   '${config.supervisorName}', '${config.address.replace(/'/g, "''")}', ${config.lat}, ${config.lng},
   '${regLoc}', true, 'approved', 'Talisay (Main Campus)', '${course}',
-  '${photoUrl}', '${INSTRUCTOR_ID}', '2026-2027', ${requiredHours}, 0
+  '${photoUrl}', '${INSTRUCTOR_ID}', '2026-2027', ${requiredHours}
 )
 ON CONFLICT (employee_id) DO UPDATE SET
   name = EXCLUDED.name,

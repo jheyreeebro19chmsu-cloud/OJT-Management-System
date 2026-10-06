@@ -165,8 +165,8 @@ async function seedCompanyTrainees(config, prefixNum, count = 120) {
         address: config.address,
         phone: `0917${String(prefixNum).padStart(2, '0')}${String(num).padStart(5, '0')}`,
         contactPhone: `0917${String(prefixNum).padStart(2, '0')}${String(num).padStart(5, '0')}`,
-        documentsPassed: true,
-        documentsStatus: 'passed',
+        documentsPassed: false,
+        documentsStatus: 'pending',
       },
     };
 
