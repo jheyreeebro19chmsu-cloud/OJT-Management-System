@@ -71,6 +71,7 @@ export function AdminGeofence() {
   const [searchQuery, setSearchQuery] = useState('');
   const [focusCoords, setFocusCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [focusTrigger, setFocusTrigger] = useState<number>(0);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Close open action menu when clicking outside
@@ -1013,28 +1014,25 @@ export function AdminGeofence() {
     toast.success('Geofence zone added successfully!');
   };
 
-  // Scroll directly to map and fly-to focus coordinates
+  // Scroll directly to map and fly-to focus coordinates with automatic popup
   const scrollToMapAndFocus = (zone: GeofenceZone) => {
     setSelectedZoneId(zone.id);
     setFocusCoords({ lat: Number(zone.lat), lng: Number(zone.lng) });
+    setFocusTrigger(Date.now());
 
     const mapCard = document.getElementById('geofence-map-card');
     if (mapCard) {
-      const navHeaderOffset = 70;
-      const elementRect = mapCard.getBoundingClientRect();
-      const absoluteElementTop = elementRect.top + window.pageYOffset;
-      const targetScrollY = Math.max(0, absoluteElementTop - navHeaderOffset);
-
-      window.scrollTo({ top: targetScrollY, behavior: 'smooth' });
+      try {
+        mapCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch {}
 
       const mainContainer = document.querySelector('main');
       if (mainContainer) {
         const containerRect = mainContainer.getBoundingClientRect();
-        const targetContainerTop = elementRect.top - containerRect.top + mainContainer.scrollTop - navHeaderOffset;
+        const elementRect = mapCard.getBoundingClientRect();
+        const targetContainerTop = elementRect.top - containerRect.top + mainContainer.scrollTop - 20;
         mainContainer.scrollTo({ top: Math.max(0, targetContainerTop), behavior: 'smooth' });
       }
-
-      mapCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
@@ -1177,7 +1175,13 @@ export function AdminGeofence() {
 
   // Display zones list with live drag coordinates and real-time editing radius overridden, with user photos attached
   const displayZones = useMemo(() => {
-    return filteredZones.map((z) => {
+    const list = [...filteredZones];
+    if (selectedZoneId && !list.some((z) => z.id === selectedZoneId)) {
+      const extra = allCombinedZones.find((z) => z.id === selectedZoneId);
+      if (extra) list.push(extra);
+    }
+
+    return list.map((z) => {
       let updated = { ...z };
       if (dragZoneId && dragCoords && z.id === dragZoneId) {
         updated.lat = dragCoords.lat;
@@ -1203,7 +1207,7 @@ export function AdminGeofence() {
       }
       return updated;
     });
-  }, [filteredZones, dragZoneId, dragCoords, editId, form.radius, form.lat, form.lng, form.name, employees]);
+  }, [filteredZones, allCombinedZones, selectedZoneId, dragZoneId, dragCoords, editId, form.radius, form.lat, form.lng, form.name, employees]);
 
   return (
     <div className="space-y-5">
@@ -1409,7 +1413,7 @@ export function AdminGeofence() {
         id="geofence-map-card"
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative"
+        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative scroll-mt-4"
       >
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1430,6 +1434,7 @@ export function AdminGeofence() {
                 onClick={() => {
                   setSelectedZoneId(null);
                   setFocusCoords(undefined);
+                  setFocusTrigger(0);
                   if (dragZoneId) handleCancelDrag();
                 }}
                 className="text-xs text-blue-600 hover:underline font-semibold cursor-pointer"
@@ -1494,10 +1499,12 @@ export function AdminGeofence() {
 
         <GeofenceMap
           zones={displayZones}
+          selectedZoneId={selectedZoneId}
+          focusCoords={focusCoords}
+          focusTrigger={focusTrigger}
           picking={Boolean(showAdd || editId || dragZoneId)}
           pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : (dragCoords ? { lat: dragCoords.lat, lng: dragCoords.lng } : undefined)}
           pickedRadius={Number(form.radius) || GEOFENCE_RADIUS_METERS}
-          focusCoords={focusCoords}
           className="h-80"
           allZonesDraggable={false}
           draggableZoneId={dragZoneId}
@@ -1506,6 +1513,7 @@ export function AdminGeofence() {
           onZoneClick={(zone) => {
             setSelectedZoneId(zone.id);
             setFocusCoords({ lat: zone.lat, lng: zone.lng });
+            setFocusTrigger(Date.now());
           }}
           onPick={async (lat, lng) => {
             const safeLat = Number(lat.toFixed(6));
@@ -1737,6 +1745,17 @@ export function AdminGeofence() {
                             <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold text-[11px] border border-blue-100">
                               ⭕ {zone.radius}m boundary radius
                             </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                scrollToMapAndFocus(zone);
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md transition-all cursor-pointer"
+                              title="Focus location and open details popup on map"
+                            >
+                              <Navigation size={11} /> Pop up on Map
+                            </button>
                             <a
                               href={`https://www.google.com/maps?q=${zone.lat},${zone.lng}`}
                               target="_blank"
@@ -2208,6 +2227,18 @@ export function AdminGeofence() {
               {/* Modal Actions Footer */}
               <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = viewModalZone;
+                      setViewModalZone(null);
+                      scrollToMapAndFocus(target);
+                    }}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Navigation size={14} /> Show & Pop Up on Map
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {

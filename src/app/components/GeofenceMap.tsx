@@ -35,6 +35,10 @@ export interface GeofenceMapProps {
   onPick?: (lat: number, lng: number) => void;
   /** Center map on selected zone */
   focusCoords?: { lat: number; lng: number };
+  /** Selected zone ID to highlight and auto-open popup */
+  selectedZoneId?: string | null;
+  /** Counter or timestamp to re-trigger focus and popup */
+  focusTrigger?: number;
   /** Employee / trainee live GPS — shows position vs geofences */
   liveUser?: { lat: number; lng: number; accuracy?: number } | null;
   /** Optional profile photo URL for live user avatar on map */
@@ -74,6 +78,8 @@ export function GeofenceMap({
   pickedRadius = 40,
   onPick,
   focusCoords,
+  selectedZoneId = null,
+  focusTrigger = 0,
   liveUser = null,
   liveUserPhoto = null,
   className = 'h-80',
@@ -90,6 +96,7 @@ export function GeofenceMap({
   sizePreset: controlledSizePreset,
   onSizePresetChange,
 }: GeofenceMapProps) {
+  const markerRefs = useRef<Map<string, L.Marker>>(new Map());
   const [internalFullscreen, setInternalFullscreen] = useState(false);
   const [internalSizePreset, setInternalSizePreset] = useState<MapSizePreset>('normal');
   const [recenterTrigger, setRecenterTrigger] = useState(0);
@@ -773,6 +780,13 @@ export function GeofenceMap({
                 }}
               />
               <Marker
+                ref={(m) => {
+                  if (m) {
+                    markerRefs.current.set(group.key, m);
+                  } else {
+                    markerRefs.current.delete(group.key);
+                  }
+                }}
                 position={[group.lat, group.lng]}
                 icon={isSingle ? getZoneMarkerIcon(zone, isDraggable) : getClusterMarkerIcon(group)}
                 draggable={isDraggable}
@@ -792,10 +806,37 @@ export function GeofenceMap({
                   },
                 }}
               >
-                <Popup className="leaflet-geofence-popup">
+                <Popup className="leaflet-geofence-popup" autoPan={true} autoPanPadding={[25, 25]}>
                   <div className="leaflet-popup-card">
                     {isSingle ? (
                       <>
+                        {selectedZoneId === zone.id && (
+                          <div
+                            style={{
+                              backgroundColor: '#ecfdf5',
+                              border: '1px solid #10b981',
+                              borderRadius: '6px',
+                              padding: '3px 6px',
+                              marginBottom: '6px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <span style={{ fontSize: '10px' }}>🎯</span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                color: '#047857',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.4px',
+                              }}
+                            >
+                              Selected Account
+                            </span>
+                          </div>
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
                           <div
                             style={{
@@ -873,57 +914,172 @@ export function GeofenceMap({
                         <p>Status: {zone.active ? 'Active' : 'Inactive'}</p>
                       </>
                     ) : (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                          <div
-                            style={{
-                              width: '36px',
-                              height: '36px',
-                              borderRadius: '9999px',
-                              backgroundColor: '#0f172a',
-                              color: '#ffffff',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '16px',
-                              flexShrink: 0,
-                              border: '2px solid #f59e0b',
-                            }}
-                          >
-                            🏢
-                          </div>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>
-                              {zone.name || 'Workplace Perimeter'}
-                            </p>
-                            <span style={{ fontSize: '10px', fontWeight: 700, color: '#f59e0b' }}>
-                              {group.zones.length} Trainees Deployed Here
-                            </span>
-                          </div>
-                        </div>
-                        <p>Radius: {Math.round(group.radius || 40)}m boundary</p>
-                        <p>
-                          Coordinates: {group.lat.toFixed(5)}, {group.lng.toFixed(5)}
-                        </p>
-                        <div style={{ maxHeight: '130px', overflowY: 'auto', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
-                          <p style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', margin: '0 0 4px 0', textTransform: 'uppercase' }}>
-                            Deployed Trainees ({group.zones.length}):
-                          </p>
-                          {group.zones.slice(0, 40).map((z, idx) => (
-                            <div key={z.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', fontSize: '11px', color: '#1e293b' }}>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px' }}>
-                                • {z.name?.split(' - ')[0] || z.name}
-                              </span>
-                              <span style={{ fontSize: '9px', color: '#10b981', fontWeight: 700 }}>Active</span>
+                      (() => {
+                        const selectedInGroup = group.zones.find(
+                          (z) => z.id === selectedZoneId || (z.employeeId && selectedZoneId?.includes(z.employeeId))
+                        );
+
+                        const sortedZones = selectedInGroup
+                          ? [selectedInGroup, ...group.zones.filter((z) => z.id !== selectedInGroup.id)]
+                          : group.zones;
+
+                        return (
+                          <>
+                            {selectedInGroup && (
+                              <div
+                                style={{
+                                  backgroundColor: '#f0fdf4',
+                                  border: '1.5px solid #10b981',
+                                  borderRadius: '8px',
+                                  padding: '7px 9px',
+                                  marginBottom: '8px',
+                                  boxShadow: '0 1px 4px rgba(16, 185, 129, 0.12)',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div
+                                    style={{
+                                      width: '32px',
+                                      height: '32px',
+                                      borderRadius: '9999px',
+                                      overflow: 'hidden',
+                                      backgroundColor: '#10b981',
+                                      color: '#ffffff',
+                                      fontWeight: 800,
+                                      fontSize: '13px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      flexShrink: 0,
+                                      border: '2px solid #ffffff',
+                                    }}
+                                  >
+                                    {(() => {
+                                      const pUrl = resolveZonePhotoUrl(selectedInGroup);
+                                      return pUrl ? (
+                                        <img
+                                          src={pUrl}
+                                          alt={selectedInGroup.name}
+                                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                          onError={(e) => {
+                                            e.currentTarget.style.display = 'none';
+                                          }}
+                                        />
+                                      ) : (
+                                        <span>{(selectedInGroup.name[0] || 'T').toUpperCase()}</span>
+                                      );
+                                    })()}
+                                  </div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div
+                                      style={{
+                                        fontSize: '9px',
+                                        fontWeight: 800,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        color: '#059669',
+                                      }}
+                                    >
+                                      🎯 Selected Trainee Account
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: '12px',
+                                        fontWeight: 800,
+                                        color: '#064e3b',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                      }}
+                                    >
+                                      {selectedInGroup.name?.split(' - ')[0] || selectedInGroup.name}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#047857', fontWeight: 600 }}>
+                                      Assigned to this workplace perimeter
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
+                              <div
+                                style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  borderRadius: '9999px',
+                                  backgroundColor: '#0f172a',
+                                  color: '#ffffff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '16px',
+                                  flexShrink: 0,
+                                  border: '2px solid #f59e0b',
+                                }}
+                              >
+                                🏢
+                              </div>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <p className="leaflet-popup-title" style={{ margin: 0, fontSize: '12px', lineHeight: 1.25, fontWeight: 800 }}>
+                                  {zone.name || 'Workplace Perimeter'}
+                                </p>
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: '#f59e0b' }}>
+                                  {group.zones.length} Trainees Deployed Here
+                                </span>
+                              </div>
                             </div>
-                          ))}
-                          {group.zones.length > 40 && (
-                            <p style={{ fontSize: '10px', color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
-                              +{group.zones.length - 40} more trainees in this zone
+                            <p>Radius: {Math.round(group.radius || 40)}m boundary</p>
+                            <p>
+                              Coordinates: {group.lat.toFixed(5)}, {group.lng.toFixed(5)}
                             </p>
-                          )}
-                        </div>
-                      </>
+                            <div style={{ maxHeight: '130px', overflowY: 'auto', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '6px' }}>
+                              <p style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', margin: '0 0 4px 0', textTransform: 'uppercase' }}>
+                                Deployed Trainees ({group.zones.length}):
+                              </p>
+                              {sortedZones.slice(0, 40).map((z, idx) => {
+                                const isThisSelected = z.id === selectedInGroup?.id;
+                                return (
+                                  <div
+                                    key={z.id || idx}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      padding: isThisSelected ? '3px 6px' : '2px 0',
+                                      margin: isThisSelected ? '2px 0' : '0',
+                                      fontSize: '11px',
+                                      borderRadius: isThisSelected ? '6px' : '0',
+                                      backgroundColor: isThisSelected ? '#ecfdf5' : 'transparent',
+                                      color: isThisSelected ? '#065f46' : '#1e293b',
+                                      fontWeight: isThisSelected ? 800 : 500,
+                                    }}
+                                  >
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px' }}>
+                                      {isThisSelected ? '🎯 ' : '• '}
+                                      {z.name?.split(' - ')[0] || z.name}
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: '9px',
+                                        color: isThisSelected ? '#059669' : '#10b981',
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      {isThisSelected ? 'Selected' : 'Active'}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              {group.zones.length > 40 && (
+                                <p style={{ fontSize: '10px', color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
+                                  +{group.zones.length - 40} more trainees in this zone
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()
                     )}
                   </div>
                 </Popup>
@@ -1057,7 +1213,13 @@ export function GeofenceMap({
         )}
 
         <MapClickHandler picking={picking} onPick={onPick} />
-        <MapFlyTo coords={focusCoords} />
+        <MapFocusController
+          selectedZoneId={selectedZoneId}
+          coords={focusCoords}
+          focusTrigger={focusTrigger}
+          groupedZones={groupedZones}
+          markerRefs={markerRefs}
+        />
         <FitMapView
           zones={safeZones}
           liveUser={safeLiveUser}
@@ -1267,29 +1429,81 @@ function MapClickHandler({ picking, onPick }: { picking: boolean; onPick?: (lat:
   return null;
 }
 
-function MapFlyTo({ coords }: { coords?: { lat: number; lng: number } }) {
+function MapFocusController({
+  selectedZoneId,
+  coords,
+  focusTrigger,
+  groupedZones,
+  markerRefs,
+}: {
+  selectedZoneId?: string | null;
+  coords?: { lat: number; lng: number };
+  focusTrigger?: number;
+  groupedZones: Array<{
+    key: string;
+    lat: number;
+    lng: number;
+    radius: number;
+    active: boolean;
+    primaryZone: GeofenceZone;
+    zones: GeofenceZone[];
+    isDraggable: boolean;
+  }>;
+  markerRefs: React.MutableRefObject<Map<string, L.Marker>>;
+}) {
   const map = useMap();
-  const lastTargetRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    if (!coords || !isValidCoord(coords.lat, coords.lng)) return;
-
-    // Ignore if coordinates are virtually identical (< 5 meters) to prevent redundant fly animations
-    if (lastTargetRef.current) {
-      const dist = calculateDistance(
-        lastTargetRef.current.lat,
-        lastTargetRef.current.lng,
-        coords.lat,
-        coords.lng
-      );
-      if (dist < 5) return;
+    if (!selectedZoneId && (!coords || !isValidCoord(coords.lat, coords.lng))) {
+      return;
     }
 
-    lastTargetRef.current = { lat: coords.lat, lng: coords.lng };
-    const currentZoom = map.getZoom();
-    const targetZoom = currentZoom ? Math.max(currentZoom, 17) : 17;
-    map.flyTo([coords.lat, coords.lng], targetZoom, { duration: 1.0 });
-  }, [coords?.lat, coords?.lng, map]);
+    // Locate the matching group on the map
+    let targetGroup = groupedZones.find(
+      (g) =>
+        g.zones.some((z) => z.id === selectedZoneId || (z.employeeId && selectedZoneId?.includes(z.employeeId))) ||
+        g.primaryZone.id === selectedZoneId
+    );
+
+    if (!targetGroup && coords && isValidCoord(coords.lat, coords.lng)) {
+      targetGroup = groupedZones.find(
+        (g) => Math.abs(g.lat - coords.lat) < 0.0002 && Math.abs(g.lng - coords.lng) < 0.0002
+      );
+    }
+
+    const targetLat = targetGroup ? targetGroup.lat : coords?.lat;
+    const targetLng = targetGroup ? targetGroup.lng : coords?.lng;
+
+    if (targetLat != null && targetLng != null && isValidCoord(targetLat, targetLng)) {
+      const currentZoom = map.getZoom();
+      const targetZoom = Math.max(currentZoom || 16, 17);
+
+      map.flyTo([targetLat, targetLng], targetZoom, {
+        duration: 0.8,
+        easeLinearity: 0.25,
+      });
+
+      if (targetGroup) {
+        const groupKey = targetGroup.key;
+        const openMarker = () => {
+          const marker = markerRefs.current.get(groupKey);
+          if (marker) {
+            marker.openPopup();
+          }
+        };
+
+        // Open immediately and also shortly after fly animation begins/settles
+        openMarker();
+        const t1 = setTimeout(openMarker, 200);
+        const t2 = setTimeout(openMarker, 550);
+
+        return () => {
+          clearTimeout(t1);
+          clearTimeout(t2);
+        };
+      }
+    }
+  }, [selectedZoneId, coords?.lat, coords?.lng, focusTrigger, groupedZones, map, markerRefs]);
 
   return null;
 }
