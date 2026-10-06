@@ -15,12 +15,14 @@ export default defineConfig({
       name: 'dev-api-middleware',
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
-          if (req.url && (req.url.startsWith('/api/geofence-zones') || req.url.startsWith('/api/time-records') || req.url.startsWith('/api/employees'))) {
+          if (req.url && (req.url.startsWith('/api/geofence-zones') || req.url.startsWith('/api/time-records') || req.url.startsWith('/api/employees') || req.url.startsWith('/api/send-otp'))) {
             const apiPath = req.url.startsWith('/api/geofence-zones')
               ? './api/geofence-zones.js'
               : req.url.startsWith('/api/time-records')
               ? './api/time-records.js'
-              : './api/employees.js';
+              : req.url.startsWith('/api/employees')
+              ? './api/employees.js'
+              : './api/send-otp.js';
             try {
               const { default: handler } = await import(apiPath);
               let body = '';
