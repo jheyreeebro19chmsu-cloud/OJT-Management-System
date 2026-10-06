@@ -696,12 +696,12 @@ export function Dashboard() {
       };
     }
 
-    // Trainee has not recorded attendance for today yet
+    // Trainee has not recorded attendance for today yet - clock-in is open all the time
     if (currentTimeInMinutes > lateThresholdMinutes) {
-      return { label: 'Offsite (No Attendance Yet)', color: 'text-rose-700 bg-rose-100' };
+      return { label: 'Open (Late Attendance)', color: 'text-amber-700 bg-amber-100' };
     }
 
-    return { label: 'Open (Clock In Anytime)', color: 'text-emerald-700 bg-emerald-100' };
+    return { label: 'Open (On-Time)', color: 'text-emerald-700 bg-emerald-100' };
   };
 
   const handleStudentClick = (record: any) => {
@@ -1770,7 +1770,7 @@ export function Dashboard() {
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-white/80 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-          <span>🕒 Clock In: <strong>Open All Times</strong> (Late after {settings?.workStartTime || '8:00 AM'})</span>
+          <span>🕒 Clock In: <strong>Open All Times</strong> (Late after {formattedCutoffTime || '8:15 AM'})</span>
           <span>🔄 Resets daily at 6:00 AM</span>
         </div>
 
@@ -1925,70 +1925,55 @@ export function Dashboard() {
 
       {/* Primary Call-To-Action (CTA): Pronounced Clock In / Clock Out Hero Button */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        {isPastLateThreshold ? (
-          /* Disabled State: Late threshold cutoff passed */
-          <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-slate-100 via-gray-100 to-slate-200 border-2 border-slate-300 shadow-sm opacity-90 cursor-not-allowed">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-slate-300 flex items-center justify-center text-slate-600 shrink-0 shadow-inner">
-                  <Lock size={26} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
-                      Late Cutoff Passed
-                    </span>
-                    <span className="text-xs font-semibold text-slate-500 font-mono">
-                      Cutoff: {formattedCutoffTime}
-                    </span>
-                  </div>
-                  <h3 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight uppercase mt-1">
-                    CLOCK IN CLOSED
-                  </h3>
-                  <p className="text-xs text-slate-600 mt-0.5 max-w-xl">
-                    Attendance cutoff passed at {formattedCutoffTime} ({lateGraceMinutes} min grace period after {formatTime(settings.workStartTime)}). Clock-in is disabled after passing the late threshold.
-                  </p>
-                </div>
-              </div>
-
-              <div className="px-4 py-2.5 rounded-2xl bg-slate-200/80 text-slate-600 text-xs font-bold flex items-center gap-1.5 self-start sm:self-center shrink-0">
-                <Lock size={14} />
-                <span>Attendance Locked</span>
-              </div>
-            </div>
-          </div>
-        ) : !todayRecord?.timeIn ? (
-          /* Active Standout State: Clock In Now (Hero Primary CTA) */
+        {!todayRecord?.timeIn ? (
+          /* Active Standout State: Clock In Now (Hero Primary CTA) - Always Open at all times */
           <Link
             to="/app/time-record"
-            className="group relative block overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white shadow-xl shadow-blue-500/25 ring-4 ring-blue-500/20 active:scale-[0.99] transition-all duration-200"
+            className={`group relative block overflow-hidden rounded-3xl p-5 sm:p-6 text-white shadow-xl ring-4 active:scale-[0.99] transition-all duration-200 ${
+              isPastLateThreshold
+                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 shadow-amber-500/25 ring-amber-500/20'
+                : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-500/25 ring-blue-500/20'
+            }`}
           >
             <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
               <div className="flex items-center gap-4">
                 <div className="relative flex items-center justify-center w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl shrink-0 shadow-inner">
-                  <span className="absolute animate-ping inline-flex h-10 w-10 rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className={`absolute animate-ping inline-flex h-10 w-10 rounded-full opacity-75 ${isPastLateThreshold ? 'bg-amber-300' : 'bg-emerald-400'}`}></span>
                   <Clock size={28} className="text-white relative z-10" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      Shift Open • Grace Cutoff: {formattedCutoffTime}
-                    </span>
+                    {isPastLateThreshold ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400/25 text-amber-100 border border-amber-300/40">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse"></span>
+                        Clock-In Open • Late Attendance (Past {formattedCutoffTime})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Shift Open • On-Time Grace until {formattedCutoffTime}
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase mt-1">
-                    CLOCK IN NOW
+                    {isPastLateThreshold ? 'CLOCK IN NOW (LATE)' : 'CLOCK IN NOW'}
                   </h3>
-                  <p className="text-xs sm:text-sm text-blue-100 flex items-center gap-1.5 mt-0.5">
-                    <Camera size={14} className="text-blue-200" />
-                    Biometric Face Recognition + Geofenced Verification
+                  <p className="text-xs sm:text-sm text-white/90 flex items-center gap-1.5 mt-0.5">
+                    <Camera size={14} className="text-white/80" />
+                    {isPastLateThreshold
+                      ? `Clock-in is open all times. Attendance will be recorded as Late (passed ${lateGraceMinutes} min threshold).`
+                      : 'Biometric Face Recognition + Geofenced Verification'}
                   </p>
                 </div>
               </div>
 
-              <div className="px-5 py-2.5 rounded-2xl bg-white text-blue-700 font-black text-sm tracking-wide shadow-md group-hover:bg-blue-50 group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0">
-                <span>RECORD TIME IN</span>
+              <div className={`px-5 py-2.5 rounded-2xl font-black text-sm tracking-wide shadow-md group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0 ${
+                isPastLateThreshold
+                  ? 'bg-white text-orange-800 group-hover:bg-amber-50'
+                  : 'bg-white text-blue-700 group-hover:bg-blue-50'
+              }`}>
+                <span>{isPastLateThreshold ? 'RECORD TIME IN (LATE)' : 'RECORD TIME IN'}</span>
                 <ChevronRight size={18} />
               </div>
             </div>
