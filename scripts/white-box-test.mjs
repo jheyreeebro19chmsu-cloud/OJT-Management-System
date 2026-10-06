@@ -2212,6 +2212,111 @@ assert('Resilient registration preserves employee data', simResult.employee.name
 assert('Resilient registration assigns valid UUID id', isUuidRegex.test(simResult.employee.id));
 
 // ----------------------------------------------------------------------------
+// 25. WHITE BOX TESTS: Undeployed Trainees in Pending Approvals & Deployed in Active Trainees
+// ----------------------------------------------------------------------------
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  25. WHITE BOX TESTS: Trainee Deployment to HTE & Pending Approval  ${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+const mockAvailableHtes = [
+  { id: 'hte-concentrix', companyName: 'Concentrix', name: 'John Doe' },
+  { id: 'hte-printing', companyName: 'Printing Services', name: 'Yzel Norte' },
+];
+
+function isTraineeDeployedCheck(emp, availableHtes) {
+  const raw = (emp.companyName || '').trim();
+  if (!raw || isInvalidHteCompanyTest(raw)) {
+    return false;
+  }
+  if (emp.hteId) {
+    return true;
+  }
+  return (availableHtes || []).some(
+    (h) => h.id === emp.hteId || (h.companyName && h.companyName.trim().toLowerCase() === raw.toLowerCase())
+  );
+}
+
+function simulateFilterGroups(employeesList, availableHtes) {
+  const pending = employeesList.filter((e) => {
+    const isStudent = (e.position || 'OJT Trainee').toLowerCase().includes('trainee');
+    if (!isStudent) return false;
+    const isUndeployed = !isTraineeDeployedCheck(e, availableHtes);
+    return (
+      e.active === false ||
+      e.approvalStatus === 'pending' ||
+      e.applicationStatus === 'pending' ||
+      e.applicationStatus === 'unregistered' ||
+      (e.active == null && e.applicationStatus !== 'approved') ||
+      isUndeployed
+    );
+  });
+
+  const student = employeesList.filter((e) => {
+    const isStudent = (e.position || 'OJT Trainee').toLowerCase().includes('trainee');
+    if (!isStudent) return false;
+    const isDeployed = isTraineeDeployedCheck(e, availableHtes);
+    return (
+      (e.active === true || e.active == null) &&
+      e.approvalStatus !== 'pending' &&
+      e.applicationStatus !== 'pending' &&
+      e.applicationStatus !== 'unregistered' &&
+      isDeployed
+    );
+  });
+
+  return { pending, student };
+}
+
+const testCohort = [
+  // 1: Undeployed - empty company
+  { id: 't1', name: 'Alice Smith', position: 'OJT Trainee', companyName: '', hteId: null, active: true, approvalStatus: 'approved', applicationStatus: 'approved' },
+  // 2: Undeployed - "Unassigned" placeholder
+  { id: 't2', name: 'Bob Johnson', position: 'OJT Trainee', companyName: 'Unassigned', hteId: null, active: true, approvalStatus: 'approved', applicationStatus: 'approved' },
+  // 3: Undeployed - "Pending Assignment"
+  { id: 't3', name: 'Charlie Brown', position: 'OJT Trainee', companyName: 'Pending Assignment', hteId: null, active: true, approvalStatus: 'approved', applicationStatus: 'approved' },
+  // 4: Deployed - Concentrix with valid hteId
+  { id: 't4', name: 'David Lee', position: 'OJT Trainee', companyName: 'Concentrix', hteId: 'hte-concentrix', active: true, approvalStatus: 'approved', applicationStatus: 'approved' },
+  // 5: Deployed - Printing Services matching available HTE
+  { id: 't5', name: 'Emma Watson', position: 'OJT Trainee', companyName: 'Printing Services', hteId: null, active: true, approvalStatus: 'approved', applicationStatus: 'approved' },
+  // 6: Pending verification regardless of company
+  { id: 't6', name: 'Frank Miller', position: 'OJT Trainee', companyName: 'Concentrix', hteId: 'hte-concentrix', active: false, approvalStatus: 'pending', applicationStatus: 'pending' },
+];
+
+const initialGroups = simulateFilterGroups(testCohort, mockAvailableHtes);
+
+// Test 25.1: Trainees not deployed to HTE must be in Pending Approvals
+assert('Trainee with empty company is categorized in Pending Approvals', initialGroups.pending.some((t) => t.id === 't1'));
+assert('Trainee with "Unassigned" company is categorized in Pending Approvals', initialGroups.pending.some((t) => t.id === 't2'));
+assert('Trainee with "Pending Assignment" company is categorized in Pending Approvals', initialGroups.pending.some((t) => t.id === 't3'));
+assert('Pending verification trainee is in Pending Approvals', initialGroups.pending.some((t) => t.id === 't6'));
+assert('Pending Approvals contains exactly 4 trainees (3 undeployed + 1 pending verification)', initialGroups.pending.length === 4);
+
+// Test 25.2: Active Trainees must strictly contain deployed, approved trainees
+assert('Active Trainees contains deployed David Lee (Concentrix)', initialGroups.student.some((t) => t.id === 't4'));
+assert('Active Trainees contains deployed Emma Watson (Printing Services)', initialGroups.student.some((t) => t.id === 't5'));
+assert('Active Trainees does not contain undeployed Alice Smith', !initialGroups.student.some((t) => t.id === 't1'));
+assert('Active Trainees does not contain unassigned Bob Johnson', !initialGroups.student.some((t) => t.id === 't2'));
+assert('Active Trainees does not contain undeployed Charlie Brown', !initialGroups.student.some((t) => t.id === 't3'));
+assert('Active Trainees contains exactly 2 deployed trainees', initialGroups.student.length === 2);
+
+// Test 25.3: Deploying a trainee to HTE moves them from Pending Approvals to Active Trainees
+const updatedT1 = {
+  ...testCohort[0],
+  hteId: 'hte-concentrix',
+  companyName: 'Concentrix',
+  active: true,
+  approvalStatus: 'approved',
+  applicationStatus: 'approved',
+};
+const updatedCohort = [updatedT1, ...testCohort.slice(1)];
+const postDeployGroups = simulateFilterGroups(updatedCohort, mockAvailableHtes);
+
+assert('Deploying Alice Smith to Concentrix moves her out of Pending Approvals', !postDeployGroups.pending.some((t) => t.id === 't1'));
+assert('Deploying Alice Smith to Concentrix places her into Active Trainees', postDeployGroups.student.some((t) => t.id === 't1'));
+assert('Active Trainees count increases from 2 to 3', postDeployGroups.student.length === 3);
+assert('Pending Approvals count decreases from 4 to 3', postDeployGroups.pending.length === 3);
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

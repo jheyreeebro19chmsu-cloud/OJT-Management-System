@@ -241,99 +241,6 @@ export function AdminEmployees() {
     return empComp.includes(target) || target.includes(empComp);
   };
 
-  const filteredGroups = {
-    pending: deduplicateAccounts(
-      employees.filter(
-        (e) =>
-          // Pending is strictly for student trainees awaiting verification
-          getEmployeeGroup(e) === 'student' &&
-          (e.active === false ||
-            e.approvalStatus === 'pending' ||
-            e.applicationStatus === 'pending' ||
-            e.applicationStatus === 'unregistered' ||
-            // null active with non-approved status = awaiting review
-            (e.active == null && e.applicationStatus !== 'approved')) &&
-          matchesYear(e) &&
-          matchesHteFilter(e, selectedHte) &&
-          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.department || '').toLowerCase().includes(search.toLowerCase()))
-      )
-    ),
-    student: deduplicateAccounts(
-      employees.filter(
-        (e) =>
-          (e.active === true || e.active == null) &&
-          e.approvalStatus !== 'pending' &&
-          e.applicationStatus !== 'pending' &&
-          e.applicationStatus !== 'unregistered' &&
-          getEmployeeGroup(e) === 'student' &&
-          matchesYear(e) &&
-          matchesHteFilter(e, selectedHte) &&
-          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.department || '').toLowerCase().includes(search.toLowerCase()))
-      )
-    ),
-    instructor: deduplicateAccounts(
-      employees.filter(
-        (e) =>
-          (e.active === true || e.active == null) &&
-          e.approvalStatus !== 'pending' &&
-          e.applicationStatus !== 'pending' &&
-          getEmployeeGroup(e) === 'instructor' &&
-          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.department || '').toLowerCase().includes(search.toLowerCase()))
-      )
-    ),
-    hte: deduplicateAccounts([
-      ...employees.filter(
-        (e) =>
-          (e.active === true || e.active == null) &&
-          e.approvalStatus !== 'pending' &&
-          e.applicationStatus !== 'pending' &&
-          getEmployeeGroup(e) === 'hte' &&
-          matchesYear(e) &&
-          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-            (e.department || '').toLowerCase().includes(search.toLowerCase()))
-      ),
-      ...(hostSupervisors || []).map((h) => ({
-        id: h.id,
-        employeeId: h.employeeId || h.id,
-        name: h.name,
-        email: h.email,
-        position: 'HTE Representative',
-        role: 'hte',
-        companyName: h.companyName,
-        companyAddress: h.companyAddress,
-        department: 'Host Establishment',
-        supervisorName: h.name,
-        phone: h.phone,
-        contactPhone: h.phone,
-        academicYear: h.academicYear || settings.activeAcademicYear,
-        active: h.active !== false,
-        approvalStatus: 'approved' as const,
-        applicationStatus: 'approved' as const,
-        requiredHours: 0,
-        faceRegistered: false,
-      } as Employee)).filter(
-        (h) =>
-          matchesYear(h) &&
-          ((h.name || '').toLowerCase().includes(search.toLowerCase()) ||
-            (h.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
-            (h.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
-            (h.department || '').toLowerCase().includes(search.toLowerCase()))
-      ),
-    ]),
-  };
-
   const allAvailableHtes = useMemo(() => {
     const map = new Map<string, {
       id: string;
@@ -403,6 +310,115 @@ export function AdminEmployees() {
     return Array.from(map.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
   }, [hostSupervisors, employees]);
 
+  const isTraineeDeployed = (emp: Employee) => {
+    const rawComp = (emp.companyName || '').trim();
+    if (!rawComp || isInvalidHteCompany(rawComp)) {
+      return false;
+    }
+    // Deployed if explicit valid hteId exists, or company name matches an available HTE establishment
+    if (emp.hteId) {
+      return true;
+    }
+    return (allAvailableHtes || []).some(
+      (h) => h.id === emp.hteId || (h.companyName && h.companyName.trim().toLowerCase() === rawComp.toLowerCase())
+    );
+  };
+
+  const filteredGroups = {
+    pending: deduplicateAccounts(
+      employees.filter(
+        (e) =>
+          // Pending is strictly for student trainees awaiting verification or HTE deployment
+          getEmployeeGroup(e) === 'student' &&
+          (e.active === false ||
+            e.approvalStatus === 'pending' ||
+            e.applicationStatus === 'pending' ||
+            e.applicationStatus === 'unregistered' ||
+            // null active with non-approved status = awaiting review
+            (e.active == null && e.applicationStatus !== 'approved') ||
+            !isTraineeDeployed(e)) &&
+          matchesYear(e) &&
+          matchesHteFilter(e, selectedHte) &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      )
+    ),
+    student: deduplicateAccounts(
+      employees.filter(
+        (e) =>
+          (e.active === true || e.active == null) &&
+          e.approvalStatus !== 'pending' &&
+          e.applicationStatus !== 'pending' &&
+          e.applicationStatus !== 'unregistered' &&
+          getEmployeeGroup(e) === 'student' &&
+          isTraineeDeployed(e) &&
+          matchesYear(e) &&
+          matchesHteFilter(e, selectedHte) &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.course || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      )
+    ),
+    instructor: deduplicateAccounts(
+      employees.filter(
+        (e) =>
+          (e.active === true || e.active == null) &&
+          e.approvalStatus !== 'pending' &&
+          e.applicationStatus !== 'pending' &&
+          getEmployeeGroup(e) === 'instructor' &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      )
+    ),
+    hte: deduplicateAccounts([
+      ...employees.filter(
+        (e) =>
+          (e.active === true || e.active == null) &&
+          e.approvalStatus !== 'pending' &&
+          e.applicationStatus !== 'pending' &&
+          getEmployeeGroup(e) === 'hte' &&
+          matchesYear(e) &&
+          ((e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (e.department || '').toLowerCase().includes(search.toLowerCase()))
+      ),
+      ...(hostSupervisors || []).map((h) => ({
+        id: h.id,
+        employeeId: h.employeeId || h.id,
+        name: h.name,
+        email: h.email,
+        position: 'HTE Representative',
+        role: 'hte',
+        companyName: h.companyName,
+        companyAddress: h.companyAddress,
+        department: 'Host Establishment',
+        supervisorName: h.name,
+        phone: h.phone,
+        contactPhone: h.phone,
+        academicYear: h.academicYear || settings.activeAcademicYear,
+        active: h.active !== false,
+        approvalStatus: 'approved' as const,
+        applicationStatus: 'approved' as const,
+        requiredHours: 0,
+        faceRegistered: false,
+      } as Employee)).filter(
+        (h) =>
+          matchesYear(h) &&
+          ((h.name || '').toLowerCase().includes(search.toLowerCase()) ||
+            (h.employeeId || '').toLowerCase().includes(search.toLowerCase()) ||
+            (h.companyName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (h.department || '').toLowerCase().includes(search.toLowerCase()))
+      ),
+    ]),
+  };
+
   const hteDropdownOptions = useMemo(() => {
     const counts = new Map<string, number>();
 
@@ -436,7 +452,7 @@ export function AdminEmployees() {
   const deployableTrainees = useMemo(() => {
     return employees.filter((t) => {
       if (getEmployeeGroup(t) !== 'student') return false;
-      if (t.active === false || t.approvalStatus === 'pending' || t.applicationStatus === 'pending' || t.applicationStatus === 'unregistered') return false;
+      if (t.approvalStatus === 'rejected') return false;
       if (!matchesYear(t)) return false;
       const matchesSearch =
         !deploySearch ||
@@ -444,14 +460,14 @@ export function AdminEmployees() {
         (t.employeeId && t.employeeId.toLowerCase().includes(deploySearch.toLowerCase())) ||
         (t.companyName && t.companyName.toLowerCase().includes(deploySearch.toLowerCase()));
       const matchesCourse = deployCourseFilter === 'all' || t.course === deployCourseFilter;
-      const isAssigned = Boolean(t.hteId && !isInvalidHteCompany(t.companyName));
+      const isAssigned = isTraineeDeployed(t);
       const matchesStatus =
         deployStatusFilter === 'all' ||
         (deployStatusFilter === 'unassigned' && !isAssigned) ||
         (deployStatusFilter === 'assigned' && isAssigned);
       return matchesSearch && matchesCourse && matchesStatus;
     });
-  }, [employees, deploySearch, deployCourseFilter, deployStatusFilter, selectedYear, settings?.academicYears, settings?.activeAcademicYear]);
+  }, [employees, deploySearch, deployCourseFilter, deployStatusFilter, selectedYear, settings?.academicYears, settings?.activeAcademicYear, allAvailableHtes]);
 
   const handleBatchDeploy = async () => {
     if (!deployTargetHteId || deploySelectedStudentIds.length === 0) return;
@@ -487,6 +503,9 @@ export function AdminEmployees() {
           },
           registrationRadius: hteLoc.radius,
           registrationAddress: hteLoc.address,
+          active: true,
+          approvalStatus: 'approved',
+          applicationStatus: 'approved',
         };
 
         await updateEmployee(student.id, updatedFields);
@@ -713,7 +732,12 @@ export function AdminEmployees() {
 
   const handleApprove = (emp: Employee) => {
     approveEmployee(emp.id);
-    toast.success(`${emp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
+    const isDeployed = isTraineeDeployed(emp);
+    if (!isDeployed) {
+      toast.success(`${emp.name} approved! Deploy to an HTE to activate trainee placement.`);
+    } else {
+      toast.success(`${emp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
+    }
   };
 
   const handleReject = (emp: Employee) => {
@@ -748,13 +772,13 @@ export function AdminEmployees() {
   const groupConfig = {
     pending: {
       title: 'Pending Approvals',
-      emptyText: 'No pending student enrollments awaiting approval',
+      emptyText: 'No pending student enrollments or undeployed trainees awaiting approval',
       accent: 'amber',
       badge: 'bg-amber-100 text-amber-800 font-bold border border-amber-200',
     },
     student: {
       title: 'Active Trainees',
-      emptyText: 'No active trainees found for this academic year',
+      emptyText: 'No active deployed trainees found for this academic year',
       accent: 'blue',
       badge: 'bg-blue-100 text-blue-800 font-bold border border-blue-200',
     },
@@ -786,8 +810,8 @@ export function AdminEmployees() {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const paginatedItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
-    // Hide pending section entirely if empty, unless it's the only search result
-    if (isPendingGroup && items.length === 0 && search === '') return null;
+    // In "All Records" view, hide pending section if empty and no search
+    if (isPendingGroup && items.length === 0 && search === '' && activeCategoryTab === 'all') return null;
 
     return (
       <div key={group} className={`bg-white rounded-2xl shadow-sm border ${isPendingGroup ? 'border-amber-200 ring-2 ring-amber-400/20' : 'border-gray-100'} overflow-hidden`}>
@@ -797,7 +821,7 @@ export function AdminEmployees() {
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${config.badge}`}>{items.length}</span>
           </div>
           <div className="flex items-center gap-2.5">
-            {group === 'student' && !isLoggedInInstructor && (
+            {(group === 'student' || group === 'pending') && (
               <button
                 type="button"
                 onClick={() => {
@@ -1031,6 +1055,18 @@ export function AdminEmployees() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            setDeploySelectedStudentIds([emp.id]);
+                            setBatchDeployOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          title="Deploy Trainee to HTE"
+                        >
+                          <Building size={13} />
+                          Deploy to HTE
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleApprove(emp);
                           }}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
@@ -1038,6 +1074,16 @@ export function AdminEmployees() {
                         >
                           <CheckCircle size={13} />
                           Accept & Enroll
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEdit(emp);
+                          }}
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg cursor-pointer"
+                          title="Edit Trainee"
+                        >
+                          <Edit3 size={15} />
                         </button>
                         <button
                           onClick={(e) => {
@@ -1268,9 +1314,19 @@ export function AdminEmployees() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  setDeploySelectedStudentIds([emp.id]);
+                                  setBatchDeployOpen(true);
+                                }}
+                                className="px-2 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold cursor-pointer"
+                              >
+                                Deploy
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleApprove(emp);
                                 }}
-                                className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold"
+                                className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer"
                               >
                                 Accept
                               </button>
@@ -1279,7 +1335,7 @@ export function AdminEmployees() {
                                   e.stopPropagation();
                                   handleReject(emp);
                                 }}
-                                className="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-xs"
+                                className="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-xs cursor-pointer"
                               >
                                 Decline
                               </button>
