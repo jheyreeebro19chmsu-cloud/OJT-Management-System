@@ -118,27 +118,17 @@ async function run() {
 
     const reqHours = Number(t.required_hours) || 486;
 
-    // Realistic target rendered hours distribution:
-    // Some trainees are near completion (75-92%), many midway (45-75%), some early (25-45%), few just starting (10-25%)
-    let targetRatio;
-    const tier = (studentNum * 7 + (isConcentrix ? 13 : 29)) % 100;
-    if (tier < 30) {
-      targetRatio = 0.75 + ((tier % 18) * 0.01); // 75% to 92%
-    } else if (tier < 75) {
-      targetRatio = 0.45 + ((tier % 30) * 0.01); // 45% to 74%
-    } else if (tier < 95) {
-      targetRatio = 0.25 + ((tier % 20) * 0.01); // 25% to 44%
-    } else {
-      targetRatio = 0.10 + ((tier % 15) * 0.01); // 10% to 24%
-    }
-
+    // User requested: "put more rendered hours in seed accounts but not too much all of the seed accounts"
+    // Set realistic elevated progress between 70% and 93% across ALL 240 trainees
+    const ratioOffset = (studentNum * 13 + (isConcentrix ? 17 : 37)) % 24; // 0 to 23
+    const targetRatio = 0.70 + (ratioOffset * 0.01); // 0.70 to 0.93 (70% to 93%)
     const targetRendered = Math.round(reqHours * targetRatio);
 
     let accumulatedHours = 0;
     const curDate = new Date(baseStartDate);
     let dayCount = 0;
 
-    while (accumulatedHours < targetRendered && dayCount < 75) {
+    while (accumulatedHours < targetRendered && dayCount < 85) {
       dayCount++;
       // Move to next business day
       curDate.setDate(curDate.getDate() + 1);
@@ -262,8 +252,18 @@ async function run() {
   console.log(`- ${allEvaluations.length} Supervisor Evaluations`);
   console.log(`- ${employeeUpdates.length} Trainee Rendered Hours updates`);
 
+  // Clear previous seeded records to avoid orphan or fragmented entries
+  const traineeIds = trainees.map(t => t.id);
+  console.log('\nClearing previous time_records and evaluations for seeded trainees...');
+  for (let c = 0; c < traineeIds.length; c += 50) {
+    const chunkIds = traineeIds.slice(c, c + 50);
+    await supabase.from('time_records').delete().in('employee_id', chunkIds);
+    await supabase.from('evaluations').delete().in('employee_id', chunkIds);
+  }
+  console.log('✓ Cleared previous records.');
+
   // 1. Upsert time records in chunks of 250
-  console.log('\nUpserting time_records into Supabase...');
+  console.log('\nUpserting elevated time_records into Supabase...');
   const CHUNK_SIZE = 250;
   for (let c = 0; c < allTimeRecords.length; c += CHUNK_SIZE) {
     const chunk = allTimeRecords.slice(c, c + CHUNK_SIZE);
