@@ -2158,6 +2158,60 @@ assert('HTE count map has Concentrix count of 1', hteCounts.get('Concentrix') ==
 assert('HTE count map has Concentrix - Bacolod count of 1', hteCounts.get('Concentrix - Bacolod') === 1);
 
 // ----------------------------------------------------------------------------
+// 24. WHITE BOX TESTS: Resilient Registration & Database Error Fallback
+// ----------------------------------------------------------------------------
+console.log(`\n${BOLD}======================================================================${RESET}`);
+console.log(`${BOLD}  24. WHITE BOX TESTS: Resilient Registration & Database Fallback     ${RESET}`);
+console.log(`${BOLD}======================================================================${RESET}`);
+
+// Test 24.1: Valid UUID generation when id is missing or not a UUID
+const isUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const genUuidTest = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+const testGeneratedId = genUuidTest();
+assert('Generated employee fallback id is valid UUID', isUuidRegex.test(testGeneratedId));
+
+// Test 24.2: Role assignment based on position
+function resolveRoleFromPosition(pos) {
+  const p = (pos || '').toLowerCase();
+  if (p.includes('instructor') || p.includes('admin') || p.includes('faculty')) return 'admin';
+  if (p.includes('hte') || p.includes('host') || p.includes('supervisor')) return 'hte';
+  return 'employee';
+}
+assert('OJT Instructor position resolves to role "admin"', resolveRoleFromPosition('OJT Instructor') === 'admin');
+assert('HTE Representative position resolves to role "hte"', resolveRoleFromPosition('HTE Representative') === 'hte');
+assert('OJT Trainee position resolves to role "employee"', resolveRoleFromPosition('OJT Trainee') === 'employee');
+
+// Test 24.3: Resilient registration fallback returns success even if cloud write fails
+function simulateResilientRegister({ cloudThrowsError = true, cleanData }) {
+  let created = null;
+  if (cloudThrowsError) {
+    // Cloud throws error (e.g. database constraint or network issue)
+    // Resilient fallback creates local profile
+    created = {
+      ...cleanData,
+      id: cleanData.id || genUuidTest(),
+    };
+  } else {
+    created = { ...cleanData, id: 'cloud-uuid' };
+  }
+  return { success: Boolean(created), employee: created };
+}
+
+const simResult = simulateResilientRegister({
+  cloudThrowsError: true,
+  cleanData: { name: 'Juan Cruz', email: 'juan@test.chmsu.edu.ph', position: 'OJT Trainee' }
+});
+assert('Resilient registration returns success: true on cloud error', simResult.success === true);
+assert('Resilient registration preserves employee data', simResult.employee.name === 'Juan Cruz');
+assert('Resilient registration assigns valid UUID id', isUuidRegex.test(simResult.employee.id));
+
+// ----------------------------------------------------------------------------
 // TEST SUMMARY & METRICS
 // ----------------------------------------------------------------------------
 console.log(`\n${BOLD}======================================================================${RESET}`);

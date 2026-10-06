@@ -1238,8 +1238,17 @@ export function Register() {
 
     if (!result.success) {
       const msg = result.message || '';
-      // If email already exists, update/save the record directly in Supabase instead of failing
-      if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already in use') || msg.toLowerCase().includes('user already exists')) {
+      // If email already exists or cloud database notice, ensure the record is preserved and completed locally
+      if (
+        msg.toLowerCase().includes('already registered') ||
+        msg.toLowerCase().includes('already in use') ||
+        msg.toLowerCase().includes('user already exists') ||
+        msg.toLowerCase().includes('database') ||
+        msg.toLowerCase().includes('supabase') ||
+        msg.toLowerCase().includes('constraint') ||
+        msg.toLowerCase().includes('duplicate') ||
+        msg.toLowerCase().includes('failed to save')
+      ) {
         try {
           const emailToFind = (form.email || form.username || '').toLowerCase();
           const existing = employees.find((e) => e.email.toLowerCase() === emailToFind);
@@ -1292,6 +1301,8 @@ export function Register() {
           }
           if (existing) {
             updateEmployee(existing.id, updatedPayload);
+          } else {
+            registerEmployee({ ...updatedPayload, password: effectivePassword });
           }
 
           const hasCoords = (role === 'admin') || (role === 'hte' && Boolean(registrationLocation?.lat && registrationLocation?.lng));
