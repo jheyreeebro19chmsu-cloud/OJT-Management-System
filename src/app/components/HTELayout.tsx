@@ -19,7 +19,6 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
-import { TokenExpiryBadge } from './TokenExpiryBadge';
 
 interface HTELayoutProps {
   children?: React.ReactNode;
@@ -260,10 +259,7 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               </div>
             </div>
 
-            {/* Right Header: Token Expiry Badge */}
-            <div className="flex items-center gap-2">
-              <TokenExpiryBadge theme="dark" />
-            </div>
+
           </div>
         </header>
 

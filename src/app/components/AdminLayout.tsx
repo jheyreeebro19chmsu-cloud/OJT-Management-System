@@ -26,7 +26,6 @@ import { isSecurityApiConfigured } from '../services/securityApi';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { getPendingTraineeRequests, subscribeToPendingRequests } from '../services/accountSync';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
-import { TokenExpiryBadge } from './TokenExpiryBadge';
 
 
 const navItems = [
@@ -347,7 +346,6 @@ export function AdminLayout() {
               </NavLink>
             </div>
             <div className="flex items-center gap-2">
-              <TokenExpiryBadge theme="light" />
               <div className="hidden sm:flex items-center gap-3">
                 <UserAvatar
                   photo={employee?.photo || currentUser?.photo}

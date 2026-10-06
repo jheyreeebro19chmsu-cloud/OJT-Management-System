@@ -10,7 +10,6 @@ import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
 import { TraineeLocationReminder } from './TraineeLocationReminder';
-import { TokenExpiryBadge } from './TokenExpiryBadge';
 import { isQuestionnaireAnswered } from '../types';
 
 
@@ -347,9 +346,8 @@ export function EmployeeLayout() {
               </div>
             </div>
 
-            {/* Right Header: Token Expiry & Notification Bell */}
+            {/* Right Header: Notification Bell */}
             <div className="flex items-center gap-2 relative">
-              <TokenExpiryBadge theme="dark" />
               <button
                 type="button"
                 onClick={() => setNotifTrayOpen((prev) => !prev)}
