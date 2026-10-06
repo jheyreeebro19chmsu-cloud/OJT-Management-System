@@ -2150,6 +2150,7 @@ export function transformSupabaseEmployee(data: any): Employee {
     startDate: data.start_date,
     endDate: data.end_date,
     requiredHours: data.required_hours,
+    renderedHours: Number(data.rendered_hours ?? regLoc?.renderedHours ?? 0),
     photo: data.photo,
     faceRegistered: data.face_registered,
     createdAt: data.created_at,
@@ -2157,19 +2158,20 @@ export function transformSupabaseEmployee(data: any): Employee {
     academicYear: data.academic_year,
     registrationLocation: (() => {
       const radiusVal = Math.max(20, Number(data.registration_radius ?? regLoc?.radius ?? 40));
+      const hoursVal = Number(data.rendered_hours ?? regLoc?.renderedHours ?? 0);
       if (data.registration_lat != null && data.registration_lng != null) {
-        return { lat: Number(data.registration_lat), lng: Number(data.registration_lng), radius: radiusVal };
+        return { lat: Number(data.registration_lat), lng: Number(data.registration_lng), radius: radiusVal, renderedHours: hoursVal };
       }
       if (regLoc?.lat != null && regLoc?.lng != null) {
-        return { lat: Number(regLoc.lat), lng: Number(regLoc.lng), radius: radiusVal };
+        return { lat: Number(regLoc.lat), lng: Number(regLoc.lng), radius: radiusVal, renderedHours: hoursVal };
       }
       if (data.registration_address) {
         const match = String(data.registration_address).match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
         if (match) {
-          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), radius: radiusVal };
+          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), radius: radiusVal, renderedHours: hoursVal };
         }
       }
-      return undefined;
+      return hoursVal > 0 ? { lat: 0, lng: 0, radius: radiusVal, renderedHours: hoursVal } : undefined;
     })(),
     registrationRadius: Math.max(20, Number(data.registration_radius ?? regLoc?.radius ?? 40)),
     registrationAddress: data.registration_address || regLoc?.address || undefined,

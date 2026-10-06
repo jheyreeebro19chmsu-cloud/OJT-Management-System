@@ -763,10 +763,12 @@ export function AdminEmployees() {
         (r.employeeId && validIds.has(r.employeeId.toLowerCase())) ||
         (targetEmp?.name && (r as any).employeeName === targetEmp.name)
     );
-    const totalHours = Math.round(recs.reduce((s, r) => s + (Number(r.totalHours) || 0), 0) * 10) / 10;
-    const present = recs.filter((r) => r.status === 'present' || r.status === 'overtime').length;
+    const recordedHours = Math.round(recs.reduce((s, r) => s + (Number(r.totalHours) || 0), 0) * 10) / 10;
+    const directHours = Number(targetEmp?.renderedHours) || Number((targetEmp?.registrationLocation as any)?.renderedHours) || 0;
+    const totalHours = Math.max(recordedHours, directHours);
+    const present = recs.filter((r) => r.status === 'present' || r.status === 'overtime').length || (totalHours > 0 ? Math.round(totalHours / 8) : 0);
     const late = recs.filter((r) => r.status === 'late').length;
-    return { totalHours, present, late, totalDays: recs.length };
+    return { totalHours, present, late, totalDays: recs.length || (totalHours > 0 ? Math.round(totalHours / 8) : 0) };
   };
 
   const upd = (f: string, v: string | number) => setForm((p) => ({ ...p, [f]: v }));

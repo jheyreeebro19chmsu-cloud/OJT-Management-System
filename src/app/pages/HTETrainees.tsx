@@ -128,7 +128,9 @@ export function HTETrainees() {
         if (mins < 0) mins += 24 * 60;
         return acc + mins;
       }, 0);
-      const renderedHours = Math.round((totalMinutes / 60) * 10) / 10;
+      const calculatedRendered = Math.round((totalMinutes / 60) * 10) / 10;
+      const directRendered = Number(trainee.renderedHours) || Number((trainee.registrationLocation as any)?.renderedHours) || 0;
+      const renderedHours = Math.max(calculatedRendered, directRendered);
       const requiredHours = trainee.requiredHours || 486;
       const progressPercent = Math.min(Math.round((renderedHours / requiredHours) * 100), 100);
 

@@ -16,6 +16,7 @@ export interface Employee {
   startDate: string;
   endDate: string;
   requiredHours: number;
+  renderedHours?: number;
   photo?: string;
   schoolLogo?: string;
   faceRegistered: boolean;
@@ -25,7 +26,7 @@ export interface Employee {
   instructorId?: string;
   hteId?: string;
   linkedAt?: string;
-  registrationLocation?: { lat: number; lng: number; radius?: number };
+  registrationLocation?: { lat: number; lng: number; radius?: number; renderedHours?: number };
   registrationRadius?: number;
   registrationAddress?: string;
   address?: string;
