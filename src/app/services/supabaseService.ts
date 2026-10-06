@@ -2687,28 +2687,50 @@ export async function resetPasswordDirect(
   otpCode?: string
 ): Promise<{ success: boolean; message?: string }> {
   const cleanEmail = email.trim().toLowerCase();
+  const cleanOtp = (otpCode || '').trim();
 
+  // 1. Try Supabase Edge Function
   try {
     const { data, error } = await supabase.functions.invoke('reset-password-admin', {
       body: {
         email: cleanEmail,
         newPassword,
-        otpCode: (otpCode || '').trim(),
+        otpCode: cleanOtp,
       },
     });
 
-    if (error) {
-      console.warn('[resetPasswordDirect] Edge Function invocation error:', error);
-      return { success: false, message: error.message || 'Failed to update password.' };
+    if (!error && data && data.success !== false) {
+      return { success: true, message: data?.message || 'Password updated successfully.' };
     }
-
-    if (data && data.success === false) {
-      return { success: false, message: data.error || 'Failed to update password.' };
+    if (data?.error) {
+      console.warn('[resetPasswordDirect] Edge Function reported error:', data.error);
     }
-
-    return { success: true, message: data?.message || 'Password updated successfully.' };
-  } catch (err: any) {
-    console.error('[resetPasswordDirect] Unexpected error:', err);
-    return { success: false, message: err?.message || 'Unexpected error updating password.' };
+  } catch (edgeErr) {
+    console.warn('[resetPasswordDirect] Edge Function unavailable, trying fallback API:', edgeErr);
   }
+
+  // 2. Fallback to /api/reset-password endpoint
+  try {
+    const res = await fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        newPassword,
+        otpCode: cleanOtp,
+      }),
+    });
+
+    const result = await res.json().catch(() => null);
+    if (res.ok && result?.success !== false) {
+      return { success: true, message: result?.message || 'Password updated successfully.' };
+    }
+    if (result?.error) {
+      return { success: false, message: result.error };
+    }
+  } catch (fallbackErr) {
+    console.error('[resetPasswordDirect] Fallback error:', fallbackErr);
+  }
+
+  return { success: false, message: 'Failed to update password. Please try again.' };
 }
