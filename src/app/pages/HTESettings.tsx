@@ -24,10 +24,11 @@ export function HTESettings() {
   }, []);
 
   const companyName =
+    currentUser?.companyName ||
     employee?.companyName ||
     hteUser?.companyName ||
     localStorage.getItem('ojt_hte_company') ||
-    'Host Training Establishment';
+    'Printing Services';
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();

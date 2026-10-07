@@ -2476,34 +2476,92 @@ export async function updateHostSupervisor(id: string, updates: Partial<HostSupe
   }
   if (updates.email !== undefined) supabaseUpdates.email = updates.email.trim().toLowerCase();
   if (updates.companyName !== undefined) supabaseUpdates.company_name = updates.companyName;
-  if (updates.companyAddress !== undefined || (updates as any).registrationAddress !== undefined) {
-    supabaseUpdates.company_address = updates.companyAddress || (updates as any).registrationAddress;
-  }
-  if (updates.phone !== undefined) supabaseUpdates.phone = updates.phone;
+  if ((updates as any).position !== undefined) supabaseUpdates.position = (updates as any).position;
   if (updates.isApproved !== undefined) supabaseUpdates.is_approved = updates.isApproved;
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
 
-  const { error } = await supabase.from('host_supervisors').update(supabaseUpdates).eq('id', id);
+  // 1. Update host_supervisors table with valid schema columns
+  let { data: updatedHostData, error } = await supabase
+    .from('host_supervisors')
+    .update(supabaseUpdates)
+    .eq('id', id)
+    .select();
+
+  if ((!updatedHostData || updatedHostData.length === 0) && updates.email) {
+    const emailRes = await supabase
+      .from('host_supervisors')
+      .update(supabaseUpdates)
+      .ilike('email', updates.email.trim().toLowerCase())
+      .select();
+    if (emailRes.error) error = emailRes.error;
+  }
+
   if (error) {
     console.error('Error updating host_supervisor:', error);
     throw new Error(error.message || 'Failed to update host_supervisor');
   }
 
-  // Also sync geofence_zones for this HTE if location coordinates are provided
-  const regLoc = (updates as any).registrationLocation;
-  if (regLoc && regLoc.lat && regLoc.lng) {
-    try {
-      await updateGeofenceZone(id, {
-        name: updates.companyName ? `${updates.name || 'HTE Supervisor'} - ${updates.companyName}` : undefined,
-        address: updates.companyAddress || (updates as any).registrationAddress,
-        lat: Number(regLoc.lat),
-        lng: Number(regLoc.lng),
-        radius: Math.max(20, Number(regLoc.radius || (updates as any).registrationRadius) || 40),
-        employeeId: id,
-      });
-    } catch (gErr) {
-      console.warn('Geofence zone sync during updateHostSupervisor notice:', gErr);
+  // 2. Also synchronize supervisor's row in employees table
+  try {
+    const empUpdates: any = {};
+    if (supabaseUpdates.name) {
+      empUpdates.name = supabaseUpdates.name;
+      empUpdates.supervisor_name = supabaseUpdates.name;
     }
+    if (supabaseUpdates.company_name) empUpdates.company_name = supabaseUpdates.company_name;
+    if (updates.companyAddress || (updates as any).registrationAddress) {
+      empUpdates.registration_address = updates.companyAddress || (updates as any).registrationAddress;
+    }
+    if (updates.phone) empUpdates.contactPhone = updates.phone;
+
+    if (Object.keys(empUpdates).length > 0) {
+      const { data: updatedEmpData } = await supabase
+        .from('employees')
+        .update(empUpdates)
+        .eq('id', id)
+        .select();
+
+      if ((!updatedEmpData || updatedEmpData.length === 0) && updates.email) {
+        await supabase
+          .from('employees')
+          .update(empUpdates)
+          .ilike('email', updates.email.trim().toLowerCase());
+      }
+    }
+
+    // 3. If establishment name or supervisor name changed, cascade to all trainees assigned to this HTE
+    if (supabaseUpdates.company_name || supabaseUpdates.name) {
+      const cascadeUpdates: any = {};
+      if (supabaseUpdates.company_name) cascadeUpdates.company_name = supabaseUpdates.company_name;
+      if (supabaseUpdates.name) cascadeUpdates.supervisor_name = supabaseUpdates.name;
+      await supabase.from('employees').update(cascadeUpdates).eq('hte_id', id);
+    }
+  } catch (empErr) {
+    console.warn('Employees sync during updateHostSupervisor notice:', empErr);
+  }
+
+  // 4. Also sync geofence_zones for this HTE if location or company name changed
+  try {
+    const zoneName = updates.companyName
+      ? `${updates.companyName} - Workplace Premises`
+      : undefined;
+    const zoneAddress = updates.companyAddress || (updates as any).registrationAddress;
+    const regLoc = (updates as any).registrationLocation;
+
+    const geoUpdates: any = {};
+    if (zoneName) geoUpdates.name = zoneName;
+    if (zoneAddress) geoUpdates.address = zoneAddress;
+    if (regLoc && regLoc.lat && regLoc.lng) {
+      geoUpdates.lat = Number(regLoc.lat);
+      geoUpdates.lng = Number(regLoc.lng);
+      geoUpdates.radius = Math.max(20, Number(regLoc.radius || (updates as any).registrationRadius) || 40);
+    }
+
+    if (Object.keys(geoUpdates).length > 0) {
+      await supabase.from('geofence_zones').update(geoUpdates).or(`id.eq.${id},employee_id.eq.${id}`);
+    }
+  } catch (gErr) {
+    console.warn('Geofence zone sync during updateHostSupervisor notice:', gErr);
   }
 
   return true;

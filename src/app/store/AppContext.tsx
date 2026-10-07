@@ -2975,18 +2975,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, updatedHosts);
 
     const updatedHost = updatedHosts.find((h) => h.id === id || h.employeeId === id);
-    if (updatedHost && currentUser && (currentUser.employeeId === id || currentUser.id === id)) {
-      setCurrentUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              name: updatedHost.name || prev.name,
-              email: updatedHost.email || prev.email,
-              photo: updatedHost.photo || prev.photo,
-              companyAddress: updatedHost.companyAddress || (prev as any).companyAddress,
-              registrationLocation: (updatedHost as any).registrationLocation || (prev as any).registrationLocation,
-            }
-          : prev
+    if (
+      updatedHost &&
+      currentUser &&
+      (currentUser.employeeId === id ||
+        currentUser.id === id ||
+        (currentUser.email && updatedHost.email && currentUser.email.toLowerCase() === updatedHost.email.toLowerCase()))
+    ) {
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const nextUser = {
+          ...prev,
+          name: updatedHost.name || prev.name,
+          email: updatedHost.email || prev.email,
+          photo: updatedHost.photo || prev.photo,
+          companyName: updatedHost.companyName || prev.companyName,
+          companyAddress: updatedHost.companyAddress || (prev as any).companyAddress,
+          registrationLocation: (updatedHost as any).registrationLocation || (prev as any).registrationLocation,
+        };
+        saveToStorage(STORAGE_KEYS.CURRENT_USER, nextUser);
+        saveToStorage(STORAGE_KEYS.USER, nextUser);
+        if (nextUser.companyName) {
+          localStorage.setItem('ojt_hte_company', nextUser.companyName);
+        }
+        return nextUser;
+      });
+    }
+
+    if (data.companyName) {
+      localStorage.setItem('ojt_hte_company', data.companyName);
+      setEmployees((prev) =>
+        prev.map((e) => {
+          if (e.id === id || e.employeeId === id || e.hteId === id) {
+            return {
+              ...e,
+              companyName: data.companyName!,
+              ...(data.name ? { supervisorName: data.name } : {}),
+            };
+          }
+          return e;
+        })
       );
     }
 

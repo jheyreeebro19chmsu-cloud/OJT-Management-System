@@ -70,7 +70,13 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   }, []);
 
   const companyName = React.useMemo(() => {
-    if (hteCompany && hteCompany !== 'Host Training Establishment') return hteCompany;
+    if (hteCompany && hteCompany !== 'Host Training Establishment' && hteCompany !== 'Host Training Establishment Partner') {
+      return hteCompany;
+    }
+    const c = currentUser?.companyName || employee?.companyName || hteUser?.companyName || localStorage.getItem('ojt_hte_company');
+    if (c && c !== 'Host Training Establishment' && c !== 'Host Training Establishment Partner') {
+      return c;
+    }
     const email = (currentUser?.email || employee?.email || hteUser?.email || '').toLowerCase().trim();
     const id = currentUser?.id || employee?.id || hteUser?.id;
     if (email.includes('reejhey') || id === '95558630-499b-4aac-b869-ba64b0694e8c') {
@@ -78,10 +84,6 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
     }
     if (email.includes('ebro') || id === '89405c66-015c-407a-937b-71ab37b829d7') {
       return 'Concentrix';
-    }
-    const c = currentUser?.companyName || employee?.companyName || hteUser?.companyName || localStorage.getItem('ojt_hte_company');
-    if (c && c !== 'Host Training Establishment' && c !== 'Host Training Establishment Partner') {
-      return c;
     }
     return 'Printing Services';
   }, [hteCompany, currentUser, employee, hteUser]);

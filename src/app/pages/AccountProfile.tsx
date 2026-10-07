@@ -31,7 +31,7 @@ import { getCampusLocation } from '../utils/campusLocations';
 import { campusOptions, departmentOptions } from '../data/academicOptions';
 
 export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
-  const { currentUser, getCurrentEmployee, employees, updateEmployee, updateHostSupervisor, addGeofenceZone, settings } = useApp();
+  const { currentUser, getCurrentEmployee, employees, hostSupervisors = [], updateEmployee, updateHostSupervisor, addGeofenceZone, settings } = useApp();
   const [syncingLocation, setSyncingLocation] = useState(false);
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const currentEmp = getCurrentEmployee();
@@ -45,6 +45,14 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     }
   })();
 
+  const matchedHost = hostSupervisors.find(
+    (h) =>
+      h.id === currentUser?.id ||
+      h.employeeId === currentUser?.employeeId ||
+      (currentUser?.email && h.email?.toLowerCase() === currentUser.email.toLowerCase()) ||
+      (hteUser?.email && h.email?.toLowerCase() === hteUser.email.toLowerCase())
+  );
+
   // Match employee record by email or id
   const employee =
     currentEmp ||
@@ -57,18 +65,21 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
     );
 
   const name =
+    matchedHost?.name ||
     employee?.name ||
     employee?.contactPerson ||
     currentUser?.name ||
     hteUser?.name ||
     'Authorized User';
 
-  const email = employee?.email || currentUser?.email || hteUser?.email || 'N/A';
+  const email = employee?.email || currentUser?.email || hteUser?.email || matchedHost?.email || 'N/A';
   const company =
+    matchedHost?.companyName ||
+    currentUser?.companyName ||
     employee?.companyName ||
     hteUser?.companyName ||
     localStorage.getItem('ojt_hte_company') ||
-    'Host Training Establishment';
+    ((email || '').toLowerCase().includes('reejhey') ? 'Printing Services' : 'Concentrix');
 
   const employeePhoto = employee?.photo || currentUser?.photo || hteUser?.photo || null;
   const position =
@@ -220,41 +231,51 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
   const handleOpenEdit = () => {
     setEditForm({
       name,
-      phone: phone !== '+63 (034) 712-0000' ? phone : '',
+      phone: phone !== '+63 (034) 712-0000' && phone !== '+63 912 345 6789' ? phone : (employee?.contactPhone || (currentUser as any)?.contactPhone || ''),
       department,
       campus,
       companyName: isHte ? company : '',
-      companyAddress: isHte ? (employee?.companyAddress || employee?.registrationAddress || '') : '',
+      companyAddress: isHte ? (employee?.registrationAddress || (employee as any)?.companyAddress || registrationAddress || '') : '',
     });
     setIsEditing(true);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetId = employee?.id || currentUser?.id;
+    const targetId = matchedHost?.id || employee?.id || currentUser?.id || hteUser?.id;
     if (!targetId) {
       toast.error('Could not identify user to save profile.');
       return;
     }
     setSaving(true);
     try {
+      const newComp = editForm.companyName.trim();
+      const newName = editForm.name.trim();
+      const newPhone = editForm.phone.trim();
+      const newAddr = editForm.companyAddress.trim();
+
       if (isHte) {
         updateHostSupervisor(targetId, {
-          name: editForm.name.trim(),
-          phone: editForm.phone.trim(),
-          contactPerson: editForm.name.trim(),
-          companyName: editForm.companyName.trim(),
-          companyAddress: editForm.companyAddress.trim(),
+          name: newName,
+          phone: newPhone,
+          contactPerson: newName,
+          companyName: newComp,
+          companyAddress: newAddr,
+          email: email !== 'N/A' ? email : undefined,
         });
-        localStorage.setItem('ojt_hte_company', editForm.companyName.trim());
+        if (newComp) {
+          localStorage.setItem('ojt_hte_company', newComp);
+        }
       }
+
       updateEmployee(targetId, {
-        name: editForm.name.trim(),
-        contactPhone: editForm.phone.trim(),
+        name: newName,
+        contactPhone: newPhone,
+        phone: newPhone,
         department: isHte ? undefined : editForm.department,
         campus: isHte ? undefined : editForm.campus,
-        companyName: isHte ? editForm.companyName.trim() : undefined,
-        companyAddress: isHte ? editForm.companyAddress.trim() : undefined,
+        companyName: isHte ? newComp : undefined,
+        registrationAddress: isHte ? newAddr : undefined,
       });
 
       // Synchronize in storage for instant UI update
@@ -262,7 +283,8 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
         const storedUser = localStorage.getItem('ojt_user');
         if (storedUser) {
           const parsed = JSON.parse(storedUser);
-          parsed.name = editForm.name.trim();
+          parsed.name = newName;
+          if (isHte && newComp) parsed.companyName = newComp;
           localStorage.setItem('ojt_user', JSON.stringify(parsed));
           localStorage.setItem('ojt_current_user', JSON.stringify(parsed));
         }
@@ -270,17 +292,19 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
           const storedHte = localStorage.getItem('ojt_hte_user');
           if (storedHte) {
             const parsed = JSON.parse(storedHte);
-            parsed.name = editForm.name.trim();
-            parsed.companyName = editForm.companyName.trim();
+            parsed.name = newName;
+            if (newComp) parsed.companyName = newComp;
             localStorage.setItem('ojt_hte_user', JSON.stringify(parsed));
           }
+          if (newComp) localStorage.setItem('ojt_hte_company', newComp);
         }
       } catch {}
 
-      toast.success('Profile updated successfully!');
+      toast.success('Establishment profile updated successfully!');
       setIsEditing(false);
-    } catch {
-      toast.error('Failed to update profile.');
+    } catch (err: any) {
+      console.error('Save profile error:', err);
+      toast.error(err?.message || 'Failed to update profile.');
     } finally {
       setSaving(false);
     }

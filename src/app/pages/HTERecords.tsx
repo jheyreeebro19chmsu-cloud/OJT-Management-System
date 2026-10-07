@@ -60,6 +60,10 @@ export function HTERecords() {
   const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
 
   const currentCompany = useMemo(() => {
+    const c = currentUser?.companyName || currentEmp?.companyName || hteUser?.companyName || localStorage.getItem('ojt_hte_company');
+    if (c && c !== 'Host Training Establishment' && c !== 'Host Training Establishment Partner') {
+      return c;
+    }
     const email = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase().trim();
     const id = currentUser?.id || currentEmp?.id || hteUser?.id;
     if (email.includes('reejhey') || id === '95558630-499b-4aac-b869-ba64b0694e8c') {
@@ -68,16 +72,16 @@ export function HTERecords() {
     if (email.includes('ebro') || id === '89405c66-015c-407a-937b-71ab37b829d7') {
       return 'Concentrix';
     }
-    const c = currentUser?.companyName || currentEmp?.companyName || hteUser?.companyName || localStorage.getItem('ojt_hte_company');
-    if (c && c !== 'Host Training Establishment' && c !== 'Host Training Establishment Partner') {
-      return c;
-    }
     return 'Printing Services';
   }, [currentUser, currentEmp, hteUser]);
 
   const assignedTraineeIds = useMemo(() => {
     const set = new Set<string>();
-    const isPrinting = currentCompany.toLowerCase().includes('printing');
+    const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
+    const isPrinting =
+      currentHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+      currentEmail.includes('reejhey') ||
+      currentCompany.toLowerCase().includes('printing');
 
     employees.forEach((e) => {
       // Must be an active trainee, not admin/HTE staff
