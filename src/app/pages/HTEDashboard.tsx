@@ -82,6 +82,8 @@ export function HTEDashboard() {
     return 'Printing Services';
   }, [currentUser, currentEmp, hteUser]);
 
+  const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
+
   const hteZone = useMemo(() => {
     const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
     const isPrinting =
@@ -115,7 +117,6 @@ export function HTEDashboard() {
 
   // Trainees tied to active HTE via company name, direct assignment, or all active OJT trainees in the active academic year
   const trainees = useMemo(() => {
-    const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
     const targetAY = settings?.activeAcademicYear || '2026-2027';
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
