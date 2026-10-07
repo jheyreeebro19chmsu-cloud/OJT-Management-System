@@ -90,30 +90,67 @@ export function HTEDashboard() {
       currentUser?.id === '95558630-499b-4aac-b869-ba64b0694e8c' ||
       currentEmp?.id === '95558630-499b-4aac-b869-ba64b0694e8c' ||
       currentEmail.includes('reejhey') ||
-      companyName.toLowerCase().includes('printing');
-    const cName = isPrinting ? 'printing' : 'concentrix';
-    const empId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || '';
-    const found = geofenceZones.find(
-      (z) =>
-        z.id === `station-${empId}` ||
-        z.id === (currentUser as any)?.hteId ||
-        (z.name && z.name.toLowerCase().includes(cName))
-    );
-    if (found) return found;
-    const loc = currentEmp?.registrationLocation || (currentUser as any)?.registrationLocation;
-    if (loc?.lat && loc?.lng) {
+      companyName.toLowerCase().includes('printing') ||
+      companyName.toLowerCase().includes('chmsu');
+
+    // Permanent official workplace coordinates for HTE establishments (Fixed & Immutable)
+    const permanentCoordinates = isPrinting
+      ? {
+          lat: 10.742858,
+          lng: 122.970088,
+          radius: 40,
+          address: 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines',
+          company: 'Printing Services',
+        }
+      : {
+          lat: 10.694261,
+          lng: 122.959987,
+          radius: 40,
+          address: 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City',
+          company: 'Concentrix',
+        };
+
+    const effectiveName = `${companyName || permanentCoordinates.company} - Workplace Geofence Perimeter`;
+
+    // Only match official non-trainee establishment zones from geofenceZones
+    const officialZone = geofenceZones.find((z) => {
+      if (!z.active || !z.lat || !z.lng) return false;
+      const zName = (z.name || '').toLowerCase();
+      // Strictly exclude personal trainee / student zones
+      if (zName.includes('trainee') || zName.includes('student') || (z as any).userType === 'trainee') return false;
+      const cSearch = isPrinting ? 'printing' : 'concentrix';
+      return (
+        z.id === currentUser?.id ||
+        z.id === currentEmp?.id ||
+        z.employeeId === currentUser?.id ||
+        zName.includes(cSearch) ||
+        zName.includes('workplace')
+      );
+    });
+
+    if (officialZone) {
       return {
-        id: `station-${empId || 'hte'}`,
-        name: companyName,
-        address: currentEmp?.registrationAddress || (currentUser as any)?.registrationAddress || 'Company Establishment',
-        lat: Number(loc.lat),
-        lng: Number(loc.lng),
-        radius: Number(loc.radius || 40),
+        ...officialZone,
+        name: effectiveName,
+        address: officialZone.address || permanentCoordinates.address,
+        lat: Number(officialZone.lat) || permanentCoordinates.lat,
+        lng: Number(officialZone.lng) || permanentCoordinates.lng,
+        radius: Math.max(20, Number(officialZone.radius || permanentCoordinates.radius)),
         active: true,
       };
     }
-    return null;
-  }, [geofenceZones, companyName, currentUser, currentEmp]);
+
+    // Default permanent establishment geofence
+    return {
+      id: `station-${currentUser?.id || currentEmp?.id || (isPrinting ? 'printing' : 'concentrix')}`,
+      name: effectiveName,
+      address: permanentCoordinates.address,
+      lat: permanentCoordinates.lat,
+      lng: permanentCoordinates.lng,
+      radius: permanentCoordinates.radius,
+      active: true,
+    };
+  }, [geofenceZones, companyName, currentUser, currentEmp, hteUser]);
 
   // Trainees tied to active HTE via company name, direct assignment, or all active OJT trainees in the active academic year
   const trainees = useMemo(() => {

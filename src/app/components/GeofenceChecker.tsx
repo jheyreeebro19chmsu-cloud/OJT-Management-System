@@ -77,12 +77,29 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
       const empId = employee.id || '';
       const hteStation = validConfiguredZones.find(
         (z) =>
-          z.id === `station-${empId}` ||
-          z.id === (employee as any)?.hteId ||
-          (employee.companyName && z.name && z.name.toLowerCase().includes(employee.companyName.toLowerCase()))
+          !z.name.toLowerCase().includes('trainee') &&
+          !z.name.toLowerCase().includes('student') &&
+          (z as any).userType !== 'trainee' &&
+          (z.id === `station-${empId}` ||
+            z.id === (employee as any)?.hteId ||
+            (employee.companyName && z.name && z.name.toLowerCase().includes(employee.companyName.toLowerCase())))
       );
       if (hteStation) {
         return [hteStation, ...validConfiguredZones.filter((z) => z.id !== hteStation.id)];
+      }
+      const hteLoc = resolveHteLocation(employee, hostSupervisors, employees, validConfiguredZones);
+      if (hteLoc) {
+        const permanentHteZone: GeofenceZone = {
+          id: `station-${empId || 'hte'}`,
+          name: `${hteLoc.companyName} Workplace Premises`,
+          address: hteLoc.address,
+          lat: hteLoc.lat,
+          lng: hteLoc.lng,
+          radius: hteLoc.radius,
+          active: true,
+          userType: 'hte',
+        };
+        return [permanentHteZone, ...validConfiguredZones];
       }
       let regLat = employee?.registrationLocation?.lat ?? (employee as any)?.registration_lat;
       let regLng = employee?.registrationLocation?.lng ?? (employee as any)?.registration_lng;

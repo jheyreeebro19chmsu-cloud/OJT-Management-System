@@ -160,14 +160,21 @@ export function resolveHteLocation(
   // 3. Check in geofenceZones for official HTE workplace zones
   const matchedZone = geofenceZones.find((z) => {
     if (!z || !z.active || !z.lat || !z.lng) return false;
-    // Don't match personal trainee zones when looking for the HTE
+    // Strictly exclude all personal trainee / student zones
     const zName = (z.name || '').toLowerCase();
-    const isPersonalZone = z.id.startsWith('personal-') || (zName.includes('trainee') && !zName.includes('geofence ('));
+    const isTraineeZone =
+      z.id.startsWith('personal-') ||
+      z.id.startsWith('station-000') ||
+      zName.includes('trainee') ||
+      zName.includes('student') ||
+      (z as any).userType === 'trainee';
+
+    if (isTraineeZone) return false;
 
     if (hteId && (z.id === hteId || (z as any).employeeId === hteId || (z as any).employee_id === hteId)) {
       return true;
     }
-    if (hasValidCompany && !isPersonalZone) {
+    if (hasValidCompany) {
       if (zName.includes(normCompany)) return true;
       if ((z as any).companyName && String((z as any).companyName).toLowerCase().includes(normCompany)) return true;
     }
@@ -181,13 +188,13 @@ export function resolveHteLocation(
       lng: Number(matchedZone.lng),
       radius: Math.max(20, Number(matchedZone.radius || 40)),
       address: matchedZone.address || `${comp} Workplace Premises`,
-      name: matchedZone.name || `${comp} Workplace Premises`,
+      name: `${comp} Workplace Premises`,
       companyName: comp,
       source: 'geofence_zone',
     };
   }
 
-  // 4. Check if companyAddress contains GPS coordinates: e.g. "10.74275, 122.970168"
+  // 4. Check if companyAddress contains GPS coordinates: e.g. "10.742858, 122.970088"
   const compAddr = traineeOrHte.companyAddress || '';
   const coordMatch = compAddr.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
   if (coordMatch) {
@@ -206,27 +213,35 @@ export function resolveHteLocation(
     }
   }
 
-  // 5. Fallback designated HTE establishment site coordinates
+  // 5. Permanent designated HTE establishment site coordinates (Fixed, never moving)
   if (hasValidCompany) {
-    let defLat = 10.74275;
-    let defLng = 122.970168;
+    let defLat = 10.742858;
+    let defLng = 122.970088;
+    let defAddr = 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines';
 
     if (normCompany.includes('printing') || normCompany.includes('press')) {
-      defLat = 10.74275;
-      defLng = 122.970168;
+      defLat = 10.742858;
+      defLng = 122.970088;
+      defAddr = 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines';
+    } else if (normCompany.includes('concentrix')) {
+      defLat = 10.694261;
+      defLng = 122.959987;
+      defAddr = 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City';
     } else if (normCompany.includes('chmsu') || normCompany.includes('carlos hilado') || normCompany.includes('campus')) {
       defLat = 10.7410;
       defLng = 122.9702;
+      defAddr = 'Carlos Hilado Memorial State University, Mabini St, Talisay City, Negros Occidental';
     } else {
-      defLat = 10.7412;
-      defLng = 122.9691;
+      defLat = 10.742858;
+      defLng = 122.970088;
+      defAddr = `${rawCompany} Workplace Premises, Negros Occidental`;
     }
 
     return {
       lat: defLat,
       lng: defLng,
       radius: 40,
-      address: compAddr || `${rawCompany} Workplace Premises, Negros Occidental`,
+      address: compAddr || defAddr,
       name: `${rawCompany} Workplace Premises`,
       companyName: rawCompany,
       source: 'default_hte',
