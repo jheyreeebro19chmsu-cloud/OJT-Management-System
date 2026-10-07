@@ -85,8 +85,12 @@ export function AdminHostFeedback() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedItemForView, setSelectedItemForView] = useState<UnifiedFeedbackItem | null>(null);
 
-  // Helper to ensure supervisor strictly matches the official HTE supervisor: Jhey Ree C Ebro (Concentrix)
+  // Helper to ensure supervisor strictly matches the official HTE supervisors: Jhey Ree (Printing Services) & Jhey Ree C Ebro (Concentrix)
   const getOfficialSupervisorName = (company?: string, rawSupervisor?: string, emp?: Employee | null): string => {
+    const comp = (company || emp?.companyName || '').trim().toLowerCase();
+    if (comp.includes('printing')) {
+      return 'Jhey Ree';
+    }
     return 'Jhey Ree C Ebro';
   };
 

@@ -481,12 +481,21 @@ export function Register() {
     }
 
     const resolvedRepName = fullName || [fName, lName].filter(Boolean).join(' ') || 'HTE Representative';
-    const resolvedCompany = 'Concentrix';
-    const resolvedStreet = 'Santa Clara Avenue, Banago';
-    const resolvedAddress = 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod';
+    const repEmailLower = (email || '').toLowerCase();
+    const isPrinting = repEmailLower.includes('reejhey') || repEmailLower.includes('printing');
 
-    setRegistrationLocation({ lat: 10.694261, lng: 122.959987, accuracy: 15 });
-    setRegistrationAddress('Helix Service Center, Santa Clara Avenue, Banago, Bacolod');
+    const resolvedCompany = isPrinting ? 'Printing Services' : 'Concentrix';
+    const resolvedAddress = isPrinting
+      ? 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines'
+      : 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod';
+
+    if (isPrinting) {
+      setRegistrationLocation({ lat: 10.742858, lng: 122.970088, accuracy: 15 });
+      setRegistrationAddress('Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines');
+    } else {
+      setRegistrationLocation({ lat: 10.694261, lng: 122.959987, accuracy: 15 });
+      setRegistrationAddress('Helix Service Center, Santa Clara Avenue, Banago, Bacolod');
+    }
 
     setForm((prev) => ({
       ...prev,

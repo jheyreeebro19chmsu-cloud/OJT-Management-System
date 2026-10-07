@@ -2156,8 +2156,24 @@ export function transformSupabaseEmployee(data: any): Employee {
     ),
     department: data.department,
     position: data.position,
-    companyName: data.company_name || 'Concentrix',
-    supervisorName: data.supervisor_name || 'Jhey Ree C Ebro',
+    companyName: (() => {
+      if (data.company_name) return data.company_name;
+      if (data.hte_id === '95558630-499b-4aac-b869-ba64b0694e8c') return 'Printing Services';
+      if (data.hte_id === '89405c66-015c-407a-937b-71ab37b829d7') return 'Concentrix';
+      const empId = String(data.employee_id || '').toUpperCase();
+      if (empId.includes('PS')) return 'Printing Services';
+      if (empId.includes('CTX')) return 'Concentrix';
+      return 'Printing Services';
+    })(),
+    supervisorName: (() => {
+      if (data.supervisor_name) return data.supervisor_name;
+      if (data.hte_id === '95558630-499b-4aac-b869-ba64b0694e8c') return 'Jhey Ree';
+      if (data.hte_id === '89405c66-015c-407a-937b-71ab37b829d7') return 'Jhey Ree C Ebro';
+      const empId = String(data.employee_id || '').toUpperCase();
+      if (empId.includes('PS')) return 'Jhey Ree';
+      if (empId.includes('CTX')) return 'Jhey Ree C Ebro';
+      return 'Jhey Ree';
+    })(),
     schoolName: data.school_name,
     campus: data.campus,
     course: data.course,
@@ -2199,7 +2215,13 @@ export function transformSupabaseEmployee(data: any): Employee {
     city: regLoc?.city || data.city || undefined,
     province: regLoc?.province || data.province || undefined,
     instructorId: data.instructor_id,
-    hteId: data.hte_id || '95558630-499b-4aac-b869-ba64b0694e8c',
+    hteId: (() => {
+      if (data.hte_id) return data.hte_id;
+      const comp = String(data.company_name || '').toLowerCase();
+      const empId = String(data.employee_id || '').toUpperCase();
+      if (comp.includes('concentrix') || empId.includes('CTX')) return '89405c66-015c-407a-937b-71ab37b829d7';
+      return '95558630-499b-4aac-b869-ba64b0694e8c';
+    })(),
     linkedAt: data.linked_at,
     applicationStatus: data.application_status || data.approval_status || (
       data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor')) ||

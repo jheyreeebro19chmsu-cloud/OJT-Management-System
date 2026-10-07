@@ -480,7 +480,9 @@ export function AdminEvaluations() {
         trainee={selectedEmp}
         companyName={selectedEmp.companyName || 'Host Training Establishment'}
         supervisorName={
-          ev?.evaluatorName || ev?.evaluatedBy || 'Jhey Ree C Ebro'
+          ev?.evaluatorName ||
+          ev?.evaluatedBy ||
+          ((selectedEmp.companyName || '').toLowerCase().includes('printing') ? 'Jhey Ree' : 'Jhey Ree C Ebro')
         }
         instructorName={instructorName}
         evaluationDate={ev?.evaluatedAt}

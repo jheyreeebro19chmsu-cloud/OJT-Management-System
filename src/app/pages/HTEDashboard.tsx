@@ -66,11 +66,24 @@ export function HTEDashboard() {
   }, []);
 
   const companyName = useMemo(() => {
-    return 'Concentrix';
-  }, []);
+    const email = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase().trim();
+    const id = currentUser?.id || currentEmp?.id || hteUser?.id;
+    if (email.includes('reejhey') || id === '95558630-499b-4aac-b869-ba64b0694e8c') {
+      return 'Printing Services';
+    }
+    if (email.includes('ebro') || id === '89405c66-015c-407a-937b-71ab37b829d7') {
+      return 'Concentrix';
+    }
+    const c = currentUser?.companyName || currentEmp?.companyName || hteUser?.companyName || localStorage.getItem('ojt_hte_company');
+    if (c && c !== 'Host Training Establishment' && c !== 'Host Training Establishment Partner') {
+      return c;
+    }
+    return 'Printing Services';
+  }, [currentUser, currentEmp, hteUser]);
 
   const hteZone = useMemo(() => {
-    const cName = 'concentrix';
+    const isPrinting = companyName.toLowerCase().includes('printing');
+    const cName = isPrinting ? 'printing' : 'concentrix';
     const empId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || '';
     const found = geofenceZones.find(
       (z) =>
@@ -87,7 +100,7 @@ export function HTEDashboard() {
         address: currentEmp?.registrationAddress || (currentUser as any)?.registrationAddress || 'Company Establishment',
         lat: Number(loc.lat),
         lng: Number(loc.lng),
-        radius: Number(loc.radius || 50),
+        radius: Number(loc.radius || 40),
         active: true,
       };
     }
@@ -139,30 +152,31 @@ export function HTEDashboard() {
       return true;
     });
 
-    const compLower = 'concentrix';
-    const currentName = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
+    const isPrinting = companyName.toLowerCase().includes('printing');
 
     const specificList = ojtList.filter((e) => {
       const eComp = (e.companyName || '').trim().toLowerCase();
-      const eSupervisor = (e.supervisorName || '').trim().toLowerCase();
+      const eEmpId = (e.employeeId || '').toUpperCase();
+      const eEmail = (e.email || '').toLowerCase();
+      const eHteId = e.hteId || '';
 
-      const isAssignedToCurrentHte = Boolean(
-        // 1. Direct HTE ID match
-        (currentHteId && (
-          e.hteId === currentHteId ||
-          (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
-          (currentEmp?.employeeId && e.hteId === currentEmp.employeeId)
-        )) ||
-        // 2. Concentrix supervisor linkage (both seeded Concentrix ID & auth ID)
-        (e.hteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
-         e.hteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
-         eComp.includes('concentrix')) ||
-        // 3. Company name match
-        (compLower && eComp && (eComp === compLower || eComp.includes(compLower) || compLower.includes(eComp))) ||
-        // 4. Supervisor name match
-        (currentName && eSupervisor && (eSupervisor.includes(currentName) || currentName.includes(eSupervisor)))
-      );
-      return isAssignedToCurrentHte;
+      if (isPrinting) {
+        // Must belong to Printing Services ONLY
+        return (
+          eHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+          eComp.includes('printing') ||
+          eEmpId.includes('PS') ||
+          eEmail.includes('.ps')
+        ) && !eComp.includes('concentrix') && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
+      } else {
+        // Must belong to Concentrix ONLY
+        return (
+          eHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+          eComp.includes('concentrix') ||
+          eEmpId.includes('CTX') ||
+          eEmail.includes('.ctx')
+        );
+      }
     });
 
     return specificList;

@@ -332,13 +332,19 @@ export default function OAuthCallback() {
               (dbEmp.position && String(dbEmp.position).toLowerCase().includes('hte'));
 
             const role: User['role'] = pendingRole === 'admin' ? 'admin' : pendingRole === 'hte' ? 'hte' : isInstructor ? 'admin' : isHte ? 'hte' : 'employee';
+            const resolvedHteComp = (() => {
+              if (dbEmp.company_name) return dbEmp.company_name;
+              if (email.includes('reejhey') || dbEmp.id === '95558630-499b-4aac-b869-ba64b0694e8c') return 'Printing Services';
+              return 'Concentrix';
+            })();
+
             const resolvedUser: User = {
               id: dbEmp.id,
               name: dbEmp.name || `${dbEmp.first_name || ''} ${dbEmp.last_name || ''}`.trim() || fullName,
               email: dbEmp.email || email,
               role,
               employeeId: dbEmp.employee_id || dbEmp.employeeId || dbEmp.id,
-              companyName: dbEmp.company_name || (role === 'hte' ? 'Concentrix' : undefined),
+              companyName: dbEmp.company_name || (role === 'hte' ? resolvedHteComp : undefined),
               photo: dbEmp.photo || photoUrl,
               faceRegistered: dbEmp.face_registered ?? dbEmp.faceRegistered ?? false,
             };
@@ -352,7 +358,7 @@ export default function OAuthCallback() {
             localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
             if (role === 'hte') {
               localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
-              const comp = dbEmp.company_name || 'Concentrix';
+              const comp = dbEmp.company_name || resolvedHteComp;
               localStorage.setItem('ojt_hte_company', comp);
             }
 
@@ -364,7 +370,9 @@ export default function OAuthCallback() {
           if (dbHost) {
             const hostCompany = dbHost.company_name && dbHost.company_name !== 'Host Training Establishment Partner' && dbHost.company_name !== 'Host Training Establishment'
               ? dbHost.company_name
-              : ((dbHost.name || fullName || '').toLowerCase().includes('jhey') || (email || '').toLowerCase().includes('reejhey') ? 'Concentrix' : 'Concentrix');
+              : (email.includes('reejhey') || dbHost.id === '95558630-499b-4aac-b869-ba64b0694e8c'
+                  ? 'Printing Services'
+                  : 'Concentrix');
 
             const resolvedHost: User = {
               id: dbHost.id,

@@ -4324,7 +4324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
     }
 
-    // 3. Ensure evaluations have academicYear and official HTE supervisor name (Jhey Ree C Ebro for Concentrix)
+    // 3. Ensure evaluations have academicYear and official HTE supervisor name (Jhey Ree for Printing Services, Jhey Ree C Ebro for Concentrix)
     const fixedEvals = evaluations.map((ev) => {
       const emp = fixedEmployees.find(
         (e) =>
@@ -4332,7 +4332,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           e.employeeId === ev.employeeId ||
           (e.email && ev.employeeId && e.email.toLowerCase() === ev.employeeId.toLowerCase())
       );
-      const officialSup = 'Jhey Ree C Ebro';
+      const comp = (emp?.companyName || '').toLowerCase();
+      const officialSup = comp.includes('printing')
+        ? 'Jhey Ree'
+        : 'Jhey Ree C Ebro';
 
       return {
         ...ev,
@@ -4353,12 +4356,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           e.employeeId === hf.employeeId ||
           (e.email && hf.employeeId && e.email.toLowerCase() === hf.employeeId.toLowerCase())
       );
-      const officialSup = 'Jhey Ree C Ebro';
+      const comp = (hf.hostCompany || emp?.companyName || '').toLowerCase();
+      const isPrinting = comp.includes('printing');
+      const officialSup = isPrinting ? 'Jhey Ree' : 'Jhey Ree C Ebro';
 
       return {
         ...hf,
         hostName: officialSup,
-        hostCompany: 'Concentrix',
+        hostCompany: isPrinting ? 'Printing Services' : 'Concentrix',
         academicYear: hf.academicYear || emp?.academicYear || activeAY || defaultAY,
       };
     });
