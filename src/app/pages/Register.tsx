@@ -236,6 +236,7 @@ export function Register() {
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
   const [previewRegDoc, setPreviewRegDoc] = useState<{ title: string; fileName: string; fileUrl?: string } | null>(null);
+  const [documents, setDocuments] = useState<TraineeDocuments>({});
 
   const handleDocumentUpload = async (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
