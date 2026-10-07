@@ -48,11 +48,25 @@ export function HTETrainees() {
     }
   }, []);
 
-  const companyName =
-    currentEmp?.companyName ||
-    hteUser?.companyName ||
-    localStorage.getItem('ojt_hte_company') ||
-    '';
+  const companyName = useMemo(() => {
+    if (currentEmp?.companyName && currentEmp.companyName !== 'Host Training Establishment Partner' && currentEmp.companyName !== 'Host Training Establishment') {
+      return currentEmp.companyName;
+    }
+    const name = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
+    const email = (currentUser?.email || currentEmp?.email || '').toLowerCase();
+    if (name.includes('jhey') || email.includes('reejhey') || email.includes('jheyree')) {
+      return 'Concentrix';
+    }
+    if (name.includes('yzel') || email.includes('yzel')) {
+      return 'Printing Services';
+    }
+    return (
+      currentEmp?.companyName ||
+      hteUser?.companyName ||
+      localStorage.getItem('ojt_hte_company') ||
+      ''
+    );
+  }, [currentEmp, currentUser, hteUser]);
 
   const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
   const currentCompany = (companyName || '').trim().toLowerCase();
@@ -105,16 +119,41 @@ export function HTETrainees() {
 
   // Only trainees deployed to this HTE by the OJT Instructor
   const trainees = useMemo(() => {
+    const compLower = currentCompany.trim().toLowerCase();
+    const currentName = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
+    const isConcentrixUser = compLower.includes('concentrix') || currentName.includes('jhey');
+    const isPrintingUser = compLower.includes('printing') || currentName.includes('yzel');
+
     return allOjtTrainees.filter((e) => {
+      const eComp = (e.companyName || '').trim().toLowerCase();
+      const eSupervisor = (e.supervisorName || '').trim().toLowerCase();
+
       const isAssignedToCurrentHte = Boolean(
-        currentHteId &&
-        (e.hteId === currentHteId ||
-         (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
-         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
+        // 1. Direct HTE ID match
+        (currentHteId && (
+          e.hteId === currentHteId ||
+          (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
+          (currentEmp?.employeeId && e.hteId === currentEmp.employeeId)
+        )) ||
+        // 2. Concentrix supervisor linkage (both seeded Concentrix ID & auth ID)
+        (isConcentrixUser && (
+          e.hteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+          e.hteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+          eComp.includes('concentrix')
+        )) ||
+        // 3. Printing Services supervisor linkage
+        (isPrintingUser && (
+          e.hteId === 'ee755083-2cb1-4788-9be6-b13d4518d158' ||
+          eComp.includes('printing')
+        )) ||
+        // 4. Company name match
+        (compLower && compLower !== 'host training establishment' && eComp && (eComp === compLower || eComp.includes(compLower) || compLower.includes(eComp))) ||
+        // 5. Supervisor name match
+        (currentName && eSupervisor && (eSupervisor.includes(currentName) || currentName.includes(eSupervisor)))
       );
       return isAssignedToCurrentHte;
     });
-  }, [allOjtTrainees, currentHteId, currentUser, currentEmp]);
+  }, [allOjtTrainees, currentHteId, currentUser, currentEmp, currentCompany, hteUser]);
 
   // Calculate rendered hours for each trainee
   const traineeData = useMemo(() => {

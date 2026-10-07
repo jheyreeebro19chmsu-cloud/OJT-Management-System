@@ -338,6 +338,7 @@ export default function OAuthCallback() {
               email: dbEmp.email || email,
               role,
               employeeId: dbEmp.employee_id || dbEmp.employeeId || dbEmp.id,
+              companyName: dbEmp.company_name || (role === 'hte' ? 'Concentrix' : undefined),
               photo: dbEmp.photo || photoUrl,
               faceRegistered: dbEmp.face_registered ?? dbEmp.faceRegistered ?? false,
             };
@@ -351,6 +352,8 @@ export default function OAuthCallback() {
             localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
             if (role === 'hte') {
               localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
+              const comp = dbEmp.company_name || 'Concentrix';
+              localStorage.setItem('ojt_hte_company', comp);
             }
 
             const targetPath = role === 'admin' ? '/admin' : role === 'hte' ? '/hte' : '/app';
@@ -359,12 +362,17 @@ export default function OAuthCallback() {
           }
 
           if (dbHost) {
+            const hostCompany = dbHost.company_name && dbHost.company_name !== 'Host Training Establishment Partner' && dbHost.company_name !== 'Host Training Establishment'
+              ? dbHost.company_name
+              : ((dbHost.name || fullName || '').toLowerCase().includes('jhey') || (email || '').toLowerCase().includes('reejhey') ? 'Concentrix' : 'Concentrix');
+
             const resolvedHost: User = {
               id: dbHost.id,
               name: dbHost.name || fullName,
               email: dbHost.email || email,
               role: 'hte',
               employeeId: dbHost.employee_id || dbHost.employeeId || dbHost.id,
+              companyName: hostCompany,
               photo: photoUrl || '',
               faceRegistered: false,
             };
@@ -373,6 +381,7 @@ export default function OAuthCallback() {
             localStorage.setItem('ojt_user', JSON.stringify(resolvedHost));
             localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedHost));
             localStorage.setItem('ojt_current_user', JSON.stringify(resolvedHost));
+            localStorage.setItem('ojt_hte_company', hostCompany);
 
             setTimeout(() => navigate('/hte', { replace: true }), 300);
             return;

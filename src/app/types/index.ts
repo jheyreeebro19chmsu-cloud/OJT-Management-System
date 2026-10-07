@@ -136,6 +136,7 @@ export interface User {
   email?: string;
   photo?: string;
   faceRegistered?: boolean;
+  companyName?: string;
 }
 
 export interface EvaluationCriterion {

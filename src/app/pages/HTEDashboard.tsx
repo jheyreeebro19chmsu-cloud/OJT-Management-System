@@ -65,11 +65,25 @@ export function HTEDashboard() {
     }
   }, []);
 
-  const companyName =
-    currentEmp?.companyName ||
-    hteUser?.companyName ||
-    localStorage.getItem('ojt_hte_company') ||
-    'Host Training Establishment';
+  const companyName = useMemo(() => {
+    if (currentEmp?.companyName && currentEmp.companyName !== 'Host Training Establishment Partner' && currentEmp.companyName !== 'Host Training Establishment') {
+      return currentEmp.companyName;
+    }
+    const name = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
+    const email = (currentUser?.email || currentEmp?.email || '').toLowerCase();
+    if (name.includes('jhey') || email.includes('reejhey') || email.includes('jheyree')) {
+      return 'Concentrix';
+    }
+    if (name.includes('yzel') || email.includes('yzel')) {
+      return 'Printing Services';
+    }
+    return (
+      currentEmp?.companyName ||
+      hteUser?.companyName ||
+      localStorage.getItem('ojt_hte_company') ||
+      'Host Training Establishment'
+    );
+  }, [currentEmp, currentUser, hteUser]);
 
   const hteZone = useMemo(() => {
     const cName = (companyName || '').toLowerCase().trim();
@@ -99,7 +113,6 @@ export function HTEDashboard() {
   // Trainees tied to active HTE via company name, direct assignment, or all active OJT trainees in the active academic year
   const trainees = useMemo(() => {
     const currentHteId = currentUser?.id || currentEmp?.id || hteUser?.id || undefined;
-    const currentCompany = (companyName || '').trim().toLowerCase();
     const targetAY = settings?.activeAcademicYear || '2026-2027';
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
 
@@ -142,18 +155,43 @@ export function HTEDashboard() {
       return true;
     });
 
+    const compLower = (companyName || '').trim().toLowerCase();
+    const currentName = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
+    const isConcentrixUser = compLower.includes('concentrix') || currentName.includes('jhey');
+    const isPrintingUser = compLower.includes('printing') || currentName.includes('yzel');
+
     const specificList = ojtList.filter((e) => {
+      const eComp = (e.companyName || '').trim().toLowerCase();
+      const eSupervisor = (e.supervisorName || '').trim().toLowerCase();
+
       const isAssignedToCurrentHte = Boolean(
-        currentHteId &&
-        (e.hteId === currentHteId ||
-         (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
-         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
+        // 1. Direct HTE ID match
+        (currentHteId && (
+          e.hteId === currentHteId ||
+          (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
+          (currentEmp?.employeeId && e.hteId === currentEmp.employeeId)
+        )) ||
+        // 2. Concentrix supervisor linkage (both seeded Concentrix ID & auth ID)
+        (isConcentrixUser && (
+          e.hteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+          e.hteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+          eComp.includes('concentrix')
+        )) ||
+        // 3. Printing Services supervisor linkage
+        (isPrintingUser && (
+          e.hteId === 'ee755083-2cb1-4788-9be6-b13d4518d158' ||
+          eComp.includes('printing')
+        )) ||
+        // 4. Company name match
+        (compLower && compLower !== 'host training establishment' && eComp && (eComp === compLower || eComp.includes(compLower) || compLower.includes(eComp))) ||
+        // 5. Supervisor name match
+        (currentName && eSupervisor && (eSupervisor.includes(currentName) || currentName.includes(eSupervisor)))
       );
       return isAssignedToCurrentHte;
     });
 
     return specificList;
-  }, [employees, currentUser, currentEmp, hteUser, settings]);
+  }, [employees, currentUser, currentEmp, hteUser, settings, companyName]);
 
   // Compute rendered hours
   const traineeStats = useMemo(() => {

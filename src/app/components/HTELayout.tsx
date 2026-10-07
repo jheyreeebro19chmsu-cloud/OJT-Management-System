@@ -69,12 +69,27 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
     }
   }, []);
 
-  const companyName =
-    hteCompany ||
-    employee?.companyName ||
-    hteUser?.companyName ||
-    localStorage.getItem('ojt_hte_company') ||
-    'Host Training Establishment';
+  const companyName = React.useMemo(() => {
+    if (hteCompany && hteCompany !== 'Host Training Establishment Partner' && hteCompany !== 'Host Training Establishment') {
+      return hteCompany;
+    }
+    if (employee?.companyName && employee.companyName !== 'Host Training Establishment Partner' && employee.companyName !== 'Host Training Establishment') {
+      return employee.companyName;
+    }
+    const currentName = (employee?.name || currentUser?.name || hteUser?.name || '').toLowerCase();
+    const currentEmail = (employee?.email || currentUser?.email || hteUser?.email || '').toLowerCase();
+    if (currentName.includes('jhey') || currentEmail.includes('reejhey') || currentEmail.includes('jheyree')) {
+      return 'Concentrix';
+    }
+    if (currentName.includes('yzel') || currentEmail.includes('yzel')) {
+      return 'Printing Services';
+    }
+    const storedComp = localStorage.getItem('ojt_hte_company');
+    if (storedComp && storedComp !== 'Host Training Establishment Partner' && storedComp !== 'Host Training Establishment') {
+      return storedComp;
+    }
+    return hteUser?.companyName || 'Concentrix';
+  }, [hteCompany, employee, currentUser, hteUser]);
 
   const avatarSource = employee?.photo || currentUser?.photo || hteUser?.photo || '';
   const avatarName = employee?.name || currentUser?.name || hteUser?.name || 'HTE Supervisor';

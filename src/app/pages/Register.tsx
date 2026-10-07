@@ -481,9 +481,20 @@ export function Register() {
     }
 
     const resolvedRepName = fullName || [fName, lName].filter(Boolean).join(' ') || 'HTE Representative';
-    const resolvedCompany = 'Host Training Establishment Partner';
-    const resolvedStreet = 'Domingo Lizares Street, Purok Manpower';
-    const resolvedAddress = `${resolvedStreet}, Zone 1, Talisay City, Negros Occidental`;
+    const repNameLower = resolvedRepName.toLowerCase();
+    const repEmailLower = (email || '').toLowerCase();
+    const isConcentrix = repNameLower.includes('jhey') || repEmailLower.includes('jhey') || repEmailLower.includes('reejhey');
+    const isPrinting = repNameLower.includes('yzel') || repEmailLower.includes('yzel');
+    const resolvedCompany = isConcentrix ? 'Concentrix' : isPrinting ? 'Printing Services' : 'Host Training Establishment Partner';
+    const resolvedStreet = isConcentrix ? 'Santa Clara Avenue, Banago' : 'Domingo Lizares Street, Purok Manpower';
+    const resolvedAddress = isConcentrix
+      ? 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod'
+      : `${resolvedStreet}, Zone 1, Talisay City, Negros Occidental`;
+
+    if (isConcentrix) {
+      setRegistrationLocation({ lat: 10.694261, lng: 122.959987, accuracy: 15 });
+      setRegistrationAddress('Helix Service Center, Santa Clara Avenue, Banago, Bacolod');
+    }
 
     setForm((prev) => ({
       ...prev,
@@ -496,7 +507,7 @@ export function Register() {
       contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
       companyName: prev.companyName || resolvedCompany,
       companyAddress: prev.companyAddress || resolvedAddress,
-      supervisorName: prev.supervisorName || 'Training Supervisor',
+      supervisorName: prev.supervisorName || resolvedRepName,
       position: 'HTE Representative',
       country: 'PH',
       region: 'Region VI (Western Visayas)',
@@ -1352,6 +1363,7 @@ export function Register() {
           localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
           if (isHte) {
             localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
+            localStorage.setItem('ojt_hte_company', form.companyName || 'Concentrix');
           }
 
           setRegisteredUser(resolvedUser);
@@ -1485,6 +1497,7 @@ export function Register() {
     localStorage.setItem('ojt_current_user', JSON.stringify(resolvedUser));
     if (isHte) {
       localStorage.setItem('ojt_hte_user', JSON.stringify(resolvedUser));
+      localStorage.setItem('ojt_hte_company', form.companyName || 'Concentrix');
     }
 
     setRegisteredUser(resolvedUser);
