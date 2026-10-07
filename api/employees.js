@@ -77,12 +77,13 @@ async function mapUpdatesToDbPayload(updates) {
   }
 
   // Handle GPS & workplace locations
+  let locObj = {};
   if (updates.registrationLocation !== undefined) {
     const loc = updates.registrationLocation;
     if (loc && typeof loc === 'object') {
       dbPayload.registration_lat = loc.lat ?? null;
       dbPayload.registration_lng = loc.lng ?? null;
-      if (loc.radius) dbPayload.registration_radius = loc.radius;
+      locObj = { ...loc };
       if (loc.address) dbPayload.registration_address = loc.address;
     } else if (loc === null) {
       dbPayload.registration_lat = null;
@@ -94,11 +95,18 @@ async function mapUpdatesToDbPayload(updates) {
   if (updates.registrationAddress !== undefined || updates.registration_address !== undefined) {
     dbPayload.registration_address = updates.registrationAddress ?? updates.registration_address;
   }
-  if (updates.registrationRadius !== undefined || updates.registration_radius !== undefined) {
-    dbPayload.registration_radius = updates.registrationRadius ?? updates.registration_radius;
+  const regRadiusVal = updates.registrationRadius ?? updates.registration_radius ?? locObj.radius;
+  if (regRadiusVal !== undefined) {
+    locObj.radius = Math.max(20, Number(regRadiusVal));
   }
-  if (updates.registrationLocation !== undefined || updates.registration_location !== undefined) {
-    dbPayload.registration_location = updates.registrationLocation ?? updates.registration_location;
+  if (dbPayload.registration_lat != null) locObj.lat = Number(dbPayload.registration_lat);
+  if (dbPayload.registration_lng != null) locObj.lng = Number(dbPayload.registration_lng);
+  if (dbPayload.registration_address) locObj.address = dbPayload.registration_address;
+  if (Object.keys(locObj).length > 0 || updates.registrationLocation !== undefined || updates.registration_location !== undefined) {
+    dbPayload.registration_location = {
+      ...(typeof updates.registration_location === 'object' ? updates.registration_location : {}),
+      ...locObj,
+    };
   }
 
   // Resolve HTE metadata

@@ -528,12 +528,6 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if ('registrationAddress' in updates) {
     supabaseUpdates.registration_address = updates.registrationAddress ?? null;
   }
-  if (updates.documentsPassed !== undefined) {
-    supabaseUpdates.documents_passed = updates.documentsPassed;
-  }
-  if (updates.documentsStatus !== undefined) {
-    supabaseUpdates.documents_status = updates.documentsStatus;
-  }
   const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
   const hasRegLocUpdates =
@@ -597,7 +591,6 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   const regRadius = updates.registrationRadius ?? updates.registrationLocation?.radius;
   if (regRadius !== undefined && regRadius !== null) {
     updatedRegLoc.radius = Math.max(20, Number(regRadius));
-    supabaseUpdates.registration_radius = Math.max(20, Number(regRadius));
   }
   if (updates.registrationAddress !== undefined) {
     updatedRegLoc.address = updates.registrationAddress;
@@ -608,10 +601,6 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     updatedRegLoc.phone = pVal;
     updatedRegLoc.contactPhone = pVal;
     updatedRegLoc.telephone = pVal;
-    if (pVal !== undefined) {
-      supabaseUpdates.phone = pVal;
-      supabaseUpdates.contact_phone = pVal;
-    }
   }
     if (updates.residentialAddress !== undefined || updates.address !== undefined) {
       const aVal = updates.residentialAddress ?? updates.address;
@@ -712,19 +701,15 @@ export async function batchUpdateEmployees(
   if (updates.registrationLocation) {
     supabaseUpdates.registration_lat = updates.registrationLocation.lat ?? null;
     supabaseUpdates.registration_lng = updates.registrationLocation.lng ?? null;
-    supabaseUpdates.registration_radius = Math.max(20, Number(updates.registrationLocation.radius || 40));
     supabaseUpdates.registration_location = {
       lat: updates.registrationLocation.lat ?? null,
       lng: updates.registrationLocation.lng ?? null,
-      radius: Math.max(20, Number(updates.registrationLocation.radius || 40)),
+      radius: Math.max(20, Number(updates.registrationLocation.radius || updates.registrationRadius || 40)),
       address: updates.registrationAddress || updates.registrationLocation.address,
     };
   }
   if (updates.registrationAddress !== undefined) {
     supabaseUpdates.registration_address = updates.registrationAddress;
-  }
-  if (updates.registrationRadius !== undefined) {
-    supabaseUpdates.registration_radius = Math.max(20, Number(updates.registrationRadius));
   }
 
   // 1. Primary path: Service role endpoint /api/employees
@@ -1232,24 +1217,35 @@ export async function createGeofenceZone(zone: Omit<GeofenceZone, 'id'> & { id?:
     // Column employee_id may be pending migration; proceed safely
   }
 
-  let { data, error } = await supabase
-    .from('geofence_zones')
-    .upsert([payload], payload.id ? { onConflict: 'id' } : undefined)
-    .select()
-    .single();
+  let data;
+  let error;
+
+  if (payload.id) {
+    const res = await supabase.from('geofence_zones').update(payload).eq('id', payload.id).select().maybeSingle();
+    data = res.data;
+    error = res.error;
+  } else {
+    const res = await supabase.from('geofence_zones').insert([payload]).select().maybeSingle();
+    data = res.data;
+    error = res.error;
+  }
 
   // If failed and payload had employee_id, retry without employee_id in case column is not yet migrated in Supabase
   if (error && payload.employee_id) {
     const fallbackPayload = { ...payload };
     delete fallbackPayload.employee_id;
-    const retry = await supabase
-      .from('geofence_zones')
-      .upsert([fallbackPayload], fallbackPayload.id ? { onConflict: 'id' } : undefined)
-      .select()
-      .single();
-    if (!retry.error) {
-      data = retry.data;
-      error = null;
+    if (fallbackPayload.id) {
+      const retry = await supabase.from('geofence_zones').update(fallbackPayload).eq('id', fallbackPayload.id).select().maybeSingle();
+      if (!retry.error && retry.data) {
+        data = retry.data;
+        error = null;
+      }
+    } else {
+      const retry = await supabase.from('geofence_zones').insert([fallbackPayload]).select().maybeSingle();
+      if (!retry.error && retry.data) {
+        data = retry.data;
+        error = null;
+      }
     }
   }
 

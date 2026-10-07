@@ -905,6 +905,10 @@ function mergeEmployees(
       hteId: remote.hteId || local.hteId,
       companyName: remote.companyName || local.companyName,
       supervisorName: remote.supervisorName || local.supervisorName,
+      companyAddress: remote.companyAddress || local.companyAddress,
+      registrationLocation: remote.registrationLocation || local.registrationLocation,
+      registrationAddress: remote.registrationAddress || local.registrationAddress,
+      registrationRadius: remote.registrationRadius || local.registrationRadius,
     };
   });
 }
@@ -2797,6 +2801,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateEmployee = async (id: string, data: Partial<Employee>): Promise<boolean> => {
+    // 1. AUTO-RESOLVE PERMANENT HTE WORKPLACE COORDINATES FOR TRAINEES
+    const targetEmp = employees.find((e) => e.id === id || e.employeeId === id);
+    const isStudent = targetEmp
+      ? isTraineeRole(targetEmp)
+      : (!data.position?.toLowerCase().includes('instructor') && !data.position?.toLowerCase().includes('hte') && !data.position?.toLowerCase().includes('admin'));
+
+    if (isStudent && (data.companyName || data.hteId || data.companyAddress)) {
+      const candidateHte = {
+        ...targetEmp,
+        ...data,
+        id,
+      };
+      if (candidateHte.companyName && !isInvalidHteCompany(candidateHte.companyName)) {
+        const hteLoc = resolveHteLocation(candidateHte, hostSupervisors, employees, geofenceZones);
+        if (hteLoc) {
+          data.companyName = hteLoc.companyName || data.companyName;
+          data.companyAddress = hteLoc.address;
+          if (!data.supervisorName && (hteLoc as any).supervisorName) {
+            data.supervisorName = (hteLoc as any).supervisorName;
+          }
+          if (!data.hteId && (hteLoc as any).id) {
+            data.hteId = (hteLoc as any).id;
+          }
+          const chosenRadius =
+            (data.registrationLocation as any)?.radius ||
+            (data as any)?.registrationRadius ||
+            hteLoc.radius;
+          data.registrationLocation = {
+            lat: Number(hteLoc.lat),
+            lng: Number(hteLoc.lng),
+            radius: Math.max(20, Number(chosenRadius)),
+            address: hteLoc.address,
+          };
+          data.registrationAddress = hteLoc.address;
+          data.registrationRadius = Math.max(20, Number(chosenRadius));
+        }
+      }
+    }
+
     let updatedEmployee: Employee | undefined;
     setEmployees((prev) => {
       const updatedEmployees = prev.map((e) => {
@@ -2877,6 +2920,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           companyName: updatedEmployee?.companyName ?? data.companyName,
           hteId: updatedEmployee?.hteId ?? data.hteId,
           supervisorName: updatedEmployee?.supervisorName ?? data.supervisorName,
+          companyAddress: updatedEmployee?.companyAddress ?? data.companyAddress,
           phone: updatedEmployee?.phone || data.phone,
           contactPhone: updatedEmployee?.contactPhone || data.contactPhone,
           telephone: (updatedEmployee as any)?.telephone || (data as any)?.telephone,
@@ -2886,8 +2930,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           barangay: updatedEmployee?.barangay || data.barangay,
           city: updatedEmployee?.city || data.city,
           province: updatedEmployee?.province || data.province,
-          registrationLocation: updatedEmployee?.registrationLocation,
-          registrationAddress: updatedEmployee?.registrationAddress,
+          registrationLocation: updatedEmployee?.registrationLocation || data.registrationLocation,
+          registrationAddress: updatedEmployee?.registrationAddress || data.registrationAddress,
           submittedDocuments: updatedEmployee?.submittedDocuments,
           documentsPassed: updatedEmployee?.documentsPassed,
           documentsStatus: updatedEmployee?.documentsStatus,
@@ -2924,9 +2968,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // AUTO-SYNC TRAINEE GEOFENCE ZONE WITH HTE WORKPLACE
     if (updatedEmployee && (data.companyName || data.hteId || data.companyAddress || data.registrationLocation)) {
-      const isStudent = isTraineeRole(updatedEmployee);
+      const isStudentRole = isTraineeRole(updatedEmployee);
 
-      if (isStudent && updatedEmployee.companyName && !isInvalidHteCompany(updatedEmployee.companyName)) {
+      if (isStudentRole && updatedEmployee.companyName && !isInvalidHteCompany(updatedEmployee.companyName)) {
         const hteLoc = resolveHteLocation(updatedEmployee, hostSupervisors, employees, geofenceZones);
 
         if (hteLoc) {
@@ -2935,7 +2979,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             (data as any)?.registrationRadius ||
             (updatedEmployee.registrationLocation as any)?.radius ||
             (updatedEmployee as any)?.registrationRadius ||
-            (updatedEmployee as any)?.registration_radius;
+            hteLoc.radius;
           const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
 
           const targetLat = (data.registrationLocation as any)?.lat ?? updatedEmployee.registrationLocation?.lat ?? hteLoc.lat;
@@ -2985,6 +3029,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!ids || ids.length === 0) return true;
     const idSet = new Set(ids);
 
+    // Auto-resolve HTE coordinates if HTE company or ID was specified
+    if (data.companyName || data.hteId || data.companyAddress) {
+      const sampleTrainee = employees.find((e) => idSet.has(e.id) || (e.employeeId && idSet.has(e.employeeId)));
+      const candidateHte = {
+        ...sampleTrainee,
+        ...data,
+      };
+      if (candidateHte.companyName && !isInvalidHteCompany(candidateHte.companyName)) {
+        const hteLoc = resolveHteLocation(candidateHte, hostSupervisors, employees, geofenceZones);
+        if (hteLoc) {
+          data.companyName = hteLoc.companyName || data.companyName;
+          data.companyAddress = hteLoc.address;
+          if (!data.supervisorName && (hteLoc as any).supervisorName) {
+            data.supervisorName = (hteLoc as any).supervisorName;
+          }
+          if (!data.hteId && (hteLoc as any).id) {
+            data.hteId = (hteLoc as any).id;
+          }
+          data.registrationLocation = {
+            lat: Number(hteLoc.lat),
+            lng: Number(hteLoc.lng),
+            radius: hteLoc.radius,
+            address: hteLoc.address,
+          };
+          data.registrationAddress = hteLoc.address;
+          data.registrationRadius = hteLoc.radius;
+        }
+      }
+    }
+
     let updatedTrainees: Employee[] = [];
     setEmployees((prev) => {
       const updatedList = prev.map((e) => {
@@ -3023,7 +3097,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
               (data.registrationLocation as any)?.radius ||
               (data as any)?.registrationRadius ||
               trainee.registrationLocation?.radius ||
-              trainee.registrationRadius;
+              trainee.registrationRadius ||
+              hteLoc.radius;
             const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
             const targetLat = (data.registrationLocation as any)?.lat ?? trainee.registrationLocation?.lat ?? hteLoc.lat;
             const targetLng = (data.registrationLocation as any)?.lng ?? trainee.registrationLocation?.lng ?? hteLoc.lng;

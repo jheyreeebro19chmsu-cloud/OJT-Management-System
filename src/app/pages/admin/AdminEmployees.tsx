@@ -371,20 +371,52 @@ export function AdminEmployees() {
       internCount: number;
     }>();
 
+    // Verified permanent partner establishments
+    map.set('95558630-499b-4aac-b869-ba64b0694e8c', {
+      id: '95558630-499b-4aac-b869-ba64b0694e8c',
+      name: 'Jhey Ree',
+      email: 'jheyreeebro19chmsu@gmail.com',
+      companyName: 'Printing Services',
+      companyAddress: 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines',
+      lat: 10.742858,
+      lng: 122.970088,
+      radius: 40,
+      internCount: 0,
+    });
+
+    map.set('89405c66-015c-407a-937b-71ab37b829d7', {
+      id: '89405c66-015c-407a-937b-71ab37b829d7',
+      name: 'Jhey Ree C Ebro',
+      email: 'concentrix.supervisor@example.com',
+      companyName: 'Concentrix',
+      companyAddress: 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City',
+      lat: 10.694261,
+      lng: 122.959987,
+      radius: 40,
+      internCount: 0,
+    });
+
     (hostSupervisors || []).forEach((h) => {
       const id = h.id || h.employeeId;
       if (!id) return;
       const key = id.toLowerCase();
+      const existing = map.get(key) || map.get(id);
+      const isCtx = (h.companyName || '').toLowerCase().includes('concentrix');
+      const isPrinting = (h.companyName || '').toLowerCase().includes('printing');
+      const defLat = isCtx ? 10.694261 : isPrinting ? 10.742858 : h.registrationLocation?.lat;
+      const defLng = isCtx ? 122.959987 : isPrinting ? 122.970088 : h.registrationLocation?.lng;
+      const defRadius = isCtx || isPrinting ? 40 : (h.registrationRadius || h.registrationLocation?.radius || 40);
+
       map.set(key, {
         id: h.id,
-        name: h.name || 'HTE Supervisor',
-        email: h.email || '',
-        companyName: h.companyName || 'Host Establishment',
-        companyAddress: h.companyAddress || h.registrationAddress || '',
-        lat: h.registrationLocation?.lat,
-        lng: h.registrationLocation?.lng,
-        radius: h.registrationRadius || h.registrationLocation?.radius || 50,
-        internCount: 0,
+        name: h.name || existing?.name || 'HTE Supervisor',
+        email: h.email || existing?.email || '',
+        companyName: h.companyName || existing?.companyName || 'Host Establishment',
+        companyAddress: h.companyAddress || h.registrationAddress || existing?.companyAddress || '',
+        lat: defLat,
+        lng: defLng,
+        radius: defRadius,
+        internCount: existing?.internCount || 0,
       });
     });
 
@@ -397,7 +429,13 @@ export function AdminEmployees() {
       const id = e.id || e.employeeId;
       if (!id) return;
       const key = id.toLowerCase();
-      const existing = map.get(key);
+      const existing = map.get(key) || map.get(id);
+      const isCtx = (e.companyName || '').toLowerCase().includes('concentrix');
+      const isPrinting = (e.companyName || '').toLowerCase().includes('printing');
+      const defLat = isCtx ? 10.694261 : isPrinting ? 10.742858 : e.registrationLocation?.lat;
+      const defLng = isCtx ? 122.959987 : isPrinting ? 122.970088 : e.registrationLocation?.lng;
+      const defRadius = isCtx || isPrinting ? 40 : (e.registrationRadius || e.registrationLocation?.radius || 40);
+
       if (!existing) {
         map.set(key, {
           id: e.id,
@@ -405,11 +443,14 @@ export function AdminEmployees() {
           email: e.email || '',
           companyName: e.companyName || 'Host Establishment',
           companyAddress: e.companyAddress || e.registrationAddress || '',
-          lat: e.registrationLocation?.lat,
-          lng: e.registrationLocation?.lng,
-          radius: e.registrationRadius || e.registrationLocation?.radius || 50,
+          lat: defLat,
+          lng: defLng,
+          radius: defRadius,
           internCount: 0,
         });
+      } else {
+        if (!existing.lat && defLat) existing.lat = defLat;
+        if (!existing.lng && defLng) existing.lng = defLng;
       }
     });
 
@@ -596,11 +637,12 @@ export function AdminEmployees() {
 
     setIsDeploying(true);
     try {
+      const isCtx = (matchedHte.companyName || '').toLowerCase().includes('concentrix');
       const hteLoc = resolveHteLocation(matchedHte, hostSupervisors, employees, geofenceZones) || {
-        lat: Number(matchedHte.lat) || 10.74275,
-        lng: Number(matchedHte.lng) || 122.970168,
-        radius: Math.max(20, Number(matchedHte.radius) || 40),
-        address: matchedHte.companyAddress || `${matchedHte.companyName} Workplace Premises`,
+        lat: isCtx ? 10.694261 : 10.742858,
+        lng: isCtx ? 122.959987 : 122.970088,
+        radius: 40,
+        address: matchedHte.companyAddress || (isCtx ? 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City' : 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines'),
         companyName: matchedHte.companyName,
       };
 
@@ -613,6 +655,7 @@ export function AdminEmployees() {
           lat: Number(hteLoc.lat),
           lng: Number(hteLoc.lng),
           radius: hteLoc.radius,
+          address: hteLoc.address,
         },
         registrationRadius: hteLoc.radius,
         registrationAddress: hteLoc.address,
@@ -718,22 +761,23 @@ export function AdminEmployees() {
     );
 
     let targetLoc: { lat: number; lng: number } | undefined = undefined;
-    const existingCustomRadius =
-      (editForm as any).registrationRadius ||
-      (selectedEmp?.registrationLocation as any)?.radius ||
-      selectedEmp?.registrationRadius ||
-      (selectedEmp as any)?.registration_radius;
-    let hteRadius = existingCustomRadius ? Math.max(20, Number(existingCustomRadius)) : 40;
+    let hteRadius = 40;
     let hteAddress = editForm.companyAddress || '';
 
-    if (matchedHost) {
-      const hteLoc = resolveHteLocation(matchedHost, hostSupervisors, employees, geofenceZones);
+    const hteLookupCandidate = matchedHost || (editForm.companyName && !isInvalidHteCompany(editForm.companyName) ? { companyName: editForm.companyName, hteId: editForm.hteId } : null);
+
+    if (hteLookupCandidate) {
+      const hteLoc = resolveHteLocation(hteLookupCandidate, hostSupervisors, employees, geofenceZones);
       if (hteLoc) {
         targetLoc = { lat: hteLoc.lat, lng: hteLoc.lng };
-        hteRadius = existingCustomRadius ? Math.max(20, Number(existingCustomRadius)) : hteLoc.radius;
+        hteRadius = hteLoc.radius;
         hteAddress = hteLoc.address;
       }
     }
+
+    const resolvedCompanyName = matchedHost ? matchedHost.companyName : (editForm.companyName.trim() || 'Printing Services');
+    const resolvedSupervisorName = matchedHost ? matchedHost.name : (editForm.supervisorName.trim() || 'Jhey Ree');
+    const resolvedHteId = matchedHost ? matchedHost.id : (editForm.hteId || (resolvedCompanyName.toLowerCase().includes('concentrix') ? '89405c66-015c-407a-937b-71ab37b829d7' : '95558630-499b-4aac-b869-ba64b0694e8c'));
 
     const updatedFields: any = {
       name: editForm.name.trim(),
@@ -744,10 +788,10 @@ export function AdminEmployees() {
       employeeId: editForm.employeeId.trim(),
       department: editForm.department,
       position: editForm.position,
-      companyName: matchedHost ? matchedHost.companyName : editForm.companyName.trim(),
+      companyName: resolvedCompanyName,
       companyAddress: hteAddress || editForm.companyAddress || (selectedEmp as any).companyAddress,
-      supervisorName: matchedHost ? matchedHost.name : editForm.supervisorName.trim(),
-      hteId: matchedHost ? matchedHost.id : (editForm.hteId || null),
+      supervisorName: resolvedSupervisorName,
+      hteId: resolvedHteId,
       schoolName: editForm.schoolName,
       campus: editForm.campus,
       course: editForm.course,
@@ -763,22 +807,24 @@ export function AdminEmployees() {
       approvalStatus: editForm.approvalStatus,
     };
 
-    if (targetLoc && matchedHost) {
+    if (targetLoc) {
       updatedFields.registrationLocation = {
         lat: Number(targetLoc.lat),
         lng: Number(targetLoc.lng),
         radius: hteRadius,
+        address: hteAddress,
       };
       updatedFields.registrationRadius = hteRadius;
       updatedFields.registrationAddress = hteAddress;
+      updatedFields.companyAddress = hteAddress;
     }
 
     await updateEmployee(selectedEmp.id, updatedFields);
 
-    if (targetLoc && matchedHost) {
+    if (targetLoc) {
       addGeofenceZone({
         id: `station-${selectedEmp.id}`,
-        name: `${editForm.name.trim()} - Trainee Geofence (${matchedHost.companyName})`,
+        name: `${editForm.name.trim()} - Trainee Geofence (${resolvedCompanyName})`,
         address: hteAddress,
         lat: Number(targetLoc.lat),
         lng: Number(targetLoc.lng),
@@ -3182,11 +3228,12 @@ export function AdminEmployees() {
                                         const matchedHost = allAvailableHtes.find((h) => h.id === selectedHteId);
                                         if (!matchedHost) return;
 
+                                        const isCtx = (matchedHost.companyName || '').toLowerCase().includes('concentrix');
                                         const hteLoc = resolveHteLocation(matchedHost, hostSupervisors, employees, geofenceZones) || {
-                                          lat: Number(matchedHost.lat) || 10.74275,
-                                          lng: Number(matchedHost.lng) || 122.970168,
-                                          radius: Math.max(20, Number(matchedHost.radius) || 40),
-                                          address: matchedHost.companyAddress || `${matchedHost.companyName} Workplace Premises`,
+                                          lat: isCtx ? 10.694261 : 10.742858,
+                                          lng: isCtx ? 122.959987 : 122.970088,
+                                          radius: 40,
+                                          address: matchedHost.companyAddress || (isCtx ? 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City' : 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines'),
                                           companyName: matchedHost.companyName,
                                         };
 
@@ -3199,6 +3246,7 @@ export function AdminEmployees() {
                                             lat: Number(hteLoc.lat),
                                             lng: Number(hteLoc.lng),
                                             radius: hteLoc.radius,
+                                            address: hteLoc.address,
                                           },
                                           registrationRadius: hteLoc.radius,
                                           registrationAddress: hteLoc.address,

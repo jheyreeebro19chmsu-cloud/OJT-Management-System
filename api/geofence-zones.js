@@ -63,12 +63,11 @@ export default async function handler(req, res) {
         active: active !== false,
       };
 
-      if (academicYear) payload.academic_year = academicYear;
       if (resolvedEmpId && isUuid(resolvedEmpId)) payload.employee_id = resolvedEmpId;
 
       let zoneId = id && isUuid(id) ? id : (rawId && isUuid(rawId) ? rawId : undefined);
 
-      // Check if an existing record matches by id, employee_id, or name
+      // Check if an existing record matches by employee_id, id, or name
       if (!zoneId && payload.employee_id) {
         const { data: existing } = await supabase
           .from('geofence_zones')
@@ -91,30 +90,54 @@ export default async function handler(req, res) {
         }
       }
 
+      let data;
+      let error;
+
       if (zoneId) {
-        payload.id = zoneId;
+        const res = await supabase
+          .from('geofence_zones')
+          .update(payload)
+          .eq('id', zoneId)
+          .select()
+          .maybeSingle();
+        data = res.data;
+        error = res.error;
+      } else {
+        const res = await supabase
+          .from('geofence_zones')
+          .insert([payload])
+          .select()
+          .maybeSingle();
+        data = res.data;
+        error = res.error;
       }
 
-      const { data, error } = await supabase
-        .from('geofence_zones')
-        .upsert([payload], payload.id ? { onConflict: 'id' } : undefined)
-        .select()
-        .single();
-
       if (error) {
-        // Fallback retry without employee_id if FK fails
+        // Fallback retry without employee_id if FK / unique error
         if (payload.employee_id) {
           delete payload.employee_id;
-          const retry = await supabase
-            .from('geofence_zones')
-            .upsert([payload], payload.id ? { onConflict: 'id' } : undefined)
-            .select()
-            .single();
-          if (!retry.error && retry.data) {
-            return res.status(200).json(retry.data);
+          if (zoneId) {
+            const retry = await supabase
+              .from('geofence_zones')
+              .update(payload)
+              .eq('id', zoneId)
+              .select()
+              .maybeSingle();
+            data = retry.data;
+            error = retry.error;
+          } else {
+            const retry = await supabase
+              .from('geofence_zones')
+              .insert([payload])
+              .select()
+              .maybeSingle();
+            data = retry.data;
+            error = retry.error;
           }
         }
-        return res.status(500).json({ error: error.message });
+        if (error) {
+          return res.status(500).json({ error: error.message });
+        }
       }
 
       return res.status(200).json(data);
