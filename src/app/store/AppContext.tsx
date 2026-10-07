@@ -260,7 +260,8 @@ interface AppContextType {
   refreshData: () => Promise<void>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   registerEmployee: (data: RegisterEmployeeInput) => Promise<{ success: boolean; message?: string; employee?: Employee }>;
-  updateEmployee: (id: string, data: Partial<Employee>) => void;
+  updateEmployee: (id: string, data: Partial<Employee>) => Promise<boolean>;
+  batchUpdateEmployees: (ids: string[], data: Partial<Employee>) => Promise<boolean>;
   updateHostSupervisor: (id: string, data: Partial<HostSupervisor>) => void;
   deleteEmployee: (id: string) => void;
   addTimeRecord: (record: Omit<TimeRecord, 'id'>) => TimeRecord;
@@ -2795,48 +2796,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateEmployee = (id: string, data: Partial<Employee>) => {
-    const updatedEmployees = employees.map((e) => {
-      if (e.id === id || e.employeeId === id) {
-        const next: any = { ...e, ...data };
-        if (data.contactPhone !== undefined || data.phone !== undefined || (data as any).telephone !== undefined) {
-          const pVal = data.contactPhone ?? data.phone ?? (data as any).telephone;
-          next.contactPhone = pVal;
-          next.phone = pVal;
-          next.telephone = pVal;
-        }
-        if (data.residentialAddress !== undefined || data.address !== undefined) {
-          const aVal = data.residentialAddress ?? data.address;
-          next.residentialAddress = aVal;
-          next.address = aVal;
-        }
-        if ('registrationLocation' in data && !data.registrationLocation) {
-          delete next.registrationLocation;
-          delete next.registration_lat;
-          delete next.registration_lng;
-        }
-        if ('registrationAddress' in data && !data.registrationAddress) {
-          delete next.registrationAddress;
-          delete next.registration_address;
-        }
-        if (data.documentsPassed !== undefined && !data.submittedDocuments && next.submittedDocuments) {
-          const targetDocStatus = data.documentsPassed ? 'passed' : 'pending';
-          const syncedDocs: any = { ...next.submittedDocuments };
-          for (const k of Object.keys(syncedDocs)) {
-            if (syncedDocs[k] && typeof syncedDocs[k] === 'object') {
-              syncedDocs[k] = { ...syncedDocs[k], status: targetDocStatus };
-            }
+  const updateEmployee = async (id: string, data: Partial<Employee>): Promise<boolean> => {
+    let updatedEmployee: Employee | undefined;
+    setEmployees((prev) => {
+      const updatedEmployees = prev.map((e) => {
+        if (e.id === id || e.employeeId === id) {
+          const next: any = { ...e, ...data };
+          if (data.contactPhone !== undefined || data.phone !== undefined || (data as any).telephone !== undefined) {
+            const pVal = data.contactPhone ?? data.phone ?? (data as any).telephone;
+            next.contactPhone = pVal;
+            next.phone = pVal;
+            next.telephone = pVal;
           }
-          next.submittedDocuments = syncedDocs;
+          if (data.residentialAddress !== undefined || data.address !== undefined) {
+            const aVal = data.residentialAddress ?? data.address;
+            next.residentialAddress = aVal;
+            next.address = aVal;
+          }
+          if ('registrationLocation' in data && !data.registrationLocation) {
+            delete next.registrationLocation;
+            delete next.registration_lat;
+            delete next.registration_lng;
+          }
+          if ('registrationAddress' in data && !data.registrationAddress) {
+            delete next.registrationAddress;
+            delete next.registration_address;
+          }
+          if (data.documentsPassed !== undefined && !data.submittedDocuments && next.submittedDocuments) {
+            const targetDocStatus = data.documentsPassed ? 'passed' : 'pending';
+            const syncedDocs: any = { ...next.submittedDocuments };
+            for (const k of Object.keys(syncedDocs)) {
+              if (syncedDocs[k] && typeof syncedDocs[k] === 'object') {
+                syncedDocs[k] = { ...syncedDocs[k], status: targetDocStatus };
+              }
+            }
+            next.submittedDocuments = syncedDocs;
+          }
+          updatedEmployee = next as Employee;
+          return next as Employee;
         }
-        return next as Employee;
-      }
-      return e;
+        return e;
+      });
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
+      return updatedEmployees;
     });
-    setEmployees(updatedEmployees);
-    saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedEmployees);
 
-    const updatedEmployee = updatedEmployees.find((e) => e.id === id || e.employeeId === id);
     if (
       updatedEmployee &&
       currentUser &&
@@ -2864,25 +2868,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    let dbSuccess = true;
     if (useSupabase) {
-      supabaseService.updateEmployee(id, {
-        ...data,
-        email: updatedEmployee?.email || data.email,
-        phone: updatedEmployee?.phone || data.phone,
-        contactPhone: updatedEmployee?.contactPhone || data.contactPhone,
-        telephone: (updatedEmployee as any)?.telephone || (data as any)?.telephone,
-        residentialAddress: updatedEmployee?.residentialAddress || data.residentialAddress,
-        address: updatedEmployee?.address || data.address,
-        street: updatedEmployee?.street || data.street,
-        barangay: updatedEmployee?.barangay || data.barangay,
-        city: updatedEmployee?.city || data.city,
-        province: updatedEmployee?.province || data.province,
-        registrationLocation: updatedEmployee?.registrationLocation,
-        registrationAddress: updatedEmployee?.registrationAddress,
-        submittedDocuments: updatedEmployee?.submittedDocuments,
-        documentsPassed: updatedEmployee?.documentsPassed,
-        documentsStatus: updatedEmployee?.documentsStatus,
-      });
+      try {
+        dbSuccess = await supabaseService.updateEmployee(id, {
+          ...data,
+          email: updatedEmployee?.email || data.email,
+          companyName: updatedEmployee?.companyName ?? data.companyName,
+          hteId: updatedEmployee?.hteId ?? data.hteId,
+          supervisorName: updatedEmployee?.supervisorName ?? data.supervisorName,
+          phone: updatedEmployee?.phone || data.phone,
+          contactPhone: updatedEmployee?.contactPhone || data.contactPhone,
+          telephone: (updatedEmployee as any)?.telephone || (data as any)?.telephone,
+          residentialAddress: updatedEmployee?.residentialAddress || data.residentialAddress,
+          address: updatedEmployee?.address || data.address,
+          street: updatedEmployee?.street || data.street,
+          barangay: updatedEmployee?.barangay || data.barangay,
+          city: updatedEmployee?.city || data.city,
+          province: updatedEmployee?.province || data.province,
+          registrationLocation: updatedEmployee?.registrationLocation,
+          registrationAddress: updatedEmployee?.registrationAddress,
+          submittedDocuments: updatedEmployee?.submittedDocuments,
+          documentsPassed: updatedEmployee?.documentsPassed,
+          documentsStatus: updatedEmployee?.documentsStatus,
+        });
+      } catch (dbErr) {
+        console.error('Error saving employee update to Supabase:', dbErr);
+        dbSuccess = false;
+      }
     }
 
     // If location is cleared, remove personal geofence zone
@@ -2910,8 +2923,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     // AUTO-SYNC TRAINEE GEOFENCE ZONE WITH HTE WORKPLACE
-    // If the employee is a student/trainee and their HTE workplace is set/changed,
-    // automatically sync the trainee's station-${id} geofence zone directly to the HTE workplace!
     if (updatedEmployee && (data.companyName || data.hteId || data.companyAddress || data.registrationLocation)) {
       const isStudent = isTraineeRole(updatedEmployee);
 
@@ -2967,6 +2978,95 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     }
+    return dbSuccess;
+  };
+
+  const batchUpdateEmployees = async (ids: string[], data: Partial<Employee>): Promise<boolean> => {
+    if (!ids || ids.length === 0) return true;
+    const idSet = new Set(ids);
+
+    let updatedTrainees: Employee[] = [];
+    setEmployees((prev) => {
+      const updatedList = prev.map((e) => {
+        if (idSet.has(e.id) || idSet.has(e.employeeId)) {
+          const next: any = {
+            ...e,
+            ...data,
+            ...(data.companyName !== undefined ? { companyName: data.companyName } : {}),
+            ...(data.hteId !== undefined ? { hteId: data.hteId } : {}),
+            ...(data.supervisorName !== undefined ? { supervisorName: data.supervisorName } : {}),
+            ...(data.companyAddress !== undefined ? { companyAddress: data.companyAddress } : {}),
+            ...(data.registrationLocation !== undefined ? { registrationLocation: data.registrationLocation } : {}),
+            ...(data.registrationAddress !== undefined ? { registrationAddress: data.registrationAddress } : {}),
+            ...(data.registrationRadius !== undefined ? { registrationRadius: data.registrationRadius } : {}),
+            ...(data.active !== undefined ? { active: data.active } : {}),
+            ...(data.approvalStatus !== undefined ? { approvalStatus: data.approvalStatus } : {}),
+            ...(data.applicationStatus !== undefined ? { applicationStatus: data.applicationStatus } : {}),
+          };
+          updatedTrainees.push(next);
+          return next as Employee;
+        }
+        return e;
+      });
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, updatedList);
+      return updatedList;
+    });
+
+    // Auto-sync geofences for all updated trainees if workplace is provided
+    if (data.companyName || data.hteId || data.registrationLocation) {
+      const newZones: GeofenceZone[] = [];
+      for (const trainee of updatedTrainees) {
+        if (trainee.companyName && !isInvalidHteCompany(trainee.companyName)) {
+          const hteLoc = resolveHteLocation(trainee, hostSupervisors, employees, geofenceZones);
+          if (hteLoc) {
+            const customRadius =
+              (data.registrationLocation as any)?.radius ||
+              (data as any)?.registrationRadius ||
+              trainee.registrationLocation?.radius ||
+              trainee.registrationRadius;
+            const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
+            const targetLat = (data.registrationLocation as any)?.lat ?? trainee.registrationLocation?.lat ?? hteLoc.lat;
+            const targetLng = (data.registrationLocation as any)?.lng ?? trainee.registrationLocation?.lng ?? hteLoc.lng;
+            const targetAddress = (data as any)?.registrationAddress || trainee.registrationAddress || hteLoc.address;
+
+            const stationZoneId = `station-${trainee.id}`;
+            const zonePayload: GeofenceZone = {
+              id: stationZoneId,
+              name: `${trainee.name} - Trainee Geofence (${hteLoc.companyName})`,
+              address: targetAddress,
+              lat: Number(targetLat),
+              lng: Number(targetLng),
+              radius: targetRadius,
+              active: true,
+              userType: 'trainee',
+              academicYear: trainee.academicYear || settings?.activeAcademicYear,
+              employeeId: trainee.id,
+            };
+            newZones.push(zonePayload);
+
+            if (useSupabase) {
+              supabaseService.createGeofenceZone(zonePayload).catch(() => {});
+            }
+          }
+        }
+      }
+
+      if (newZones.length > 0) {
+        setGeofenceZones((prev) => {
+          const zoneIdMap = new Set(newZones.map((z) => z.id));
+          const empIdMap = new Set(newZones.map((z) => z.employeeId));
+          const remaining = prev.filter((z) => !zoneIdMap.has(z.id) && !empIdMap.has((z as any).employeeId));
+          const combined = [...remaining, ...newZones];
+          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, combined);
+          return combined;
+        });
+      }
+    }
+
+    if (useSupabase) {
+      return await supabaseService.batchUpdateEmployees(ids, data);
+    }
+    return true;
   };
 
   const updateHostSupervisor = (id: string, data: Partial<HostSupervisor>) => {
@@ -4565,6 +4665,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         changeCurrentUserPassword,
         registerEmployee,
         updateEmployee,
+        batchUpdateEmployees,
         updateHostSupervisor,
         deleteEmployee,
         approveEmployee,

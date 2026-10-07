@@ -26,6 +26,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { GeofenceMap } from '../components/GeofenceMap';
 import { getPaginationWindow } from '../utils/pagination';
+import { isInvalidHteCompany } from '../utils/hteLocation';
 
 function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
   const [hasError, setHasError] = useState(false);
@@ -163,33 +164,59 @@ export function HTEDashboard() {
       currentEmail.includes('reejhey') ||
       companyName.toLowerCase().includes('printing');
 
+    const normCurrentComp = companyName.trim().toLowerCase();
+
     const specificList = ojtList.filter((e) => {
       const eComp = (e.companyName || '').trim().toLowerCase();
       const eEmpId = (e.employeeId || '').toUpperCase();
       const eEmail = (e.email || '').toLowerCase();
       const eHteId = e.hteId || '';
 
+      const hasAssignedCompany = eComp && !isInvalidHteCompany(eComp);
+
       if (isPrinting) {
-        // Must belong to Printing Services ONLY
+        if (hasAssignedCompany) {
+          return eComp.includes('printing') || eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+        }
+        if (eHteId) {
+          return eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+        }
+        return (eEmpId.includes('PS') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
+      }
+
+      const isConcentrix =
+        currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+        normCurrentComp.includes('concentrix') ||
+        currentEmail.includes('concentrix') ||
+        currentEmail.includes('jheyree.ebro');
+
+      if (isConcentrix) {
+        if (hasAssignedCompany) {
+          return eComp.includes('concentrix') || eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
+        }
+        if (eHteId) {
+          return eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
+        }
+        return eEmpId.includes('CTX') || eEmail.includes('.ctx');
+      }
+
+      // General HTE matching
+      if (hasAssignedCompany) {
         return (
-          eHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
-          eComp.includes('printing') ||
-          eEmpId.includes('PS') ||
-          eEmail.includes('.ps')
-        ) && !eComp.includes('concentrix') && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
-      } else {
-        // Must belong to Concentrix ONLY
-        return (
-          eHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
-          eComp.includes('concentrix') ||
-          eEmpId.includes('CTX') ||
-          eEmail.includes('.ctx')
+          eComp === normCurrentComp ||
+          eComp.includes(normCurrentComp) ||
+          normCurrentComp.includes(eComp) ||
+          (Boolean(currentHteId) && eHteId === currentHteId)
         );
       }
+      if (eHteId && currentHteId) {
+        return eHteId === currentHteId;
+      }
+      return false;
     });
 
     return specificList;
-  }, [employees, currentUser, currentEmp, hteUser, settings, companyName]);
+  }, [employees, currentUser, currentEmp, hteUser, settings, companyName, currentHteId]);
 
   // Compute rendered hours
   const traineeStats = useMemo(() => {

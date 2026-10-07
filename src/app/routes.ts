@@ -70,6 +70,7 @@ const routeLoaders: Record<string, () => Promise<any>> = {
   '/admin': () => import('./pages/admin/AdminDashboard'),
   '/admin/dashboard': () => import('./pages/admin/AdminDashboard'),
   '/admin/employees': () => import('./pages/admin/AdminEmployees'),
+  '/admin/documents': () => import('./pages/admin/AdminEmployees'),
   '/admin/records': () => import('./pages/admin/AdminEmployees'),
   '/admin/geofence': () => import('./pages/admin/AdminGeofence'),
   '/admin/reports': () => import('./pages/admin/AdminReports'),
@@ -99,6 +100,7 @@ export function preloadRoute(path: string) {
 export function preloadAllAdminRoutes() {
   const adminPaths = [
     '/admin/employees',
+    '/admin/documents',
     '/admin/reports',
     '/admin/geofence',
     '/admin/evaluations',
@@ -263,6 +265,7 @@ export const router = createBrowserRouter([
       { index: true, element: withSuspense(AdminDashboard) },
       { path: 'dashboard', element: withSuspense(AdminDashboard) },
       { path: 'employees', element: withSuspense(AdminEmployees) },
+      { path: 'documents', element: withSuspense(AdminEmployees) },
       { path: 'records', element: withSuspense(AdminEmployees) },
       { path: 'geofence', element: withSuspense(AdminGeofence) },
       { path: 'reports', element: withSuspense(AdminReports) },

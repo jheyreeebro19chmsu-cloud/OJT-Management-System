@@ -56,7 +56,7 @@ import { Country, State, City } from 'country-state-city';
 
 import { authAPI } from '../services/authApi';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { createEmployee as createEmployeeDb } from '../services/supabaseService';
+import { createEmployee as createEmployeeDb, uploadDocumentToStorage } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
@@ -235,9 +235,9 @@ export function Register() {
 
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
-  const [documents, setDocuments] = useState<TraineeDocuments>({});
+  const [previewRegDoc, setPreviewRegDoc] = useState<{ title: string; fileName: string; fileUrl?: string } | null>(null);
 
-  const handleDocumentUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+  const handleDocumentUpload = async (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
     // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
     const ALLOWED_MIME = [
@@ -259,20 +259,31 @@ export function Register() {
       return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
+      const cleanEmpId = form.employeeId || 'trainee_registration';
+
+      let finalUrl = dataUrl;
+      try {
+        const storedUrl = await uploadDocumentToStorage(cleanEmpId, docKey as string, file, file.name);
+        if (storedUrl && storedUrl.startsWith('http')) {
+          finalUrl = storedUrl;
+        }
+      } catch {}
+
       setDocuments((prev) => ({
         ...prev,
         [docKey]: {
           name: file.name,
           size: file.size,
-          dataUrl,
+          dataUrl: finalUrl,
           fileType: file.type || 'application/octet-stream',
           uploadedAt: new Date().toISOString(),
-          status: 'passed' as const,
+          status: 'pending',
+          source: 'registration',
         },
       }));
-      toast.success(`${file.name} attached — status set to PASSED`);
+      toast.success(`${file.name} attached for verification (Pending Instructor Review)`);
     };
     reader.onerror = () => {
       toast.error('Failed to read file. Please try again.');
@@ -4067,13 +4078,13 @@ export function Register() {
                               <span
                                 className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0 whitespace-nowrap ${
                                   uploaded
-                                    ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                                    ? 'bg-blue-100 text-blue-700 border-blue-300'
                                     : 'bg-amber-100 text-amber-700 border-amber-300'
                                 }`}
                               >
                                 {uploaded ? (
                                   <>
-                                    <Check size={9} className="stroke-[3]" /> PASSED
+                                    <Clock size={9} className="stroke-[2.5]" /> ATTACHED (PENDING REVIEW)
                                   </>
                                 ) : (
                                   <>
@@ -4103,6 +4114,14 @@ export function Register() {
                                     📎 {uploaded.name}
                                   </span>
                                   <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewRegDoc({ title: item.title, fileName: uploaded.name, fileUrl: uploaded.dataUrl })}
+                                      className="text-[10px] font-bold text-violet-600 hover:text-violet-800 transition-colors inline-flex items-center gap-0.5 cursor-pointer"
+                                      title="Preview attached file"
+                                    >
+                                      <Eye size={10} /> View
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => downloadDocument(uploaded.dataUrl, uploaded.name)}
@@ -4429,6 +4448,71 @@ export function Register() {
 
         </div>
       </motion.div>
+
+      {/* Registration Attached Document Preview Modal */}
+      {previewRegDoc && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">{previewRegDoc.title}</h3>
+                <p className="text-xs text-gray-500 font-mono truncate">{previewRegDoc.fileName}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {previewRegDoc.fileUrl && (
+                  <button
+                    type="button"
+                    onClick={() => downloadDocument(previewRegDoc.fileUrl!, previewRegDoc.fileName)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm"
+                  >
+                    <Download size={13} /> Download
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewRegDoc(null)}
+                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-50 flex items-center justify-center min-h-[360px]">
+              {previewRegDoc.fileUrl ? (
+                previewRegDoc.fileUrl.startsWith('data:image/') || previewRegDoc.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ? (
+                  <img
+                    src={previewRegDoc.fileUrl}
+                    alt={previewRegDoc.title}
+                    className="max-h-[500px] object-contain rounded-xl shadow border border-slate-200"
+                  />
+                ) : previewRegDoc.fileName?.match(/\.(doc|docx)$/i) ? (
+                  <div className="text-center p-6 bg-white rounded-2xl border border-slate-200 max-w-sm">
+                    <FileText size={48} className="mx-auto text-blue-600 mb-3" />
+                    <h4 className="font-bold text-sm text-gray-800 mb-1">{previewRegDoc.title}</h4>
+                    <p className="text-xs text-gray-500 mb-4">{previewRegDoc.fileName}</p>
+                    <button
+                      type="button"
+                      onClick={() => downloadDocument(previewRegDoc.fileUrl!, previewRegDoc.fileName)}
+                      className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-bold"
+                    >
+                      Download Document
+                    </button>
+                  </div>
+                ) : (
+                  <iframe
+                    src={previewRegDoc.fileUrl}
+                    className="w-full h-[460px] rounded-xl border border-gray-200 bg-white"
+                    title="Document Preview"
+                  />
+                )
+              ) : (
+                <p className="text-gray-400 text-xs">No preview available</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

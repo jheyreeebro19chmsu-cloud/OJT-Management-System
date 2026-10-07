@@ -152,9 +152,15 @@ function sanitizeDocumentsForDb(docs: any): any {
         size: docItem.size,
         fileType: docItem.fileType || 'application/pdf',
         uploadedAt: docItem.uploadedAt || new Date().toISOString(),
-        status: docItem.status || 'passed',
+        status: docItem.status || 'pending',
         // Preserve dataUrl or fileUrl so documents can be viewed and previewed
         dataUrl: docItem.dataUrl || docItem.fileUrl || '',
+        description: docItem.description || '',
+        notes: docItem.notes || docItem.feedback || '',
+        feedback: docItem.feedback || '',
+        reviewedBy: docItem.reviewedBy || '',
+        reviewedAt: docItem.reviewedAt || '',
+        source: docItem.source || 'portal',
       };
     } else {
       clean[key] = val;
@@ -522,6 +528,12 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   if ('registrationAddress' in updates) {
     supabaseUpdates.registration_address = updates.registrationAddress ?? null;
   }
+  if (updates.documentsPassed !== undefined) {
+    supabaseUpdates.documents_passed = updates.documentsPassed;
+  }
+  if (updates.documentsStatus !== undefined) {
+    supabaseUpdates.documents_status = updates.documentsStatus;
+  }
   const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
   const hasRegLocUpdates =
@@ -665,6 +677,99 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   }
 
   return true;
+}
+
+export async function batchUpdateEmployees(
+  ids: string[],
+  updates: Partial<Employee>
+): Promise<boolean> {
+  if (!isSupabaseConfigured() || !ids || ids.length === 0) return false;
+
+  const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+  const supabaseUpdates: any = {};
+  if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+  if (updates.employeeId !== undefined) supabaseUpdates.employee_id = updates.employeeId;
+  if (updates.email !== undefined) supabaseUpdates.email = updates.email.trim().toLowerCase();
+  if (updates.department !== undefined) supabaseUpdates.department = updates.department;
+  if (updates.position !== undefined) supabaseUpdates.position = updates.position;
+  if (updates.companyName !== undefined) supabaseUpdates.company_name = updates.companyName;
+  if (updates.supervisorName !== undefined) supabaseUpdates.supervisor_name = updates.supervisorName;
+  if (updates.schoolName !== undefined) supabaseUpdates.school_name = updates.schoolName;
+  if (updates.campus !== undefined) supabaseUpdates.campus = updates.campus;
+  if (updates.course !== undefined) supabaseUpdates.course = updates.course;
+  if (updates.startDate !== undefined) supabaseUpdates.start_date = updates.startDate;
+  if (updates.endDate !== undefined) supabaseUpdates.end_date = updates.endDate;
+  if (updates.requiredHours !== undefined) supabaseUpdates.required_hours = updates.requiredHours;
+  if (updates.active !== undefined) supabaseUpdates.active = updates.active;
+  if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
+  if (updates.applicationStatus !== undefined) supabaseUpdates.application_status = updates.applicationStatus;
+  if (updates.approvalStatus !== undefined) supabaseUpdates.application_status = updates.approvalStatus;
+  if (updates.instructorId !== undefined) supabaseUpdates.instructor_id = updates.instructorId;
+  if (updates.hteId !== undefined) supabaseUpdates.hte_id = updates.hteId;
+  if (updates.linkedAt !== undefined) supabaseUpdates.linked_at = updates.linkedAt;
+
+  if (updates.registrationLocation) {
+    supabaseUpdates.registration_lat = updates.registrationLocation.lat ?? null;
+    supabaseUpdates.registration_lng = updates.registrationLocation.lng ?? null;
+    supabaseUpdates.registration_radius = Math.max(20, Number(updates.registrationLocation.radius || 40));
+    supabaseUpdates.registration_location = {
+      lat: updates.registrationLocation.lat ?? null,
+      lng: updates.registrationLocation.lng ?? null,
+      radius: Math.max(20, Number(updates.registrationLocation.radius || 40)),
+      address: updates.registrationAddress || updates.registrationLocation.address,
+    };
+  }
+  if (updates.registrationAddress !== undefined) {
+    supabaseUpdates.registration_address = updates.registrationAddress;
+  }
+  if (updates.registrationRadius !== undefined) {
+    supabaseUpdates.registration_radius = Math.max(20, Number(updates.registrationRadius));
+  }
+
+  // 1. Primary path: Service role endpoint /api/employees
+  try {
+    const res = await fetch('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        traineeIds: ids,
+        updates: {
+          ...updates,
+          ...supabaseUpdates,
+        },
+      }),
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch (apiErr) {
+    console.warn('API endpoint /api/employees batch error, falling back to direct Supabase:', apiErr);
+  }
+
+  // 2. Direct Supabase client fallback
+  try {
+    const uuidIds = ids.filter(isUuid);
+    const nonUuidIds = ids.filter((id) => !isUuid(id));
+
+    const promises: Promise<any>[] = [];
+    if (uuidIds.length > 0) {
+      promises.push(supabase.from('employees').update(supabaseUpdates).in('id', uuidIds));
+    }
+    if (nonUuidIds.length > 0) {
+      promises.push(supabase.from('employees').update(supabaseUpdates).in('employee_id', nonUuidIds));
+    }
+    const results = await Promise.all(promises);
+    const error = results.find((r) => r.error)?.error;
+    if (error) {
+      console.error('Direct Supabase batch update error:', error);
+      return false;
+    }
+    return true;
+  } catch (directErr) {
+    console.error('Direct Supabase batch update exception:', directErr);
+    return false;
+  }
 }
 
 export async function deleteEmployee(id: string): Promise<boolean> {
@@ -2163,7 +2268,7 @@ export function transformSupabaseEmployee(data: any): Employee {
       const empId = String(data.employee_id || '').toUpperCase();
       if (empId.includes('PS')) return 'Printing Services';
       if (empId.includes('CTX')) return 'Concentrix';
-      return 'Printing Services';
+      return 'Pending Admin Assignment';
     })(),
     supervisorName: (() => {
       if (data.supervisor_name) return data.supervisor_name;
@@ -2172,7 +2277,7 @@ export function transformSupabaseEmployee(data: any): Employee {
       const empId = String(data.employee_id || '').toUpperCase();
       if (empId.includes('PS')) return 'Jhey Ree';
       if (empId.includes('CTX')) return 'Jhey Ree C Ebro';
-      return 'Jhey Ree';
+      return undefined;
     })(),
     schoolName: data.school_name,
     campus: data.campus,
@@ -2218,9 +2323,12 @@ export function transformSupabaseEmployee(data: any): Employee {
     hteId: (() => {
       if (data.hte_id) return data.hte_id;
       const comp = String(data.company_name || '').toLowerCase();
+      if (comp.includes('concentrix')) return '89405c66-015c-407a-937b-71ab37b829d7';
+      if (comp.includes('printing')) return '95558630-499b-4aac-b869-ba64b0694e8c';
       const empId = String(data.employee_id || '').toUpperCase();
-      if (comp.includes('concentrix') || empId.includes('CTX')) return '89405c66-015c-407a-937b-71ab37b829d7';
-      return '95558630-499b-4aac-b869-ba64b0694e8c';
+      if (empId.includes('CTX')) return '89405c66-015c-407a-937b-71ab37b829d7';
+      if (empId.includes('PS')) return '95558630-499b-4aac-b869-ba64b0694e8c';
+      return undefined;
     })(),
     linkedAt: data.linked_at,
     applicationStatus: data.application_status || data.approval_status || (

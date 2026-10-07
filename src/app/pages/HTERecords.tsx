@@ -19,6 +19,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { MonthlyDTTRView } from '../components/MonthlyDTTRView';
 import { getPaginationWindow } from '../utils/pagination';
+import { isInvalidHteCompany } from '../utils/hteLocation';
 
 function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
   const [hasError, setHasError] = useState(false);
@@ -96,22 +97,43 @@ export function HTERecords() {
       const eEmail = (e.email || '').toLowerCase();
       const eHteId = e.hteId || '';
 
-      const isAssigned = isPrinting
-        ? (
-            (eHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
-             eComp.includes('printing') ||
-             eEmpId.includes('PS') ||
-             eEmail.includes('.ps')) &&
-            !eComp.includes('concentrix') &&
-            !eEmpId.includes('CTX') &&
-            !eEmail.includes('.ctx')
-          )
-        : (
-            eHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
-            eComp.includes('concentrix') ||
-            eEmpId.includes('CTX') ||
-            eEmail.includes('.ctx')
-          );
+      const normCurrentComp = currentCompany.trim().toLowerCase();
+      const hasAssignedCompany = eComp && !isInvalidHteCompany(eComp);
+
+      let isAssigned = false;
+      if (isPrinting) {
+        if (hasAssignedCompany) {
+          isAssigned = eComp.includes('printing') || eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+        } else if (eHteId) {
+          isAssigned = eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+        } else {
+          isAssigned = (eEmpId.includes('PS') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
+        }
+      } else {
+        const isConcentrix =
+          currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+          normCurrentComp.includes('concentrix') ||
+          currentEmail.includes('concentrix') ||
+          currentEmail.includes('jheyree.ebro');
+
+        if (isConcentrix) {
+          if (hasAssignedCompany) {
+            isAssigned = eComp.includes('concentrix') || eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
+          } else if (eHteId) {
+            isAssigned = eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
+          } else {
+            isAssigned = eEmpId.includes('CTX') || eEmail.includes('.ctx');
+          }
+        } else if (hasAssignedCompany) {
+          isAssigned =
+            eComp === normCurrentComp ||
+            eComp.includes(normCurrentComp) ||
+            normCurrentComp.includes(eComp) ||
+            (Boolean(currentHteId) && eHteId === currentHteId);
+        } else if (eHteId && currentHteId) {
+          isAssigned = eHteId === currentHteId;
+        }
+      }
 
       if (isAssigned) {
         if (e.id) set.add(e.id);
@@ -120,7 +142,7 @@ export function HTERecords() {
       }
     });
     return set;
-  }, [employees, currentCompany]);
+  }, [employees, currentCompany, currentHteId]);
 
   // Map employee info with records (filtered to deployed trainees only)
   const enrichedRecords = useMemo(() => {

@@ -1,6 +1,7 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2 } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { FaceCapture } from '../../components/FaceCapture';
@@ -59,6 +60,7 @@ export function AdminEmployees() {
     addGeofenceZone,
     registerEmployee,
     updateEmployee,
+    batchUpdateEmployees,
     deleteEmployee,
     approveEmployee,
     rejectEmployee,
@@ -98,9 +100,26 @@ export function AdminEmployees() {
   const [deployTargetHteId, setDeployTargetHteId] = useState('');
   const [deploySelectedStudentIds, setDeploySelectedStudentIds] = useState<string[]>([]);
   const [deployCourseFilter, setDeployCourseFilter] = useState('all');
-  const [deployStatusFilter, setDeployStatusFilter] = useState<'all' | 'unassigned' | 'assigned'>('unassigned');
+  const [deployStatusFilter, setDeployStatusFilter] = useState<'all' | 'unassigned' | 'assigned'>('all');
   const [deploySearch, setDeploySearch] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
+
+  // Document monitoring state
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const [docViewMode, setDocViewMode] = useState<'monitoring' | 'requirements'>('monitoring');
+  const [docFilterStatus, setDocFilterStatus] = useState<'all' | 'pending' | 'compliant' | 'incomplete'>('all');
+  const [docFilterRequirement, setDocFilterRequirement] = useState<string>('all');
+  const [docFilterCourse, setDocFilterCourse] = useState<string>('all');
+  const [docSearch, setDocSearch] = useState<string>('');
+  const [docMonitoringPage, setDocMonitoringPage] = useState<number>(1);
+  const docMonitoringPerPage = 10;
+
+  useEffect(() => {
+    if (location.pathname === '/admin/documents' || searchParams.get('tab') === 'documents') {
+      setActiveCategoryTab('documents');
+    }
+  }, [location.pathname, searchParams]);
 
   const currentEmp = getCurrentEmployee();
   const isLoggedInInstructor = useMemo(() => {
@@ -130,6 +149,104 @@ export function AdminEmployees() {
       empId.startsWith('instr-')
     );
   }, [currentUser, currentEmp]);
+
+  // All student trainees for document compliance monitoring
+  const allTrainees = useMemo(() => {
+    return employees.filter((emp) => {
+      const pos = (emp.position || '').toLowerCase();
+      const role = ((emp as any).role || '').toLowerCase();
+      return (
+        role !== 'admin' &&
+        role !== 'instructor' &&
+        role !== 'hte' &&
+        pos !== 'administrator' &&
+        !pos.includes('instructor') &&
+        !pos.includes('faculty') &&
+        !pos.includes('hte') &&
+        !pos.includes('host')
+      );
+    });
+  }, [employees]);
+
+  // Document Compliance Statistics
+  const docStats = useMemo(() => {
+    let compliantCount = 0;
+    let pendingCount = 0;
+    let incompleteCount = 0;
+    let totalFilesUploaded = 0;
+
+    allTrainees.forEach((t) => {
+      const docs = t.submittedDocuments || {};
+      const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(docs[k]?.dataUrl || docs[k]?.name)).length;
+      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
+      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+
+      totalFilesUploaded += uploadedCount;
+
+      if (passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (t.documentsPassed === true && t.documentsStatus === 'passed')) {
+        compliantCount++;
+      } else if (hasPending || t.documentsStatus === 'submitted') {
+        pendingCount++;
+      } else {
+        incompleteCount++;
+      }
+    });
+
+    return {
+      total: allTrainees.length,
+      compliant: compliantCount,
+      pending: pendingCount,
+      incomplete: incompleteCount,
+      totalFilesUploaded,
+    };
+  }, [allTrainees]);
+
+  const availableDocCourses = useMemo(() => {
+    const set = new Set<string>();
+    allTrainees.forEach((t) => {
+      if (t.course) set.add(t.course);
+    });
+    return Array.from(set).sort();
+  }, [allTrainees]);
+
+  const filteredDocTrainees = useMemo(() => {
+    return allTrainees.filter((t) => {
+      const q = docSearch.trim().toLowerCase();
+      if (q) {
+        const matchName = (t.name || '').toLowerCase().includes(q);
+        const matchId = (t.employeeId || '').toLowerCase().includes(q);
+        const matchCourse = (t.course || '').toLowerCase().includes(q);
+        const matchCompany = (t.companyName || '').toLowerCase().includes(q);
+        if (!matchName && !matchId && !matchCourse && !matchCompany) return false;
+      }
+
+      if (docFilterCourse !== 'all' && t.course !== docFilterCourse) {
+        return false;
+      }
+
+      const docs = t.submittedDocuments || {};
+      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
+      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+      const isCompliant = passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (t.documentsPassed === true && t.documentsStatus === 'passed');
+
+      if (docFilterStatus === 'compliant' && !isCompliant) return false;
+      if (docFilterStatus === 'pending' && (!hasPending && t.documentsStatus !== 'submitted')) return false;
+      if (docFilterStatus === 'incomplete' && (isCompliant || hasPending)) return false;
+
+      if (docFilterRequirement !== 'all') {
+        const targetDoc = docs[docFilterRequirement];
+        if (!targetDoc?.dataUrl && !targetDoc?.name) return false;
+      }
+
+      return true;
+    });
+  }, [allTrainees, docSearch, docFilterCourse, docFilterStatus, docFilterRequirement]);
+
+  const totalDocPages = Math.ceil(filteredDocTrainees.length / docMonitoringPerPage) || 1;
+  const paginatedDocTrainees = useMemo(() => {
+    const start = (docMonitoringPage - 1) * docMonitoringPerPage;
+    return filteredDocTrainees.slice(start, start + docMonitoringPerPage);
+  }, [filteredDocTrainees, docMonitoringPage, docMonitoringPerPage]);
 
   const resolveEmpHomeAddress = (emp: Employee | null) => {
     if (!emp) return '';
@@ -487,47 +604,32 @@ export function AdminEmployees() {
         companyName: matchedHte.companyName,
       };
 
-      for (const studentId of deploySelectedStudentIds) {
-        const student = employees.find((e) => e.id === studentId || e.employeeId === studentId);
-        if (!student) continue;
-
-        const updatedFields: any = {
-          hteId: matchedHte.id,
-          companyName: matchedHte.companyName,
-          companyAddress: hteLoc.address,
-          supervisorName: matchedHte.name,
-          registrationLocation: {
-            lat: Number(hteLoc.lat),
-            lng: Number(hteLoc.lng),
-            radius: hteLoc.radius,
-          },
-          registrationRadius: hteLoc.radius,
-          registrationAddress: hteLoc.address,
-          active: true,
-          approvalStatus: 'approved',
-          applicationStatus: 'approved',
-        };
-
-        await updateEmployee(student.id, updatedFields);
-
-        addGeofenceZone({
-          id: `station-${student.id}`,
-          name: `${student.name} - Trainee Geofence (${matchedHte.companyName})`,
-          address: hteLoc.address,
+      const updatedFields: Partial<Employee> = {
+        hteId: matchedHte.id,
+        companyName: matchedHte.companyName,
+        companyAddress: hteLoc.address,
+        supervisorName: matchedHte.name,
+        registrationLocation: {
           lat: Number(hteLoc.lat),
           lng: Number(hteLoc.lng),
           radius: hteLoc.radius,
-          active: true,
-          academicYear: student.academicYear || settings?.activeAcademicYear,
-          employeeId: student.id,
-          userType: 'trainee',
-        } as any);
-      }
+        },
+        registrationRadius: hteLoc.radius,
+        registrationAddress: hteLoc.address,
+        active: true,
+        approvalStatus: 'approved',
+        applicationStatus: 'approved',
+      };
 
-      toast.success(`Successfully deployed ${deploySelectedStudentIds.length} trainees to ${matchedHte.companyName}!`);
-      setBatchDeployOpen(false);
-      setDeploySelectedStudentIds([]);
-      setDeployTargetHteId('');
+      const success = await batchUpdateEmployees(deploySelectedStudentIds, updatedFields);
+      if (success) {
+        toast.success(`Successfully assigned & deployed ${deploySelectedStudentIds.length} trainees to ${matchedHte.companyName}!`);
+        setBatchDeployOpen(false);
+        setDeploySelectedStudentIds([]);
+        setDeployTargetHteId('');
+      } else {
+        toast.error('Failed to update trainees in database.');
+      }
     } catch (err: any) {
       console.error('Batch deployment error:', err);
       toast.error('Deployment failed: ' + (err?.message || 'Error'));
@@ -1671,10 +1773,16 @@ export function AdminEmployees() {
           }`}
         >
           <FileCheck size={15} />
-          Required Documents
-          <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeCategoryTab === 'documents' ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-700'}`}>
-            {REQUIRED_TRAINEE_DOCUMENTS.length + (requiredDocuments?.length || 0)}
-          </span>
+          Document Monitoring
+          {docStats.pending > 0 ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500 text-white font-bold animate-pulse">
+              {docStats.pending} Pending
+            </span>
+          ) : (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeCategoryTab === 'documents' ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-700'}`}>
+              {docStats.compliant}/{docStats.total}
+            </span>
+          )}
         </button>
 
         <button
@@ -1766,108 +1874,658 @@ export function AdminEmployees() {
       {/* Main Content Area */}
       <div className="space-y-5">
         {activeCategoryTab === 'documents' ? (
-          /* Required Documents Management Section */
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+          /* Trainee Document Monitoring & Compliance Hub */
+          <div className="space-y-6">
+            {/* Hub Header & Mode Switcher */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <FileCheck size={20} className="text-violet-600" />
-                  Required OJT Documents & Deployment Compliance
-                </h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  Manage the official institutional documents required for trainee deployment, verification, and final evaluation across CHMSU.
-                </p>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center font-bold">
+                    <FileCheck size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                      Trainee Document Monitoring & Compliance Hub
+                    </h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Monitor, preview, verify, and certify onboarding credentials (PDFs, Images, and Documents) uploaded in registration or portal
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowAddDocModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer self-start sm:self-auto"
-              >
-                <Plus size={15} /> Add Required Document
-              </button>
+              <div className="flex items-center gap-2.5 flex-wrap self-start md:self-auto">
+                <div className="bg-gray-100 p-1 rounded-2xl flex items-center gap-1 border border-gray-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setDocViewMode('monitoring')}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      docViewMode === 'monitoring'
+                        ? 'bg-white text-violet-700 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Users size={14} />
+                    Trainee Submissions
+                    {docStats.pending > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-amber-500 text-white font-extrabold animate-pulse">
+                        {docStats.pending}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDocViewMode('requirements')}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      docViewMode === 'requirements'
+                        ? 'bg-white text-violet-700 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <FileText size={14} />
+                    Requirements Guidelines ({REQUIRED_TRAINEE_DOCUMENTS.length + (requiredDocuments?.length || 0)})
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddDocModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer"
+                >
+                  <Plus size={14} /> Add Requirement
+                </button>
+              </div>
             </div>
 
-            {/* Standard 10 Mandatory Documents Grid */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-emerald-600" />
-                Standard Mandatory IS OJT Requirements ({REQUIRED_TRAINEE_DOCUMENTS.length})
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {REQUIRED_TRAINEE_DOCUMENTS.map((doc) => (
-                  <div key={doc.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-black flex items-center justify-center">
-                            {doc.num}
-                          </span>
-                          {doc.title}
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Mandatory
-                        </span>
+            {docViewMode === 'monitoring' ? (
+              /* Trainee Document Submissions Monitoring View */
+              <div className="space-y-6">
+                {/* 5 KPI Stat Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                  <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                        <Users size={18} />
                       </div>
-                      <p className="text-xs font-semibold text-blue-700">{doc.subtitle}</p>
-                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">{doc.desc}</p>
-                    </div>
-                    <div className="mt-3 pt-2.5 border-t border-gray-200/60 flex items-center justify-between text-[11px] text-gray-400">
-                      <span>Status: Institutional Standard</span>
-                      <span className="font-semibold text-emerald-600">Active Requirement</span>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-gray-500">Total Trainees</p>
+                        <p className="text-xl font-bold text-gray-900 mt-0.5">{docStats.total}</p>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Custom Departmental Documents (if any) */}
-            {requiredDocuments && requiredDocuments.length > 0 && (
-              <div className="space-y-3 pt-4 border-t border-gray-100">
-                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <FileText size={14} className="text-violet-600" />
-                  Additional Departmental Requirements ({requiredDocuments.length})
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {requiredDocuments.map((doc, idx) => (
-                    <div key={doc.id} className="p-4 rounded-2xl border border-violet-200 bg-violet-50/30 flex flex-col justify-between">
+                  <div className="bg-white p-4 rounded-2xl border border-emerald-100/80 bg-gradient-to-br from-white to-emerald-50/20 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                        <CheckCircle2 size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-gray-500">Fully Compliant</p>
+                        <p className="text-xl font-bold text-emerald-700 mt-0.5">
+                          {docStats.compliant}
+                          <span className="text-[10px] font-normal text-gray-500 ml-1">
+                            ({Math.round((docStats.compliant / Math.max(1, docStats.total)) * 100)}%)
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`p-4 rounded-2xl border shadow-xs transition-all ${
+                    docStats.pending > 0
+                      ? 'bg-amber-50/70 border-amber-200'
+                      : 'bg-white border-gray-100'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                        <Clock size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-gray-500">Pending Review</p>
+                        <p className="text-xl font-bold text-amber-800 mt-0.5">
+                          {docStats.pending}
+                          {docStats.pending > 0 && (
+                            <span className="text-[9px] font-extrabold uppercase ml-1 px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-md">
+                              Action Required
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                        <AlertTriangle size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-gray-500">Incomplete</p>
+                        <p className="text-xl font-bold text-rose-700 mt-0.5">{docStats.incomplete}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs col-span-2 sm:col-span-1">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center font-bold">
+                        <FileCheck size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-gray-500">Uploaded Files</p>
+                        <p className="text-xl font-bold text-violet-800 mt-0.5">{docStats.totalFilesUploaded}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter & Search Toolbar */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Search student by name, student ID, course, or host company..."
+                        value={docSearch}
+                        onChange={(e) => {
+                          setDocSearch(e.target.value);
+                          setDocMonitoringPage(1);
+                        }}
+                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                      />
+                      {docSearch && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocSearch('');
+                            setDocMonitoringPage(1);
+                          }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Status Filter */}
+                      <select
+                        value={docFilterStatus}
+                        onChange={(e) => {
+                          setDocFilterStatus(e.target.value as any);
+                          setDocMonitoringPage(1);
+                        }}
+                        className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                      >
+                        <option value="all">All Statuses ({docStats.total})</option>
+                        <option value="pending">⏳ Needs Review ({docStats.pending})</option>
+                        <option value="compliant">✓ Fully Compliant ({docStats.compliant})</option>
+                        <option value="incomplete">⚠️ Incomplete ({docStats.incomplete})</option>
+                      </select>
+
+                      {/* Requirement Filter */}
+                      <select
+                        value={docFilterRequirement}
+                        onChange={(e) => {
+                          setDocFilterRequirement(e.target.value);
+                          setDocMonitoringPage(1);
+                        }}
+                        className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 max-w-[200px]"
+                      >
+                        <option value="all">All 10 Requirements</option>
+                        {REQUIRED_TRAINEE_DOCUMENTS.map((req) => (
+                          <option key={req.key} value={req.key}>
+                            {req.num}. {req.title}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Course Filter */}
+                      {availableDocCourses.length > 0 && (
+                        <select
+                          value={docFilterCourse}
+                          onChange={(e) => {
+                            setDocFilterCourse(e.target.value);
+                            setDocMonitoringPage(1);
+                          }}
+                          className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 max-w-[180px]"
+                        >
+                          <option value="all">All Programs ({availableDocCourses.length})</option>
+                          {availableDocCourses.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {(docSearch || docFilterStatus !== 'all' || docFilterRequirement !== 'all' || docFilterCourse !== 'all') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocSearch('');
+                            setDocFilterStatus('all');
+                            setDocFilterRequirement('all');
+                            setDocFilterCourse('all');
+                            setDocMonitoringPage(1);
+                          }}
+                          className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trainees Document Monitoring Table */}
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-sm sm:text-base flex items-center gap-2">
+                        <span>Trainee Compliance & Document Verification</span>
+                        <span className="text-xs font-normal text-gray-500">
+                          ({filteredDocTrainees.length} {filteredDocTrainees.length === 1 ? 'trainee' : 'trainees'})
+                        </span>
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Inspect attached files, preview PDFs and pictures, verify compliance, or certify all requirements.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50/80 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                          <th className="px-5 py-3.5">Student Trainee</th>
+                          <th className="px-4 py-3.5">Compliance Progress</th>
+                          <th className="px-4 py-3.5">Status</th>
+                          <th className="px-4 py-3.5">Uploaded Credentials Matrix</th>
+                          <th className="px-5 py-3.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-xs">
+                        {paginatedDocTrainees.map((trainee) => {
+                          const docs = trainee.submittedDocuments || {};
+                          const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(docs[k]?.dataUrl || docs[k]?.name)).length;
+                          const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
+                          const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+                          const isCompliant = passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (trainee.documentsPassed === true && trainee.documentsStatus === 'passed');
+                          const photoUrl = getPhotoUrl(trainee.photo);
+
+                          return (
+                            <tr key={trainee.id} className="hover:bg-slate-50/60 transition-colors">
+                              {/* Trainee Profile */}
+                              <td className="px-5 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-violet-200">
+                                    {photoUrl ? (
+                                      <img src={photoUrl} alt={trainee.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <span>{trainee.name?.slice(0, 2).toUpperCase() || 'TR'}</span>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-gray-900 text-sm truncate" title={trainee.name}>
+                                      {trainee.name}
+                                    </p>
+                                    <p className="text-[11px] font-mono text-gray-500 mt-0.5">{trainee.employeeId}</p>
+                                    <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
+                                      <span className="truncate max-w-[140px] text-blue-700 font-medium">{trainee.course || 'BS Information Systems'}</span>
+                                      {trainee.companyName && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="truncate max-w-[140px] text-gray-600 flex items-center gap-1">
+                                            <Building size={11} className="text-gray-400" />
+                                            {trainee.companyName}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Progress bar */}
+                              <td className="px-4 py-4 min-w-[160px]">
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-bold text-gray-700">{passedCount}/10 Passed</span>
+                                    <span className="text-gray-500 font-mono text-[10px]">{uploadedCount} uploaded</span>
+                                  </div>
+                                  <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden border border-gray-200/60">
+                                    <div
+                                      className={`h-full transition-all duration-300 rounded-full ${
+                                        isCompliant
+                                          ? 'bg-emerald-500'
+                                          : hasPending
+                                          ? 'bg-amber-500'
+                                          : 'bg-blue-500'
+                                      }`}
+                                      style={{ width: `${Math.min(100, Math.round((passedCount / 10) * 100))}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Status Badge */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
+                                    isCompliant
+                                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                      : hasPending
+                                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                >
+                                  {isCompliant ? (
+                                    <>
+                                      <CheckCircle2 size={11} className="text-emerald-700" /> Certified
+                                    </>
+                                  ) : hasPending ? (
+                                    <>
+                                      <Clock size={11} className="text-amber-700" /> Needs Review
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertTriangle size={11} className="text-slate-600" /> Incomplete
+                                    </>
+                                  )}
+                                </span>
+                              </td>
+
+                              {/* Documents Interactive Matrix */}
+                              <td className="px-4 py-4">
+                                <div className="flex flex-wrap gap-1 max-w-[340px]">
+                                  {REQUIRED_TRAINEE_DOCUMENTS.map((req) => {
+                                    const doc = docs[req.key];
+                                    const isDocPassed = doc?.status === 'passed';
+                                    const hasFile = Boolean(doc?.dataUrl || doc?.name);
+                                    const isPendingDoc = hasFile && !isDocPassed;
+
+                                    if (isDocPassed) {
+                                      return (
+                                        <button
+                                          key={req.id}
+                                          type="button"
+                                          onClick={() =>
+                                            setPreviewInstructorDoc({
+                                              studentName: trainee.name,
+                                              studentId: trainee.employeeId,
+                                              title: `${req.num}. ${req.title}`,
+                                              fileName: doc?.name || `${req.key}.pdf`,
+                                              fileUrl: doc?.dataUrl || undefined,
+                                              note: doc?.name
+                                                ? `Uploaded file: ${doc.name}${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}`
+                                                : `Verified requirement.`,
+                                              date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Recorded',
+                                            })
+                                          }
+                                          className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                          title={`${req.title}: PASSED (Click to preview)`}
+                                        >
+                                          <Check size={9} className="stroke-[3]" />
+                                          <span className="truncate max-w-[80px]">{req.title.split(' ')[0]}</span>
+                                        </button>
+                                      );
+                                    }
+
+                                    if (isPendingDoc) {
+                                      return (
+                                        <button
+                                          key={req.id}
+                                          type="button"
+                                          onClick={() =>
+                                            setPreviewInstructorDoc({
+                                              studentName: trainee.name,
+                                              studentId: trainee.employeeId,
+                                              title: `${req.num}. ${req.title}`,
+                                              fileName: doc?.name || `${req.key}.pdf`,
+                                              fileUrl: doc?.dataUrl || undefined,
+                                              note: doc?.name
+                                                ? `Attached: ${doc.name} (Awaiting Coordinator Review)${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}`
+                                                : undefined,
+                                              date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Recent submission',
+                                            })
+                                          }
+                                          className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors inline-flex items-center gap-1 cursor-pointer animate-pulse"
+                                          title={`${req.title}: Attached & Pending Review (Click to preview)`}
+                                        >
+                                          <Clock size={9} />
+                                          <span className="truncate max-w-[80px]">{req.title.split(' ')[0]}</span>
+                                        </button>
+                                      );
+                                    }
+
+                                    return (
+                                      <span
+                                        key={req.id}
+                                        className="px-1.5 py-0.5 rounded text-[10px] text-gray-300 font-mono"
+                                        title={`${req.title}: Not submitted`}
+                                      >
+                                        —
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+
+                              {/* Actions */}
+                              <td className="px-5 py-4 text-right whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => openReview(trainee)}
+                                    className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-sm shadow-violet-200 transition-all cursor-pointer"
+                                  >
+                                    <Eye size={13} /> Review Docs
+                                  </button>
+
+                                  {!isCompliant && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const currentDocs = trainee.submittedDocuments || {};
+                                        const updatedDocs: TraineeDocuments = { ...currentDocs };
+                                        REQUIRED_TRAINEE_DOC_KEYS.forEach((k) => {
+                                          updatedDocs[k] = {
+                                            ...(currentDocs[k] || {
+                                              name: `${k}.pdf`,
+                                              fileType: 'application/pdf',
+                                              size: 0,
+                                              uploadedAt: new Date().toISOString(),
+                                            }),
+                                            status: 'passed',
+                                          };
+                                        });
+
+                                        await updateEmployee(trainee.id, {
+                                          submittedDocuments: updatedDocs,
+                                          documentsPassed: true,
+                                          documentsStatus: 'passed',
+                                        });
+                                        toast.success(`All 10 documents certified as PASSED for ${trainee.name}!`);
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-bold text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                                      title="One-click certify all documents"
+                                    >
+                                      <CheckCircle2 size={13} /> Certify All
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {paginatedDocTrainees.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="py-12 text-center text-gray-400">
+                              <FileCheck size={36} className="mx-auto mb-2 opacity-30" />
+                              <p className="font-semibold text-sm text-gray-700">No trainees matched your filter</p>
+                              <p className="text-xs text-gray-400 mt-1">Try resetting search keywords or changing the status filter.</p>
+                              {(docSearch || docFilterStatus !== 'all' || docFilterRequirement !== 'all' || docFilterCourse !== 'all') && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDocSearch('');
+                                    setDocFilterStatus('all');
+                                    setDocFilterRequirement('all');
+                                    setDocFilterCourse('all');
+                                    setDocMonitoringPage(1);
+                                  }}
+                                  className="mt-3 px-3 py-1.5 bg-violet-50 text-violet-700 rounded-xl text-xs font-bold hover:bg-violet-100 transition-colors"
+                                >
+                                  Reset Filters
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {totalDocPages > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-gray-100 text-xs text-gray-500">
+                      <div>
+                        Showing <strong className="text-gray-900">{(docMonitoringPage - 1) * docMonitoringPerPage + 1}</strong> to{' '}
+                        <strong className="text-gray-900">{Math.min(docMonitoringPage * docMonitoringPerPage, filteredDocTrainees.length)}</strong> of{' '}
+                        <strong className="text-gray-900">{filteredDocTrainees.length}</strong> trainees
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setDocMonitoringPage((p) => Math.max(1, p - 1))}
+                          disabled={docMonitoringPage === 1}
+                          className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronLeft size={15} />
+                        </button>
+                        {Array.from({ length: totalDocPages }, (_, i) => i + 1).map((pg) => (
+                          <button
+                            key={pg}
+                            type="button"
+                            onClick={() => setDocMonitoringPage(pg)}
+                            className={`min-w-[28px] h-7 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                              docMonitoringPage === pg
+                                ? 'bg-violet-600 text-white'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {pg}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setDocMonitoringPage((p) => Math.min(totalDocPages, p + 1))}
+                          disabled={docMonitoringPage === totalDocPages}
+                          className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <ChevronRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Requirements Guidelines & Setup View */
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                      <FileCheck size={20} className="text-violet-600" />
+                      Standard Mandatory OJT Requirements ({REQUIRED_TRAINEE_DOCUMENTS.length})
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Official institutional documents required for trainee onboarding, deployment, and final completion across CHMSU.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Standard 10 Mandatory Documents Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {REQUIRED_TRAINEE_DOCUMENTS.map((doc) => (
+                    <div key={doc.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 flex flex-col justify-between hover:bg-white hover:shadow-xs transition-all">
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-black flex items-center justify-center">
-                              {REQUIRED_TRAINEE_DOCUMENTS.length + idx + 1}
+                            <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-black flex items-center justify-center">
+                              {doc.num}
                             </span>
                             {doc.title}
                           </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200">
-                              Custom Requirement
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (confirm(`Remove "${doc.title}" from required documents?`)) {
-                                  deleteRequiredDocument(doc.id);
-                                  toast.success(`"${doc.title}" removed.`);
-                                }
-                              }}
-                              className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                              title="Delete requirement"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Mandatory
+                          </span>
                         </div>
-                        {doc.description && <p className="text-xs text-gray-600 mt-1">{doc.description}</p>}
-                        {doc.notes && <p className="text-[11px] text-gray-500 mt-1 italic">Notes: {doc.notes}</p>}
+                        <p className="text-xs font-semibold text-blue-700">{doc.subtitle}</p>
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{doc.desc}</p>
                       </div>
-                      <div className="mt-3 pt-2.5 border-t border-violet-100 flex items-center justify-between text-[11px] text-gray-400">
-                        <span>Due: {doc.dueDate || 'Prior to Deployment'}</span>
-                        <span className="text-violet-700 font-semibold">A.Y. {doc.academicYear || settings.activeAcademicYear}</span>
+                      <div className="mt-3 pt-2.5 border-t border-gray-200/60 flex items-center justify-between text-[11px] text-gray-400">
+                        <span>Status: Institutional Standard</span>
+                        <span className="font-semibold text-emerald-600">Active Requirement</span>
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Custom Departmental Documents (if any) */}
+                {requiredDocuments && requiredDocuments.length > 0 && (
+                  <div className="space-y-3 pt-4 border-t border-gray-100">
+                    <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText size={14} className="text-violet-600" />
+                      Additional Departmental Requirements ({requiredDocuments.length})
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      {requiredDocuments.map((doc, idx) => (
+                        <div key={doc.id} className="p-4 rounded-2xl border border-violet-200 bg-violet-50/30 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-black flex items-center justify-center">
+                                  {REQUIRED_TRAINEE_DOCUMENTS.length + idx + 1}
+                                </span>
+                                {doc.title}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200">
+                                  Custom Requirement
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Remove "${doc.title}" from required documents?`)) {
+                                      deleteRequiredDocument(doc.id);
+                                      toast.success(`"${doc.title}" removed.`);
+                                    }
+                                  }}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                                  title="Delete requirement"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                            {doc.description && <p className="text-xs text-gray-600 mt-1">{doc.description}</p>}
+                            {doc.notes && <p className="text-[11px] text-gray-500 mt-1 italic">Notes: {doc.notes}</p>}
+                          </div>
+                          <div className="mt-3 pt-2.5 border-t border-violet-100 flex items-center justify-between text-[11px] text-gray-400">
+                            <span>Due: {doc.dueDate || 'Prior to Deployment'}</span>
+                            <span className="text-violet-700 font-semibold">A.Y. {doc.academicYear || settings.activeAcademicYear}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -3503,9 +4161,20 @@ export function AdminEmployees() {
                                 <div className="min-w-0 flex-1">
                                   <p className="text-xs font-bold text-gray-900 truncate" title={docItem.title}>{docItem.title}</p>
                                   {doc?.name ? (
-                                    <p className="text-[10px] text-blue-600 truncate font-mono" title={doc.name}>
-                                      📁 {doc.name} {doc.size ? `(${(Number(doc.size) / 1024).toFixed(0)} KB)` : ''}
-                                    </p>
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                      <p className="text-[10px] text-blue-600 truncate font-mono max-w-[150px]" title={doc.name}>
+                                        📁 {doc.name} {doc.size ? `(${(Number(doc.size) / 1024).toFixed(0)} KB)` : ''}
+                                      </p>
+                                      {doc.source && (
+                                        <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                          doc.source === 'registration'
+                                            ? 'bg-purple-100 text-purple-700'
+                                            : 'bg-blue-100 text-blue-700'
+                                        }`}>
+                                          {doc.source === 'registration' ? 'Registration' : 'Portal'}
+                                        </span>
+                                      )}
+                                    </div>
                                   ) : (
                                     <p className="text-[10px] text-gray-400 italic">No custom file uploaded</p>
                                   )}
@@ -3534,7 +4203,7 @@ export function AdminEmployees() {
                                     fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
                                     fileUrl: doc?.dataUrl || undefined,
                                     note: doc?.name
-                                      ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
+                                      ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}${doc.source ? ` • Source: ${doc.source === 'registration' ? 'Pre-Registration' : 'Trainee Portal'}` : ''}`
                                       : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
                                     date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
                                   })
@@ -4054,8 +4723,8 @@ export function AdminEmployees() {
                     onChange={(e) => setDeployStatusFilter(e.target.value as any)}
                     className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="unassigned">Unassigned Trainees Only</option>
                     <option value="all">All Trainees</option>
+                    <option value="unassigned">Unassigned Trainees Only</option>
                     <option value="assigned">Already Assigned Trainees</option>
                   </select>
 

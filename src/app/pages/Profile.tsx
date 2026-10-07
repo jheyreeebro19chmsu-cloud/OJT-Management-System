@@ -43,6 +43,7 @@ import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { uploadDocumentToStorage } from '../services/supabaseService';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 import { GeofenceMap } from '../components/GeofenceMap';
 
@@ -308,16 +309,34 @@ export function Profile() {
 
     setDocUploadingKey(docKey);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
+      const empId = employee?.id || employee?.employeeId || '';
+
+      try {
+        localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
+        localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+      } catch {}
+
+      let finalUrl = dataUrl;
+      try {
+        const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
+        if (storedUrl && storedUrl.startsWith('http')) {
+          finalUrl = storedUrl;
+          try {
+            localStorage.setItem(`ojt_doc_${empId}_${docKey}`, storedUrl);
+          } catch {}
+        }
+      } catch {}
+
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl,
+        dataUrl: finalUrl,
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        // Pending until OJT Coordinator reviews
         status: 'pending',
+        source: 'portal',
       };
       const updatedDocs: TraineeDocuments = {
         ...(employee?.submittedDocuments || {}),

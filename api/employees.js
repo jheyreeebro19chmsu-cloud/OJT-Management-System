@@ -12,9 +12,9 @@ const isUuid = (val) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 // Known HTE mappings for automatic linking
 const KNOWN_HTES = {
   'printing services': {
-    id: 'ee755083-2cb1-4788-9be6-b13d4518d158',
+    id: '95558630-499b-4aac-b869-ba64b0694e8c',
     companyName: 'Printing Services',
-    supervisorName: 'Yzel B. Norte',
+    supervisorName: 'Jhey Ree',
   },
   'concentrix': {
     id: '89405c66-015c-407a-937b-71ab37b829d7',
@@ -22,6 +22,145 @@ const KNOWN_HTES = {
     supervisorName: 'Jhey Ree C Ebro',
   },
 };
+
+async function mapUpdatesToDbPayload(updates) {
+  const dbPayload = {};
+  if (updates.name !== undefined) dbPayload.name = updates.name;
+  if (updates.employeeId !== undefined || updates.employee_id !== undefined) {
+    dbPayload.employee_id = updates.employeeId ?? updates.employee_id;
+  }
+  if (updates.email !== undefined) {
+    dbPayload.email = String(updates.email).trim().toLowerCase();
+    dbPayload.email_lower = String(updates.email).trim().toLowerCase();
+  }
+  if (updates.department !== undefined) dbPayload.department = updates.department;
+  if (updates.position !== undefined) dbPayload.position = updates.position;
+  if (updates.companyName !== undefined || updates.company_name !== undefined) {
+    dbPayload.company_name = updates.companyName ?? updates.company_name;
+  }
+  if (updates.supervisorName !== undefined || updates.supervisor_name !== undefined) {
+    dbPayload.supervisor_name = updates.supervisorName ?? updates.supervisor_name;
+  }
+  if (updates.schoolName !== undefined || updates.school_name !== undefined) {
+    dbPayload.school_name = updates.schoolName ?? updates.school_name;
+  }
+  if (updates.campus !== undefined) dbPayload.campus = updates.campus;
+  if (updates.course !== undefined) dbPayload.course = updates.course;
+  if (updates.startDate !== undefined || updates.start_date !== undefined) {
+    dbPayload.start_date = updates.startDate ?? updates.start_date;
+  }
+  if (updates.endDate !== undefined || updates.end_date !== undefined) {
+    dbPayload.end_date = updates.endDate ?? updates.end_date;
+  }
+  if (updates.requiredHours !== undefined || updates.required_hours !== undefined) {
+    dbPayload.required_hours = Number(updates.requiredHours ?? updates.required_hours);
+  }
+  if (updates.photo !== undefined) dbPayload.photo = updates.photo;
+  if (updates.faceRegistered !== undefined || updates.face_registered !== undefined) {
+    dbPayload.face_registered = updates.faceRegistered ?? updates.face_registered;
+  }
+  if (updates.active !== undefined) dbPayload.active = updates.active;
+  if (updates.academicYear !== undefined || updates.academic_year !== undefined) {
+    dbPayload.academic_year = updates.academicYear ?? updates.academic_year;
+  }
+  if (updates.applicationStatus !== undefined || updates.application_status !== undefined || updates.approvalStatus !== undefined) {
+    dbPayload.application_status = updates.applicationStatus ?? updates.application_status ?? updates.approvalStatus;
+  }
+  if (updates.instructorId !== undefined || updates.instructor_id !== undefined) {
+    dbPayload.instructor_id = updates.instructorId ?? updates.instructor_id;
+  }
+  if (updates.hteId !== undefined || updates.hte_id !== undefined) {
+    dbPayload.hte_id = updates.hteId ?? updates.hte_id;
+  }
+  if (updates.linkedAt !== undefined || updates.linked_at !== undefined) {
+    dbPayload.linked_at = updates.linkedAt ?? updates.linked_at;
+  }
+
+  // Handle GPS & workplace locations
+  if (updates.registrationLocation !== undefined) {
+    const loc = updates.registrationLocation;
+    if (loc && typeof loc === 'object') {
+      dbPayload.registration_lat = loc.lat ?? null;
+      dbPayload.registration_lng = loc.lng ?? null;
+      if (loc.radius) dbPayload.registration_radius = loc.radius;
+      if (loc.address) dbPayload.registration_address = loc.address;
+    } else if (loc === null) {
+      dbPayload.registration_lat = null;
+      dbPayload.registration_lng = null;
+    }
+  }
+  if (updates.registration_lat !== undefined) dbPayload.registration_lat = updates.registration_lat;
+  if (updates.registration_lng !== undefined) dbPayload.registration_lng = updates.registration_lng;
+  if (updates.registrationAddress !== undefined || updates.registration_address !== undefined) {
+    dbPayload.registration_address = updates.registrationAddress ?? updates.registration_address;
+  }
+  if (updates.registrationRadius !== undefined || updates.registration_radius !== undefined) {
+    dbPayload.registration_radius = updates.registrationRadius ?? updates.registration_radius;
+  }
+  if (updates.registrationLocation !== undefined || updates.registration_location !== undefined) {
+    dbPayload.registration_location = updates.registrationLocation ?? updates.registration_location;
+  }
+
+  // Resolve HTE metadata
+  if (dbPayload.company_name && !dbPayload.hte_id) {
+    const normComp = String(dbPayload.company_name).trim().toLowerCase();
+    for (const [key, known] of Object.entries(KNOWN_HTES)) {
+      if (normComp.includes(key) || key.includes(normComp)) {
+        dbPayload.hte_id = known.id;
+        dbPayload.company_name = known.companyName;
+        if (!dbPayload.supervisor_name) dbPayload.supervisor_name = known.supervisorName;
+        break;
+      }
+    }
+    // Dynamic fallback to host_supervisors table
+    if (!dbPayload.hte_id && !normComp.includes('pending') && !normComp.includes('unassigned')) {
+      try {
+        const { data: host } = await supabase
+          .from('host_supervisors')
+          .select('id, company_name, name')
+          .ilike('company_name', `%${normComp}%`)
+          .limit(1)
+          .maybeSingle();
+        if (host) {
+          dbPayload.hte_id = host.id;
+          dbPayload.company_name = host.company_name;
+          if (!dbPayload.supervisor_name) dbPayload.supervisor_name = host.name;
+        }
+      } catch (hErr) {
+        console.warn('host_supervisors lookup error:', hErr);
+      }
+    }
+  }
+
+  // If hte_id is specified but company_name is missing
+  if (dbPayload.hte_id && !dbPayload.company_name) {
+    for (const known of Object.values(KNOWN_HTES)) {
+      if (known.id === dbPayload.hte_id) {
+        dbPayload.company_name = known.companyName;
+        if (!dbPayload.supervisor_name) dbPayload.supervisor_name = known.supervisorName;
+        break;
+      }
+    }
+    if (!dbPayload.company_name && isUuid(dbPayload.hte_id)) {
+      try {
+        const { data: host } = await supabase
+          .from('host_supervisors')
+          .select('id, company_name, name')
+          .eq('id', dbPayload.hte_id)
+          .limit(1)
+          .maybeSingle();
+        if (host) {
+          dbPayload.company_name = host.company_name;
+          if (!dbPayload.supervisor_name) dbPayload.supervisor_name = host.name;
+        }
+      } catch (hErr) {
+        console.warn('host_supervisors lookup error:', hErr);
+      }
+    }
+  }
+
+  return dbPayload;
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -63,6 +202,30 @@ export default async function handler(req, res) {
       const targetId = body.id || req.query?.id;
       const updates = body.updates || body;
 
+      // Handle batch / bulk updates
+      if (body.traineeIds && Array.isArray(body.traineeIds) && body.traineeIds.length > 0) {
+        const dbPayload = await mapUpdatesToDbPayload(updates);
+        const ids = body.traineeIds.filter(Boolean);
+        const uuidIds = ids.filter(isUuid);
+        const nonUuidIds = ids.filter((id) => !isUuid(id));
+
+        const promises = [];
+        if (uuidIds.length > 0) {
+          promises.push(supabase.from('employees').update(dbPayload).in('id', uuidIds));
+        }
+        if (nonUuidIds.length > 0) {
+          promises.push(supabase.from('employees').update(dbPayload).in('employee_id', nonUuidIds));
+        }
+
+        const results = await Promise.all(promises);
+        const error = results.find((r) => r.error)?.error;
+        if (error) {
+          console.error('Batch update employees error:', error);
+          return res.status(500).json({ error: error.message });
+        }
+        return res.status(200).json({ success: true, count: ids.length, updated: dbPayload });
+      }
+
       const targetEmail = updates.email || body.email;
       const targetEmpId = updates.employeeId || updates.employee_id || body.employeeId || body.employee_id;
 
@@ -70,103 +233,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Missing employee identifier (id, employeeId, or email)' });
       }
 
-      // Map incoming fields to Supabase column names
-      const dbPayload = {};
-      if (updates.name !== undefined) dbPayload.name = updates.name;
-      if (updates.employeeId !== undefined || updates.employee_id !== undefined) {
-        dbPayload.employee_id = updates.employeeId ?? updates.employee_id;
-      }
-      if (updates.email !== undefined) {
-        dbPayload.email = String(updates.email).trim().toLowerCase();
-        dbPayload.email_lower = String(updates.email).trim().toLowerCase();
-      }
-      if (updates.department !== undefined) dbPayload.department = updates.department;
-      if (updates.position !== undefined) dbPayload.position = updates.position;
-      if (updates.companyName !== undefined || updates.company_name !== undefined) {
-        dbPayload.company_name = updates.companyName ?? updates.company_name;
-      }
-      if (updates.supervisorName !== undefined || updates.supervisor_name !== undefined) {
-        dbPayload.supervisor_name = updates.supervisorName ?? updates.supervisor_name;
-      }
-      if (updates.schoolName !== undefined || updates.school_name !== undefined) {
-        dbPayload.school_name = updates.schoolName ?? updates.school_name;
-      }
-      if (updates.campus !== undefined) dbPayload.campus = updates.campus;
-      if (updates.course !== undefined) dbPayload.course = updates.course;
-      if (updates.startDate !== undefined || updates.start_date !== undefined) {
-        dbPayload.start_date = updates.startDate ?? updates.start_date;
-      }
-      if (updates.endDate !== undefined || updates.end_date !== undefined) {
-        dbPayload.end_date = updates.endDate ?? updates.end_date;
-      }
-      if (updates.requiredHours !== undefined || updates.required_hours !== undefined) {
-        dbPayload.required_hours = Number(updates.requiredHours ?? updates.required_hours);
-      }
-      if (updates.photo !== undefined) dbPayload.photo = updates.photo;
-      if (updates.faceRegistered !== undefined || updates.face_registered !== undefined) {
-        dbPayload.face_registered = updates.faceRegistered ?? updates.face_registered;
-      }
-      if (updates.active !== undefined) dbPayload.active = updates.active;
-      if (updates.academicYear !== undefined || updates.academic_year !== undefined) {
-        dbPayload.academic_year = updates.academicYear ?? updates.academic_year;
-      }
-      if (updates.applicationStatus !== undefined || updates.application_status !== undefined || updates.approvalStatus !== undefined) {
-        dbPayload.application_status = updates.applicationStatus ?? updates.application_status ?? updates.approvalStatus;
-      }
-      if (updates.instructorId !== undefined || updates.instructor_id !== undefined) {
-        dbPayload.instructor_id = updates.instructorId ?? updates.instructor_id;
-      }
-      if (updates.hteId !== undefined || updates.hte_id !== undefined) {
-        dbPayload.hte_id = updates.hteId ?? updates.hte_id;
-      }
-      if (updates.linkedAt !== undefined || updates.linked_at !== undefined) {
-        dbPayload.linked_at = updates.linkedAt ?? updates.linked_at;
-      }
-
-      // Handle GPS & workplace locations
-      if (updates.registrationLocation !== undefined) {
-        const loc = updates.registrationLocation;
-        if (loc && typeof loc === 'object') {
-          dbPayload.registration_lat = loc.lat ?? null;
-          dbPayload.registration_lng = loc.lng ?? null;
-          if (loc.radius) dbPayload.registration_radius = loc.radius;
-          if (loc.address) dbPayload.registration_address = loc.address;
-        } else if (loc === null) {
-          dbPayload.registration_lat = null;
-          dbPayload.registration_lng = null;
-        }
-      }
-      if (updates.registration_lat !== undefined) dbPayload.registration_lat = updates.registration_lat;
-      if (updates.registration_lng !== undefined) dbPayload.registration_lng = updates.registration_lng;
-      if (updates.registrationAddress !== undefined || updates.registration_address !== undefined) {
-        dbPayload.registration_address = updates.registrationAddress ?? updates.registration_address;
-      }
-      if (updates.registrationLocation !== undefined || updates.registration_location !== undefined) {
-        dbPayload.registration_location = updates.registrationLocation ?? updates.registration_location;
-      }
-
-      // Auto-resolve hte_id if company_name is set but hte_id is missing
-      if (dbPayload.company_name && !dbPayload.hte_id) {
-        const normComp = String(dbPayload.company_name).trim().toLowerCase();
-        for (const [key, known] of Object.entries(KNOWN_HTES)) {
-          if (normComp.includes(key) || key.includes(normComp)) {
-            dbPayload.hte_id = known.id;
-            if (!dbPayload.supervisor_name) dbPayload.supervisor_name = known.supervisorName;
-            break;
-          }
-        }
-      }
-
-      // If hte_id is known but company_name is missing
-      if (dbPayload.hte_id && !dbPayload.company_name) {
-        for (const known of Object.values(KNOWN_HTES)) {
-          if (known.id === dbPayload.hte_id) {
-            dbPayload.company_name = known.companyName;
-            if (!dbPayload.supervisor_name) dbPayload.supervisor_name = known.supervisorName;
-            break;
-          }
-        }
-      }
+      const dbPayload = await mapUpdatesToDbPayload(updates);
 
       // Target selection
       let updateQuery = supabase.from('employees').update(dbPayload);

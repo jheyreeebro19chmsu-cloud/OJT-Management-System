@@ -57,9 +57,13 @@ export interface TraineeDocumentItem {
   dataUrl?: string;
   fileType?: string;
   uploadedAt: string;
-  status: 'passed' | 'pending';
+  status: 'passed' | 'pending' | 'rejected' | 'submitted';
   description?: string;
   notes?: string;
+  feedback?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  source?: 'registration' | 'portal';
 }
 
 export interface TraineeDocuments {
