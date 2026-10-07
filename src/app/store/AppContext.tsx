@@ -2813,7 +2813,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...data,
         id,
       };
-      if (candidateHte.companyName && !isInvalidHteCompany(candidateHte.companyName)) {
+      if ((candidateHte.companyName && !isInvalidHteCompany(candidateHte.companyName)) || candidateHte.hteId) {
         const hteLoc = resolveHteLocation(candidateHte, hostSupervisors, employees, geofenceZones);
         if (hteLoc) {
           data.companyName = hteLoc.companyName || data.companyName;
@@ -2916,6 +2916,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         dbSuccess = await supabaseService.updateEmployee(id, {
           ...data,
+          employeeId: updatedEmployee?.employeeId || data.employeeId,
           email: updatedEmployee?.email || data.email,
           companyName: updatedEmployee?.companyName ?? data.companyName,
           hteId: updatedEmployee?.hteId ?? data.hteId,

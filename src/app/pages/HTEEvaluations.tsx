@@ -248,16 +248,50 @@ export function HTEEvaluations() {
       return true;
     });
 
+    const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
+    const normCurrentComp = (companyName || '').trim().toLowerCase();
+
+    const isChmsuOrPrinting =
+      currentHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+      currentEmail.includes('reejhey') ||
+      normCurrentComp.includes('chmsu') ||
+      normCurrentComp.includes('printing');
+
+    const isConcentrix =
+      currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+      normCurrentComp.includes('concentrix') ||
+      currentEmail.includes('concentrix') ||
+      currentEmail.includes('jheyree.ebro');
+
     return deduplicatedTrainees.filter((e) => {
+      const eComp = (e.companyName || '').trim().toLowerCase();
+      const eHteId = e.hteId || '';
+
+      if (isChmsuOrPrinting) {
+        return (
+          eHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+          eComp.includes('chmsu') ||
+          eComp.includes('printing')
+        );
+      }
+
+      if (isConcentrix) {
+        return (
+          eHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+          eComp.includes('concentrix')
+        );
+      }
+
       const isAssignedToCurrentHte = Boolean(
         currentHteId &&
         (e.hteId === currentHteId ||
          (currentUser?.employeeId && e.hteId === currentUser.employeeId) ||
-         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId))
+         (currentEmp?.employeeId && e.hteId === currentEmp.employeeId) ||
+         (normCurrentComp && eComp && eComp.includes(normCurrentComp)))
       );
       return isAssignedToCurrentHte;
     });
-  }, [employees, currentUser, currentEmp, hteUser, selectedAcademicYear]);
+  }, [employees, currentUser, currentEmp, hteUser, selectedAcademicYear, companyName]);
 
   // Handle preselected student from URL
   React.useEffect(() => {

@@ -68,27 +68,36 @@ export function HTERecords() {
     const email = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase().trim();
     const id = currentUser?.id || currentEmp?.id || hteUser?.id;
     if (email.includes('reejhey') || id === '95558630-499b-4aac-b869-ba64b0694e8c') {
-      return 'Printing Services';
+      return 'CHMSU';
     }
     if (email.includes('ebro') || id === '89405c66-015c-407a-937b-71ab37b829d7') {
       return 'Concentrix';
     }
-    return 'Printing Services';
+    return 'CHMSU';
   }, [currentUser, currentEmp, hteUser]);
 
   const assignedTraineeIds = useMemo(() => {
     const set = new Set<string>();
     const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
-    const isPrinting =
+    const normCurrentComp = currentCompany.trim().toLowerCase();
+
+    const isChmsuOrPrinting =
       currentHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
       currentEmail.includes('reejhey') ||
-      currentCompany.toLowerCase().includes('printing');
+      normCurrentComp.includes('chmsu') ||
+      normCurrentComp.includes('printing');
+
+    const isConcentrix =
+      currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+      normCurrentComp.includes('concentrix') ||
+      currentEmail.includes('concentrix') ||
+      currentEmail.includes('jheyree.ebro');
 
     employees.forEach((e) => {
       // Must be an active trainee, not admin/HTE staff
       const pos = (e.position || '').toLowerCase();
       const role = ((e as any).role || '').toLowerCase();
-      if (role === 'admin' || role === 'hte' || pos.includes('instructor') || pos.includes('representative')) {
+      if (role === 'admin' || role === 'instructor' || role === 'hte' || pos.includes('instructor') || pos.includes('representative')) {
         return;
       }
 
@@ -97,48 +106,55 @@ export function HTERecords() {
       const eEmail = (e.email || '').toLowerCase();
       const eHteId = e.hteId || '';
 
-      const normCurrentComp = currentCompany.trim().toLowerCase();
       const hasAssignedCompany = eComp && !isInvalidHteCompany(eComp);
 
       let isAssigned = false;
-      if (isPrinting) {
+      if (isChmsuOrPrinting) {
         if (hasAssignedCompany) {
-          isAssigned = eComp.includes('printing') || eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+          isAssigned =
+            eComp.includes('chmsu') ||
+            eComp.includes('printing') ||
+            eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
         } else if (eHteId) {
           isAssigned = eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
         } else {
-          isAssigned = (eEmpId.includes('PS') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
-        }
-      } else {
-        const isConcentrix =
-          currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
-          normCurrentComp.includes('concentrix') ||
-          currentEmail.includes('concentrix') ||
-          currentEmail.includes('jheyree.ebro');
-
-        if (isConcentrix) {
-          if (hasAssignedCompany) {
-            isAssigned = eComp.includes('concentrix') || eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
-          } else if (eHteId) {
-            isAssigned = eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
-          } else {
-            isAssigned = eEmpId.includes('CTX') || eEmail.includes('.ctx');
-          }
-        } else if (hasAssignedCompany) {
           isAssigned =
-            eComp === normCurrentComp ||
-            eComp.includes(normCurrentComp) ||
-            normCurrentComp.includes(eComp) ||
-            (Boolean(currentHteId) && eHteId === currentHteId);
-        } else if (eHteId && currentHteId) {
-          isAssigned = eHteId === currentHteId;
+            (eEmpId.includes('CHMSU') || eEmpId.includes('PS') || eEmail.includes('.chmsu') || eEmail.includes('.ps')) &&
+            !eEmpId.includes('CTX') &&
+            !eEmail.includes('.ctx');
         }
+      } else if (isConcentrix) {
+        if (hasAssignedCompany) {
+          isAssigned =
+            eComp.includes('concentrix') ||
+            eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
+        } else if (eHteId) {
+          isAssigned = eHteId === '89405c66-015c-407a-937b-71ab37b829d7';
+        } else {
+          isAssigned = eEmpId.includes('CTX') || eEmail.includes('.ctx');
+        }
+      } else if (hasAssignedCompany) {
+        isAssigned =
+          eComp === normCurrentComp ||
+          eComp.includes(normCurrentComp) ||
+          normCurrentComp.includes(eComp) ||
+          (Boolean(currentHteId) && eHteId === currentHteId);
+      } else if (eHteId && currentHteId) {
+        isAssigned = eHteId === currentHteId;
       }
 
       if (isAssigned) {
-        if (e.id) set.add(e.id);
-        if (e.employeeId) set.add(e.employeeId.toLowerCase());
-        if (e.email) set.add(e.email.toLowerCase());
+        if (e.id) {
+          set.add(e.id);
+          set.add(e.id.toLowerCase());
+        }
+        if (e.employeeId) {
+          set.add(e.employeeId);
+          set.add(e.employeeId.toLowerCase());
+        }
+        if (e.email) {
+          set.add(e.email.toLowerCase());
+        }
       }
     });
     return set;

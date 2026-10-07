@@ -10,6 +10,28 @@ export interface HteLocationInfo {
   source: 'host_supervisor' | 'hte_employee' | 'geofence_zone' | 'company_address' | 'default_hte';
 }
 
+export const CHMSU_HTE_SITE = {
+  id: '95558630-499b-4aac-b869-ba64b0694e8c',
+  lat: 10.742858,
+  lng: 122.970088,
+  radius: 40,
+  address: 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines',
+  companyName: 'CHMSU',
+  supervisorName: 'Jhey Ree',
+  email: 'reejhey1@gmail.com',
+};
+
+export const CONCENTRIX_HTE_SITE = {
+  id: '89405c66-015c-407a-937b-71ab37b829d7',
+  lat: 10.694261,
+  lng: 122.959987,
+  radius: 40,
+  address: 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City',
+  companyName: 'Concentrix',
+  supervisorName: 'Jhey Ree C Ebro',
+  email: 'jheyree.ebro@chmsu.edu.ph',
+};
+
 /**
  * Checks if a company name is empty, placeholder, or unassigned.
  */
@@ -87,7 +109,7 @@ export function resolveHteLocation(
 ): HteLocationInfo | null {
   if (!traineeOrHte) return null;
 
-  const hteId = traineeOrHte.hteId || traineeOrHte.assignedZoneId;
+  const hteId = traineeOrHte.hteId || traineeOrHte.assignedZoneId || (traineeOrHte.role === 'hte' ? traineeOrHte.id : undefined);
   const rawCompany = (traineeOrHte.companyName || '').trim();
   const hasValidCompany = !isInvalidHteCompany(rawCompany);
 
@@ -97,6 +119,45 @@ export function resolveHteLocation(
   }
 
   const normCompany = rawCompany.toLowerCase();
+
+  // Primary Check: Known Permanent HTE Partners (CHMSU and Concentrix)
+  const isChmsuHte =
+    hteId === CHMSU_HTE_SITE.id ||
+    normCompany === 'chmsu' ||
+    normCompany.includes('chmsu') ||
+    normCompany.includes('printing') ||
+    normCompany.includes('press');
+
+  if (isChmsuHte) {
+    const comp = rawCompany && !normCompany.includes('pending') ? rawCompany : CHMSU_HTE_SITE.companyName;
+    return {
+      lat: CHMSU_HTE_SITE.lat,
+      lng: CHMSU_HTE_SITE.lng,
+      radius: CHMSU_HTE_SITE.radius,
+      address: CHMSU_HTE_SITE.address,
+      name: `${comp} Workplace Premises`,
+      companyName: comp,
+      source: 'default_hte',
+    };
+  }
+
+  const isConcentrixHte =
+    hteId === CONCENTRIX_HTE_SITE.id ||
+    normCompany === 'concentrix' ||
+    normCompany.includes('concentrix');
+
+  if (isConcentrixHte) {
+    const comp = rawCompany && !normCompany.includes('pending') ? rawCompany : CONCENTRIX_HTE_SITE.companyName;
+    return {
+      lat: CONCENTRIX_HTE_SITE.lat,
+      lng: CONCENTRIX_HTE_SITE.lng,
+      radius: CONCENTRIX_HTE_SITE.radius,
+      address: CONCENTRIX_HTE_SITE.address,
+      name: `${comp} Workplace Premises`,
+      companyName: comp,
+      source: 'default_hte',
+    };
+  }
 
   // 1. Check in hostSupervisors (matching by ID or company name)
   const matchedHost = hostSupervisors.find((h) => {
@@ -215,33 +276,11 @@ export function resolveHteLocation(
 
   // 5. Permanent designated HTE establishment site coordinates (Fixed, never moving)
   if (hasValidCompany) {
-    let defLat = 10.742858;
-    let defLng = 122.970088;
-    let defAddr = 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines';
-
-    if (normCompany.includes('printing') || normCompany.includes('press')) {
-      defLat = 10.742858;
-      defLng = 122.970088;
-      defAddr = 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines';
-    } else if (normCompany.includes('concentrix')) {
-      defLat = 10.694261;
-      defLng = 122.959987;
-      defAddr = 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City';
-    } else if (normCompany.includes('chmsu') || normCompany.includes('carlos hilado') || normCompany.includes('campus')) {
-      defLat = 10.7410;
-      defLng = 122.9702;
-      defAddr = 'Carlos Hilado Memorial State University, Mabini St, Talisay City, Negros Occidental';
-    } else {
-      defLat = 10.742858;
-      defLng = 122.970088;
-      defAddr = `${rawCompany} Workplace Premises, Negros Occidental`;
-    }
-
     return {
-      lat: defLat,
-      lng: defLng,
+      lat: 10.742858,
+      lng: 122.970088,
       radius: 40,
-      address: compAddr || defAddr,
+      address: compAddr || 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines',
       name: `${rawCompany} Workplace Premises`,
       companyName: rawCompany,
       source: 'default_hte',

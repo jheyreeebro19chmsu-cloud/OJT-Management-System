@@ -57,12 +57,12 @@ export function HTETrainees() {
     const email = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase().trim();
     const id = currentUser?.id || currentEmp?.id || hteUser?.id;
     if (email.includes('reejhey') || id === '95558630-499b-4aac-b869-ba64b0694e8c') {
-      return 'Printing Services';
+      return 'CHMSU';
     }
     if (email.includes('ebro') || id === '89405c66-015c-407a-937b-71ab37b829d7') {
       return 'Concentrix';
     }
-    return 'Printing Services';
+    return 'CHMSU';
   }, [currentUser, currentEmp, hteUser]);
 
   const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
@@ -117,12 +117,19 @@ export function HTETrainees() {
   // Only trainees deployed to this HTE by the OJT Instructor
   const trainees = useMemo(() => {
     const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
-    const isPrinting =
+    const normCurrentComp = companyName.trim().toLowerCase();
+
+    const isChmsuOrPrinting =
       currentHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
       currentEmail.includes('reejhey') ||
-      companyName.toLowerCase().includes('printing');
+      normCurrentComp.includes('chmsu') ||
+      normCurrentComp.includes('printing');
 
-    const normCurrentComp = companyName.trim().toLowerCase();
+    const isConcentrix =
+      currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+      normCurrentComp.includes('concentrix') ||
+      currentEmail.includes('concentrix') ||
+      currentEmail.includes('jheyree.ebro');
 
     return allOjtTrainees.filter((e) => {
       const eComp = (e.companyName || '').trim().toLowerCase();
@@ -132,21 +139,19 @@ export function HTETrainees() {
 
       const hasAssignedCompany = eComp && !isInvalidHteCompany(eComp);
 
-      if (isPrinting) {
+      if (isChmsuOrPrinting) {
         if (hasAssignedCompany) {
-          return eComp.includes('printing') || eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+          return (
+            eComp.includes('chmsu') ||
+            eComp.includes('printing') ||
+            eHteId === '95558630-499b-4aac-b869-ba64b0694e8c'
+          );
         }
         if (eHteId) {
           return eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
         }
-        return (eEmpId.includes('PS') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
+        return (eEmpId.includes('CHMSU') || eEmpId.includes('PS') || eEmail.includes('.chmsu') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
       }
-
-      const isConcentrix =
-        currentHteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
-        normCurrentComp.includes('concentrix') ||
-        currentEmail.includes('concentrix') ||
-        currentEmail.includes('jheyree.ebro');
 
       if (isConcentrix) {
         if (hasAssignedCompany) {

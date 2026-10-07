@@ -2259,10 +2259,10 @@ export function transformSupabaseEmployee(data: any): Employee {
     position: data.position,
     companyName: (() => {
       if (data.company_name) return data.company_name;
-      if (data.hte_id === '95558630-499b-4aac-b869-ba64b0694e8c') return 'Printing Services';
+      if (data.hte_id === '95558630-499b-4aac-b869-ba64b0694e8c') return 'CHMSU';
       if (data.hte_id === '89405c66-015c-407a-937b-71ab37b829d7') return 'Concentrix';
       const empId = String(data.employee_id || '').toUpperCase();
-      if (empId.includes('PS')) return 'Printing Services';
+      if (empId.includes('CHMSU') || empId.includes('PS')) return 'CHMSU';
       if (empId.includes('CTX')) return 'Concentrix';
       return 'Pending Admin Assignment';
     })(),

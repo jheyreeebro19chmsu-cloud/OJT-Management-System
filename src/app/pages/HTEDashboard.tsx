@@ -100,7 +100,7 @@ export function HTEDashboard() {
           lng: 122.970088,
           radius: 40,
           address: 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines',
-          company: 'Printing Services',
+          company: 'CHMSU',
         }
       : {
           lat: 10.694261,
@@ -118,12 +118,13 @@ export function HTEDashboard() {
       const zName = (z.name || '').toLowerCase();
       // Strictly exclude personal trainee / student zones
       if (zName.includes('trainee') || zName.includes('student') || (z as any).userType === 'trainee') return false;
-      const cSearch = isPrinting ? 'printing' : 'concentrix';
+      const cSearch = isPrinting ? 'chmsu' : 'concentrix';
       return (
         z.id === currentUser?.id ||
         z.id === currentEmp?.id ||
         z.employeeId === currentUser?.id ||
         zName.includes(cSearch) ||
+        (isPrinting && zName.includes('printing')) ||
         zName.includes('workplace')
       );
     });
@@ -197,12 +198,13 @@ export function HTEDashboard() {
     });
 
     const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
-    const isPrinting =
+    const normCurrentComp = companyName.trim().toLowerCase();
+
+    const isChmsuOrPrinting =
       currentHteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
       currentEmail.includes('reejhey') ||
-      companyName.toLowerCase().includes('printing');
-
-    const normCurrentComp = companyName.trim().toLowerCase();
+      normCurrentComp.includes('chmsu') ||
+      normCurrentComp.includes('printing');
 
     const specificList = ojtList.filter((e) => {
       const eComp = (e.companyName || '').trim().toLowerCase();
@@ -212,14 +214,18 @@ export function HTEDashboard() {
 
       const hasAssignedCompany = eComp && !isInvalidHteCompany(eComp);
 
-      if (isPrinting) {
+      if (isChmsuOrPrinting) {
         if (hasAssignedCompany) {
-          return eComp.includes('printing') || eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+          return (
+            eComp.includes('chmsu') ||
+            eComp.includes('printing') ||
+            eHteId === '95558630-499b-4aac-b869-ba64b0694e8c'
+          );
         }
         if (eHteId) {
           return eHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
         }
-        return (eEmpId.includes('PS') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
+        return (eEmpId.includes('CHMSU') || eEmpId.includes('PS') || eEmail.includes('.chmsu') || eEmail.includes('.ps')) && !eEmpId.includes('CTX') && !eEmail.includes('.ctx');
       }
 
       const isConcentrix =

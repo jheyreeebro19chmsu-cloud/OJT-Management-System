@@ -11,9 +11,14 @@ const isUuid = (val) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 
 // Known HTE mappings for automatic linking
 const KNOWN_HTES = {
+  'chmsu': {
+    id: '95558630-499b-4aac-b869-ba64b0694e8c',
+    companyName: 'CHMSU',
+    supervisorName: 'Jhey Ree',
+  },
   'printing services': {
     id: '95558630-499b-4aac-b869-ba64b0694e8c',
-    companyName: 'Printing Services',
+    companyName: 'CHMSU',
     supervisorName: 'Jhey Ree',
   },
   'concentrix': {

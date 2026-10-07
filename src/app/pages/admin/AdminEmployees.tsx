@@ -375,8 +375,8 @@ export function AdminEmployees() {
     map.set('95558630-499b-4aac-b869-ba64b0694e8c', {
       id: '95558630-499b-4aac-b869-ba64b0694e8c',
       name: 'Jhey Ree',
-      email: 'jheyreeebro19chmsu@gmail.com',
-      companyName: 'Printing Services',
+      email: 'reejhey1@gmail.com',
+      companyName: 'CHMSU',
       companyAddress: 'Domingo Lizares Street, Purok Manpower, Zone 1, Talisay, Negros Occidental, Negros Island Region, 6115, Philippines',
       lat: 10.742858,
       lng: 122.970088,
@@ -387,7 +387,7 @@ export function AdminEmployees() {
     map.set('89405c66-015c-407a-937b-71ab37b829d7', {
       id: '89405c66-015c-407a-937b-71ab37b829d7',
       name: 'Jhey Ree C Ebro',
-      email: 'concentrix.supervisor@example.com',
+      email: 'jheyree.ebro@chmsu.edu.ph',
       companyName: 'Concentrix',
       companyAddress: 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod City',
       lat: 10.694261,
@@ -401,11 +401,11 @@ export function AdminEmployees() {
       if (!id) return;
       const key = id.toLowerCase();
       const existing = map.get(key) || map.get(id);
-      const isCtx = (h.companyName || '').toLowerCase().includes('concentrix');
-      const isPrinting = (h.companyName || '').toLowerCase().includes('printing');
-      const defLat = isCtx ? 10.694261 : isPrinting ? 10.742858 : h.registrationLocation?.lat;
-      const defLng = isCtx ? 122.959987 : isPrinting ? 122.970088 : h.registrationLocation?.lng;
-      const defRadius = isCtx || isPrinting ? 40 : (h.registrationRadius || h.registrationLocation?.radius || 40);
+      const isCtx = (h.companyName || '').toLowerCase().includes('concentrix') || id === '89405c66-015c-407a-937b-71ab37b829d7';
+      const isChmsuOrPrinting = (h.companyName || '').toLowerCase().includes('chmsu') || (h.companyName || '').toLowerCase().includes('printing') || id === '95558630-499b-4aac-b869-ba64b0694e8c';
+      const defLat = isCtx ? 10.694261 : isChmsuOrPrinting ? 10.742858 : h.registrationLocation?.lat;
+      const defLng = isCtx ? 122.959987 : isChmsuOrPrinting ? 122.970088 : h.registrationLocation?.lng;
+      const defRadius = isCtx || isChmsuOrPrinting ? 40 : (h.registrationRadius || h.registrationLocation?.radius || 40);
 
       map.set(key, {
         id: h.id,
@@ -430,11 +430,11 @@ export function AdminEmployees() {
       if (!id) return;
       const key = id.toLowerCase();
       const existing = map.get(key) || map.get(id);
-      const isCtx = (e.companyName || '').toLowerCase().includes('concentrix');
-      const isPrinting = (e.companyName || '').toLowerCase().includes('printing');
-      const defLat = isCtx ? 10.694261 : isPrinting ? 10.742858 : e.registrationLocation?.lat;
-      const defLng = isCtx ? 122.959987 : isPrinting ? 122.970088 : e.registrationLocation?.lng;
-      const defRadius = isCtx || isPrinting ? 40 : (e.registrationRadius || e.registrationLocation?.radius || 40);
+      const isCtx = (e.companyName || '').toLowerCase().includes('concentrix') || id === '89405c66-015c-407a-937b-71ab37b829d7';
+      const isChmsuOrPrinting = (e.companyName || '').toLowerCase().includes('chmsu') || (e.companyName || '').toLowerCase().includes('printing') || id === '95558630-499b-4aac-b869-ba64b0694e8c';
+      const defLat = isCtx ? 10.694261 : isChmsuOrPrinting ? 10.742858 : e.registrationLocation?.lat;
+      const defLng = isCtx ? 122.959987 : isChmsuOrPrinting ? 122.970088 : e.registrationLocation?.lng;
+      const defRadius = isCtx || isChmsuOrPrinting ? 40 : (e.registrationRadius || e.registrationLocation?.radius || 40);
 
       if (!existing) {
         map.set(key, {
@@ -775,7 +775,7 @@ export function AdminEmployees() {
       }
     }
 
-    const resolvedCompanyName = matchedHost ? matchedHost.companyName : (editForm.companyName.trim() || 'Printing Services');
+    const resolvedCompanyName = matchedHost ? matchedHost.companyName : (editForm.companyName.trim() || 'CHMSU');
     const resolvedSupervisorName = matchedHost ? matchedHost.name : (editForm.supervisorName.trim() || 'Jhey Ree');
     const resolvedHteId = matchedHost ? matchedHost.id : (editForm.hteId || (resolvedCompanyName.toLowerCase().includes('concentrix') ? '89405c66-015c-407a-937b-71ab37b829d7' : '95558630-499b-4aac-b869-ba64b0694e8c'));
 
@@ -3238,6 +3238,8 @@ export function AdminEmployees() {
                                         };
 
                                         const updatedFields: any = {
+                                          employeeId: selectedEmp.employeeId,
+                                          email: selectedEmp.email,
                                           hteId: matchedHost.id,
                                           companyName: matchedHost.companyName,
                                           companyAddress: hteLoc.address,
