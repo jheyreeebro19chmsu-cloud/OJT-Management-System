@@ -97,7 +97,24 @@ export function Dashboard() {
     refreshData,
   } = useApp();
   const employee = getCurrentEmployee();
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = useMemo(() => {
+    const role = (currentUser?.role || (employee as any)?.role || '').toLowerCase();
+    const pos = (currentUser?.position || employee?.position || '').toLowerCase();
+    if (role === 'admin' || role === 'instructor') return true;
+    if (pos.includes('instructor') || pos === 'administrator') return true;
+    try {
+      const u = localStorage.getItem('user');
+      if (u) {
+        const parsed = JSON.parse(u);
+        const pRole = (parsed.role || '').toLowerCase();
+        const pPos = (parsed.position || '').toLowerCase();
+        if (pRole === 'admin' || pRole === 'instructor' || pPos.includes('instructor') || pPos === 'administrator') {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }, [currentUser, employee]);
 
   // Automatically refresh data when instructor or admin views the dashboard
   useEffect(() => {
@@ -109,14 +126,28 @@ export function Dashboard() {
   const studentEmployees = useMemo(() => {
     const activeAY = settings?.activeAcademicYear || '2026-2027';
     const defaultAY = settings?.academicYears?.[0] || '2026-2027';
-    return employees.filter(
-      (e) =>
-        e.position !== 'OJT Instructor' &&
-        e.position !== 'HTE Representative' &&
-        !e.employeeId?.startsWith('ADM-') &&
-        !e.employeeId?.startsWith('HTE-') &&
-        (e.academicYear === activeAY || (!e.academicYear && (activeAY === defaultAY || !activeAY)) || e.academicYear === '2026-2027')
-    );
+    return employees.filter((e) => {
+      const pos = (e.position || '').toLowerCase();
+      const role = ((e as any).role || '').toLowerCase();
+      const isStaffOrHte =
+        role === 'admin' ||
+        role === 'instructor' ||
+        role === 'hte' ||
+        role === 'host' ||
+        pos === 'administrator' ||
+        pos.includes('instructor') ||
+        pos.includes('hte') ||
+        pos.includes('supervisor') ||
+        pos.includes('representative') ||
+        e.employeeId?.startsWith('ADM-') ||
+        e.employeeId?.startsWith('HTE-');
+      if (isStaffOrHte) return false;
+      return (
+        e.academicYear === activeAY ||
+        (!e.academicYear && (activeAY === defaultAY || !activeAY)) ||
+        e.academicYear === '2026-2027'
+      );
+    });
   }, [employees, settings?.activeAcademicYear, settings?.academicYears]);
 
   // HTE Linked students
@@ -298,7 +329,7 @@ export function Dashboard() {
   const currentEmp = employee || getCurrentEmployee();
   const empLookupId = currentEmp?.id || currentEmp?.employeeId || currentUser?.employeeId || currentUser?.id || '';
   const displayName = currentEmp?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
-  const displayId = currentEmp?.employeeId || (isAdmin ? 'ADMIN' : '');
+  const displayId = currentEmp?.employeeId || currentUser?.employeeId || (isAdmin ? 'INSTRUCTOR' : '');
   const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
   const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -344,7 +375,10 @@ export function Dashboard() {
   const totalRequired = docKeys.length;
   const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
   const missingDocsCount = totalRequired - uploadedDocsCount;
-  const isAllDocsPassed = uploadedDocsCount === totalRequired;
+  const isAllDocsPassed =
+    (currentEmp?.documentsPassed && currentEmp?.documentsStatus === 'passed') ||
+    currentEmp?.documentsPassed === true ||
+    uploadedDocsCount === totalRequired;
   const docsProgressPercent = Math.round((uploadedDocsCount / totalRequired) * 100);
 
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
@@ -552,12 +586,22 @@ export function Dashboard() {
   const handleApprove = async (student: Employee) => {
     setProcessingId(student.id);
     try {
+      const isUuidVal = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+      const resolvedInstructorId =
+        currentUser?.id && isUuidVal(currentUser.id)
+          ? currentUser.id
+          : employee?.id && isUuidVal(employee.id)
+          ? employee.id
+          : student.instructorId && isUuidVal(student.instructorId)
+          ? student.instructorId
+          : null;
+
       const { error } = await supabase
         .from('employees')
         .update({
           application_status: 'approved',
           active: true,
-          instructor_id: currentUser?.id || student.instructorId || null,
+          instructor_id: resolvedInstructorId,
         })
         .eq('id', student.id);
       if (error) throw error;
@@ -566,7 +610,7 @@ export function Dashboard() {
         active: true,
         approvalStatus: 'approved',
         applicationStatus: 'approved',
-        instructorId: currentUser?.id || student.instructorId,
+        instructorId: resolvedInstructorId || undefined,
         linkedAt: new Date().toISOString(),
       });
 
@@ -632,18 +676,7 @@ export function Dashboard() {
   const adminDocStats = useMemo(() => {
     if (!isAdmin) return { total: 0, compliant: 0, pending: 0, incomplete: 0, pendingSubmissions: [] };
 
-    const trainees = employees.filter((e) => {
-      const pos = (e.position || '').toLowerCase();
-      const role = ((e as any).role || '').toLowerCase();
-      return (
-        role !== 'admin' &&
-        role !== 'instructor' &&
-        role !== 'hte' &&
-        pos !== 'administrator' &&
-        !pos.includes('instructor') &&
-        !pos.includes('hte')
-      );
-    });
+    const trainees = studentEmployees;
 
     let compliant = 0;
     let pending = 0;
@@ -658,11 +691,22 @@ export function Dashboard() {
     trainees.forEach((emp) => {
       const docs = emp.submittedDocuments || {};
       const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
-      const hasPendingDoc = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+      const hasPendingDoc = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
+        const d = docs[k];
+        const hasFile = Boolean(d && (d.dataUrl || d.name || (d as any).fileUrl));
+        return hasFile && (d.status === 'pending' || d.status === 'submitted' || !d.status) && d.status !== 'passed' && d.status !== 'rejected';
+      });
 
-      if (passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (emp.documentsPassed && emp.documentsStatus === 'passed')) {
+      const isCompliant = Boolean(
+        (emp.documentsPassed && emp.documentsStatus === 'passed') ||
+        emp.documentsPassed === true ||
+        emp.documentsStatus === 'passed' ||
+        passedCount === REQUIRED_TRAINEE_DOC_KEYS.length
+      );
+
+      if (isCompliant) {
         compliant++;
-      } else if (hasPendingDoc || emp.documentsStatus === 'submitted') {
+      } else if (hasPendingDoc || emp.documentsStatus === 'submitted' || emp.documentsStatus === 'pending') {
         pending++;
       } else {
         incomplete++;
@@ -670,7 +714,9 @@ export function Dashboard() {
 
       REQUIRED_TRAINEE_DOCUMENTS.forEach((req) => {
         const d = docs[req.key];
-        if (d && (d.dataUrl || d.name) && d.status === 'pending') {
+        const hasFile = Boolean(d && (d.dataUrl || d.name || (d as any).fileUrl));
+        const isPendingItem = hasFile && (d.status === 'pending' || d.status === 'submitted' || !d.status) && d.status !== 'passed' && d.status !== 'rejected';
+        if (isPendingItem) {
           pendingSubmissions.push({
             employee: emp,
             docKey: req.key,
@@ -682,7 +728,7 @@ export function Dashboard() {
     });
 
     return { total: trainees.length, compliant, pending, incomplete, pendingSubmissions };
-  }, [employees, isAdmin]);
+  }, [studentEmployees, isAdmin]);
 
   const requiredHours = employee?.requiredHours ?? (isAdmin ? 0 : 486);
   const hoursProgress = requiredHours > 0 ? Math.min((totalHoursRendered / requiredHours) * 100, 100) : 0;
@@ -899,6 +945,121 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* Instructor: Pending Student Registrations Awaiting Verification */}
+        {pendingApps.length > 0 && (
+          <div className="bg-amber-50/70 rounded-2xl border border-amber-200/80 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-amber-200/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-sm shrink-0">
+                  <User size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">Pending Trainee Registrations</h3>
+                  <p className="text-xs text-amber-900/80 mt-0.5">
+                    Newly registered student trainees awaiting instructor approval to begin their OJT tracking
+                  </p>
+                </div>
+              </div>
+              <span className="px-3.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-full shadow-xs self-start sm:self-auto">
+                {pendingApps.length} Awaiting Approval
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {pendingApps.map((app) => (
+                <div key={app.id} className="bg-white p-4 rounded-xl border border-amber-200/70 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex justify-between items-start gap-2">
+                      <p className="font-bold text-gray-900 text-sm truncate" title={app.name}>{app.name}</p>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 shrink-0">
+                        {app.employeeId || 'ID: Pending'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{app.course || (app as any).year_section || 'Trainee'}</p>
+                    <p className="text-xs text-blue-700 font-semibold mt-1 flex items-center gap-1">
+                      <Building size={12} className="shrink-0" />
+                      <span className="truncate">{app.companyName || 'Host Establishment Pending'}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(app)}
+                      disabled={!!processingId}
+                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer text-center"
+                    >
+                      {processingId === app.id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleReject(app)}
+                      disabled={!!processingId}
+                      className="py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-lg transition-colors border border-red-200 disabled:opacity-50 cursor-pointer"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Instructor: HTE Student Access Requests */}
+        {hteRequests.some((req) => req.status === 'pending') && (
+          <div className="bg-blue-50/70 rounded-2xl border border-blue-200/80 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-blue-200/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                  <Building size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">HTE Access Requests</h3>
+                  <p className="text-xs text-blue-900/80 mt-0.5">
+                    Host Training Establishments requesting access to supervise trainees
+                  </p>
+                </div>
+              </div>
+              <span className="px-3.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-full shadow-xs self-start sm:self-auto">
+                {hteRequests.filter((r) => r.status === 'pending').length} Pending Requests
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {hteRequests.filter((req) => req.status === 'pending').map((req) => (
+                <div key={req.id} className="bg-white p-4 rounded-xl border border-blue-200/70 shadow-xs flex flex-col justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                      {req.host_supervisors?.company_name || 'Host Company'}
+                    </p>
+                    <p className="font-bold text-gray-800 text-sm mt-1">
+                      {req.host_supervisors?.name}{' '}
+                      <span className="font-normal text-gray-400 text-xs">requests</span> {req.employees?.name}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => handleApproveHte(req)}
+                      disabled={!!processingId}
+                      className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+                    >
+                      {processingId === req.id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectHte(req)}
+                      disabled={!!processingId}
+                      className="py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-lg transition-colors border border-red-200 disabled:opacity-50 cursor-pointer"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Linked Students Status */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -1940,147 +2101,6 @@ export function Dashboard() {
           </div>
         )}
       </motion.div>
-
-      {/* Instructor: Pending Applications */}
-      {isAdmin && pendingApps.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                  <User size={18} className="text-amber-600" />
-                </div>
-                <h3 className="font-bold text-gray-800">Pending OJT Applications</h3>
-              </div>
-              <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full">
-                {pendingApps.length} New
-              </span>
-            </div>
-
-            <div className="space-y-4">
-              {pendingApps.map((app) => (
-                <div key={app.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-bold text-gray-800">{app.name}</p>
-                      <p className="text-xs text-gray-500">{(app as any).year_section || 'No Section'}</p>
-                      <p className="text-xs text-blue-600 mt-1 font-medium">{app.companyName}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleApprove(app)}
-                        disabled={!!processingId}
-                        className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleReject(app)}
-                        disabled={!!processingId}
-                        className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Instructor: HTE Access Requests */}
-      {isAdmin && hteRequests.some((req) => req.status === 'pending') && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Building size={18} className="text-blue-600" />
-                </div>
-                <h3 className="font-bold text-gray-800">HTE Access Requests</h3>
-              </div>
-              <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">
-                {hteRequests.length} New
-              </span>
-            </div>
-
-            <div className="space-y-4">
-                {hteRequests.filter((req) => req.status === 'pending').map((req) => (
-                <div key={req.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">
-                        {req.host_supervisors?.company_name}
-                      </p>
-                      <p className="font-bold text-gray-800 mt-1">
-                        {req.host_supervisors?.name}{' '}
-                        <span className="font-normal text-gray-400">requests access to</span> {req.employees?.name}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleApproveHte(req)}
-                        disabled={!!processingId}
-                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleRejectHte(req)}
-                        disabled={!!processingId}
-                        className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Instructor: OJT assigned to an HTE */}
-      {isAdmin && hteRequests.some((req) => req.status === 'approved') && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-          <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Building size={18} className="text-green-600" />
-                </div>
-                <h3 className="font-bold text-gray-800">OJT Assigned to HTE</h3>
-              </div>
-              <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">
-                {hteRequests.filter((req) => req.status === 'approved').length} Assigned
-              </span>
-            </div>
-            <div className="space-y-3">
-              {hteRequests
-                .filter((req) => req.status === 'approved')
-                .map((req) => (
-                  <div key={req.id} className="p-4 rounded-2xl bg-green-50 border border-green-100">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-gray-800">{req.employees?.name || 'Unknown OJT'}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {req.employees?.employeeId || req.employees?.employee_id || 'No student ID'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs font-bold text-green-700">{req.host_supervisors?.company_name || 'HTE'}</p>
-                        <p className="text-xs text-gray-500 mt-1">{req.host_supervisors?.name || 'HTE representative'}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
 
       {/* Primary Call-To-Action (CTA): Pronounced Clock In / Clock Out Hero Button */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
