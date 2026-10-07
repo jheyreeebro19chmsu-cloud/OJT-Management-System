@@ -85,26 +85,8 @@ export function AdminHostFeedback() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedItemForView, setSelectedItemForView] = useState<UnifiedFeedbackItem | null>(null);
 
-  // Helper to ensure supervisor strictly matches the 2 official supervisors: Jhey Ree C Ebro (Concentrix) and Yzel B. Norte (Printing Services)
+  // Helper to ensure supervisor strictly matches the official HTE supervisor: Jhey Ree C Ebro (Concentrix)
   const getOfficialSupervisorName = (company?: string, rawSupervisor?: string, emp?: Employee | null): string => {
-    const comp = (company || emp?.companyName || '').trim().toLowerCase();
-    if (comp.includes('concentrix')) {
-      return 'Jhey Ree C Ebro';
-    }
-    if (comp.includes('printing')) {
-      return 'Yzel B. Norte';
-    }
-    const matchedHost = hostSupervisors.find(
-      (h) => h.companyName && comp.includes(h.companyName.toLowerCase().trim())
-    );
-    if (matchedHost?.name) return matchedHost.name;
-
-    const normRaw = (rawSupervisor || emp?.supervisorName || '').trim().toLowerCase();
-    if (normRaw.includes('ebro') || normRaw.includes('jhey')) return 'Jhey Ree C Ebro';
-    if (normRaw.includes('norte') || normRaw.includes('yzel')) return 'Yzel B. Norte';
-
-    // The system ONLY contains 2 supervisors: Jhey Ree C Ebro and Yzel B. Norte.
-    // Legacy mock names (e.g. Karen Joy Villamor, Gilza Dojoles, etc.) are strictly forbidden.
     return 'Jhey Ree C Ebro';
   };
 

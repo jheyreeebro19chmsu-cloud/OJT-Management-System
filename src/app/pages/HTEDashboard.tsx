@@ -66,33 +66,17 @@ export function HTEDashboard() {
   }, []);
 
   const companyName = useMemo(() => {
-    if (currentEmp?.companyName && currentEmp.companyName !== 'Host Training Establishment Partner' && currentEmp.companyName !== 'Host Training Establishment') {
-      return currentEmp.companyName;
-    }
-    const name = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
-    const email = (currentUser?.email || currentEmp?.email || '').toLowerCase();
-    if (name.includes('jhey') || email.includes('reejhey') || email.includes('jheyree')) {
-      return 'Concentrix';
-    }
-    if (name.includes('yzel') || email.includes('yzel')) {
-      return 'Printing Services';
-    }
-    return (
-      currentEmp?.companyName ||
-      hteUser?.companyName ||
-      localStorage.getItem('ojt_hte_company') ||
-      'Host Training Establishment'
-    );
-  }, [currentEmp, currentUser, hteUser]);
+    return 'Concentrix';
+  }, []);
 
   const hteZone = useMemo(() => {
-    const cName = (companyName || '').toLowerCase().trim();
+    const cName = 'concentrix';
     const empId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || '';
     const found = geofenceZones.find(
       (z) =>
         z.id === `station-${empId}` ||
         z.id === (currentUser as any)?.hteId ||
-        (cName && z.name && z.name.toLowerCase().includes(cName))
+        (z.name && z.name.toLowerCase().includes(cName))
     );
     if (found) return found;
     const loc = currentEmp?.registrationLocation || (currentUser as any)?.registrationLocation;
@@ -155,10 +139,8 @@ export function HTEDashboard() {
       return true;
     });
 
-    const compLower = (companyName || '').trim().toLowerCase();
+    const compLower = 'concentrix';
     const currentName = (currentUser?.name || currentEmp?.name || hteUser?.name || '').toLowerCase();
-    const isConcentrixUser = compLower.includes('concentrix') || currentName.includes('jhey');
-    const isPrintingUser = compLower.includes('printing') || currentName.includes('yzel');
 
     const specificList = ojtList.filter((e) => {
       const eComp = (e.companyName || '').trim().toLowerCase();
@@ -172,19 +154,12 @@ export function HTEDashboard() {
           (currentEmp?.employeeId && e.hteId === currentEmp.employeeId)
         )) ||
         // 2. Concentrix supervisor linkage (both seeded Concentrix ID & auth ID)
-        (isConcentrixUser && (
-          e.hteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
-          e.hteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
-          eComp.includes('concentrix')
-        )) ||
-        // 3. Printing Services supervisor linkage
-        (isPrintingUser && (
-          e.hteId === 'ee755083-2cb1-4788-9be6-b13d4518d158' ||
-          eComp.includes('printing')
-        )) ||
-        // 4. Company name match
-        (compLower && compLower !== 'host training establishment' && eComp && (eComp === compLower || eComp.includes(compLower) || compLower.includes(eComp))) ||
-        // 5. Supervisor name match
+        (e.hteId === '89405c66-015c-407a-937b-71ab37b829d7' ||
+         e.hteId === '95558630-499b-4aac-b869-ba64b0694e8c' ||
+         eComp.includes('concentrix')) ||
+        // 3. Company name match
+        (compLower && eComp && (eComp === compLower || eComp.includes(compLower) || compLower.includes(eComp))) ||
+        // 4. Supervisor name match
         (currentName && eSupervisor && (eSupervisor.includes(currentName) || currentName.includes(eSupervisor)))
       );
       return isAssignedToCurrentHte;

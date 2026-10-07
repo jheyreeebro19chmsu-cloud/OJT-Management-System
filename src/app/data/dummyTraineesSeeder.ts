@@ -4,20 +4,20 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 export const DEMO_TAG_PREFIX = 'OJT-2024-D';
 export const DEMO_EMAIL_DOMAIN = 'demo.chmsu.edu.ph';
 
-// HTE 3: Printing Services (Yzel Norte)
+// HTE: Concentrix (Jhey Ree)
 export const HTE_3_PRINTING_SERVICES = {
-  id: 'b3171b8e-5912-4b09-8468-e1084ca97ccd',
-  employeeId: 'HTE-DEMO-003',
-  name: 'Printing Services',
-  contactPerson: 'Yzel Norte',
-  email: 'norteyzel@gmail.com',
+  id: '95558630-499b-4aac-b869-ba64b0694e8c',
+  employeeId: 'HTE-CTX-001',
+  name: 'Concentrix',
+  contactPerson: 'Jhey Ree',
+  email: 'reejhey1@gmail.com',
   position: 'HTE Representative',
-  department: 'Printing & Media Services',
-  address: 'Printing Services, Negros Occidental',
+  department: 'Operations',
+  address: 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod',
   phone: '0918-420-1192',
-  lat: 10.822655,
-  lng: 123.033082,
-  radius: 100,
+  lat: 10.694261,
+  lng: 122.959987,
+  radius: 40,
   academicYear: '2026-2027',
 };
 

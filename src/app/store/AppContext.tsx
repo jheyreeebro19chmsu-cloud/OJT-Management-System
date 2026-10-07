@@ -4324,7 +4324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, fixedRecords);
     }
 
-    // 3. Ensure evaluations have academicYear and official HTE supervisor name (Jhey Ree C Ebro for Concentrix, Yzel B. Norte for Printing Services)
+    // 3. Ensure evaluations have academicYear and official HTE supervisor name (Jhey Ree C Ebro for Concentrix)
     const fixedEvals = evaluations.map((ev) => {
       const emp = fixedEmployees.find(
         (e) =>
@@ -4332,12 +4332,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           e.employeeId === ev.employeeId ||
           (e.email && ev.employeeId && e.email.toLowerCase() === ev.employeeId.toLowerCase())
       );
-      const comp = (emp?.companyName || '').toLowerCase();
-      const officialSup = comp.includes('concentrix')
-        ? 'Jhey Ree C Ebro'
-        : comp.includes('printing')
-        ? 'Yzel B. Norte'
-        : ev.evaluatedBy || emp?.supervisorName || 'HTE Supervisor';
+      const officialSup = 'Jhey Ree C Ebro';
 
       return {
         ...ev,
@@ -4358,17 +4353,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           e.employeeId === hf.employeeId ||
           (e.email && hf.employeeId && e.email.toLowerCase() === hf.employeeId.toLowerCase())
       );
-      const comp = (hf.hostCompany || emp?.companyName || '').toLowerCase();
-      const officialSup = comp.includes('concentrix')
-        ? 'Jhey Ree C Ebro'
-        : comp.includes('printing')
-        ? 'Yzel B. Norte'
-        : hf.hostName || emp?.supervisorName || 'HTE Supervisor';
+      const officialSup = 'Jhey Ree C Ebro';
 
       return {
         ...hf,
         hostName: officialSup,
-        hostCompany: comp.includes('concentrix') ? 'Concentrix' : comp.includes('printing') ? 'Printing Services' : hf.hostCompany,
+        hostCompany: 'Concentrix',
         academicYear: hf.academicYear || emp?.academicYear || activeAY || defaultAY,
       };
     });

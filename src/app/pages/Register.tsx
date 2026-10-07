@@ -481,20 +481,12 @@ export function Register() {
     }
 
     const resolvedRepName = fullName || [fName, lName].filter(Boolean).join(' ') || 'HTE Representative';
-    const repNameLower = resolvedRepName.toLowerCase();
-    const repEmailLower = (email || '').toLowerCase();
-    const isConcentrix = repNameLower.includes('jhey') || repEmailLower.includes('jhey') || repEmailLower.includes('reejhey');
-    const isPrinting = repNameLower.includes('yzel') || repEmailLower.includes('yzel');
-    const resolvedCompany = isConcentrix ? 'Concentrix' : isPrinting ? 'Printing Services' : 'Host Training Establishment Partner';
-    const resolvedStreet = isConcentrix ? 'Santa Clara Avenue, Banago' : 'Domingo Lizares Street, Purok Manpower';
-    const resolvedAddress = isConcentrix
-      ? 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod'
-      : `${resolvedStreet}, Zone 1, Talisay City, Negros Occidental`;
+    const resolvedCompany = 'Concentrix';
+    const resolvedStreet = 'Santa Clara Avenue, Banago';
+    const resolvedAddress = 'Helix Service Center, Santa Clara Avenue, Banago, Bacolod';
 
-    if (isConcentrix) {
-      setRegistrationLocation({ lat: 10.694261, lng: 122.959987, accuracy: 15 });
-      setRegistrationAddress('Helix Service Center, Santa Clara Avenue, Banago, Bacolod');
-    }
+    setRegistrationLocation({ lat: 10.694261, lng: 122.959987, accuracy: 15 });
+    setRegistrationAddress('Helix Service Center, Santa Clara Avenue, Banago, Bacolod');
 
     setForm((prev) => ({
       ...prev,
