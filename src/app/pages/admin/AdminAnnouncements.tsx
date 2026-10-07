@@ -344,8 +344,16 @@ export function AdminAnnouncements() {
                           👤 {ROLE_LABELS[ann.targetRole]}
                         </span>
                         {ann.createdBy && (
-                          <span className="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-bold">
-                            By {ann.createdBy} ({ann.createdByRole || 'host'})
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border ${
+                              ann.createdByRole === 'admin'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : ann.createdByRole === 'employee'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-purple-50 text-purple-800 border-purple-200'
+                            }`}
+                          >
+                            {ann.createdByRole === 'admin' ? '🎓 Instructor:' : ann.createdByRole === 'employee' ? '👤 Trainee:' : '🏢 HTE:'} {ann.createdBy}
                           </span>
                         )}
                         {ann.expiresAt && (

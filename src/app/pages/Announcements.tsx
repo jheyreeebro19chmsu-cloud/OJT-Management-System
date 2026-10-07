@@ -1,11 +1,63 @@
-import { Bell, Camera, CheckCircle, Clock, MessageSquare, XCircle } from 'lucide-react';
+import {
+  Bell,
+  Camera,
+  CheckCircle,
+  Clock,
+  MessageSquare,
+  XCircle,
+  Plus,
+  Trash2,
+  Pin,
+  Info,
+  AlertTriangle,
+  Megaphone,
+  User,
+  GraduationCap,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import React, { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { authAPI } from '../services/authApi';
 import { API_BASE } from '../services/config';
 import type { Announcement } from '../types';
 import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
+
+const TYPE_CONFIG: Record<
+  Announcement['type'],
+  { label: string; color: string; bg: string; border: string; icon: React.ReactNode }
+> = {
+  info: {
+    label: 'Information',
+    color: 'text-blue-700',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    icon: <Info size={13} />,
+  },
+  warning: {
+    label: 'Notice & Reminder',
+    color: 'text-amber-700',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    icon: <AlertTriangle size={13} />,
+  },
+  success: {
+    label: 'Good News / Update',
+    color: 'text-emerald-700',
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    icon: <CheckCircle size={13} />,
+  },
+  urgent: {
+    label: 'Urgent Alert',
+    color: 'text-rose-700',
+    bg: 'bg-rose-50',
+    border: 'border-rose-300',
+    icon: <Bell size={13} />,
+  },
+};
 
 export function Announcements() {
   const {
@@ -16,34 +68,66 @@ export function Announcements() {
     getAnnouncementSubmissionStatus,
     submitAnnouncementResponse,
     addAnnouncement,
+    deleteAnnouncement,
     getAnnouncementComments,
     addAnnouncementComment,
+    settings,
   } = useApp();
+
   const employee = getCurrentEmployee();
+  const activeUser = employee || currentUser;
+
+  const isInstructor = Boolean(
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'instructor' ||
+    (currentUser?.position && currentUser.position.toLowerCase().includes('instructor')) ||
+    (employee?.position && employee.position.toLowerCase().includes('instructor')) ||
+    (employee as any)?.role === 'instructor'
+  );
+
+  const authorRole: 'admin' | 'employee' = isInstructor ? 'admin' : 'employee';
+  const authorName = currentUser?.name || employee?.name || (isInstructor ? 'OJT Instructor' : 'Trainee');
+
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | undefined>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
-  
+
   const [isPosting, setIsPosting] = useState(false);
-  const [newPost, setNewPost] = useState({ title: '', content: '', photo: '' });
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+  const [newPost, setNewPost] = useState<{
+    title: string;
+    content: string;
+    photo: string;
+    type: Announcement['type'];
+    targetRole: Announcement['targetRole'];
+  }>({
+    title: '',
+    content: '',
+    photo: '',
+    type: 'info',
+    targetRole: 'all',
+  });
 
   const handlePostComment = async (announcementId: string) => {
     const text = (commentDrafts[announcementId] || '').trim();
-    if (!text || !employee) return;
+    if (!text || !activeUser) return;
 
     await addAnnouncementComment({
       announcementId,
-      employeeId: employee.id,
-      authorName: currentUser?.name || employee.name,
-      authorRole: 'trainee',
+      employeeId: activeUser.id,
+      authorName,
+      authorRole: isInstructor ? 'admin' : 'trainee',
       content: text,
       createdAt: new Date().toISOString(),
     });
 
     setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
+    toast.success('Comment posted!');
   };
 
-  const announcements = useMemo(() => getActiveAnnouncements('employee'), [getActiveAnnouncements]);
+  const announcements = useMemo(() => {
+    return getActiveAnnouncements(isInstructor ? 'admin' : 'employee');
+  }, [getActiveAnnouncements, isInstructor]);
 
   const onPickPhoto = async (announcementId: string, file?: File) => {
     if (!file) return;
@@ -52,120 +136,252 @@ export function Announcements() {
   };
 
   const submit = (announcement: Announcement) => {
-    if (!employee) return;
+    if (!activeUser) return;
     const message = (messageDrafts[announcement.id] || '').trim();
     const photo = photoDrafts[announcement.id];
     if (!message && !photo) return;
-    // If backend is configured, POST to server; else use local context
+
     if (API_BASE) {
       const formData = new FormData();
       formData.append('announcement_id', announcement.id);
-      formData.append('user_id', String(employee.id));
+      formData.append('user_id', String(activeUser.id));
       formData.append('message', message);
       if (photo && photo.startsWith('data:')) {
-        // convert data URL to blob
         fetch(photo)
           .then((r) => r.blob())
           .then((blob) => {
             formData.append('image', blob, `submission_${Date.now()}.jpg`);
             authAPI
-              .submitAnnouncementResponse(announcement.id, Number(employee.id), formData)
+              .submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData)
               .then(() => {
-                // update local mirror
-                submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+                submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
+                toast.success('Response submitted!');
               })
               .catch(() => {
-                // fallback local
-                submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+                submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
+                toast.success('Response submitted!');
               });
           })
-          .catch(() => submitAnnouncementResponse(announcement.id, employee.id, message, photo));
+          .catch(() => {
+            submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
+            toast.success('Response submitted!');
+          });
       } else {
         authAPI
-          .submitAnnouncementResponse(announcement.id, Number(employee.id), formData)
+          .submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData)
           .then(() => {
-            submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+            submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
+            toast.success('Response submitted!');
           })
-          .catch(() => submitAnnouncementResponse(announcement.id, employee.id, message, photo));
+          .catch(() => {
+            submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
+            toast.success('Response submitted!');
+          });
       }
     } else {
-      submitAnnouncementResponse(announcement.id, employee.id, message, photo);
+      submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
+      toast.success('Response submitted!');
     }
     setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
     setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: undefined }));
   };
-  const handleCreatePost = () => {
-    if (!newPost.title.trim() || !newPost.content.trim()) return;
-    addAnnouncement({
-      title: newPost.title,
-      content: newPost.content,
-      photo: newPost.photo,
-      type: 'info',
-      targetRole: 'employee',
-      isPinned: false,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.name || employee.name,
-      createdByRole: 'employee',
-    });
-    setNewPost({ title: '', content: '', photo: '' });
-    setIsPosting(false);
+
+  const handleCreatePost = async () => {
+    if (!newPost.title.trim() || !newPost.content.trim()) {
+      toast.error('Please provide both a title and details.');
+      return;
+    }
+    setIsSubmittingPost(true);
+    try {
+      addAnnouncement({
+        title: newPost.title.trim(),
+        content: newPost.content.trim(),
+        photo: newPost.photo || undefined,
+        type: newPost.type,
+        targetRole: newPost.targetRole,
+        isPinned: false,
+        createdAt: new Date().toISOString(),
+        createdBy: authorName,
+        createdByRole: authorRole,
+        academicYear: settings?.activeAcademicYear,
+      });
+
+      toast.success(isInstructor ? 'Instructor announcement posted!' : 'Trainee announcement posted!');
+      setNewPost({ title: '', content: '', photo: '', type: 'info', targetRole: 'all' });
+      setIsPosting(false);
+    } catch (err: any) {
+      toast.error('Failed to post announcement: ' + (err?.message || 'Error'));
+    } finally {
+      setIsSubmittingPost(false);
+    }
   };
 
-  if (!employee) {
-    return <div className="text-sm text-gray-500">Employee profile not found.</div>;
+  const handleDeleteAnnouncement = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this announcement?')) {
+      deleteAnnouncement(id);
+      toast.success('Announcement removed.');
+    }
+  };
+
+  if (!activeUser) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-sm text-gray-500 shadow-xs">
+        <Megaphone size={36} className="mx-auto text-blue-500 mb-2 opacity-50" />
+        Please log in to view and post announcements.
+      </div>
+    );
   }
 
+  // Count strictly required submission tasks
+  const requiredSubmissionAnnouncements = announcements.filter((a) => a.requiresSubmission);
+  const missedCount = requiredSubmissionAnnouncements.filter((a) => getAnnouncementSubmissionStatus(a, activeUser.id) === 'missed').length;
+  const passedCount = requiredSubmissionAnnouncements.filter((a) => getAnnouncementSubmissionStatus(a, activeUser.id) === 'passed').length;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 rounded-3xl p-6 text-white shadow-md">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Announcements & Updates</h2>
-          <p className="text-sm text-gray-500">Notices, reminders, updates, and important information for your OJT.</p>
-        </div>
-        
-        <div className="flex gap-2">
-          <div className="bg-white px-4 py-2 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center min-w-[80px]">
-            <p className="text-xs text-gray-400 font-medium">Missing</p>
-            <p className="text-lg font-bold text-red-600">
-              {announcements.filter(a => getAnnouncementSubmissionStatus(a, employee.id) === 'missed').length}
-            </p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
+              <Megaphone size={18} className="text-blue-200" />
+            </span>
+            <h2 className="text-xl font-black tracking-tight">Announcements & Feed</h2>
           </div>
-          <div className="bg-white px-4 py-2 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center min-w-[80px]">
-            <p className="text-xs text-gray-400 font-medium">Turned In</p>
-            <p className="text-lg font-bold text-green-600">
-              {announcements.filter(a => getAnnouncementSubmissionStatus(a, employee.id) === 'passed').length}
-            </p>
-          </div>
+          <p className="text-xs text-blue-200">
+            Official announcements, updates, notices, and reminders for OJT Trainees & Instructors.
+          </p>
         </div>
+
+        {requiredSubmissionAnnouncements.length > 0 && (
+          <div className="flex gap-2">
+            <div className="bg-white/10 backdrop-blur-xs px-3.5 py-1.5 rounded-2xl border border-white/20 flex flex-col items-center min-w-[75px]">
+              <p className="text-[10px] text-blue-200 font-medium">Missing</p>
+              <p className="text-base font-extrabold text-rose-300">{missedCount}</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-xs px-3.5 py-1.5 rounded-2xl border border-white/20 flex flex-col items-center min-w-[75px]">
+              <p className="text-[10px] text-blue-200 font-medium">Turned In</p>
+              <p className="text-base font-extrabold text-emerald-300">{passedCount}</p>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm space-y-3">
+      {/* Post Box (Available for both Trainees and Instructors) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
         {!isPosting ? (
-          <button
-            onClick={() => setIsPosting(true)}
-            className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-xl text-gray-500 text-sm font-medium transition-colors border border-gray-200"
-          >
-            Share a notice, reminder, update, or important information with the team...
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold shrink-0">
+              {isInstructor ? <GraduationCap size={18} /> : <User size={18} />}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPosting(true)}
+              className="flex-1 text-left px-4 py-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl text-slate-500 text-xs sm:text-sm font-medium transition-colors border border-slate-200 flex items-center justify-between cursor-pointer"
+            >
+              <span>
+                {isInstructor
+                  ? 'Post an official instructor announcement or reminder...'
+                  : 'Post an announcement, update, or notice for the group...'}
+              </span>
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
+                <Plus size={12} /> Create Post
+              </span>
+            </button>
+          </div>
         ) : (
-          <div className="space-y-3">
-            <input
-              value={newPost.title}
-              onChange={(e) => setNewPost(p => ({ ...p, title: e.target.value }))}
-              placeholder="Update Title"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
-            />
-            <textarea
-              value={newPost.content}
-              onChange={(e) => setNewPost(p => ({ ...p, content: e.target.value }))}
-              placeholder="What's on your mind?"
-              rows={3}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-            <div className="flex items-center gap-2">
-              <label className="text-xs flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors">
-                <Camera size={14} />
-                Attach Photo
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    isInstructor
+                      ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  }`}
+                >
+                  {isInstructor ? '🎓 Posting as Instructor' : '👤 Posting as Trainee'}
+                </span>
+                <span className="text-xs font-semibold text-slate-700">{authorName}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPosting(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">Announcement Type</label>
+                <select
+                  value={newPost.type}
+                  onChange={(e) => setNewPost((p) => ({ ...p, type: e.target.value as any }))}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium"
+                >
+                  <option value="info">ℹ️ General Information</option>
+                  <option value="warning">⚠️ Notice / Reminder</option>
+                  <option value="success">🎉 Good News / Update</option>
+                  <option value="urgent">🚨 Urgent Notice</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 block mb-1">Target Audience</label>
+                <select
+                  value={newPost.targetRole}
+                  onChange={(e) => setNewPost((p) => ({ ...p, targetRole: e.target.value as any }))}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium"
+                >
+                  <option value="all">🌐 Everyone (Trainees & Instructors)</option>
+                  <option value="employee">👥 Trainees Only</option>
+                  <option value="admin">🎓 Instructors / Staff Only</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">Announcement Title</label>
+              <input
+                type="text"
+                value={newPost.title}
+                onChange={(e) => setNewPost((p) => ({ ...p, title: e.target.value }))}
+                placeholder="e.g. OJT Weekly Journal Deadline / Office Schedule Reminder"
+                className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">Message Content</label>
+              <textarea
+                value={newPost.content}
+                onChange={(e) => setNewPost((p) => ({ ...p, content: e.target.value }))}
+                placeholder="Provide details, instructions, schedules, or reminders..."
+                rows={3}
+                className="w-full px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+
+            {/* Photo Attachment Preview */}
+            {newPost.photo && (
+              <div className="relative inline-block border border-slate-200 rounded-xl overflow-hidden group">
+                <img src={newPost.photo} alt="Preview" className="h-24 w-auto object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setNewPost((p) => ({ ...p, photo: '' }))}
+                  className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <label className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors text-slate-700 font-medium">
+                <Camera size={14} className="text-blue-600" />
+                <span>Attach Photo / Image</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -174,26 +390,28 @@ export function Announcements() {
                     const f = e.target.files?.[0];
                     if (f) {
                       const b64 = await readAsDataUrl(f);
-                      setNewPost(p => ({ ...p, photo: b64 }));
+                      setNewPost((p) => ({ ...p, photo: b64 }));
                     }
                   }}
                 />
               </label>
-              {newPost.photo && <span className="text-[10px] text-green-600 font-bold flex items-center gap-1"><CheckCircle size={10} /> Photo added</span>}
-              
-              <div className="ml-auto flex gap-2">
+
+              <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setIsPosting(false)}
-                  className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleCreatePost}
-                  disabled={!newPost.title.trim() || !newPost.content.trim()}
-                  className="px-4 py-2 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-all shadow-md shadow-blue-100"
+                  disabled={isSubmittingPost || !newPost.title.trim() || !newPost.content.trim()}
+                  className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-50 transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
                 >
-                  Post Update
+                  <Megaphone size={13} />
+                  <span>{isSubmittingPost ? 'Posting...' : 'Post Announcement'}</span>
                 </button>
               </div>
             </div>
@@ -202,61 +420,112 @@ export function Announcements() {
       </div>
 
       {announcements.length === 0 ? (
-        <div className="rounded-2xl bg-white border border-gray-100 p-6 text-center text-sm text-gray-500">
-          No announcements yet.
+        <div className="rounded-2xl bg-white border border-slate-200/80 p-8 text-center text-sm text-slate-500 shadow-xs">
+          <Megaphone size={36} className="mx-auto text-slate-300 mb-2" />
+          No announcements yet. Be the first to post an update!
         </div>
       ) : (
         announcements.map((announcement) => {
-          const submission = getAnnouncementSubmission(announcement.id, employee.id);
-          const status = getAnnouncementSubmissionStatus(announcement, employee.id);
+          const submission = activeUser ? getAnnouncementSubmission(announcement.id, activeUser.id) : null;
+          const status = activeUser ? getAnnouncementSubmissionStatus(announcement, activeUser.id) : 'pending';
+          const typeConf = TYPE_CONFIG[announcement.type || 'info'] || TYPE_CONFIG.info;
+
+          const canDelete = Boolean(
+            isInstructor ||
+            announcement.createdBy === authorName ||
+            announcement.createdBy === activeUser?.name ||
+            (announcement.createdByRole === 'employee' && !isInstructor && announcement.createdBy === activeUser?.name)
+          );
+
           return (
-            <div key={announcement.id} className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
+            <div key={announcement.id} className="rounded-2xl bg-white border border-slate-200/80 p-5 space-y-3.5 shadow-xs transition-shadow hover:shadow-sm">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-bold text-gray-800">{announcement.title}</p>
-                    {announcement.createdBy && (
-                      <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-md border border-gray-100">
-                        By {announcement.createdBy}
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 border ${typeConf.bg} ${typeConf.color} ${typeConf.border}`}>
+                      {typeConf.icon}
+                      {typeConf.label}
+                    </span>
+
+                    {/* Author Role Badge */}
+                    {announcement.createdByRole === 'admin' ? (
+                      <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <GraduationCap size={11} className="text-blue-600" />
+                        Instructor: {announcement.createdBy}
+                      </span>
+                    ) : announcement.createdByRole === 'employee' ? (
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <User size={11} className="text-emerald-600" />
+                        Trainee: {announcement.createdBy}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        🏢 {announcement.createdBy || 'HTE Partner'}
                       </span>
                     )}
+
+                    {announcement.isPinned && (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <Pin size={10} /> Pinned
+                      </span>
+                    )}
+
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {new Date(announcement.createdAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{announcement.content}</p>
+
+                  <h3 className="font-bold text-slate-900 text-base">{announcement.title}</h3>
+                  <p className="text-xs sm:text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{announcement.content}</p>
                 </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <StatusBadge status={status} />
+
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {announcement.requiresSubmission && <StatusBadge status={status} />}
+                  <div className="flex items-center gap-1.5">
+                    {canDelete && (
                       <button
                         type="button"
-                        onClick={() => {
-                          // Print only this announcement
-                          const html = `
-                            <html>
-                              <head>
-                                <title>${announcement.title}</title>
-                                <style>body{font-family:sans-serif;padding:20px;} .title{font-size:20px;font-weight:700;} .meta{color:#666;font-size:12px;margin-bottom:8px;} img{max-width:100%;height:auto;margin-top:12px;border:1px solid #ddd;padding:4px;border-radius:6px;}</style>
-                              </head>
-                              <body>
-                                <div class="title">${announcement.title}</div>
-                                <div class="meta">By ${announcement.createdBy || 'N/A'} • ${new Date(announcement.createdAt).toLocaleString()}</div>
-                                <div class="content">${announcement.content.replace(/\n/g, '<br/>')}</div>
-                                ${announcement.photo ? `<img src="${announcement.photo}" alt="announcement photo"/>` : ''}
-                              </body>
-                            </html>`;
-                          const w = window.open('', '_blank', 'noopener');
-                          if (!w) return;
-                          w.document.open();
-                          w.document.write(html);
-                          w.document.close();
-                          w.focus();
-                          setTimeout(() => {
-                            w.print();
-                          }, 300);
-                        }}
-                        className="text-xs px-2 py-1 rounded-md bg-slate-50 border border-gray-100 text-slate-700 hover:bg-slate-100"
+                        onClick={() => handleDeleteAnnouncement(announcement.id)}
+                        title="Delete announcement"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                       >
-                        Print
+                        <Trash2 size={14} />
                       </button>
-                    </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const html = `
+                          <html>
+                            <head>
+                              <title>${announcement.title}</title>
+                              <style>body{font-family:sans-serif;padding:24px;} .title{font-size:22px;font-weight:bold;margin-bottom:6px;} .meta{color:#64748b;font-size:12px;margin-bottom:14px;} .content{font-size:14px;line-height:1.6;color:#1e293b;} img{max-width:100%;height:auto;margin-top:16px;border:1px solid #cbd5e1;border-radius:8px;}</style>
+                            </head>
+                            <body>
+                              <div class="title">${announcement.title}</div>
+                              <div class="meta">Posted by ${announcement.createdBy || 'OJT System'} • ${new Date(announcement.createdAt).toLocaleString()}</div>
+                              <div class="content">${announcement.content.replace(/\n/g, '<br/>')}</div>
+                              ${announcement.photo ? `<img src="${announcement.photo}" alt="attachment"/>` : ''}
+                            </body>
+                          </html>`;
+                        const w = window.open('', '_blank', 'noopener');
+                        if (!w) return;
+                        w.document.open();
+                        w.document.write(html);
+                        w.document.close();
+                        w.focus();
+                        setTimeout(() => w.print(), 300);
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 font-medium cursor-pointer"
+                    >
+                      Print
+                    </button>
+                  </div>
+                </div>
               </div>
               {announcement.photo && (
                 <AnnouncementAttachmentView photo={announcement.photo} allowDownload={true} />
