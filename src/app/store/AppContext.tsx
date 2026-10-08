@@ -297,6 +297,7 @@ interface AppContextType {
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
   addAnnouncementComment: (comment: Omit<AnnouncementComment, 'id'>) => Promise<AnnouncementComment>;
   getAnnouncementComments: (announcementId: string) => AnnouncementComment[];
+  deleteAnnouncementComment: (announcementId: string, commentId: string) => Promise<boolean>;
   requiredDocuments: RequiredDocument[];
   addRequiredDocument: (
     employeeId: string,
@@ -1022,6 +1023,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   function extractCommentsFromAnnouncements(announcementsList: Announcement[]): AnnouncementComment[] {
     if (!Array.isArray(announcementsList)) return [];
     const comments: AnnouncementComment[] = [];
+    const seenSignatures = new Set<string>();
     for (const ann of announcementsList) {
       if (ann && ann.comments && typeof ann.comments === 'string') {
         try {
@@ -1029,8 +1031,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (Array.isArray(parsed)) {
             for (const item of parsed) {
               if (item && item.content) {
+                const commentId = item.id || `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                const sig = `${ann.id}:${(item.authorName || '').trim().toLowerCase()}:${(item.content || '').trim().toLowerCase()}`;
+                if (seenSignatures.has(sig) || seenSignatures.has(commentId)) {
+                  continue;
+                }
+                seenSignatures.add(sig);
+                seenSignatures.add(commentId);
                 comments.push({
-                  id: item.id || `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  id: commentId,
                   announcementId: ann.id,
                   employeeId: item.employeeId,
                   authorName: item.authorName || 'User',
@@ -4129,20 +4138,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addAnnouncementComment = async (comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment> => {
+    const trimmedContent = (comment.content || '').trim();
+    if (!trimmedContent) return {} as AnnouncementComment;
+
+    // 1. Debounce / duplicate prevention guard:
+    // If the exact same comment was posted on this announcement in the last 4 seconds, ignore it
+    const now = Date.now();
+    const isRecentDuplicate = announcementComments.some(
+      (c) =>
+        c.announcementId === comment.announcementId &&
+        (c.authorName || '').trim() === (comment.authorName || '').trim() &&
+        c.content.trim().toLowerCase() === trimmedContent.toLowerCase() &&
+        now - new Date(c.createdAt).getTime() < 4000
+    );
+    if (isRecentDuplicate) {
+      console.warn('Duplicate comment prevented:', trimmedContent);
+      return (
+        announcementComments.find(
+          (c) =>
+            c.announcementId === comment.announcementId &&
+            c.content.trim().toLowerCase() === trimmedContent.toLowerCase()
+        ) || ({} as AnnouncementComment)
+      );
+    }
+
     const newComm: AnnouncementComment = {
       ...comment,
+      content: trimmedContent,
       id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: comment.createdAt || new Date().toISOString(),
     };
 
-    // 1. Immediately update local state & localStorage
+    // 2. Immediately update local state & localStorage with deduplication
     setAnnouncementComments((prev) => {
+      if (prev.some((c) => c.id === newComm.id)) return prev;
       const next = [...prev, newComm];
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
       return next;
     });
 
-    // 2. Sync to the announcement's comments column in Supabase:
+    // 3. Sync to the announcement's comments column in Supabase:
     //    a) Persists in Supabase announcements table (which already exists and works)
     //    b) All roles (HTE, Trainee, Instructor) see the comment immediately on reload
     const currentAnn = announcements.find((a) => a.id === comment.announcementId);
@@ -4155,11 +4190,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Non-JSON comment string
       }
     }
-    const combinedForThisAnn = [
-      ...existingComments.filter((c) => c.id !== newComm.id),
-      ...announcementComments.filter((c) => c.announcementId === comment.announcementId && !existingComments.some((e) => e.id === c.id)),
-      newComm,
-    ];
+
+    // Merge uniquely by ID
+    const map = new Map<string, AnnouncementComment>();
+    for (const c of existingComments) {
+      map.set(c.id, c);
+    }
+    for (const c of announcementComments.filter((a) => a.announcementId === comment.announcementId)) {
+      map.set(c.id, c);
+    }
+    map.set(newComm.id, newComm);
+
+    const combinedForThisAnn = Array.from(map.values());
     const commentsJson = JSON.stringify(combinedForThisAnn);
 
     setAnnouncements((prev) => {
@@ -4171,22 +4213,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (useSupabase) {
       try {
         // Save to announcements table in Supabase
-        supabaseService.updateAnnouncement(comment.announcementId, { comments: commentsJson }).catch((uErr) => {
-          console.warn('Syncing comment to announcement error:', uErr);
-        });
-
-        // Also attempt dedicated announcement_comments table if available
-        const created = await supabaseService.createAnnouncementComment(comment);
-        if (created) {
-          setAnnouncementComments((prev) => {
-            const next = prev.map((c) => (c.id === newComm.id ? created : c));
-            saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
-            return next;
-          });
-          return created;
-        }
+        await supabaseService.updateAnnouncement(comment.announcementId, { comments: commentsJson });
       } catch (err) {
-        console.warn('Supabase create comment error:', err);
+        console.warn('Syncing comment to announcement error:', err);
       }
     }
 
@@ -4195,6 +4224,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getAnnouncementComments = (announcementId: string): AnnouncementComment[] => {
     return announcementComments.filter((c) => c.announcementId === announcementId);
+  };
+
+  const deleteAnnouncementComment = async (announcementId: string, commentId: string): Promise<boolean> => {
+    // 1. Remove from local comments state & localStorage
+    setAnnouncementComments((prev) => {
+      const next = prev.filter((c) => c.id !== commentId);
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
+      return next;
+    });
+
+    // 2. Remove from announcement.comments JSON
+    const currentAnn = announcements.find((a) => a.id === announcementId);
+    let updatedComments: AnnouncementComment[] = [];
+    if (currentAnn?.comments && typeof currentAnn.comments === 'string') {
+      try {
+        const parsed = JSON.parse(currentAnn.comments);
+        if (Array.isArray(parsed)) {
+          updatedComments = parsed.filter((c: AnnouncementComment) => c.id !== commentId);
+        }
+      } catch {
+        // Non-JSON comment string
+      }
+    } else {
+      updatedComments = announcementComments.filter((c) => c.announcementId === announcementId && c.id !== commentId);
+    }
+
+    const commentsJson = updatedComments.length > 0 ? JSON.stringify(updatedComments) : null;
+
+    setAnnouncements((prev) => {
+      const updated = prev.map((a) => (a.id === announcementId ? { ...a, comments: commentsJson } : a));
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+      return updated;
+    });
+
+    if (useSupabase) {
+      try {
+        await supabaseService.updateAnnouncement(announcementId, { comments: commentsJson });
+      } catch (err) {
+        console.warn('Error deleting comment in Supabase:', err);
+      }
+    }
+
+    return true;
   };
 
   const addRequiredDocument = (
@@ -4886,6 +4958,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         getAnnouncementSubmissionStatus,
         addAnnouncementComment,
         getAnnouncementComments,
+        deleteAnnouncementComment,
         addRequiredDocument,
         updateRequiredDocument,
         deleteRequiredDocument,

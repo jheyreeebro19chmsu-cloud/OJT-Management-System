@@ -15,6 +15,7 @@ import {
   Download,
   Printer,
   Camera,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
@@ -96,6 +97,7 @@ export function AdminAnnouncements() {
     getAnnouncementSubmissionStatus,
     getAnnouncementComments,
     addAnnouncementComment,
+    deleteAnnouncementComment,
     settings,
   } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
@@ -104,22 +106,31 @@ export function AdminAnnouncements() {
   const [form, setForm] = useState(BLANK_FORM);
   const [showSubmissionsId, setShowSubmissionsId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [submittingComments, setSubmittingComments] = useState<Record<string, boolean>>({});
 
   const handlePostComment = async (announcementId: string) => {
+    if (submittingComments[announcementId]) return;
     const text = (commentDrafts[announcementId] || '').trim();
     if (!text) return;
 
-    await addAnnouncementComment({
-      announcementId,
-      employeeId: currentUser?.id,
-      authorName: currentUser?.name || 'OJT Instructor',
-      authorRole: 'admin',
-      content: text,
-      createdAt: new Date().toISOString(),
-    });
+    setSubmittingComments((prev) => ({ ...prev, [announcementId]: true }));
+    try {
+      await addAnnouncementComment({
+        announcementId,
+        employeeId: currentUser?.id,
+        authorName: currentUser?.name || 'OJT Instructor',
+        authorRole: 'admin',
+        content: text,
+        createdAt: new Date().toISOString(),
+      });
 
-    setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
-    toast.success('Comment posted!');
+      setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
+      toast.success('Comment posted!');
+    } catch {
+      toast.error('Failed to post comment');
+    } finally {
+      setSubmittingComments((prev) => ({ ...prev, [announcementId]: false }));
+    }
   };
 
   const upd = (key: string, val: string | boolean) => setForm((p) => ({ ...p, [key]: val }));
@@ -403,9 +414,24 @@ export function AdminAnnouncements() {
                             <div key={c.id} className="bg-gray-50 border border-gray-100 rounded-lg p-2 text-xs">
                               <div className="flex items-center justify-between mb-0.5">
                                 <span className="font-bold text-gray-800 text-[11px]">{c.authorName}</span>
-                                <span className="text-[9px] text-gray-400">
-                                  {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] text-gray-400">
+                                    {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    title="Delete comment across all accounts"
+                                    onClick={async () => {
+                                      if (window.confirm('Delete this comment across all accounts?')) {
+                                        await deleteAnnouncementComment(ann.id, c.id);
+                                        toast.success('Comment deleted!');
+                                      }
+                                    }}
+                                    className="text-gray-300 hover:text-red-500 transition-colors p-0.5 rounded cursor-pointer"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
                               </div>
                               <p className="text-gray-600 text-[11px]">{c.content}</p>
                             </div>
@@ -421,22 +447,32 @@ export function AdminAnnouncements() {
                             type="text"
                             placeholder="Write an instructor reply..."
                             value={commentDrafts[ann.id] || ''}
+                            disabled={Boolean(submittingComments[ann.id])}
                             onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [ann.id]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                handlePostComment(ann.id);
+                                if (!submittingComments[ann.id]) {
+                                  handlePostComment(ann.id);
+                                }
                               }
                             }}
-                            className="flex-1 px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                            className="flex-1 px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white disabled:opacity-60"
                           />
                           <button
                             type="button"
                             onClick={() => handlePostComment(ann.id)}
-                            disabled={!(commentDrafts[ann.id] || '').trim()}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+                            disabled={!(commentDrafts[ann.id] || '').trim() || Boolean(submittingComments[ann.id])}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0"
                           >
-                            Reply
+                            {submittingComments[ann.id] ? (
+                              <>
+                                <Loader2 size={12} className="animate-spin" />
+                                <span>Sending...</span>
+                              </>
+                            ) : (
+                              <span>Reply</span>
+                            )}
                           </button>
                         </div>
                       </div>

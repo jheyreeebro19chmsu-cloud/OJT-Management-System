@@ -15,6 +15,7 @@ import {
   GraduationCap,
   Sparkles,
   X,
+  Loader2,
 } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -71,6 +72,7 @@ export function Announcements() {
     deleteAnnouncement,
     getAnnouncementComments,
     addAnnouncementComment,
+    deleteAnnouncementComment,
     settings,
   } = useApp();
 
@@ -91,6 +93,7 @@ export function Announcements() {
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | undefined>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [submittingComments, setSubmittingComments] = useState<Record<string, boolean>>({});
 
   const [isPosting, setIsPosting] = useState(false);
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
@@ -109,20 +112,28 @@ export function Announcements() {
   });
 
   const handlePostComment = async (announcementId: string) => {
+    if (submittingComments[announcementId]) return;
     const text = (commentDrafts[announcementId] || '').trim();
     if (!text || !activeUser) return;
 
-    await addAnnouncementComment({
-      announcementId,
-      employeeId: activeUser.id,
-      authorName,
-      authorRole: isInstructor ? 'admin' : 'trainee',
-      content: text,
-      createdAt: new Date().toISOString(),
-    });
+    setSubmittingComments((prev) => ({ ...prev, [announcementId]: true }));
+    try {
+      await addAnnouncementComment({
+        announcementId,
+        employeeId: activeUser.id,
+        authorName,
+        authorRole: isInstructor ? 'admin' : 'trainee',
+        content: text,
+        createdAt: new Date().toISOString(),
+      });
 
-    setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
-    toast.success('Comment posted!');
+      setCommentDrafts((prev) => ({ ...prev, [announcementId]: '' }));
+      toast.success('Comment posted!');
+    } catch {
+      toast.error('Failed to post comment. Please try again.');
+    } finally {
+      setSubmittingComments((prev) => ({ ...prev, [announcementId]: false }));
+    }
   };
 
   const announcements = useMemo(() => {
@@ -642,9 +653,24 @@ export function Announcements() {
                             {c.authorRole === 'admin' ? 'Instructor' : c.authorRole === 'host' ? 'HTE' : 'Trainee'}
                           </span>
                         </div>
-                        <span className="text-[10px] text-gray-400">
-                          {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-400">
+                            {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <button
+                            type="button"
+                            title="Delete comment across all accounts"
+                            onClick={async () => {
+                              if (window.confirm('Delete this comment across all accounts?')) {
+                                await deleteAnnouncementComment(announcement.id, c.id);
+                                toast.success('Comment deleted!');
+                              }
+                            }}
+                            className="text-gray-300 hover:text-red-500 transition-colors p-0.5 rounded cursor-pointer"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-gray-700 leading-relaxed">{c.content}</p>
                     </div>
@@ -658,24 +684,34 @@ export function Announcements() {
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    placeholder="Write a comment..."
+                    placeholder={submittingComments[announcement.id] ? 'Sending comment...' : 'Write a comment...'}
                     value={commentDrafts[announcement.id] || ''}
+                    disabled={Boolean(submittingComments[announcement.id])}
                     onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [announcement.id]: e.target.value }))}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        handlePostComment(announcement.id);
+                        if (!submittingComments[announcement.id]) {
+                          handlePostComment(announcement.id);
+                        }
                       }
                     }}
-                    className="flex-1 px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                    className="flex-1 px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white disabled:opacity-60"
                   />
                   <button
                     type="button"
                     onClick={() => handlePostComment(announcement.id)}
-                    disabled={!(commentDrafts[announcement.id] || '').trim()}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40"
+                    disabled={!(commentDrafts[announcement.id] || '').trim() || Boolean(submittingComments[announcement.id])}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0"
                   >
-                    Send
+                    {submittingComments[announcement.id] ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      <span>Send</span>
+                    )}
                   </button>
                 </div>
               </div>

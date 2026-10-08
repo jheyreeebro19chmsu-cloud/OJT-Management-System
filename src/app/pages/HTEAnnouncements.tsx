@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Building,
   Upload,
+  Loader2,
 } from 'lucide-react';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
@@ -86,6 +87,7 @@ export function HTEAnnouncements() {
     deleteAnnouncement,
     getAnnouncementComments,
     addAnnouncementComment,
+    deleteAnnouncementComment,
     settings,
   } = useApp();
 
@@ -132,6 +134,7 @@ export function HTEAnnouncements() {
   // Comments State
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [submittingComments, setSubmittingComments] = useState<Record<string, boolean>>({});
 
   // Filter announcements visible to this HTE
   const hteAnnouncements = useMemo(() => {
@@ -365,20 +368,28 @@ export function HTEAnnouncements() {
 
   // Comment Thread
   const handlePostComment = async (annId: string) => {
+    if (submittingComments[annId]) return;
     const text = (commentDrafts[annId] || '').trim();
     if (!text) return;
 
-    await addAnnouncementComment({
-      announcementId: annId,
-      employeeId: currentUser?.id || employee?.id,
-      authorName: `${authorName} (${companyName})`,
-      authorRole: 'host',
-      content: text,
-      createdAt: new Date().toISOString(),
-    });
+    setSubmittingComments((prev) => ({ ...prev, [annId]: true }));
+    try {
+      await addAnnouncementComment({
+        announcementId: annId,
+        employeeId: currentUser?.id || employee?.id,
+        authorName: `${authorName} (${companyName})`,
+        authorRole: 'host',
+        content: text,
+        createdAt: new Date().toISOString(),
+      });
 
-    setCommentDrafts((prev) => ({ ...prev, [annId]: '' }));
-    toast.success('Comment posted!');
+      setCommentDrafts((prev) => ({ ...prev, [annId]: '' }));
+      toast.success('Comment posted!');
+    } catch {
+      toast.error('Failed to post comment. Please try again.');
+    } finally {
+      setSubmittingComments((prev) => ({ ...prev, [annId]: false }));
+    }
   };
 
   const isAuthor = (ann: Announcement) => {
@@ -639,9 +650,24 @@ export function HTEAnnouncements() {
                               {c.authorRole}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-400">
-                            {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <button
+                              type="button"
+                              title="Delete comment across all accounts"
+                              onClick={async () => {
+                                if (window.confirm('Delete this comment across all accounts?')) {
+                                  await deleteAnnouncementComment(ann.id, c.id);
+                                  toast.success('Comment deleted!');
+                                }
+                              }}
+                              className="text-slate-300 hover:text-red-500 transition-colors p-0.5 rounded cursor-pointer"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-slate-700 leading-relaxed">{c.content}</p>
                       </div>
@@ -658,24 +684,34 @@ export function HTEAnnouncements() {
                   <div className="flex items-center gap-2 pt-1">
                     <input
                       type="text"
-                      placeholder="Write a comment or reply as HTE..."
+                      placeholder={submittingComments[ann.id] ? 'Sending comment...' : 'Write a comment or reply as HTE...'}
                       value={commentDrafts[ann.id] || ''}
+                      disabled={Boolean(submittingComments[ann.id])}
                       onChange={(e) => setCommentDrafts((p) => ({ ...p, [ann.id]: e.target.value }))}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          handlePostComment(ann.id);
+                          if (!submittingComments[ann.id]) {
+                            handlePostComment(ann.id);
+                          }
                         }
                       }}
-                      className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
                     />
                     <button
                       type="button"
                       onClick={() => handlePostComment(ann.id)}
-                      disabled={!(commentDrafts[ann.id] || '').trim()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 shrink-0"
+                      disabled={!(commentDrafts[ann.id] || '').trim() || Boolean(submittingComments[ann.id])}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 shrink-0 flex items-center gap-1.5"
                     >
-                      Reply
+                      {submittingComments[ann.id] ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Sending...</span>
+                        </>
+                      ) : (
+                        <span>Reply</span>
+                      )}
                     </button>
                   </div>
                 </div>
