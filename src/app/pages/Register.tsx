@@ -389,8 +389,8 @@ export function Register() {
 
   const phBarangaysList = useMemo(() => {
     if (!form.city) return [];
-    return getBarangaysForCity(form.city);
-  }, [form.city]);
+    return getBarangaysForCity(form.city, form.province);
+  }, [form.city, form.province]);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 

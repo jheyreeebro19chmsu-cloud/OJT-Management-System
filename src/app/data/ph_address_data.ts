@@ -1,3 +1,5 @@
+import phil from 'phil-reg-prov-mun-brgy';
+
 export interface Province {
   name: string;
   cities: string[];
@@ -601,43 +603,108 @@ export const BARANGAY_SAMPLES: Record<string, string[]> = {
   ],
 };
 
-export function getBarangaysForCity(cityName?: string): string[] {
-  if (!cityName || !cityName.trim()) return [];
-  const normalized = cityName.trim().toLowerCase();
+function cleanGeoName(str?: string): string {
+  return (str || '')
+    .toLowerCase()
+    .replace(/\bcity of\b/g, '')
+    .replace(/\bmunicipality of\b/g, '')
+    .replace(/\bcity\b/g, '')
+    .replace(/\bmunicipality\b/g, '')
+    .replace(/\bcapital\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
 
-  // 1. Direct or case-insensitive match
+export function getBarangaysForCity(cityName?: string, provinceName?: string): string[] {
+  if (!cityName || !cityName.trim()) return [];
+
+  const targetCityClean = cleanGeoName(cityName);
+  const targetProvClean = cleanGeoName(provinceName);
+
+  if (!targetCityClean) return [];
+
+  // Special case: City of Manila (NCR)
+  if (targetCityClean === 'manila') {
+    const manilaBrgys = (phil?.barangays || []).filter(
+      (b: any) => b.mun_code && String(b.mun_code).startsWith('1339')
+    );
+    if (manilaBrgys.length > 0) {
+      return Array.from(new Set(manilaBrgys.map((b: any) => b.name))).sort((a: any, b: any) =>
+        a.localeCompare(undefined, { numeric: true })
+      ) as string[];
+    }
+  }
+
+  // 1. Search full national database (phil-reg-prov-mun-brgy: 41,582 barangays across all 1,627 cities & municipalities)
+  try {
+    let targetProvCodes: string[] = [];
+    if (targetProvClean) {
+      if (targetProvClean.includes('metromanila') || targetProvClean === 'ncr') {
+        targetProvCodes = ['1339', '1374', '1375', '1376'];
+      } else {
+        const matchedProvs = (phil?.provinces || []).filter((p: any) => {
+          const pClean = cleanGeoName(p.name);
+          return pClean === targetProvClean || pClean.includes(targetProvClean) || targetProvClean.includes(pClean);
+        });
+        targetProvCodes = matchedProvs.map((p: any) => String(p.prov_code));
+      }
+    }
+
+    const findMatch = (filterByProv: boolean) => {
+      const candidates =
+        filterByProv && targetProvCodes.length > 0
+          ? (phil?.city_mun || []).filter((c: any) => targetProvCodes.includes(String(c.prov_code)))
+          : phil?.city_mun || [];
+
+      // Exact clean match
+      let match = candidates.find((c: any) => cleanGeoName(c.name) === targetCityClean);
+      if (match) return match;
+
+      // Startswith match
+      match = candidates.find((c: any) => {
+        const cClean = cleanGeoName(c.name);
+        return cClean.startsWith(targetCityClean) || targetCityClean.startsWith(cClean);
+      });
+      if (match) return match;
+
+      // Substring match
+      match = candidates.find((c: any) => {
+        const cClean = cleanGeoName(c.name);
+        return cClean.includes(targetCityClean) || targetCityClean.includes(cClean);
+      });
+      return match;
+    };
+
+    const matchedCity = findMatch(true) || findMatch(false);
+
+    if (matchedCity) {
+      const brgys = phil?.getBarangayByMun ? phil.getBarangayByMun(matchedCity.mun_code) : [];
+      if (brgys && brgys.length > 0) {
+        return Array.from(new Set(brgys.map((b: any) => b.name))).sort((a: any, b: any) =>
+          a.localeCompare(undefined, { numeric: true })
+        ) as string[];
+      }
+    }
+  } catch (err) {
+    console.warn('phil-reg-prov-mun-brgy lookup error:', err);
+  }
+
+  // 2. Fallback to BARANGAY_SAMPLES
+  const normalized = cityName.trim().toLowerCase();
   for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
     if (key.toLowerCase() === normalized) {
       return barangays;
     }
   }
-
-  // Helper to normalize city names by removing 'City', 'Municipality', 'of', and non-alphanumeric chars
-  const clean = (s: string) =>
-    s
-      .toLowerCase()
-      .replace(/\bcity\b/g, '')
-      .replace(/\bmunicipality\b/g, '')
-      .replace(/\bof\b/g, '')
-      .replace(/[^a-z0-9]/g, '')
-      .trim();
-
-  const targetClean = clean(normalized);
-  if (!targetClean) return [];
-
-  // 2. Cleaned match (e.g. 'Bacolod City' vs 'Bacolod', 'E.B. Magalona' vs 'EB Magalona')
   for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
-    const keyClean = clean(key);
-    if (keyClean === targetClean) {
+    if (cleanGeoName(key) === targetCityClean) {
       return barangays;
     }
   }
-
-  // 3. Substring match for prefixes/suffixes if clean length is meaningful (>= 4 chars)
-  if (targetClean.length >= 4) {
+  if (targetCityClean.length >= 4) {
     for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
-      const keyClean = clean(key);
-      if (keyClean.includes(targetClean) || targetClean.includes(keyClean)) {
+      const keyClean = cleanGeoName(key);
+      if (keyClean.includes(targetCityClean) || targetCityClean.includes(keyClean)) {
         return barangays;
       }
     }
