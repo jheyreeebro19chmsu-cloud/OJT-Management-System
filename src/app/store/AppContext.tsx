@@ -1019,6 +1019,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   });
   const [evaluations, setEvaluations] = useState<Evaluation[]>(() => loadFromStorage(STORAGE_KEYS.EVALUATIONS, []));
+  function extractCommentsFromAnnouncements(announcementsList: Announcement[]): AnnouncementComment[] {
+    if (!Array.isArray(announcementsList)) return [];
+    const comments: AnnouncementComment[] = [];
+    for (const ann of announcementsList) {
+      if (ann && ann.comments && typeof ann.comments === 'string') {
+        try {
+          const parsed = JSON.parse(ann.comments);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (item && item.content) {
+                comments.push({
+                  id: item.id || `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  announcementId: ann.id,
+                  employeeId: item.employeeId,
+                  authorName: item.authorName || 'User',
+                  authorRole: item.authorRole || 'employee',
+                  content: item.content,
+                  createdAt: item.createdAt || ann.createdAt || new Date().toISOString(),
+                });
+              }
+            }
+          }
+        } catch {
+          // Non-JSON comments string, ignore
+        }
+      }
+    }
+    return comments;
+  }
+
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
     const stored = loadFromStorage<Announcement[]>(STORAGE_KEYS.ANNOUNCEMENTS, []);
     if (stored.length === 0) {
@@ -1030,9 +1060,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [announcementSubmissions, setAnnouncementSubmissions] = useState<AnnouncementSubmission[]>(() =>
     loadFromStorage<AnnouncementSubmission[]>(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, [])
   );
-  const [announcementComments, setAnnouncementComments] = useState<AnnouncementComment[]>(() =>
-    loadFromStorage<AnnouncementComment[]>(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, [])
-  );
+  const [announcementComments, setAnnouncementComments] = useState<AnnouncementComment[]>(() => {
+    const stored = loadFromStorage<AnnouncementComment[]>(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, []);
+    const storedAnn = loadFromStorage<Announcement[]>(STORAGE_KEYS.ANNOUNCEMENTS, []);
+    const fromAnn = extractCommentsFromAnnouncements(storedAnn);
+    const map = new Map<string, AnnouncementComment>();
+    stored.forEach((c) => map.set(c.id, c));
+    fromAnn.forEach((c) => map.set(c.id, c));
+    return Array.from(map.values());
+  });
   const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>(() =>
     loadFromStorage<RequiredDocument[]>(STORAGE_KEYS.REQUIRED_DOCUMENTS, [])
   );
@@ -1199,6 +1235,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (isMounted && ann && ann.length > 0) {
                 setAnnouncements(ann);
                 saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, ann);
+                const fromAnn = extractCommentsFromAnnouncements(ann);
+                if (fromAnn.length > 0) {
+                  setAnnouncementComments((prev) => {
+                    const map = new Map<string, AnnouncementComment>();
+                    prev.forEach((c) => map.set(c.id, c));
+                    fromAnn.forEach((c) => map.set(c.id, c));
+                    const merged = Array.from(map.values());
+                    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+                    return merged;
+                  });
+                }
               }
             }),
             supabaseService.fetchAnnouncementSubmissions().then((subs) => {
@@ -1378,7 +1425,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
               return merged;
             });
           }
-          if (supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+          if (supabaseAnnouncements.length > 0) {
+            setAnnouncements(supabaseAnnouncements);
+            const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
+            if (fromAnn.length > 0) {
+              setAnnouncementComments((prev) => {
+                const map = new Map<string, AnnouncementComment>();
+                prev.forEach((c) => map.set(c.id, c));
+                fromAnn.forEach((c) => map.set(c.id, c));
+                const merged = Array.from(map.values());
+                saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+                return merged;
+              });
+            }
+          }
           if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
           if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
           if (supabaseHostSupervisors) setHostSupervisors(supabaseHostSupervisors);
@@ -1507,7 +1567,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return merged;
         });
       }
-      if (supabaseAnnouncements && supabaseAnnouncements.length > 0) setAnnouncements(supabaseAnnouncements);
+      if (supabaseAnnouncements && supabaseAnnouncements.length > 0) {
+        setAnnouncements(supabaseAnnouncements);
+        const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
+        if (fromAnn.length > 0) {
+          setAnnouncementComments((prev) => {
+            const map = new Map<string, AnnouncementComment>();
+            prev.forEach((c) => map.set(c.id, c));
+            fromAnn.forEach((c) => map.set(c.id, c));
+            const merged = Array.from(map.values());
+            saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+            return merged;
+          });
+        }
+      }
       if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
       if (supabaseHostFeedback && supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
       if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
@@ -1666,10 +1739,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [announcementSubmissions, useSupabase]);
 
   useEffect(() => {
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, announcementComments);
-    }
-  }, [announcementComments, useSupabase]);
+    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, announcementComments);
+  }, [announcementComments]);
 
   useEffect(() => {
     if (!useSupabase) {
@@ -4064,13 +4135,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: comment.createdAt || new Date().toISOString(),
     };
 
-    setAnnouncementComments((prev) => [...prev, newComm]);
+    // 1. Immediately update local state & localStorage
+    setAnnouncementComments((prev) => {
+      const next = [...prev, newComm];
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
+      return next;
+    });
+
+    // 2. Sync to the announcement's comments column in Supabase:
+    //    a) Persists in Supabase announcements table (which already exists and works)
+    //    b) All roles (HTE, Trainee, Instructor) see the comment immediately on reload
+    const currentAnn = announcements.find((a) => a.id === comment.announcementId);
+    let existingComments: AnnouncementComment[] = [];
+    if (currentAnn?.comments && typeof currentAnn.comments === 'string') {
+      try {
+        const parsed = JSON.parse(currentAnn.comments);
+        if (Array.isArray(parsed)) existingComments = parsed;
+      } catch {
+        // Non-JSON comment string
+      }
+    }
+    const combinedForThisAnn = [
+      ...existingComments.filter((c) => c.id !== newComm.id),
+      ...announcementComments.filter((c) => c.announcementId === comment.announcementId && !existingComments.some((e) => e.id === c.id)),
+      newComm,
+    ];
+    const commentsJson = JSON.stringify(combinedForThisAnn);
+
+    setAnnouncements((prev) => {
+      const updated = prev.map((a) => (a.id === comment.announcementId ? { ...a, comments: commentsJson } : a));
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       try {
+        // Save to announcements table in Supabase
+        supabaseService.updateAnnouncement(comment.announcementId, { comments: commentsJson }).catch((uErr) => {
+          console.warn('Syncing comment to announcement error:', uErr);
+        });
+
+        // Also attempt dedicated announcement_comments table if available
         const created = await supabaseService.createAnnouncementComment(comment);
         if (created) {
-          setAnnouncementComments((prev) => prev.map((c) => (c.id === newComm.id ? created : c)));
+          setAnnouncementComments((prev) => {
+            const next = prev.map((c) => (c.id === newComm.id ? created : c));
+            saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
+            return next;
+          });
           return created;
         }
       } catch (err) {
