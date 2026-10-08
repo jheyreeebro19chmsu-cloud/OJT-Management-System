@@ -1,4 +1,12 @@
-import phil from 'phil-reg-prov-mun-brgy';
+import psgcData from './ph_psgc_barangays.json';
+
+interface PsgcCityRecord {
+  c: string;
+  p: string;
+  b: string[];
+}
+
+const PSGC_RECORDS = psgcData as PsgcCityRecord[];
 
 export interface Province {
   name: string;
@@ -615,6 +623,10 @@ function cleanGeoName(str?: string): string {
     .trim();
 }
 
+/**
+ * Returns all official barangays for a given city / municipality in the Philippines.
+ * Sourced directly from the official PSA PSGC database containing all 42,046 barangays.
+ */
 export function getBarangaysForCity(cityName?: string, provinceName?: string): string[] {
   if (!cityName || !cityName.trim()) return [];
 
@@ -623,90 +635,60 @@ export function getBarangaysForCity(cityName?: string, provinceName?: string): s
 
   if (!targetCityClean) return [];
 
-  // Special case: City of Manila (NCR)
-  if (targetCityClean === 'manila') {
-    const manilaBrgys = (phil?.barangays || []).filter(
-      (b: any) => b.mun_code && String(b.mun_code).startsWith('1339')
-    );
-    if (manilaBrgys.length > 0) {
-      return Array.from(new Set(manilaBrgys.map((b: any) => b.name))).sort((a: any, b: any) =>
-        a.localeCompare(undefined, { numeric: true })
-      ) as string[];
+  // Filter candidates by province if provinceName is provided
+  let candidates = PSGC_RECORDS;
+  if (targetProvClean) {
+    const provMatches = PSGC_RECORDS.filter((rec) => {
+      const pClean = cleanGeoName(rec.p);
+      return (
+        pClean === targetProvClean ||
+        pClean.includes(targetProvClean) ||
+        targetProvClean.includes(pClean)
+      );
+    });
+    if (provMatches.length > 0) {
+      candidates = provMatches;
     }
   }
 
-  // 1. Search full national database (phil-reg-prov-mun-brgy: 41,582 barangays across all 1,627 cities & municipalities)
-  try {
-    let targetProvCodes: string[] = [];
-    if (targetProvClean) {
-      if (targetProvClean.includes('metromanila') || targetProvClean === 'ncr') {
-        targetProvCodes = ['1339', '1374', '1375', '1376'];
-      } else {
-        const matchedProvs = (phil?.provinces || []).filter((p: any) => {
-          const pClean = cleanGeoName(p.name);
-          return pClean === targetProvClean || pClean.includes(targetProvClean) || targetProvClean.includes(pClean);
-        });
-        targetProvCodes = matchedProvs.map((p: any) => String(p.prov_code));
-      }
-    }
+  // 1. Exact clean city match within candidates
+  let match = candidates.find((rec) => cleanGeoName(rec.c) === targetCityClean);
 
-    const findMatch = (filterByProv: boolean) => {
-      const candidates =
-        filterByProv && targetProvCodes.length > 0
-          ? (phil?.city_mun || []).filter((c: any) => targetProvCodes.includes(String(c.prov_code)))
-          : phil?.city_mun || [];
+  // 2. StartsWith match
+  if (!match) {
+    match = candidates.find((rec) => {
+      const cClean = cleanGeoName(rec.c);
+      return cClean.startsWith(targetCityClean) || targetCityClean.startsWith(cClean);
+    });
+  }
 
-      // Exact clean match
-      let match = candidates.find((c: any) => cleanGeoName(c.name) === targetCityClean);
-      if (match) return match;
+  // 3. Includes match
+  if (!match) {
+    match = candidates.find((rec) => {
+      const cClean = cleanGeoName(rec.c);
+      return cClean.includes(targetCityClean) || targetCityClean.includes(cClean);
+    });
+  }
 
-      // Startswith match
-      match = candidates.find((c: any) => {
-        const cClean = cleanGeoName(c.name);
+  // 4. Fallback search across entire national dataset if province filter was too strict
+  if (!match && candidates !== PSGC_RECORDS) {
+    match = PSGC_RECORDS.find((rec) => cleanGeoName(rec.c) === targetCityClean);
+    if (!match) {
+      match = PSGC_RECORDS.find((rec) => {
+        const cClean = cleanGeoName(rec.c);
         return cClean.startsWith(targetCityClean) || targetCityClean.startsWith(cClean);
       });
-      if (match) return match;
-
-      // Substring match
-      match = candidates.find((c: any) => {
-        const cClean = cleanGeoName(c.name);
-        return cClean.includes(targetCityClean) || targetCityClean.includes(cClean);
-      });
-      return match;
-    };
-
-    const matchedCity = findMatch(true) || findMatch(false);
-
-    if (matchedCity) {
-      const brgys = phil?.getBarangayByMun ? phil.getBarangayByMun(matchedCity.mun_code) : [];
-      if (brgys && brgys.length > 0) {
-        return Array.from(new Set(brgys.map((b: any) => b.name))).sort((a: any, b: any) =>
-          a.localeCompare(undefined, { numeric: true })
-        ) as string[];
-      }
-    }
-  } catch (err) {
-    console.warn('phil-reg-prov-mun-brgy lookup error:', err);
-  }
-
-  // 2. Fallback to BARANGAY_SAMPLES
-  const normalized = cityName.trim().toLowerCase();
-  for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
-    if (key.toLowerCase() === normalized) {
-      return barangays;
     }
   }
+
+  if (match && match.b && match.b.length > 0) {
+    return match.b;
+  }
+
+  // 5. Fallback to BARANGAY_SAMPLES
   for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
     if (cleanGeoName(key) === targetCityClean) {
       return barangays;
-    }
-  }
-  if (targetCityClean.length >= 4) {
-    for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
-      const keyClean = cleanGeoName(key);
-      if (keyClean.includes(targetCityClean) || targetCityClean.includes(keyClean)) {
-        return barangays;
-      }
     }
   }
 
