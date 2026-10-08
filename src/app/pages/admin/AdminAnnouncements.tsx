@@ -142,6 +142,7 @@ export function AdminAnnouncements() {
   };
 
   const openEdit = (ann: Announcement) => {
+    const isDiscussionJson = typeof ann.comments === 'string' && ann.comments.trim().startsWith('[');
     setForm({
       title: ann.title,
       content: ann.content,
@@ -151,7 +152,7 @@ export function AdminAnnouncements() {
       photo: ann.photo || '',
       reminder: ann.reminder || '',
       deadlineAt: ann.deadlineAt ? ann.deadlineAt.slice(0, 16) : '',
-      comments: ann.comments || '',
+      comments: isDiscussionJson ? '' : (ann.comments || ''),
       requiresSubmission: Boolean(ann.requiresSubmission),
       expiresAt: ann.expiresAt ? ann.expiresAt.slice(0, 16) : '',
     });
@@ -176,6 +177,10 @@ export function AdminAnnouncements() {
     };
 
     if (editId) {
+      const existing = announcements.find((a) => a.id === editId);
+      if (existing?.comments && existing.comments.trim().startsWith('[')) {
+        (data as any).comments = existing.comments;
+      }
       updateAnnouncement(editId, data);
       toast.success('Announcement updated!');
     } else {
@@ -335,11 +340,6 @@ export function AdminAnnouncements() {
                       {ann.reminder && (
                         <p className="text-xs mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
                           Reminder: {ann.reminder}
-                        </p>
-                      )}
-                      {ann.comments && (
-                        <p className="text-xs mt-2 text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                          Comments: {ann.comments}
                         </p>
                       )}
                       <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-400">
