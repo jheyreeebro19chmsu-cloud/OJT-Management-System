@@ -3371,26 +3371,7 @@ export function Register() {
                         </div>
                       )}
 
-                      {/* Street Address / House No. for all addresses */}
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">
-                          Street Address / House No. / Subd. {role === 'trainee' ? '*' : ''}
-                        </label>
-                        <input
-                          value={form.street}
-                          onChange={(e) => update('street', e.target.value)}
-                          placeholder="e.g. Block 5 Lot 12, Rose Street, Villa Angela Subd."
-                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                            attemptedNext && role === 'trainee' && !form.street?.trim()
-                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                              : 'border-gray-200 focus:ring-blue-500'
-                          }`}
-                        />
-                        {attemptedNext && role === 'trainee' && !form.street?.trim() && (
-                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Street Address / House Number</p>
-                        )}
-                      </div>
-
+                      {/* Barangay */}
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-semibold text-gray-600">
@@ -3412,6 +3393,26 @@ export function Register() {
                         />
                         {attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay && (
                           <p className="text-xs text-red-500 mt-1 font-medium">Please enter Barangay</p>
+                        )}
+                      </div>
+
+                      {/* Street Address / House No. for all addresses */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Street Address / House No. / Subd. {role === 'trainee' ? '*' : ''}
+                        </label>
+                        <input
+                          value={form.street}
+                          onChange={(e) => update('street', e.target.value)}
+                          placeholder="e.g. Block 5 Lot 12, Rose Street, Villa Angela Subd."
+                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                            attemptedNext && role === 'trainee' && !form.street?.trim()
+                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                              : 'border-gray-200 focus:ring-blue-500'
+                          }`}
+                        />
+                        {attemptedNext && role === 'trainee' && !form.street?.trim() && (
+                          <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Street Address / House Number</p>
                         )}
                       </div>
                       <div>
