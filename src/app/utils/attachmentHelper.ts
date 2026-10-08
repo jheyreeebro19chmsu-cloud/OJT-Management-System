@@ -14,6 +14,15 @@ export function parseAnnouncementAttachment(photo?: string): ParsedAttachment | 
 
   const trimmed = photo.trim();
 
+  // Guard against encoded error payloads (e.g. Supabase 404 Bucket not found / NoSuchBucket saved as data URL)
+  if (
+    trimmed.includes('eyJzdGF0dXNDb2Rl') ||
+    trimmed.includes('Bucket not found') ||
+    trimmed.includes('NoSuchBucket')
+  ) {
+    return null;
+  }
+
   // 1. Check if stored as JSON object { url, name, type, size }
   if (trimmed.startsWith('{') && trimmed.includes('"url"')) {
     try {

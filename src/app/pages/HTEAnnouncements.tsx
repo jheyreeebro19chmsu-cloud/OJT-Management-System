@@ -247,8 +247,31 @@ export function HTEAnnouncements() {
 
     const reader = new FileReader();
     reader.onload = () => {
+      const dataUrl = reader.result as string;
+
+      // Validate image files to ensure they are real, decodable pictures
+      if (fileType === 'image') {
+        const testImg = new Image();
+        testImg.onload = () => {
+          setAttachment({
+            url: dataUrl,
+            name: file.name,
+            type: 'image',
+            size: formatFileSize(file.size),
+          });
+          toast.success(`Attached ${file.name}`);
+        };
+        testImg.onerror = () => {
+          toast.error(`"${file.name}" is not a valid or readable image. Please select a valid photo (JPG/PNG).`);
+          setAttachment(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        testImg.src = dataUrl;
+        return;
+      }
+
       setAttachment({
-        url: reader.result as string,
+        url: dataUrl,
         name: file.name,
         type: fileType,
         size: formatFileSize(file.size),
@@ -819,6 +842,9 @@ export function HTEAnnouncements() {
                         <img
                           src={attachment.url}
                           alt="Preview"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
                           className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
                         />
                       ) : attachment.type === 'pdf' ? (

@@ -9,6 +9,7 @@ interface Props {
 
 export function AnnouncementAttachmentView({ photo, allowDownload = true }: Props) {
   const [showImageModal, setShowImageModal] = useState(false);
+  const [imgLoadError, setImgLoadError] = useState(false);
   const attachment = parseAnnouncementAttachment(photo);
 
   if (!attachment || !attachment.url) return null;
@@ -46,12 +47,21 @@ export function AnnouncementAttachmentView({ photo, allowDownload = true }: Prop
     return (
       <div className="my-3">
         <div className="group relative inline-block max-w-md w-full bg-slate-50 rounded-2xl p-2 border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition-all">
-          <img
-            src={attachment.url}
-            alt={attachment.name}
-            onClick={() => setShowImageModal(true)}
-            className="w-full max-h-72 object-contain rounded-xl cursor-zoom-in transition-transform group-hover:scale-[1.01]"
-          />
+          {imgLoadError ? (
+            <div className="w-full h-32 bg-slate-100 rounded-xl flex flex-col items-center justify-center text-slate-400 gap-2 border border-slate-200/80 p-4 text-center">
+              <ImageIcon size={28} className="text-slate-300" />
+              <span className="text-xs font-semibold text-slate-500">Image preview unavailable</span>
+              <span className="text-[11px] text-slate-400">The uploaded file could not be displayed</span>
+            </div>
+          ) : (
+            <img
+              src={attachment.url}
+              alt={attachment.name}
+              onError={() => setImgLoadError(true)}
+              onClick={() => setShowImageModal(true)}
+              className="w-full max-h-72 object-contain rounded-xl cursor-zoom-in transition-transform group-hover:scale-[1.01]"
+            />
+          )}
           <div className="mt-2 flex items-center justify-between px-1 text-xs text-slate-500">
             <span className="flex items-center gap-1.5 font-medium truncate max-w-[200px]" title={attachment.name}>
               <ImageIcon size={14} className="text-blue-600 shrink-0" />
@@ -59,15 +69,17 @@ export function AnnouncementAttachmentView({ photo, allowDownload = true }: Prop
             </span>
             {allowDownload && (
               <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowImageModal(true)}
-                  className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 shadow-xs flex items-center gap-1 transition-all"
-                  title="Preview Full Size"
-                >
-                  <Eye size={12} />
-                  <span>Preview</span>
-                </button>
+                {!imgLoadError && (
+                  <button
+                    type="button"
+                    onClick={() => setShowImageModal(true)}
+                    className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 shadow-xs flex items-center gap-1 transition-all"
+                    title="Preview Full Size"
+                  >
+                    <Eye size={12} />
+                    <span>Preview</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleDownload}
@@ -83,7 +95,7 @@ export function AnnouncementAttachmentView({ photo, allowDownload = true }: Prop
         </div>
 
         {/* Full Image Modal */}
-        {showImageModal && (
+        {showImageModal && !imgLoadError && (
           <div
             className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
             onClick={() => setShowImageModal(false)}
@@ -114,6 +126,7 @@ export function AnnouncementAttachmentView({ photo, allowDownload = true }: Prop
               <img
                 src={attachment.url}
                 alt={attachment.name}
+                onError={() => setImgLoadError(true)}
                 className="max-h-[80vh] w-auto max-w-full rounded-2xl object-contain shadow-2xl border border-white/20 bg-slate-900"
               />
             </div>

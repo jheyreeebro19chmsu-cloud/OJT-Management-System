@@ -390,7 +390,15 @@ export function Announcements() {
                     const f = e.target.files?.[0];
                     if (f) {
                       const b64 = await readAsDataUrl(f);
-                      setNewPost((p) => ({ ...p, photo: b64 }));
+                      const testImg = new Image();
+                      testImg.onload = () => {
+                        setNewPost((p) => ({ ...p, photo: b64 }));
+                        toast.success(`Attached ${f.name}`);
+                      };
+                      testImg.onerror = () => {
+                        toast.error(`"${f.name}" is not a valid or readable image. Please select a valid photo.`);
+                      };
+                      testImg.src = b64;
                     }
                   }}
                 />

@@ -533,7 +533,16 @@ export function AdminAnnouncements() {
                           reader.onload = () => {
                             const dataUrl = String(reader.result || '');
                             if (f.type.startsWith('image/')) {
-                              upd('photo', dataUrl);
+                              const testImg = new Image();
+                              testImg.onload = () => {
+                                upd('photo', dataUrl);
+                                toast.success(`Attached ${f.name}`);
+                              };
+                              testImg.onerror = () => {
+                                toast.error(`"${f.name}" is not a valid or readable image. Please select a valid photo.`);
+                                upd('photo', '');
+                              };
+                              testImg.src = dataUrl;
                             } else {
                               let type: 'pdf' | 'doc' | 'file' = 'file';
                               if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
@@ -561,6 +570,9 @@ export function AdminAnnouncements() {
                               src={att.url}
                               className="w-10 h-10 rounded-lg object-cover"
                               alt="Preview"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
                             />
                           ) : att?.type === 'pdf' ? (
                             <div className="w-10 h-10 rounded-lg bg-red-500 text-white flex items-center justify-center font-bold text-[10px]">
