@@ -47,7 +47,7 @@ import { TraineeDocuments, TraineeDocumentItem, User as AuthUser } from '../type
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
-import { PH_ADDRESS_DATA } from '../data/ph_address_data';
+import { PH_ADDRESS_DATA, getBarangaysForCity } from '../data/ph_address_data';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../data/academicOptions';
 import { getCampusLocation } from '../utils/campusLocations';
 import { Country, State, City } from 'country-state-city';
@@ -386,6 +386,11 @@ export function Register() {
     }
     return [];
   }, [form.province]);
+
+  const phBarangaysList = useMemo(() => {
+    if (!form.city) return [];
+    return getBarangaysForCity(form.city);
+  }, [form.city]);
 
   const steps = role === 'admin' ? stepsAdmin : role === 'hte' ? stepsHTE : stepsTrainee;
 
@@ -2297,6 +2302,7 @@ export function Register() {
                                     update('province', e.target.value);
                                     update('city', '');
                                     update('barangay', '');
+                                    update('barangayManual', '');
                                   }}
                                   className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
                                     attemptedNext && !hasValidProvince
@@ -2322,6 +2328,7 @@ export function Register() {
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
+                                    update('barangayManual', '');
                                   }}
                                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                 >
@@ -2346,6 +2353,7 @@ export function Register() {
                                   onChange={(e) => {
                                     update('city', e.target.value);
                                     update('barangay', '');
+                                    update('barangayManual', '');
                                   }}
                                   className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
                                     attemptedNext && !hasValidCity
@@ -2384,18 +2392,62 @@ export function Register() {
                             <div className="flex items-center justify-between mb-1">
                               <label className="text-xs font-semibold text-gray-600">Barangay *</label>
                             </div>
-                            <input
-                              value={form.barangay}
-                              onChange={(e) => {
-                                update('barangay', e.target.value);
-                              }}
-                              placeholder="Enter barangay"
-                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
-                                attemptedNext && !hasValidBarangay
-                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                                  : 'border-gray-200 focus:ring-blue-500'
-                              }`}
-                            />
+                            {phBarangaysList.length > 0 || !form.city ? (
+                              <div className="space-y-2">
+                                <select
+                                  value={form.barangay}
+                                  disabled={!form.city}
+                                  onChange={(e) => {
+                                    update('barangay', e.target.value);
+                                    if (e.target.value !== 'other') {
+                                      update('barangayManual', '');
+                                    }
+                                  }}
+                                  className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                    !form.city ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                                  } ${
+                                    attemptedNext && !hasValidBarangay
+                                      ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                      : 'border-gray-200 focus:ring-blue-500'
+                                  }`}
+                                >
+                                  <option value="">
+                                    {!form.city ? 'Select City/Municipality First' : 'Select Barangay'}
+                                  </option>
+                                  {phBarangaysList.map((b) => (
+                                    <option key={b} value={b}>
+                                      {b}
+                                    </option>
+                                  ))}
+                                  <option value="other">Other (type manually)...</option>
+                                </select>
+                                {form.barangay === 'other' && (
+                                  <input
+                                    value={form.barangayManual}
+                                    onChange={(e) => update('barangayManual', e.target.value)}
+                                    placeholder="Enter barangay name"
+                                    className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                      attemptedNext && !form.barangayManual?.trim()
+                                        ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                        : 'border-gray-200 focus:ring-blue-500'
+                                    }`}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <input
+                                value={form.barangay}
+                                onChange={(e) => {
+                                  update('barangay', e.target.value);
+                                }}
+                                placeholder={form.city ? `Enter barangay in ${form.city}` : "Enter barangay"}
+                                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-white ${
+                                  attemptedNext && !hasValidBarangay
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
+                              />
+                            )}
                             {attemptedNext && !hasValidBarangay && (
                               <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Barangay</p>
                             )}
@@ -3227,6 +3279,7 @@ export function Register() {
                               update('province', '');
                               update('city', '');
                               update('barangay', '');
+                              update('barangayManual', '');
                             }}
                             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                           >
@@ -3251,6 +3304,7 @@ export function Register() {
                                 update('province', '');
                                 update('city', '');
                                 update('barangay', '');
+                                update('barangayManual', '');
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
@@ -3269,6 +3323,7 @@ export function Register() {
                                 update('province', '');
                                 update('city', '');
                                 update('barangay', '');
+                                update('barangayManual', '');
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
@@ -3295,6 +3350,7 @@ export function Register() {
                                 update('province', selectedProv);
                                 update('city', '');
                                 update('barangay', '');
+                                update('barangayManual', '');
                               }}
                               className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.region ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
                                 }`}
@@ -3318,6 +3374,7 @@ export function Register() {
                                 const selectedCity = e.target.value;
                                 update('city', selectedCity);
                                 update('barangay', '');
+                                update('barangayManual', '');
                               }}
                               className={`w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 ${!form.province ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
                                 }`}
@@ -3348,6 +3405,7 @@ export function Register() {
                               onChange={(e) => {
                                 update('city', e.target.value);
                                 update('barangay', '');
+                                update('barangayManual', '');
                               }}
                               className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                             >
@@ -3378,19 +3436,63 @@ export function Register() {
                             {form.country === 'PH' || !form.country ? 'Barangay *' : 'Neighborhood/Area'}
                           </label>
                         </div>
-                        {/* Always use manual input for Barangay to avoid select fallback */}
-                        <input
-                          value={form.barangay}
-                          onChange={(e) => {
-                            update('barangay', e.target.value);
-                          }}
-                          placeholder="Enter barangay"
-                          className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
-                            attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay
-                              ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
-                              : 'border-gray-200 focus:ring-blue-500'
-                          }`}
-                        />
+                        {phBarangaysList.length > 0 || !form.city ? (
+                          <div className="space-y-2">
+                            <select
+                              value={form.barangay}
+                              disabled={!form.city}
+                              onChange={(e) => {
+                                update('barangay', e.target.value);
+                                if (e.target.value !== 'other') {
+                                  update('barangayManual', '');
+                                }
+                              }}
+                              className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                                !form.city ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
+                              } ${
+                                attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay
+                                  ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                  : 'border-gray-200 focus:ring-blue-500'
+                              }`}
+                            >
+                              <option value="">
+                                {!form.city ? 'Select City/Municipality First' : 'Select Barangay'}
+                              </option>
+                              {phBarangaysList.map((b) => (
+                                <option key={b} value={b}>
+                                  {b}
+                                </option>
+                              ))}
+                              <option value="other">Other (type manually)...</option>
+                            </select>
+
+                            {form.barangay === 'other' && (
+                              <input
+                                value={form.barangayManual}
+                                onChange={(e) => update('barangayManual', e.target.value)}
+                                placeholder="Enter barangay name"
+                                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                                  attemptedNext && !form.barangayManual?.trim()
+                                    ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                    : 'border-gray-200 focus:ring-blue-500'
+                                }`}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            value={form.barangay}
+                            onChange={(e) => {
+                              update('barangay', e.target.value);
+                            }}
+                            placeholder={form.city ? `Enter barangay in ${form.city}` : "Enter barangay"}
+                            className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 bg-gray-50 ${
+                              attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay
+                                ? 'border-red-400 focus:ring-red-400 bg-red-50/20'
+                                : 'border-gray-200 focus:ring-blue-500'
+                            }`}
+                          />
+                        )}
                         {attemptedNext && (form.country === 'PH' || !form.country) && !hasValidBarangay && (
                           <p className="text-xs text-red-500 mt-1 font-medium">Please enter Barangay</p>
                         )}

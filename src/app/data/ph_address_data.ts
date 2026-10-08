@@ -539,4 +539,109 @@ export const BARANGAY_SAMPLES: Record<string, string[]> = {
   'Davao City': [
     'Agdao', 'Baguio', 'Buhangin', 'Bunawan', 'Calinan', 'Marilog', 'Paquibato', 'Poblacion', 'Talomo', 'Toril', 'Tugbok'
   ],
+  'Dumaguete City': [
+    'Bagacay', 'Bajumpandan', 'Balugo', 'Banilad', 'Bantayan', 'Batinguel', 'Buñao', 'Cadawinonan', 'Calindagan', 'Camanjac', 'Candau-ay', 'Cantil-e', 'Daro', 'Junob', 'Looc', 'Mangnao-Canal', 'Motong', 'Piapi', 'Poblacion 1', 'Poblacion 2', 'Poblacion 3', 'Poblacion 4', 'Poblacion 5', 'Poblacion 6', 'Poblacion 7', 'Poblacion 8', 'Pulantubig', 'Tabuctubig', 'Taclobo', 'Talay'
+  ],
+  Binalbagan: [
+    'Amontay', 'Bagroy', 'Bi-ao', 'Canmoros', 'Enclaro', 'Marina', 'Paglaum', 'Payao', 'Progreso', 'San Jose', 'San Pedro', 'San Roque', 'San Teodoro', 'San Vicente', 'Santo Rosario', 'Santol'
+  ],
+  Calatrava: [
+    'Agpangi', 'Ani-e', 'Bagacay', 'Bantayanon', 'Buenavista', 'Cabunaoan', 'Calatrava', 'Castellano', 'Cruz', 'Dalandan', 'Hilub-ang', 'Hinab-ongan', 'Ilaya', 'Lemery', 'Lipat-on', 'Lo-ok (Poblacion)', 'Ma-as', 'Macasilao', 'Malanog', 'Malasibog', 'Mina-utok', 'Paghumayan', 'Pantao', 'Patun-an', 'Pinocutan', 'Refugio', 'San Benito', 'San Isidro', 'Suba (Poblacion)', 'Telim', 'Tigbao', 'Tigbon', 'Winaswasan'
+  ],
+  Candoni: [
+    'Agboy', 'Bangkalan', 'Cabacungan', 'Caningay', 'Gatuslao', 'Haba', 'Payauan', 'Poblacion East', 'Poblacion West'
+  ],
+  Cauayan: [
+    'Abaca', 'Baclao', 'Biajayan', 'Caliling', 'Camalanda-an', 'Camindangan', 'Elihan', 'Guilungan', 'Inayawan', 'Isio', 'Linaon', 'Lumbia', 'Mambugsay', 'Man-uling', 'Masaling', 'Molobolo', 'Poblacion', 'Siasi', 'Talacdan', 'Tambad', 'Tiling', 'Tomina', 'Tuyom', 'Yawa'
+  ],
+  'E.B. Magalona': [
+    'Alacaygan', 'Alicante', 'Batea', 'Canlusong', 'Consing', 'Cudangdang', 'Damgo', 'Gahit', 'Madalag', 'Manta-angan', 'Nanca', 'Pasil', 'Poblacion I', 'Poblacion II', 'Poblacion III', 'San Isidro', 'San Jose', 'Santo Niño', 'Tabigue', 'Tanza', 'Tomongtong', 'Tuburan', 'Udtongan'
+  ],
+  Hinigaran: [
+    'Anahaw', 'Aranda', 'Bago', 'Cambulad', 'Candungao', 'Gargato', 'Himaya', 'Miranda', 'Nanunga', 'Narauis', 'Palayog', 'Paticui', 'Poblacion 1', 'Poblacion 2', 'Pontevedra', 'Quiwi', 'Tagda', 'Tuguis'
+  ],
+  'Hinoba-an': [
+    'Alim', 'Asia', 'Bacuyangan', 'Barangay 1 (Poblacion)', 'Barangay 2 (Poblacion)', 'Bulwangan', 'Culipapa', 'Damutan', 'Daug', 'Po-ok', 'San Rafael', 'Sangke', 'Talacagay'
+  ],
+  Ilog: [
+    'Andulauan', 'Balicotoc', 'Bocana', 'Calubang', 'Can-Untog', 'Consuelo', 'Dancalan', 'Delicioso', 'Galicia', 'Manalad', 'Pinggot', 'Poblacion', 'Tabu', 'Tagukon', 'Vista Alegre'
+  ],
+  Isabela: [
+    'Amin', 'Banog-banog', 'Bulad', 'Bungahin', 'Cabacungan', 'Camangcamang', 'Campamento', 'Cansalongon', 'Guinpana-an', 'Libas', 'Makilala', 'Mansablay', 'Maytubig', 'Panaquiao', 'Poblacion 1', 'Poblacion 2', 'Poblacion 3', 'Poblacion 4', 'Poblacion 5', 'Poblacion 6', 'Poblacion 7', 'Poblacion 8', 'Poblacion 9', 'Riverside', 'Rumirum', 'San Agustin', 'Sebucauan', 'Sibalao', 'Tinongan'
+  ],
+  'La Castellana': [
+    'Biak-na-Bato', 'Cabacungan', 'Cabagnaan', 'Camandag', 'Lalagsan', 'Manghanoy', 'Mansalanao', 'Masulog', 'Nato', 'Pahanocoy', 'Robles (Poblacion)', 'Sag-ang', 'Talaptap'
+  ],
+  Manapla: [
+    'Chambery', 'Barangay I (Poblacion)', 'Barangay I-A (Poblacion)', 'Barangay II (Poblacion)', 'Barangay II-A (Poblacion)', 'Punta Mesa', 'Punta Salong', 'Purisima', 'San Agustin', 'Santa Teresa', 'Tortosa', 'Uriarte'
+  ],
+  'Moises Padilla': [
+    'Barangay 1 (Poblacion)', 'Barangay 2 (Poblacion)', 'Barangay 3 (Poblacion)', 'Barangay 4 (Poblacion)', 'Barangay 5 (Poblacion)', 'Barangay 6 (Poblacion)', 'Barangay 7 (Poblacion)', 'Crossing Magallon', 'Guinpana-an', 'Inolingan', 'Macagahay', 'Magallon Cadre', 'Montilla', 'Odiong', 'Quintin Remo'
+  ],
+  Murcia: [
+    'Abo-abo', 'Alegria', 'Amontay', 'Anahaw', 'Blumentritt', 'Buenavista', 'Caliban', 'Canlandog', 'Cansilayan', 'Damsite', 'Iglau-an', 'Lopez Jaena', 'Minoyan', 'Pandanon', 'Salvacion', 'San Miguel', 'Santa Cruz', 'Santa Rosa', 'Zone 1 (Poblacion)', 'Zone 2 (Poblacion)', 'Zone 3 (Poblacion)', 'Zone 4 (Poblacion)', 'Zone 5 (Poblacion)'
+  ],
+  Pontevedra: [
+    'Antipolo', 'Barangay 1 (Poblacion)', 'Barangay 2 (Poblacion)', 'Barangay 3 (Poblacion)', 'Buenavista Rizal', 'Burgos', 'Cambannug', 'Canroma', 'General Malvar', 'Gomez', 'M. H. Del Pilar', 'Miranda', 'Pandanan', 'San Isidro', 'San Jose', 'San Juan', 'Zamora'
+  ],
+  Pulupandan: [
+    'Barangay Zone 1 (Poblacion)', 'Barangay Zone 2 (Poblacion)', 'Barangay Zone 3 (Poblacion)', 'Barangay Zone 4 (Poblacion)', 'Barangay Zone 5 (Poblacion)', 'Barangay Zone 6 (Poblacion)', 'Barangay Zone 7 (Poblacion)', 'Canjusa', 'Crossing Pulupandan', 'Mabini', 'Pag-ayon', 'Palaka', 'Pati-on', 'Tapong', 'Ubay', 'Utod'
+  ],
+  'Salvador Benedicto': [
+    'Bago (La Carlota)', 'Bagonbon', 'Bagong Silang', 'Bunga', 'Igmaya-an', 'Kpandanan', 'Pinowayan', 'Poblacion'
+  ],
+  'San Enrique': [
+    'Bagonbon', 'Baliwagan', 'Batuan', 'Guintorilan', 'Nayon', 'Poblacion', 'Sibucao', 'Tabao Baybay', 'Tabao Rizal', 'Tibsoc'
+  ],
+  Toboso: [
+    'Bandila', 'Bug-ang', 'General Luna', 'Magticol', 'Poblacion', 'Salamanca', 'San Isidro', 'San Jose', 'Tabun-ac'
+  ],
+  Valladolid: [
+    'Alijis', 'Ayungon', 'Bagumbayan', 'Batuan', 'Bayabas', 'Central Tabao', 'Doldol', 'Guintorilan', 'Mabini', 'Pacol', 'Palaka', 'Poblacion', 'Sagua Banua', 'Tabao Proper', 'Tan-awan'
+  ],
 };
+
+export function getBarangaysForCity(cityName?: string): string[] {
+  if (!cityName || !cityName.trim()) return [];
+  const normalized = cityName.trim().toLowerCase();
+
+  // 1. Direct or case-insensitive match
+  for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
+    if (key.toLowerCase() === normalized) {
+      return barangays;
+    }
+  }
+
+  // Helper to normalize city names by removing 'City', 'Municipality', 'of', and non-alphanumeric chars
+  const clean = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\bcity\b/g, '')
+      .replace(/\bmunicipality\b/g, '')
+      .replace(/\bof\b/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+
+  const targetClean = clean(normalized);
+  if (!targetClean) return [];
+
+  // 2. Cleaned match (e.g. 'Bacolod City' vs 'Bacolod', 'E.B. Magalona' vs 'EB Magalona')
+  for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
+    const keyClean = clean(key);
+    if (keyClean === targetClean) {
+      return barangays;
+    }
+  }
+
+  // 3. Substring match for prefixes/suffixes if clean length is meaningful (>= 4 chars)
+  if (targetClean.length >= 4) {
+    for (const [key, barangays] of Object.entries(BARANGAY_SAMPLES)) {
+      const keyClean = clean(key);
+      if (keyClean.includes(targetClean) || targetClean.includes(keyClean)) {
+        return barangays;
+      }
+    }
+  }
+
+  return [];
+}
