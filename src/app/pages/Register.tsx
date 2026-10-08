@@ -1243,7 +1243,7 @@ export function Register() {
         contactPhone: form.contactPhone || undefined,
         userId: localStorage.getItem('oauth_user_id') || undefined,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-        requiredHours: role === 'admin' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600),
+        requiredHours: role === 'admin' ? 0 : (role === 'trainee' ? 600 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600)),
         faceRegistered,
         photo,
         active: role !== 'trainee',
@@ -1307,7 +1307,7 @@ export function Register() {
             course: form.course,
             startDate: form.startDate,
             endDate: form.endDate,
-            requiredHours: role === 'admin' || role === 'hte' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600),
+            requiredHours: role === 'admin' || role === 'hte' ? 0 : (role === 'trainee' ? 600 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600)),
             address: residentialAddress,
             residentialAddress: residentialAddress,
             street: form.street || undefined,
@@ -3846,30 +3846,25 @@ export function Register() {
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs font-semibold text-gray-600">Required OJT Hours</label>
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
+                            <Lock size={10} /> Fixed Requirement
+                          </span>
+                        </div>
                         <div className="relative">
                           <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={form.requiredHours ?? ''}
-                            onChange={(e) => update('requiredHours', e.target.value)}
-                            placeholder="600"
-                            className="w-full px-3 py-2.5 pr-8 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            type="text"
+                            value="600"
+                            readOnly
+                            disabled
+                            className="w-full px-3 py-2.5 pr-9 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 bg-gray-100/90 cursor-not-allowed select-none"
                           />
-                          {form.requiredHours !== '' && form.requiredHours !== undefined && form.requiredHours !== null && (
-                            <button
-                              type="button"
-                              onClick={() => update('requiredHours', '')}
-                              aria-label="Clear required hours"
-                              title="Clear required hours"
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200 transition-colors"
-                            >
-                              <X size={14} />
-                            </button>
-                          )}
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                            <Lock size={14} />
+                          </div>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1">Standard academic requirement (e.g. 600 hours)</p>
+                        <p className="text-[10px] text-gray-500 mt-1">Standard academic requirement (fixed at 600 hours)</p>
                       </div>
                     </>
                   )}
