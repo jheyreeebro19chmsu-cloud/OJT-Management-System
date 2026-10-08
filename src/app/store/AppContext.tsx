@@ -1020,10 +1020,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   });
   const [evaluations, setEvaluations] = useState<Evaluation[]>(() => loadFromStorage(STORAGE_KEYS.EVALUATIONS, []));
+  function deduplicateComments(list: AnnouncementComment[]): AnnouncementComment[] {
+    if (!Array.isArray(list)) return [];
+    const result: AnnouncementComment[] = [];
+    const seenIds = new Set<string>();
+
+    for (const c of list) {
+      if (!c || !c.content || !c.announcementId) continue;
+      if (c.id && seenIds.has(c.id)) continue;
+
+      const cTime = new Date(c.createdAt || 0).getTime();
+      const isDup = result.some((existing) => {
+        if (existing.announcementId !== c.announcementId) return false;
+        if ((existing.authorName || '').trim().toLowerCase() !== (c.authorName || '').trim().toLowerCase()) return false;
+        if (existing.content.trim().toLowerCase() !== c.content.trim().toLowerCase()) return false;
+        const existingTime = new Date(existing.createdAt || 0).getTime();
+        return Math.abs(cTime - existingTime) < 60000;
+      });
+
+      if (isDup) continue;
+
+      if (c.id) seenIds.add(c.id);
+      result.push(c);
+    }
+    return result;
+  }
+
   function extractCommentsFromAnnouncements(announcementsList: Announcement[]): AnnouncementComment[] {
     if (!Array.isArray(announcementsList)) return [];
     const comments: AnnouncementComment[] = [];
-    const seenSignatures = new Set<string>();
     for (const ann of announcementsList) {
       if (ann && ann.comments && typeof ann.comments === 'string') {
         try {
@@ -1032,12 +1057,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             for (const item of parsed) {
               if (item && item.content) {
                 const commentId = item.id || `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-                const sig = `${ann.id}:${(item.authorName || '').trim().toLowerCase()}:${(item.content || '').trim().toLowerCase()}`;
-                if (seenSignatures.has(sig) || seenSignatures.has(commentId)) {
-                  continue;
-                }
-                seenSignatures.add(sig);
-                seenSignatures.add(commentId);
                 comments.push({
                   id: commentId,
                   announcementId: ann.id,
@@ -1055,7 +1074,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     }
-    return comments;
+    return deduplicateComments(comments);
   }
 
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
@@ -1073,10 +1092,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const stored = loadFromStorage<AnnouncementComment[]>(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, []);
     const storedAnn = loadFromStorage<Announcement[]>(STORAGE_KEYS.ANNOUNCEMENTS, []);
     const fromAnn = extractCommentsFromAnnouncements(storedAnn);
-    const map = new Map<string, AnnouncementComment>();
-    stored.forEach((c) => map.set(c.id, c));
-    fromAnn.forEach((c) => map.set(c.id, c));
-    return Array.from(map.values());
+    const merged = deduplicateComments([...fromAnn, ...stored]);
+    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+    return merged;
   });
   const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>(() =>
     loadFromStorage<RequiredDocument[]>(STORAGE_KEYS.REQUIRED_DOCUMENTS, [])
@@ -1247,10 +1265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 const fromAnn = extractCommentsFromAnnouncements(ann);
                 if (fromAnn.length > 0) {
                   setAnnouncementComments((prev) => {
-                    const map = new Map<string, AnnouncementComment>();
-                    prev.forEach((c) => map.set(c.id, c));
-                    fromAnn.forEach((c) => map.set(c.id, c));
-                    const merged = Array.from(map.values());
+                    const merged = deduplicateComments([...fromAnn, ...prev]);
                     saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
                     return merged;
                   });
@@ -1263,10 +1278,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchAnnouncementComments().then((comms) => {
               if (isMounted && comms && comms.length > 0) {
                 setAnnouncementComments((prev) => {
-                  const map = new Map<string, AnnouncementComment>();
-                  prev.forEach((c) => map.set(c.id, c));
-                  comms.forEach((c) => map.set(c.id, c));
-                  const merged = Array.from(map.values());
+                  const merged = deduplicateComments([...comms, ...prev]);
                   saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
                   return merged;
                 });
@@ -1439,10 +1451,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
             if (fromAnn.length > 0) {
               setAnnouncementComments((prev) => {
-                const map = new Map<string, AnnouncementComment>();
-                prev.forEach((c) => map.set(c.id, c));
-                fromAnn.forEach((c) => map.set(c.id, c));
-                const merged = Array.from(map.values());
+                const merged = deduplicateComments([...fromAnn, ...prev]);
                 saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
                 return merged;
               });
@@ -1581,10 +1590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
         if (fromAnn.length > 0) {
           setAnnouncementComments((prev) => {
-            const map = new Map<string, AnnouncementComment>();
-            prev.forEach((c) => map.set(c.id, c));
-            fromAnn.forEach((c) => map.set(c.id, c));
-            const merged = Array.from(map.values());
+            const merged = deduplicateComments([...fromAnn, ...prev]);
             saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
             return merged;
           });
@@ -4171,8 +4177,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // 2. Immediately update local state & localStorage with deduplication
     setAnnouncementComments((prev) => {
-      if (prev.some((c) => c.id === newComm.id)) return prev;
-      const next = [...prev, newComm];
+      const next = deduplicateComments([...prev, newComm]);
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
       return next;
     });
@@ -4191,18 +4196,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Merge uniquely by ID
-    const map = new Map<string, AnnouncementComment>();
-    for (const c of existingComments) {
-      map.set(c.id, c);
-    }
-    for (const c of announcementComments.filter((a) => a.announcementId === comment.announcementId)) {
-      map.set(c.id, c);
-    }
-    map.set(newComm.id, newComm);
-
-    const combinedForThisAnn = Array.from(map.values());
-    const commentsJson = JSON.stringify(combinedForThisAnn);
+    const mergedForThisAnn = deduplicateComments([
+      ...existingComments,
+      ...announcementComments.filter((a) => a.announcementId === comment.announcementId),
+      newComm,
+    ]);
+    const commentsJson = JSON.stringify(mergedForThisAnn);
 
     setAnnouncements((prev) => {
       const updated = prev.map((a) => (a.id === comment.announcementId ? { ...a, comments: commentsJson } : a));
@@ -4223,7 +4222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getAnnouncementComments = (announcementId: string): AnnouncementComment[] => {
-    return announcementComments.filter((c) => c.announcementId === announcementId);
+    return deduplicateComments(announcementComments.filter((c) => c.announcementId === announcementId));
   };
 
   const deleteAnnouncementComment = async (announcementId: string, commentId: string): Promise<boolean> => {
