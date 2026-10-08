@@ -23,8 +23,6 @@ export const EMPLOYEE_CORE_COLUMNS = [
   'name',
   'employee_id',
   'email',
-  'phone',
-  'contact_phone',
   'department',
   'position',
   'company_name',
@@ -63,17 +61,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
     }
 
     if (error) {
-      console.warn('Optimized fetchEmployees query notice, trying fallback columns with phone:', error.message);
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('employees')
-        .select('id, name, employee_id, email, phone, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
-        .order('created_at', { ascending: false });
-
-      if (!fallbackError && fallbackData) {
-        return fallbackData.map(transformSupabaseEmployee);
-      }
-
-      console.warn('Trying minimal columns fallback:', fallbackError?.message);
+      console.warn('Optimized fetchEmployees query notice, trying minimal columns fallback:', error.message);
       const { data: minimalData, error: minimalError } = await supabase
         .from('employees')
         .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
