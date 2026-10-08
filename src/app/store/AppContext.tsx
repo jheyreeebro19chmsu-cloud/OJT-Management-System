@@ -6,6 +6,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { getAbsoluteUrl } from '../services/config';
+import { sendAnnouncementNotificationEmail } from '../lib/resend';
 import {
   Employee,
   TimeRecord,
@@ -3927,19 +3928,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   </div>
                 `;
 
-                const { error: fnError } = await supabase.functions.invoke('send-email', {
-                  body: {
-                    to: uniqueEmails,
-                    subject: `[OJT Announcement] ${created.title}`,
-                    html: emailHtml,
-                  },
-                });
-
-                if (fnError) {
-                  console.warn('Background announcement email delivery failed:', fnError);
-                }
+                await sendAnnouncementNotificationEmail(uniqueEmails, created.title, emailHtml);
               } catch (emailErr) {
-                console.warn('Background announcement email notification error:', emailErr);
+                // Silent fail for non-critical background email notifications
               }
             })();
           }

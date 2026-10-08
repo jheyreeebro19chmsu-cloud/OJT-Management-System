@@ -171,3 +171,56 @@ export const sendWelcomeEmail = async (toEmail: string, name: string): Promise<{
     return { error: err?.message || String(err) };
   }
 };
+
+export const sendAnnouncementNotificationEmail = async (
+  toEmails: string[],
+  title: string,
+  htmlContent: string
+): Promise<{ data?: any; error?: string }> => {
+  if (!toEmails || toEmails.length === 0) return { error: 'No recipients' };
+
+  // 1. Primary path: Serverless endpoint /api/send-email
+  try {
+    const res = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: toEmails,
+        subject: `[OJT Announcement] ${title}`,
+        html: htmlContent,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { data };
+    }
+  } catch {
+    // API not reachable, try direct Resend fallback
+  }
+
+  // 2. Secondary path: Direct Resend API
+  if (RESEND_API_KEY) {
+    try {
+      const directRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'OJT System <onboarding@resend.dev>',
+          to: toEmails.slice(0, 50),
+          subject: `[OJT Announcement] ${title}`,
+          html: htmlContent,
+        }),
+      });
+      if (directRes.ok) {
+        return { data: await directRes.json() };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return { error: 'Email service unavailable' };
+};
