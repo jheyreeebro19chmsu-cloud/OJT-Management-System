@@ -1818,6 +1818,20 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
 export async function fetchAnnouncements(): Promise<Announcement[]> {
   if (!isSupabaseConfigured()) return [];
 
+  // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS)
+  try {
+    const res = await fetch('/api/announcements');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data as Announcement[];
+      }
+    }
+  } catch (apiErr) {
+    console.warn('fetchAnnouncements /api/announcements note:', apiErr);
+  }
+
+  // 2. Direct Supabase client fallback
   const { data, error } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
 
   if (error) {
@@ -1875,6 +1889,24 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     // created_at intentionally omitted — let the DB default (now()) set it
   };
 
+  // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS to guarantee persistence)
+  try {
+    const res = await fetch('/api/announcements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(supabaseAnn),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.id) {
+        return data as Announcement;
+      }
+    }
+  } catch (apiErr) {
+    console.warn('API endpoint /api/announcements POST error, falling back to direct Supabase:', apiErr);
+  }
+
+  // 2. Direct Supabase client fallback
   const { data, error } = await supabase.from('announcements').insert([supabaseAnn]).select().single();
 
   if (error) {
@@ -1922,6 +1954,21 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
   if (updates.requiresSubmission !== undefined) supabaseUpdates.requires_submission = updates.requiresSubmission;
   if (updates.createdByRole !== undefined) supabaseUpdates.created_by_role = updates.createdByRole;
 
+  // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS)
+  try {
+    const res = await fetch(`/api/announcements?id=${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(supabaseUpdates),
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch (apiErr) {
+    console.warn('API endpoint /api/announcements PUT error, falling back to direct Supabase:', apiErr);
+  }
+
+  // 2. Direct Supabase client fallback
   const { error } = await supabase.from('announcements').update(supabaseUpdates).eq('id', id);
 
   if (error) {
@@ -1935,6 +1982,19 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
 export async function deleteAnnouncement(id: string): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
 
+  // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS)
+  try {
+    const res = await fetch(`/api/announcements?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch (apiErr) {
+    console.warn('API endpoint /api/announcements DELETE error, falling back to direct Supabase:', apiErr);
+  }
+
+  // 2. Direct Supabase client fallback
   const { error } = await supabase.from('announcements').delete().eq('id', id);
 
   if (error) {

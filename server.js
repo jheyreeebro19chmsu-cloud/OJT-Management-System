@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import { URL } from 'url';
 import { getAllEmployees, createEmployee, updateEmployee, deleteEmployee } from './src/backend/db';
+import announcementsHandler from './api/announcements.js';
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
@@ -229,6 +230,11 @@ if (req.url.startsWith('/api/employees')) {
   res.end('Method Not Allowed');
   return;
 }
+  // ====== ANNOUNCEMENTS API ROUTE (Service Role RLS Bypass) ======
+  if (req.url.startsWith('/api/announcements')) {
+    return announcementsHandler(req, res);
+  }
+
   // If request is for /api/*, proxy to backend with CORS headers
   if (req.url.startsWith('/api/')) {
     const backendPath = req.url; // Already includes /api/...
