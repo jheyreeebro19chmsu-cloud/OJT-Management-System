@@ -1941,7 +1941,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   course: 'Information Systems',
                   startDate: new Date().toISOString().split('T')[0],
                   endDate: new Date().toISOString().split('T')[0],
-                  requiredHours: isInstRole || isHostRole ? 0 : 486,
+                  requiredHours: isInstRole || isHostRole ? 0 : 600,
                   faceRegistered: false,
                   active: true,
                   academicYear: settings.activeAcademicYear,
@@ -2533,7 +2533,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       course: employeeData.course || 'N/A',
       startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
       endDate: employeeData.endDate || new Date().toISOString().split('T')[0],
-      requiredHours: employeeData.requiredHours ?? (isInstructor || isHTE ? 0 : 486),
+      requiredHours: employeeData.requiredHours ?? (isInstructor || isHTE ? 0 : 600),
     };
 
     const newEmp: Employee = {

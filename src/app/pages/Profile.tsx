@@ -173,7 +173,7 @@ export function Profile() {
     course: (currentUser as any)?.course || 'BS Information Technology',
     startDate: (currentUser as any)?.startDate || new Date().toISOString().split('T')[0],
     endDate: (currentUser as any)?.endDate || new Date().toISOString().split('T')[0],
-    requiredHours: (currentUser as any)?.requiredHours || 486,
+    requiredHours: (currentUser as any)?.requiredHours || (employee as any)?.requiredHours || 600,
     photo: currentUser?.photo || '',
     faceRegistered: currentUser?.faceRegistered ?? false,
     active: true,

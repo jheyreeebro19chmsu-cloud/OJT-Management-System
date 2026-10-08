@@ -216,7 +216,7 @@ export function Register() {
     employeeId: '',
     startDate: '',
     endDate: '',
-    requiredHours: 486 as number | string,
+    requiredHours: 600 as number | string,
   });
 
   const selectedProgramOptions = useMemo(() => {
@@ -1238,7 +1238,7 @@ export function Register() {
         contactPhone: form.contactPhone || undefined,
         userId: localStorage.getItem('oauth_user_id') || undefined,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-        requiredHours: role === 'admin' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
+        requiredHours: role === 'admin' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600),
         faceRegistered,
         photo,
         active: role !== 'trainee',
@@ -1302,7 +1302,7 @@ export function Register() {
             course: form.course,
             startDate: form.startDate,
             endDate: form.endDate,
-            requiredHours: role === 'admin' || role === 'hte' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 486),
+            requiredHours: role === 'admin' || role === 'hte' ? 0 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600),
             address: residentialAddress,
             residentialAddress: residentialAddress,
             street: form.street || undefined,
@@ -3866,7 +3866,7 @@ export function Register() {
                             step="1"
                             value={form.requiredHours ?? ''}
                             onChange={(e) => update('requiredHours', e.target.value)}
-                            placeholder="486"
+                            placeholder="600"
                             className="w-full px-3 py-2.5 pr-8 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
                           />
                           {form.requiredHours !== '' && form.requiredHours !== undefined && form.requiredHours !== null && (
@@ -3881,7 +3881,7 @@ export function Register() {
                             </button>
                           )}
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1">Standard academic requirement (e.g. 486 hours)</p>
+                        <p className="text-[10px] text-gray-400 mt-1">Standard academic requirement (e.g. 600 hours)</p>
                       </div>
                     </>
                   )}

@@ -122,7 +122,7 @@ export function Records() {
 
   // Overall OJT stats
   const allTotalHours = allRecords.reduce((s, r) => s + (r.totalHours || 0), 0);
-  const requiredHours = Number(currentEmp?.requiredHours) > 0 ? Number(currentEmp?.requiredHours) : 486;
+  const requiredHours = Number(currentEmp?.requiredHours) > 0 ? Number(currentEmp?.requiredHours) : 600;
   const progressPercent = Math.min(100, Math.round((allTotalHours / requiredHours) * 100));
 
   // Generate month options (All Months + last 6 months)

@@ -213,7 +213,7 @@ export function Dashboard() {
     }
 
     const totalRequiredHours = Math.round(
-      studentEmployees.reduce((sum, s) => sum + (Number(s.requiredHours) || 486), 0) * 10
+      studentEmployees.reduce((sum, s) => sum + (Number(s.requiredHours) || 600), 0) * 10
     ) / 10;
     totalRenderedHours = Math.round(totalRenderedHours * 10) / 10;
     const totalRemainingHours = Math.max(0, Math.round((totalRequiredHours - totalRenderedHours) * 10) / 10);
@@ -730,7 +730,7 @@ export function Dashboard() {
     return { total: trainees.length, compliant, pending, incomplete, pendingSubmissions };
   }, [studentEmployees, isAdmin]);
 
-  const requiredHours = employee?.requiredHours ?? (isAdmin ? 0 : 486);
+  const requiredHours = employee?.requiredHours ?? (isAdmin ? 0 : 600);
   const hoursProgress = requiredHours > 0 ? Math.min((totalHoursRendered / requiredHours) * 100, 100) : 0;
   const presentDays = allRecords.filter((r) => r.status === 'present' || r.status === 'overtime').length;
   const lateDays = allRecords.filter((r) => r.status === 'late').length;
@@ -830,7 +830,7 @@ export function Dashboard() {
         position: 'OJT Trainee',
         companyName: 'Host Training Establishment',
         supervisorName: 'HTE Supervisor',
-        requiredHours: 486,
+        requiredHours: 600,
         active: true,
         photo: record.photo,
       } as Employee);
@@ -1480,7 +1480,7 @@ export function Dashboard() {
               .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
             const totalRendered = empRecords.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
-            const required = Number(target.requiredHours) || 486;
+            const required = Number(target.requiredHours) || 600;
             const progressPercent = Math.min(100, Math.round((totalRendered / required) * 100));
             const remainingHours = Math.max(0, required - totalRendered);
 
@@ -2370,7 +2370,7 @@ export function Dashboard() {
 
               <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
                 <span className="text-[11px]">
-                  Required Hours: <strong className="text-slate-700">{employee?.requiredHours || 486}h</strong>
+                  Required Hours: <strong className="text-slate-700">{employee?.requiredHours || 600}h</strong>
                 </span>
                 <span className="text-[11px] font-medium text-slate-600">
                   {employee?.campus || 'CHMSU'}

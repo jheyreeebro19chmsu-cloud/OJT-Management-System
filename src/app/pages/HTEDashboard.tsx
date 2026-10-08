@@ -277,7 +277,7 @@ export function HTEDashboard() {
       const calculatedRendered = Math.round((totalMinutes / 60) * 10) / 10;
       const directRendered = Number(t.renderedHours) || Number((t.registrationLocation as any)?.renderedHours) || 0;
       const renderedHours = Math.max(calculatedRendered, directRendered);
-      const requiredHours = t.requiredHours || 486;
+      const requiredHours = t.requiredHours || 600;
       const progress = Math.min(Math.round((renderedHours / requiredHours) * 100), 100);
       const hasEvaluation =
         evaluations.some((ev) => ev.employeeId === t.id) ||

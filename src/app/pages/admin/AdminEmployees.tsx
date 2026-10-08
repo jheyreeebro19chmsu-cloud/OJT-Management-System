@@ -32,7 +32,7 @@ const BLANK_FORM = {
   course: '',
   startDate: '',
   endDate: '',
-  requiredHours: 486,
+  requiredHours: 600,
   academicYear: '2026-2027',
   residentialAddress: '',
   documentsPassed: false,
@@ -725,7 +725,7 @@ export function AdminEmployees() {
       course: emp.course || '',
       startDate: emp.startDate || '',
       endDate: emp.endDate || '',
-      requiredHours: emp.requiredHours ?? 486,
+      requiredHours: emp.requiredHours ?? 600,
       academicYear: emp.academicYear || settings?.activeAcademicYear || '2026-2027',
       residentialAddress: resolveEmpHomeAddress(emp) || '',
       documentsPassed: (() => {
@@ -797,7 +797,7 @@ export function AdminEmployees() {
       course: editForm.course,
       startDate: editForm.startDate,
       endDate: editForm.endDate,
-      requiredHours: Number(editForm.requiredHours) || 486,
+      requiredHours: Number(editForm.requiredHours) || 600,
       academicYear: editForm.academicYear,
       residentialAddress: editForm.residentialAddress.trim(),
       address: editForm.residentialAddress.trim(),
@@ -3163,7 +3163,7 @@ export function AdminEmployees() {
                                 { label: 'Campus', val: selectedEmp.campus || 'Not specified' },
                                 { label: 'Course', val: selectedEmp.course || 'Not specified' },
                                 { label: 'OJT Period', val: `${selectedEmp.startDate || '—'} → ${selectedEmp.endDate || '—'}` },
-                                { label: 'Required Hours', val: `${selectedEmp.requiredHours ?? 486} hrs` },
+                                { label: 'Required Hours', val: `${selectedEmp.requiredHours ?? 600} hrs` },
                                 {
                                   label: 'Requirements',
                                   val: (() => {
@@ -3975,7 +3975,7 @@ export function AdminEmployees() {
                           value={editForm.requiredHours}
                           onChange={(e) => updEdit('requiredHours', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
-                          placeholder="486"
+                          placeholder="600"
                         />
                       </div>
 

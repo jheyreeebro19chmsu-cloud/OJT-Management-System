@@ -194,7 +194,7 @@ export function HTETrainees() {
       const calculatedRendered = Math.round((totalMinutes / 60) * 10) / 10;
       const directRendered = Number(trainee.renderedHours) || Number((trainee.registrationLocation as any)?.renderedHours) || 0;
       const renderedHours = Math.max(calculatedRendered, directRendered);
-      const requiredHours = trainee.requiredHours || 486;
+      const requiredHours = trainee.requiredHours || 600;
       const progressPercent = Math.min(Math.round((renderedHours / requiredHours) * 100), 100);
 
       const isDirectlyAssigned = Boolean(
