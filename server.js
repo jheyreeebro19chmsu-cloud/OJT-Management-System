@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import { URL } from 'url';
 import { getAllEmployees, createEmployee, updateEmployee, deleteEmployee } from './src/backend/db';
 import announcementsHandler from './api/announcements.js';
+import sendEmailHandler from './api/send-email.js';
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
@@ -233,6 +234,11 @@ if (req.url.startsWith('/api/employees')) {
   // ====== ANNOUNCEMENTS API ROUTE (Service Role RLS Bypass) ======
   if (req.url.startsWith('/api/announcements')) {
     return announcementsHandler(req, res);
+  }
+
+  // ====== SEND EMAIL API ROUTE ======
+  if (req.url.startsWith('/api/send-email')) {
+    return sendEmailHandler(req, res);
   }
 
   // If request is for /api/*, proxy to backend with CORS headers

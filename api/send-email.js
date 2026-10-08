@@ -1,29 +1,57 @@
 const RESEND_API_KEY = process.env.VITE_RESEND_API_KEY || process.env.RESEND_API_KEY;
 
+function sendJson(res, statusCode, data) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json');
+  if (typeof res.status === 'function' && typeof res.json === 'function') {
+    return res.status(statusCode).json(data);
+  }
+  return res.end(JSON.stringify(data));
+}
+
+async function parseBody(req) {
+  if (req.body !== undefined && req.body !== null) {
+    return typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  }
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', chunk => (body += chunk));
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.statusCode = 200;
+    return res.end();
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return sendJson(res, 405, { error: 'Method not allowed' });
   }
 
   if (!RESEND_API_KEY) {
-    return res.status(200).json({ skipped: true, message: 'RESEND_API_KEY not configured' });
+    return sendJson(res, 200, { skipped: true, message: 'RESEND_API_KEY not configured' });
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const body = await parseBody(req);
     const { to, subject, html } = body;
 
     const recipients = Array.isArray(to) ? to.filter((e) => e && typeof e === 'string' && e.includes('@')) : [to].filter(Boolean);
     if (recipients.length === 0) {
-      return res.status(400).json({ error: 'Valid recipient email(s) required.' });
+      return sendJson(res, 400, { error: 'Valid recipient email(s) required.' });
     }
 
     const resendResponse = await fetch('https://api.resend.com/emails', {
@@ -40,9 +68,9 @@ export default async function handler(req, res) {
       }),
     });
 
-    const data = await resendResponse.json();
-    return res.status(resendResponse.ok ? 200 : resendResponse.status).json(data);
+    const data = await resendResponse.json().catch(() => ({}));
+    return sendJson(res, resendResponse.ok ? 200 : resendResponse.status, data);
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Internal server error' });
+    return sendJson(res, 500, { error: err.message || 'Internal server error' });
   }
 }

@@ -195,31 +195,7 @@ export const sendAnnouncementNotificationEmail = async (
       return { data };
     }
   } catch {
-    // API not reachable, try direct Resend fallback
-  }
-
-  // 2. Secondary path: Direct Resend API
-  if (RESEND_API_KEY) {
-    try {
-      const directRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'OJT System <onboarding@resend.dev>',
-          to: toEmails.slice(0, 50),
-          subject: `[OJT Announcement] ${title}`,
-          html: htmlContent,
-        }),
-      });
-      if (directRes.ok) {
-        return { data: await directRes.json() };
-      }
-    } catch {
-      // ignore
-    }
+    // API not reachable or background email not configured
   }
 
   return { error: 'Email service unavailable' };
