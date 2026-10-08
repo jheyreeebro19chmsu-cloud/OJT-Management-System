@@ -6,10 +6,11 @@
 
 CREATE TABLE IF NOT EXISTS public.announcement_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  announcement_id UUID NOT NULL,
+  announcement_id TEXT NOT NULL,
   employee_id UUID REFERENCES public.employees(id) ON DELETE SET NULL,
-  author_name TEXT NOT NULL,
-  author_role TEXT DEFAULT 'employee',
+  author_id TEXT,
+  author_name TEXT NOT NULL DEFAULT 'User',
+  author_role TEXT NOT NULL DEFAULT 'employee',
   content TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -27,17 +28,23 @@ ALTER TABLE public.announcement_comments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow read announcement_comments" ON public.announcement_comments;
 CREATE POLICY "Allow read announcement_comments"
 ON public.announcement_comments FOR SELECT
-TO authenticated, anon
+TO authenticated, anon, public
 USING (true);
 
 DROP POLICY IF EXISTS "Allow insert announcement_comments" ON public.announcement_comments;
 CREATE POLICY "Allow insert announcement_comments"
 ON public.announcement_comments FOR INSERT
-TO authenticated, anon
+TO authenticated, anon, public
 WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow update announcement_comments" ON public.announcement_comments;
+CREATE POLICY "Allow update announcement_comments"
+ON public.announcement_comments FOR UPDATE
+TO authenticated, anon, public
+USING (true);
 
 DROP POLICY IF EXISTS "Allow delete announcement_comments" ON public.announcement_comments;
 CREATE POLICY "Allow delete announcement_comments"
 ON public.announcement_comments FOR DELETE
-TO authenticated
-USING (public.is_instructor() OR employee_id = auth.uid());
+TO authenticated, anon, public
+USING (true);

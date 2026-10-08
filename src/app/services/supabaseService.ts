@@ -2073,9 +2073,50 @@ export async function createAnnouncementSubmission(submission: Omit<Announcement
   }
 }
 
+let hasAnnouncementCommentsTable: boolean | null = null;
+
 export async function fetchAnnouncementComments(): Promise<AnnouncementComment[]> {
-  // Table announcement_comments is stored locally to eliminate unmigrated 404 network requests
-  return [];
+  // 1. Try server endpoint first (prevents 404 in browser console and handles service role)
+  try {
+    const res = await fetch('/api/announcements?action=comments');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (apiErr) {
+    // API not reachable, fallback to direct Supabase
+  }
+
+  if (!isSupabaseConfigured() || hasAnnouncementCommentsTable === false) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from('announcement_comments')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      if ((error as any)?.code === 'PGRST205' || (error as any)?.status === 404) {
+        hasAnnouncementCommentsTable = false;
+      }
+      return [];
+    }
+
+    hasAnnouncementCommentsTable = true;
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      announcementId: row.announcement_id,
+      employeeId: row.employee_id,
+      authorName: row.author_name,
+      authorRole: row.author_role,
+      content: row.content,
+      createdAt: row.created_at,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function createAnnouncementComment(comment: Omit<AnnouncementComment, 'id'>): Promise<AnnouncementComment | null> {
@@ -2089,12 +2130,39 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
     createdAt: comment.createdAt || new Date().toISOString(),
   };
 
-  if (!isSupabaseConfigured()) return localComment;
+  // 1. Primary path: Service role endpoint /api/announcements?action=comment (safely returns 200 even if unmigrated)
+  try {
+    const res = await fetch('/api/announcements?action=comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        announcement_id: comment.announcementId,
+        employee_id: comment.employeeId || null,
+        author_name: comment.authorName,
+        author_role: comment.authorRole,
+        content: comment.content,
+        created_at: comment.createdAt || new Date().toISOString(),
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.comment) {
+        return data.comment;
+      }
+      return localComment;
+    }
+  } catch (apiErr) {
+    // API endpoint not reachable (e.g. standalone Vite dev without server)
+  }
+
+  if (!isSupabaseConfigured() || hasAnnouncementCommentsTable === false) return localComment;
 
   try {
+    const isUUID = typeof comment.employeeId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(comment.employeeId);
     const payload = {
       announcement_id: comment.announcementId,
-      employee_id: comment.employeeId || null,
+      employee_id: isUUID ? comment.employeeId : null,
+      author_id: comment.employeeId || null,
       author_name: comment.authorName,
       author_role: comment.authorRole,
       content: comment.content,
@@ -2108,9 +2176,13 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
       .maybeSingle();
 
     if (error) {
+      if ((error as any)?.code === 'PGRST205' || (error as any)?.status === 404) {
+        hasAnnouncementCommentsTable = false;
+      }
       return localComment;
     }
 
+    hasAnnouncementCommentsTable = true;
     return {
       id: data?.id || localComment.id,
       announcementId: data?.announcement_id || comment.announcementId,

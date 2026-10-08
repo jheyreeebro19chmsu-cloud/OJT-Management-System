@@ -1204,6 +1204,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchAnnouncementSubmissions().then((subs) => {
               if (isMounted && subs && subs.length > 0) setAnnouncementSubmissions(subs);
             }),
+            supabaseService.fetchAnnouncementComments().then((comms) => {
+              if (isMounted && comms && comms.length > 0) {
+                setAnnouncementComments((prev) => {
+                  const map = new Map<string, AnnouncementComment>();
+                  prev.forEach((c) => map.set(c.id, c));
+                  comms.forEach((c) => map.set(c.id, c));
+                  const merged = Array.from(map.values());
+                  saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+                  return merged;
+                });
+              }
+            }),
             supabaseService.fetchHostFeedback().then((fb) => {
               if (isMounted && fb && fb.length > 0) setHostFeedback(fb);
             }),

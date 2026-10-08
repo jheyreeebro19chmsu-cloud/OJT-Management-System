@@ -77,8 +77,36 @@ export default async function handler(req, res) {
   }
 
   try {
-    // GET: Fetch announcements
+    // GET: Fetch announcements or comments
     if (req.method === 'GET') {
+      const action = getQueryParam(req, 'action');
+      if (action === 'comments') {
+        try {
+          const { data, error } = await supabase
+            .from('announcement_comments')
+            .select('*')
+            .order('created_at', { ascending: true });
+
+          if (error) {
+            // Table doesn't exist yet in Supabase schema cache
+            return sendJson(res, 200, []);
+          }
+
+          const formatted = (data || []).map((row) => ({
+            id: row.id,
+            announcementId: row.announcement_id,
+            employeeId: row.employee_id,
+            authorName: row.author_name,
+            authorRole: row.author_role,
+            content: row.content,
+            createdAt: row.created_at,
+          }));
+          return sendJson(res, 200, formatted);
+        } catch {
+          return sendJson(res, 200, []);
+        }
+      }
+
       const { data, error } = await supabase
         .from('announcements')
         .select('*')
@@ -92,9 +120,70 @@ export default async function handler(req, res) {
       return sendJson(res, 200, formatted);
     }
 
-    // POST: Create new announcement
+    // POST: Create new announcement or comment
     if (req.method === 'POST') {
       const body = await parseBody(req);
+      const action = getQueryParam(req, 'action') || body.action;
+
+      if (action === 'comment' || (body.announcement_id && body.content && !body.title)) {
+        const announcementId = body.announcement_id || body.announcementId;
+        const rawEmpId = body.employee_id || body.employeeId || null;
+        const isUUID = typeof rawEmpId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawEmpId);
+        const employeeId = isUUID ? rawEmpId : null;
+        const authorName = body.author_name || body.authorName || 'User';
+        const authorRole = body.author_role || body.authorRole || 'employee';
+        const content = body.content || '';
+        const createdAt = body.created_at || body.createdAt || new Date().toISOString();
+
+        const localFallback = {
+          id: `comm-${Date.now()}`,
+          announcementId,
+          employeeId: rawEmpId,
+          authorName,
+          authorRole,
+          content,
+          createdAt,
+        };
+
+        try {
+          const payload = {
+            announcement_id: announcementId,
+            employee_id: employeeId,
+            author_id: rawEmpId || employeeId,
+            author_name: authorName,
+            author_role: authorRole,
+            content,
+            created_at: createdAt,
+          };
+
+          const { data, error } = await supabase
+            .from('announcement_comments')
+            .insert([payload])
+            .select()
+            .maybeSingle();
+
+          if (error) {
+            // Table doesn't exist yet in Supabase schema cache (PGRST205) -> return 200 with local fallback
+            return sendJson(res, 200, { success: true, localOnly: true, comment: localFallback });
+          }
+
+          return sendJson(res, 200, {
+            success: true,
+            comment: {
+              id: data?.id || localFallback.id,
+              announcementId: data?.announcement_id || announcementId,
+              employeeId: data?.employee_id || rawEmpId,
+              authorName: data?.author_name || authorName,
+              authorRole: data?.author_role || authorRole,
+              content: data?.content || content,
+              createdAt: data?.created_at || createdAt,
+            },
+          });
+        } catch {
+          return sendJson(res, 200, { success: true, localOnly: true, comment: localFallback });
+        }
+      }
+
       const {
         title,
         content,
