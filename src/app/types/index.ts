@@ -67,18 +67,21 @@ export interface TraineeDocumentItem {
 }
 
 export interface TraineeDocuments {
+  internshipAgreement?: TraineeDocumentItem;
+  moa?: TraineeDocumentItem;
+  consent?: TraineeDocumentItem;
+  trainingPlan?: TraineeDocumentItem;
   pledgeOfConduct?: TraineeDocumentItem;
   medical?: TraineeDocumentItem;
-  enrolmentForm?: TraineeDocumentItem;
-  consent?: TraineeDocumentItem;
+  application?: TraineeDocumentItem;
   resume?: TraineeDocumentItem;
+  enrolmentForm?: TraineeDocumentItem;
+  endorsement?: TraineeDocumentItem;
+  // Legacy / backward-compatible aliases
   dutiesAndResponsibilities?: TraineeDocumentItem;
-  moa?: TraineeDocumentItem;
-  internshipAgreement?: TraineeDocumentItem;
   evaluationForm?: TraineeDocumentItem;
   evaluationReport?: TraineeDocumentItem;
-  // Legacy / backward-compatible aliases
-  endorsement?: TraineeDocumentItem;
+  parent_consent?: TraineeDocumentItem;
   [key: string]: TraineeDocumentItem | undefined;
 }
 

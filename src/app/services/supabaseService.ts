@@ -311,12 +311,17 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
         const isTrainee = !employee.position || (!employee.position.toLowerCase().includes('instructor') && !employee.position.toLowerCase().includes('hte') && employee.position !== 'Administrator');
         if (!isTrainee) return employee.documentsPassed !== undefined ? employee.documentsPassed : true;
         const REQUIRED_KEYS = [
-          'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
-          'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+          'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
+          'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
         ];
         const uploadedCount = employee.submittedDocuments
           ? REQUIRED_KEYS.filter((k) => {
-              const d = (employee.submittedDocuments as any)?.[k];
+              const d =
+                (employee.submittedDocuments as any)?.[k] ||
+                (k === 'consent' ? (employee.submittedDocuments as any)?.parent_consent : undefined) ||
+                (k === 'medical' ? (employee.submittedDocuments as any)?.clearance : undefined) ||
+                (k === 'trainingPlan' ? (employee.submittedDocuments as any)?.training_plan : undefined) ||
+                (k === 'application' ? ((employee.submittedDocuments as any)?.applicationForm || (employee.submittedDocuments as any)?.application_letter) : undefined);
               return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
             }).length
           : 0;
@@ -327,12 +332,17 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
         const isTrainee = !employee.position || (!employee.position.toLowerCase().includes('instructor') && !employee.position.toLowerCase().includes('hte') && employee.position !== 'Administrator');
         if (!isTrainee) return employee.documentsStatus || 'passed';
         const REQUIRED_KEYS = [
-          'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
-          'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+          'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
+          'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
         ];
         const uploadedCount = employee.submittedDocuments
           ? REQUIRED_KEYS.filter((k) => {
-              const d = (employee.submittedDocuments as any)?.[k];
+              const d =
+                (employee.submittedDocuments as any)?.[k] ||
+                (k === 'consent' ? (employee.submittedDocuments as any)?.parent_consent : undefined) ||
+                (k === 'medical' ? (employee.submittedDocuments as any)?.clearance : undefined) ||
+                (k === 'trainingPlan' ? (employee.submittedDocuments as any)?.training_plan : undefined) ||
+                (k === 'application' ? ((employee.submittedDocuments as any)?.applicationForm || (employee.submittedDocuments as any)?.application_letter) : undefined);
               return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
             }).length
           : 0;
@@ -2487,18 +2497,31 @@ export function transformSupabaseEmployee(data: any): Employee {
       }
 
       const REQUIRED_KEYS = [
-        'pledgeOfConduct', 'medical', 'enrolmentForm', 'consent', 'resume',
-        'dutiesAndResponsibilities', 'moa', 'internshipAgreement', 'evaluationForm', 'evaluationReport'
+        'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
+        'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
       ];
+      const getDoc = (k: string) => {
+        if (!submittedDocs) return undefined;
+        if ((submittedDocs as any)[k]) return (submittedDocs as any)[k];
+        if (k === 'trainingPlan' && ((submittedDocs as any).dutiesAndResponsibilities || (submittedDocs as any).training_plan)) return (submittedDocs as any).dutiesAndResponsibilities || (submittedDocs as any).training_plan;
+        if (k === 'application' && ((submittedDocs as any).evaluationForm || (submittedDocs as any).evaluationReport || (submittedDocs as any).applicationForm || (submittedDocs as any).application_letter)) return (submittedDocs as any).evaluationForm || (submittedDocs as any).evaluationReport || (submittedDocs as any).applicationForm || (submittedDocs as any).application_letter;
+        if (k === 'consent' && ((submittedDocs as any).parent_consent || (submittedDocs as any).parentalConsent)) return (submittedDocs as any).parent_consent || (submittedDocs as any).parentalConsent;
+        if (k === 'internshipAgreement' && ((submittedDocs as any).internship_agreement || (submittedDocs as any).agreement)) return (submittedDocs as any).internship_agreement || (submittedDocs as any).agreement;
+        if (k === 'moa' && ((submittedDocs as any).memorandumOfAgreement || (submittedDocs as any).moaDoc)) return (submittedDocs as any).memorandumOfAgreement || (submittedDocs as any).moaDoc;
+        if (k === 'medical' && ((submittedDocs as any).medicalCertificate || (submittedDocs as any).clearance || (submittedDocs as any).medCert)) return (submittedDocs as any).medicalCertificate || (submittedDocs as any).clearance || (submittedDocs as any).medCert;
+        if (k === 'endorsement' && ((submittedDocs as any).endorsementLetter || (submittedDocs as any).endorsementDoc)) return (submittedDocs as any).endorsementLetter || (submittedDocs as any).endorsementDoc;
+        return undefined;
+      };
+
       const uploadedDocsCount = submittedDocs
         ? REQUIRED_KEYS.filter((k) => {
-            const d = (submittedDocs as any)[k];
+            const d = getDoc(k);
             return Boolean(d && (d.dataUrl || d.name || d.fileUrl));
           }).length
         : 0;
       const passedDocsCount = submittedDocs
         ? REQUIRED_KEYS.filter((k) => {
-            const d = (submittedDocs as any)[k];
+            const d = getDoc(k);
             return d?.status === 'passed' && Boolean(d && (d.dataUrl || d.name || d.fileUrl));
           }).length
         : 0;

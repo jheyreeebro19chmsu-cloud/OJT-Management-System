@@ -52,7 +52,7 @@ import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
 import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
-import { REQUIRED_TRAINEE_DOC_KEYS, REQUIRED_TRAINEE_DOCUMENTS } from '../data/documentRequirements';
+import { REQUIRED_TRAINEE_DOC_KEYS, REQUIRED_TRAINEE_DOCUMENTS, getTraineeDocItem } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
 import { computeTraineeOjtNotifications } from '../utils/traineeNotifications';
 import { getPaginationWindow } from '../utils/pagination';
@@ -403,7 +403,10 @@ export function Dashboard() {
   const submittedDocs: TraineeDocuments = currentEmp?.submittedDocuments || {};
   const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
   const totalRequired = docKeys.length;
-  const uploadedDocsCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
+  const uploadedDocsCount = docKeys.filter((k) => {
+    const d = getTraineeDocItem(submittedDocs, k);
+    return Boolean(d?.dataUrl || d?.name);
+  }).length;
   const missingDocsCount = totalRequired - uploadedDocsCount;
   const isAllDocsPassed =
     (currentEmp?.documentsPassed && currentEmp?.documentsStatus === 'passed') ||
@@ -746,9 +749,12 @@ export function Dashboard() {
 
     trainees.forEach((emp) => {
       const docs = emp.submittedDocuments || {};
-      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
+      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+        const d = getTraineeDocItem(docs, k);
+        return d?.status === 'passed';
+      }).length;
       const hasPendingDoc = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
-        const d = docs[k];
+        const d = getTraineeDocItem(docs, k);
         const hasFile = Boolean(d && (d.dataUrl || d.name || (d as any).fileUrl));
         return hasFile && (d.status === 'pending' || d.status === 'submitted' || !d.status) && d.status !== 'passed' && d.status !== 'rejected';
       });
@@ -769,7 +775,7 @@ export function Dashboard() {
       }
 
       REQUIRED_TRAINEE_DOCUMENTS.forEach((req) => {
-        const d = docs[req.key];
+        const d = getTraineeDocItem(docs, req.key);
         const hasFile = Boolean(d && (d.dataUrl || d.name || (d as any).fileUrl));
         const isPendingItem = hasFile && (d.status === 'pending' || d.status === 'submitted' || !d.status) && d.status !== 'passed' && d.status !== 'rejected';
         if (isPendingItem) {
@@ -2320,9 +2326,9 @@ export function Dashboard() {
                 <FileCheck size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-gray-800 text-sm">Required OJT Documents</h3>
+                <h3 className="font-bold text-gray-800 text-sm">Pre-Requirement Documents</h3>
                 <p className="text-xs text-gray-500">
-                  {uploadedDocsCount}/4 Documents Submitted ({docsProgressPercent}%)
+                  {uploadedDocsCount}/{totalRequired} Documents Submitted ({docsProgressPercent}%)
                 </p>
               </div>
             </div>
@@ -2336,7 +2342,7 @@ export function Dashboard() {
             >
               {isAllDocsPassed ? (
                 <>
-                  <Check size={13} className="stroke-[3]" /> 4/4 Passed
+                  <Check size={13} className="stroke-[3]" /> {totalRequired}/{totalRequired} Passed
                 </>
               ) : (
                 <>
@@ -2361,10 +2367,10 @@ export function Dashboard() {
             />
           </div>
 
-          {/* 4 Mini Document Status Pills (Compact Overview) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          {/* 10 Mini Pre-Requirement Status Pills */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
             {STANDARD_REQUIRED_DOCS.map((docItem) => {
-              const doc = submittedDocs[docItem.key];
+              const doc = getTraineeDocItem(submittedDocs, docItem.key);
               const hasFile = Boolean(doc?.dataUrl || doc?.name);
               const isPassed = doc?.status === 'passed' && hasFile;
 
@@ -2391,13 +2397,13 @@ export function Dashboard() {
           {/* Action Link to dedicated Documents page */}
           <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between">
             <span className="text-[11px] text-gray-500">
-              {isAllDocsPassed ? 'All mandatory clearance documents are complete.' : 'Upload or manage all 4 documents in the document center.'}
+              {isAllDocsPassed ? 'All mandatory pre-requirement documents are complete.' : `Upload or manage all ${totalRequired} pre-requirements in the document center.`}
             </span>
             <Link
               to="/app/documents"
               className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all"
             >
-              <span>Manage Documents</span>
+              <span>Manage Pre-Requirements</span>
               <ChevronRight size={13} />
             </Link>
           </div>

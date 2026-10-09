@@ -42,7 +42,7 @@ import { UserAvatar } from '../components/UserAvatar';
 import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
-import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
 import { uploadDocumentToStorage } from '../services/supabaseService';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 import { GeofenceMap } from '../components/GeofenceMap';
@@ -278,7 +278,10 @@ export function Profile() {
   const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
   const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
   const totalRequired = docKeys.length;
-  const uploadedDocCount = docKeys.filter((k) => Boolean(submittedDocs[k]?.dataUrl || submittedDocs[k]?.name)).length;
+  const uploadedDocCount = docKeys.filter((k) => {
+    const d = getTraineeDocItem(submittedDocs, k);
+    return Boolean(d?.dataUrl || d?.name);
+  }).length;
 
   const handleProfileDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
@@ -687,8 +690,8 @@ export function Profile() {
               <FileCheck size={15} className="text-blue-700" />
             </div>
             <div>
-              <h3 className="font-bold text-gray-800 text-sm">Required Documents</h3>
-              <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/4 submitted</p>
+              <h3 className="font-bold text-gray-800 text-sm">Pre-Requirements</h3>
+              <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/{totalRequired} submitted</p>
             </div>
           </div>
           <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
@@ -710,7 +713,7 @@ export function Profile() {
 
         <div className="space-y-2">
           {STANDARD_REQUIRED_DOCS.map((item) => {
-            const doc = submittedDocs[item.key];
+            const doc = getTraineeDocItem(submittedDocs, item.key);
             const hasFile = Boolean(doc?.dataUrl || doc?.name);
             const isPassed = doc?.status === 'passed' && hasFile;
             const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;

@@ -349,7 +349,16 @@ export function HTEEvaluations() {
       setQuestionnaire(existing.questionnaire || {});
       setFormStatus(existing.status);
     } else {
-      const recs = timeRecords.filter((r) => r.employeeId === emp.id);
+      const validIds = new Set<string>();
+      if (emp.id) { validIds.add(emp.id); validIds.add(emp.id.toLowerCase()); }
+      if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
+      if (emp.email) { validIds.add(emp.email.toLowerCase()); }
+      const recs = timeRecords.filter(
+        (r) =>
+          validIds.has(r.employeeId) ||
+          (r.employeeId && validIds.has(r.employeeId.toLowerCase())) ||
+          (emp.name && (r as any).employeeName && (r as any).employeeName.trim().toLowerCase() === emp.name.trim().toLowerCase())
+      );
       const lateCount = recs.filter((r) => r.status === 'late').length;
       const initialRatings = getDefaultRatings();
       if (recs.length > 0 && lateCount === 0) {

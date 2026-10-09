@@ -7,9 +7,8 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
-import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
-import { TraineeLocationReminder } from './TraineeLocationReminder';
 import { isQuestionnaireAnswered } from '../types';
 
 
@@ -17,7 +16,7 @@ const navItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
-  { to: '/app/documents', label: 'Required Docs', icon: FileCheck, end: false, isDocNav: true },
+  { to: '/app/documents', label: 'Pre-Requirements', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/evaluation', label: 'OJT Questionnaire', icon: Award, end: false, isEvalNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false, isAnnounceNav: true },
   { to: '/app/settings', label: 'Settings', icon: Settings, end: false },
@@ -117,11 +116,7 @@ export function EmployeeLayout() {
   const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
   const totalRequired = docKeys.length;
   const uploadedDocsCount = docKeys.filter((k) => {
-    const doc =
-      submittedDocs[k] ||
-      (k === 'consent' ? submittedDocs.parent_consent : undefined) ||
-      (k === 'moa' ? submittedDocs.endorsement : undefined) ||
-      (k === 'medical' ? submittedDocs.clearance : undefined);
+    const doc = getTraineeDocItem(submittedDocs, k);
     return Boolean(doc?.dataUrl || doc?.name);
   }).length;
   const missingDocsCount = Math.max(0, totalRequired - uploadedDocsCount);
@@ -528,9 +523,6 @@ export function EmployeeLayout() {
         onClose={() => setShowLogoutModal(false)}
         onConfirm={confirmLogout}
       />
-
-      {/* Trainee Location Reminder Pop-up (Upper Left) */}
-      <TraineeLocationReminder />
     </div>
   );
 }

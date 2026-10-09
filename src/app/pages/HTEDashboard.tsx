@@ -265,23 +265,52 @@ export function HTEDashboard() {
   // Compute rendered hours
   const traineeStats = useMemo(() => {
     return trainees.map((t) => {
-      const records = timeRecords.filter((r) => r.employeeId === t.id);
-      const totalMinutes = records.reduce((acc, r) => {
-        if (!r.timeIn || !r.timeOut) return acc;
-        const [inH, inM] = r.timeIn.split(':').map(Number);
-        const [outH, outM] = r.timeOut.split(':').map(Number);
-        let mins = outH * 60 + outM - (inH * 60 + inM);
-        if (mins < 0) mins += 24 * 60;
-        return acc + mins;
+      const validIds = new Set<string>();
+      if (t.id) {
+        validIds.add(t.id);
+        validIds.add(t.id.toLowerCase());
+      }
+      if (t.employeeId) {
+        validIds.add(t.employeeId);
+        validIds.add(t.employeeId.toLowerCase());
+      }
+      if (t.email) {
+        validIds.add(t.email.toLowerCase());
+      }
+
+      const records = timeRecords.filter((r) => {
+        if (!r.employeeId) return false;
+        const rId = r.employeeId.toLowerCase();
+        return (
+          validIds.has(r.employeeId) ||
+          validIds.has(rId) ||
+          (t.name && (r as any).employeeName && (r as any).employeeName.trim().toLowerCase() === t.name.trim().toLowerCase())
+        );
+      });
+
+      const totalHoursFromRecords = records.reduce((acc, r) => {
+        if (r.totalHours != null && !isNaN(Number(r.totalHours))) {
+          return acc + Number(r.totalHours);
+        }
+        if (r.timeIn && r.timeOut) {
+          const [inH, inM] = r.timeIn.split(':').map(Number);
+          const [outH, outM] = r.timeOut.split(':').map(Number);
+          if (!isNaN(inH) && !isNaN(inM) && !isNaN(outH) && !isNaN(outM)) {
+            let mins = outH * 60 + outM - (inH * 60 + inM);
+            if (mins < 0) mins += 24 * 60;
+            return acc + mins / 60;
+          }
+        }
+        return acc;
       }, 0);
-      const calculatedRendered = Math.round((totalMinutes / 60) * 10) / 10;
+      const calculatedRendered = Math.round(totalHoursFromRecords * 10) / 10;
       const directRendered = Number(t.renderedHours) || Number((t.registrationLocation as any)?.renderedHours) || 0;
       const renderedHours = Math.max(calculatedRendered, directRendered);
       const requiredHours = t.requiredHours || 600;
       const progress = Math.min(Math.round((renderedHours / requiredHours) * 100), 100);
       const hasEvaluation =
-        evaluations.some((ev) => ev.employeeId === t.id) ||
-        hostFeedback.some((hf) => hf.employeeId === t.id);
+        evaluations.some((ev) => validIds.has(ev.employeeId) || (ev.employeeId && validIds.has(ev.employeeId.toLowerCase()))) ||
+        hostFeedback.some((hf) => validIds.has(hf.employeeId) || (hf.employeeId && validIds.has(hf.employeeId.toLowerCase())));
 
       return {
         ...t,
@@ -543,22 +572,22 @@ export function HTEDashboard() {
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-slate-100">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold">
+          <table className="w-full text-sm min-w-[900px]">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3">Student Intern</th>
-                <th className="px-4 py-3">HTE</th>
-                <th className="px-4 py-3">Office / Department</th>
-                <th className="px-4 py-3">Position</th>
-                <th className="px-4 py-3">Rendered Hours</th>
-                <th className="px-4 py-3">Evaluation</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-5 py-3.5 min-w-[200px]">Student Intern</th>
+                <th className="px-4 py-3.5 min-w-[110px]">HTE</th>
+                <th className="px-4 py-3.5 min-w-[200px]">Office / Department</th>
+                <th className="px-4 py-3.5 min-w-[120px]">Position</th>
+                <th className="px-4 py-3.5 min-w-[150px]">Rendered Hours</th>
+                <th className="px-4 py-3.5 min-w-[130px]">Evaluation</th>
+                <th className="px-5 py-3.5 min-w-[100px] text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {paginatedTrainees.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden shrink-0 relative select-none">
                         <span className="font-bold text-sm text-blue-700">{t.name.charAt(0)}</span>
@@ -573,22 +602,26 @@ export function HTEDashboard() {
                           />
                         )}
                       </div>
-                      <div>
-                        <div className="font-bold text-slate-900 text-sm">{t.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">ID: {t.employeeId || t.id.slice(0, 8)}</div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 text-sm truncate">{t.name}</div>
+                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">ID: {t.employeeId || t.id.slice(0, 8)}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div className="font-semibold text-slate-800 text-xs">
                       {t.companyName || companyName || 'Host Training Establishment'}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="text-xs text-slate-800 font-medium">{t.department || 'College of Computer Studies'}</div>
-                    <div className="text-[11px] text-slate-400 font-mono">{t.course || 'OJT Trainee'}</div>
+                  <td className="px-4 py-4">
+                    <div className="text-xs text-slate-800 font-bold truncate max-w-[220px]" title={t.department || 'College of Computer Studies'}>
+                      {t.department || 'College of Computer Studies'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium truncate max-w-[220px] mt-0.5" title={t.course || 'OJT Trainee'}>
+                      {t.course || 'OJT Trainee'}
+                    </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4">
                     <div className="flex items-center justify-start">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
                         {t.position || 'OJT Trainee'}
@@ -753,18 +786,18 @@ export function HTEDashboard() {
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-slate-100">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold">
+          <table className="w-full text-sm min-w-[900px]">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3 w-14 text-center">Profile</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Student Name</th>
-                <th className="px-4 py-3">HTE</th>
-                <th className="px-4 py-3">Office / Department</th>
-                <th className="px-4 py-3">Position</th>
-                <th className="px-4 py-3">Time In</th>
-                <th className="px-4 py-3">Time Out</th>
-                <th className="px-4 py-3">Geofence Status</th>
+                <th className="px-4 py-3 min-w-[100px]">Date</th>
+                <th className="px-4 py-3 min-w-[170px]">Student Name</th>
+                <th className="px-4 py-3 min-w-[110px]">HTE</th>
+                <th className="px-4 py-3 min-w-[190px]">Office / Department</th>
+                <th className="px-4 py-3 min-w-[120px]">Position</th>
+                <th className="px-4 py-3 min-w-[90px]">Time In</th>
+                <th className="px-4 py-3 min-w-[90px]">Time Out</th>
+                <th className="px-4 py-3 min-w-[130px]">Geofence Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

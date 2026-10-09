@@ -11,7 +11,7 @@ import { Employee, TraineeDocuments } from '../../types';
 import { getPhotoUrl } from '../../services/config';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
-import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../../data/documentRequirements';
+import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
 import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper';
 import { isWithinNegrosOccidental } from '../../utils/geo';
 import { getPaginationWindow } from '../../utils/pagination';
@@ -3393,19 +3393,21 @@ export function AdminEmployees() {
                                 <div>
                                   <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
                                     <FileCheck size={16} className="text-violet-600" />
-                                    Required OJT Documents Monitoring ({REQUIRED_TRAINEE_DOCUMENTS.length} Credentials)
+                                    Pre-Requirements Monitoring ({REQUIRED_TRAINEE_DOCUMENTS.length} Documents)
                                   </p>
                                   <p className="text-[11px] text-violet-600 mt-0.5">
-                                    {REQUIRED_TRAINEE_DOCUMENTS.length} Official Compliance Documents Required for Trainee Activation & Deployment
+                                    {REQUIRED_TRAINEE_DOCUMENTS.length} Official Pre-Requirement Documents for Trainee Compliance & Deployment
                                   </p>
                                 </div>
                                 {(() => {
-                                  const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
-                                    (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
-                                  ).length;
-                                  const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
-                                    (k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed'
-                                  ).length;
+                                  const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+                                    const d = getTraineeDocItem(selectedEmp.submittedDocuments, k);
+                                    return !d?.dataUrl && !d?.name;
+                                  }).length;
+                                  const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+                                    const d = getTraineeDocItem(selectedEmp.submittedDocuments, k);
+                                    return d?.status === 'passed';
+                                  }).length;
                                   const isCompliant = missingCount === 0 && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
 
                                   return (
@@ -3424,10 +3426,10 @@ export function AdminEmployees() {
                                 })()}
                               </div>
 
-                              {/* The 9 Standard Documents Grid */}
+                              {/* The 10 Pre-Requirement Documents Grid */}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                 {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
-                                  const doc = selectedEmp.submittedDocuments?.[docItem.key];
+                                  const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);
                                   const isPassed = doc ? doc.status === 'passed' : false;
                                   const hasFile = !!doc?.dataUrl;
                                   const IconComponent = docItem.icon;
@@ -4240,10 +4242,10 @@ export function AdminEmployees() {
                       );
                     })()}
 
-                    {/* The 9 Standard Documents Grid */}
+                    {/* The 10 Pre-Requirement Documents Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
-                        const doc = selectedEmp.submittedDocuments?.[docItem.key];
+                        const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);
                         const isPassed = doc ? doc.status === 'passed' : false;
                         const hasFile = Boolean(doc?.dataUrl);
 

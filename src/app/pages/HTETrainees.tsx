@@ -182,16 +182,45 @@ export function HTETrainees() {
   // Calculate rendered hours for each trainee
   const traineeData = useMemo(() => {
     return trainees.map((trainee) => {
-      const records = timeRecords.filter((r) => r.employeeId === trainee.id);
-      const totalMinutes = records.reduce((acc, r) => {
-        if (!r.timeIn || !r.timeOut) return acc;
-        const [inH, inM] = r.timeIn.split(':').map(Number);
-        const [outH, outM] = r.timeOut.split(':').map(Number);
-        let mins = outH * 60 + outM - (inH * 60 + inM);
-        if (mins < 0) mins += 24 * 60;
-        return acc + mins;
+      const validIds = new Set<string>();
+      if (trainee.id) {
+        validIds.add(trainee.id);
+        validIds.add(trainee.id.toLowerCase());
+      }
+      if (trainee.employeeId) {
+        validIds.add(trainee.employeeId);
+        validIds.add(trainee.employeeId.toLowerCase());
+      }
+      if (trainee.email) {
+        validIds.add(trainee.email.toLowerCase());
+      }
+
+      const records = timeRecords.filter((r) => {
+        if (!r.employeeId) return false;
+        const rId = r.employeeId.toLowerCase();
+        return (
+          validIds.has(r.employeeId) ||
+          validIds.has(rId) ||
+          (trainee.name && (r as any).employeeName && (r as any).employeeName.trim().toLowerCase() === trainee.name.trim().toLowerCase())
+        );
+      });
+
+      const totalHoursFromRecords = records.reduce((acc, r) => {
+        if (r.totalHours != null && !isNaN(Number(r.totalHours))) {
+          return acc + Number(r.totalHours);
+        }
+        if (r.timeIn && r.timeOut) {
+          const [inH, inM] = r.timeIn.split(':').map(Number);
+          const [outH, outM] = r.timeOut.split(':').map(Number);
+          if (!isNaN(inH) && !isNaN(inM) && !isNaN(outH) && !isNaN(outM)) {
+            let mins = outH * 60 + outM - (inH * 60 + inM);
+            if (mins < 0) mins += 24 * 60;
+            return acc + mins / 60;
+          }
+        }
+        return acc;
       }, 0);
-      const calculatedRendered = Math.round((totalMinutes / 60) * 10) / 10;
+      const calculatedRendered = Math.round(totalHoursFromRecords * 10) / 10;
       const directRendered = Number(trainee.renderedHours) || Number((trainee.registrationLocation as any)?.renderedHours) || 0;
       const renderedHours = Math.max(calculatedRendered, directRendered);
       const requiredHours = trainee.requiredHours || 600;

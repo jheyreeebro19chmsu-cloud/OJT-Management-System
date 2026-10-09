@@ -110,6 +110,38 @@ const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [];
 
 export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
   {
+    docKey: 'internshipAgreement',
+    title: 'Internship Agreement',
+    description: 'Formal internship training contract detailing internship schedule, duties, workplace guidelines, and competencies.',
+    notes: 'Workplace Training Contract & Agreement',
+    dueDate: 'Prior to deployment',
+    required: true,
+  },
+  {
+    docKey: 'moa',
+    title: 'Memorandum of Agreement',
+    description: 'Tripartite Memorandum of Agreement executed between CHMSU, the Host Training Establishment (HTE), and the student.',
+    notes: 'Institutional Partnership Agreement (MOA)',
+    dueDate: 'Prior to starting training',
+    required: true,
+  },
+  {
+    docKey: 'consent',
+    title: 'Parental Consent',
+    description: 'Signed student waiver, assumption of liability, and parent/guardian emergency authorization for off-campus internship.',
+    notes: 'Parent / Guardian Waiver & Consent Form',
+    dueDate: 'Before starting training hours',
+    required: true,
+  },
+  {
+    docKey: 'trainingPlan',
+    title: 'Training Plan',
+    description: 'Structured curriculum training plan, competency goals, skills matrix, and weekly task schedule for the internship.',
+    notes: 'Internship Course Training & Learning Outline',
+    dueDate: 'Prior to deployment',
+    required: true,
+  },
+  {
     docKey: 'pledgeOfConduct',
     title: 'Pledge of Conduct',
     description: 'Formal signed commitment acknowledging student ethical standards, university policies, and workplace conduct.',
@@ -121,24 +153,16 @@ export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
     docKey: 'medical',
     title: 'Medical Certificate',
     description: 'Official medical examination clearance and physical fitness certification from a licensed physician or university clinic.',
-    notes: 'Health & Physical Fitness Clearance',
+    notes: 'Health Examination & Physical Fitness Clearance',
     dueDate: 'Before deployment to HTE',
     required: true,
   },
   {
-    docKey: 'enrolmentForm',
-    title: 'Enrolment Form',
-    description: 'Official university enrolment assessment form or Certificate of Registration for the active OJT term / semester.',
-    notes: 'Certificate of Registration (COR)',
-    dueDate: 'Prior to training hours',
-    required: true,
-  },
-  {
-    docKey: 'consent',
-    title: 'Parental Consent for Student Internship',
-    description: 'Signed student waiver, assumption of liability, and parent/guardian emergency authorization for off-campus internship.',
-    notes: 'Parent / Guardian Waiver & Consent',
-    dueDate: 'Before starting training hours',
+    docKey: 'application',
+    title: 'Application',
+    description: 'Official formal application letter and application form submitted to the Host Training Establishment for OJT placement.',
+    notes: 'Student Internship Application Form / Letter',
+    dueDate: 'Prior to company placement',
     required: true,
   },
   {
@@ -150,43 +174,19 @@ export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
     required: true,
   },
   {
-    docKey: 'dutiesAndResponsibilities',
-    title: 'Duties and Responsibilities of BSIS Trainees',
-    description: 'Detailed terms of reference and signed acknowledgment of the specific workplace duties assigned to the BSIS intern.',
-    notes: 'Terms of Reference & Scope of Work',
-    dueDate: 'Within first 2 weeks of training',
+    docKey: 'enrolmentForm',
+    title: 'Enrolment Form',
+    description: 'Official university enrolment assessment form or Certificate of Registration for the active OJT term / semester.',
+    notes: 'Certificate of Registration (COR)',
+    dueDate: 'Prior to training hours',
     required: true,
   },
   {
-    docKey: 'moa',
-    title: 'Memorandum of Agreement',
-    description: 'Tripartite Memorandum of Agreement executed between CHMSU, the Host Training Establishment (HTE), and the student.',
-    notes: 'Institutional Partnership Agreement (MOA)',
-    dueDate: 'Within first 2 weeks of training',
-    required: true,
-  },
-  {
-    docKey: 'internshipAgreement',
-    title: 'Internship Agreement',
-    description: 'Formal internship contract detailing training schedule, workplace policies, supervisor guidance, and competencies.',
-    notes: 'Workplace Training Contract',
-    dueDate: 'Prior to deployment',
-    required: true,
-  },
-  {
-    docKey: 'evaluationForm',
-    title: 'On The Job Training Evaluation Form',
-    description: 'Standard university performance evaluation form to be completed and signed by the designated HTE supervisor.',
-    notes: 'Official Performance Appraisal Sheet',
-    dueDate: 'Upon completing training hours',
-    required: true,
-  },
-  {
-    docKey: 'evaluationReport',
-    title: 'Evaluation Report',
-    description: 'Comprehensive post-training performance report, competency appraisal ratings, and final evaluation summary from the HTE.',
-    notes: 'Official Trainee Performance Assessment',
-    dueDate: 'Upon completion of internship',
+    docKey: 'endorsement',
+    title: 'Endorsement Letter',
+    description: 'Official recommendation and endorsement letter from the college dean or OJT coordinator endorsing the student to the HTE.',
+    notes: 'Official University Endorsement Letter',
+    dueDate: 'Prior to company placement',
     required: true,
   },
 ];
@@ -2177,13 +2177,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       authUser.user_metadata?.role;
 
     if (matchedEmp) {
-      if (useSupabase && authId && matchedEmp.userId !== authId) {
-        try {
-          await supabase.from('employees').update({ user_id: authId }).eq('id', matchedEmp.id);
-          matchedEmp.userId = authId;
-        } catch (linkErr) {
-          console.warn('Could not link OAuth user_id:', linkErr);
-        }
+      if (authId && matchedEmp.userId !== authId) {
+        matchedEmp.userId = authId;
       }
 
       const isInstructor =
@@ -2209,7 +2204,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (useSupabase) {
           try {
             await supabase.from('employees').update({
-              role: 'admin',
               position: 'OJT Instructor',
               application_status: 'approved',
             }).eq('id', matchedEmp.id);
@@ -2226,7 +2220,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (useSupabase) {
           try {
             await supabase.from('employees').update({
-              role: 'hte',
               position: 'HTE Representative',
               application_status: 'approved',
             }).eq('id', matchedEmp.id);
@@ -4388,10 +4381,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Also sync to employee.submittedDocuments
     const lowerDoc = documentId.toLowerCase();
     let docKey: keyof TraineeDocuments | null = null;
-    if (lowerDoc.includes('endorsement')) docKey = 'endorsement';
-    else if (lowerDoc.includes('consent')) docKey = 'consent';
-    else if (lowerDoc.includes('medical')) docKey = 'medical';
-    else if (lowerDoc.includes('resume')) docKey = 'resume';
+    if (lowerDoc.includes('internship') || lowerDoc.includes('agreement') || lowerDoc.includes('contract') || lowerDoc.includes('doc-1')) docKey = 'internshipAgreement';
+    else if (lowerDoc.includes('moa') || lowerDoc.includes('memorandum') || lowerDoc.includes('doc-2')) docKey = 'moa';
+    else if (lowerDoc.includes('consent') || lowerDoc.includes('waiver') || lowerDoc.includes('parental') || lowerDoc.includes('doc-3')) docKey = 'consent';
+    else if (lowerDoc.includes('training') || lowerDoc.includes('plan') || lowerDoc.includes('doc-4')) docKey = 'trainingPlan';
+    else if (lowerDoc.includes('pledge') || lowerDoc.includes('conduct') || lowerDoc.includes('doc-5')) docKey = 'pledgeOfConduct';
+    else if (lowerDoc.includes('medical') || lowerDoc.includes('clearance') || lowerDoc.includes('doc-6')) docKey = 'medical';
+    else if (lowerDoc.includes('application') || lowerDoc.includes('doc-7')) docKey = 'application';
+    else if (lowerDoc.includes('resume') || lowerDoc.includes('biodata') || lowerDoc.includes('bio-data') || lowerDoc.includes('cv') || lowerDoc.includes('doc-8')) docKey = 'resume';
+    else if (lowerDoc.includes('enrolment') || lowerDoc.includes('enrollment') || lowerDoc.includes('cor') || lowerDoc.includes('doc-9')) docKey = 'enrolmentForm';
+    else if (lowerDoc.includes('endorsement') || lowerDoc.includes('doc-10')) docKey = 'endorsement';
 
     if (docKey) {
       const currentEmp = employees.find((e) => e.id === employeeId) || getCurrentEmployee();
@@ -4427,30 +4426,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
       employees.find((e) => e.id === employeeId) ||
       (getCurrentEmployee()?.id === employeeId ? getCurrentEmployee() : null);
     if (emp?.submittedDocuments) {
+      const lowerDoc = (documentId || '').toLowerCase();
       let matchedDocItem: TraineeDocumentItem | undefined = undefined;
-      const lowerDoc = documentId.toLowerCase();
-      if (lowerDoc.includes('pledge') || lowerDoc.includes('conduct') || lowerDoc.includes('doc-1')) {
-        matchedDocItem = emp.submittedDocuments.pledgeOfConduct;
-      } else if (lowerDoc.includes('medical') || lowerDoc.includes('doc-2')) {
-        matchedDocItem = emp.submittedDocuments.medical;
-      } else if (lowerDoc.includes('enrolment') || lowerDoc.includes('enrollment') || lowerDoc.includes('cor') || lowerDoc.includes('doc-3')) {
-        matchedDocItem = emp.submittedDocuments.enrolmentForm;
-      } else if (lowerDoc.includes('consent') || lowerDoc.includes('waiver') || lowerDoc.includes('parental') || lowerDoc.includes('doc-4')) {
-        matchedDocItem = emp.submittedDocuments.consent;
-      } else if (lowerDoc.includes('resume') || lowerDoc.includes('biodata') || lowerDoc.includes('bio-data') || lowerDoc.includes('cv') || lowerDoc.includes('doc-5')) {
-        matchedDocItem = emp.submittedDocuments.resume;
-      } else if (lowerDoc.includes('duties') || lowerDoc.includes('responsibilities') || lowerDoc.includes('bsis') || lowerDoc.includes('doc-6')) {
-        matchedDocItem = emp.submittedDocuments.dutiesAndResponsibilities;
-      } else if (lowerDoc.includes('moa') || lowerDoc.includes('memorandum') || lowerDoc.includes('doc-7')) {
-        matchedDocItem = emp.submittedDocuments.moa;
-      } else if (lowerDoc.includes('internship') || lowerDoc.includes('agreement') || lowerDoc.includes('contract') || lowerDoc.includes('doc-8')) {
+      if (lowerDoc.includes('internship') || lowerDoc.includes('agreement') || lowerDoc.includes('contract') || lowerDoc.includes('doc-1')) {
         matchedDocItem = emp.submittedDocuments.internshipAgreement;
-      } else if ((lowerDoc.includes('evaluation') && lowerDoc.includes('report')) || lowerDoc.includes('doc-10')) {
-        matchedDocItem = emp.submittedDocuments.evaluationReport;
-      } else if (lowerDoc.includes('evaluation') || lowerDoc.includes('appraisal') || lowerDoc.includes('doc-9')) {
-        matchedDocItem = emp.submittedDocuments.evaluationForm;
-      } else if (lowerDoc.includes('endorsement')) {
+      } else if (lowerDoc.includes('moa') || lowerDoc.includes('memorandum') || lowerDoc.includes('doc-2')) {
+        matchedDocItem = emp.submittedDocuments.moa;
+      } else if (lowerDoc.includes('consent') || lowerDoc.includes('waiver') || lowerDoc.includes('parental') || lowerDoc.includes('doc-3')) {
+        matchedDocItem = emp.submittedDocuments.consent || emp.submittedDocuments.parent_consent;
+      } else if (lowerDoc.includes('training') || lowerDoc.includes('plan') || lowerDoc.includes('doc-4')) {
+        matchedDocItem = emp.submittedDocuments.trainingPlan || (emp.submittedDocuments as any)?.training_plan;
+      } else if (lowerDoc.includes('pledge') || lowerDoc.includes('conduct') || lowerDoc.includes('doc-5')) {
+        matchedDocItem = emp.submittedDocuments.pledgeOfConduct;
+      } else if (lowerDoc.includes('medical') || lowerDoc.includes('clearance') || lowerDoc.includes('doc-6')) {
+        matchedDocItem = emp.submittedDocuments.medical;
+      } else if (lowerDoc.includes('application') || lowerDoc.includes('doc-7')) {
+        matchedDocItem = emp.submittedDocuments.application || (emp.submittedDocuments as any)?.applicationForm || (emp.submittedDocuments as any)?.application_letter;
+      } else if (lowerDoc.includes('resume') || lowerDoc.includes('biodata') || lowerDoc.includes('bio-data') || lowerDoc.includes('cv') || lowerDoc.includes('doc-8')) {
+        matchedDocItem = emp.submittedDocuments.resume;
+      } else if (lowerDoc.includes('enrolment') || lowerDoc.includes('enrollment') || lowerDoc.includes('cor') || lowerDoc.includes('doc-9')) {
+        matchedDocItem = emp.submittedDocuments.enrolmentForm;
+      } else if (lowerDoc.includes('endorsement') || lowerDoc.includes('doc-10')) {
         matchedDocItem = emp.submittedDocuments.endorsement;
+      } else if (lowerDoc.includes('duties') || lowerDoc.includes('responsibilities')) {
+        matchedDocItem = emp.submittedDocuments.dutiesAndResponsibilities;
+      } else if (lowerDoc.includes('evaluation') && lowerDoc.includes('report')) {
+        matchedDocItem = emp.submittedDocuments.evaluationReport;
+      } else if (lowerDoc.includes('evaluation')) {
+        matchedDocItem = emp.submittedDocuments.evaluationForm;
       } else {
         // Direct key lookup
         matchedDocItem = (emp.submittedDocuments as any)[documentId];
