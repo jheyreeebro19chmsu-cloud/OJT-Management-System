@@ -16,7 +16,7 @@ const navItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
-  { to: '/app/documents', label: 'Pre-Requirements', icon: FileCheck, end: false, isDocNav: true },
+  { to: '/app/documents', label: 'OJT Documents', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/evaluation', label: 'OJT Questionnaire', icon: Award, end: false, isEvalNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false, isAnnounceNav: true },
   { to: '/app/settings', label: 'Settings', icon: Settings, end: false },
@@ -211,7 +211,7 @@ export function EmployeeLayout() {
                       />
                     )}
                   </div>
-                  <span className="text-sm font-medium">{label}</span>
+                  <span className="text-sm font-medium whitespace-nowrap">{label}</span>
                   {(item as any).isDocNav && (
                     <span
                       className={`ml-auto text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${

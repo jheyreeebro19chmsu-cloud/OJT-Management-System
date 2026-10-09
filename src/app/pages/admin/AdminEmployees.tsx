@@ -3393,10 +3393,10 @@ export function AdminEmployees() {
                                 <div>
                                   <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
                                     <FileCheck size={16} className="text-violet-600" />
-                                    Pre-Requirements Monitoring ({REQUIRED_TRAINEE_DOCUMENTS.length} Documents)
+                                    OJT Documents Monitoring ({REQUIRED_TRAINEE_DOCUMENTS.length} Documents)
                                   </p>
                                   <p className="text-[11px] text-violet-600 mt-0.5">
-                                    {REQUIRED_TRAINEE_DOCUMENTS.length} Official Pre-Requirement Documents for Trainee Compliance & Deployment
+                                    {REQUIRED_TRAINEE_DOCUMENTS.length} Official Compliance Documents Required for Trainee Activation & Deployment
                                   </p>
                                 </div>
                                 {(() => {
@@ -3426,7 +3426,7 @@ export function AdminEmployees() {
                                 })()}
                               </div>
 
-                              {/* The 10 Pre-Requirement Documents Grid */}
+                              {/* The 10 OJT Documents Grid */}
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                 {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                                   const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);
@@ -4242,7 +4242,7 @@ export function AdminEmployees() {
                       );
                     })()}
 
-                    {/* The 10 Pre-Requirement Documents Grid */}
+                    {/* The 10 OJT Documents Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                         const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);

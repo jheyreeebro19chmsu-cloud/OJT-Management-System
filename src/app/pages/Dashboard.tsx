@@ -2326,7 +2326,7 @@ export function Dashboard() {
                 <FileCheck size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-gray-800 text-sm">Pre-Requirement Documents</h3>
+                <h3 className="font-bold text-gray-800 text-sm">OJT Documents</h3>
                 <p className="text-xs text-gray-500">
                   {uploadedDocsCount}/{totalRequired} Documents Submitted ({docsProgressPercent}%)
                 </p>
@@ -2367,7 +2367,7 @@ export function Dashboard() {
             />
           </div>
 
-          {/* 10 Mini Pre-Requirement Status Pills */}
+          {/* 10 Mini OJT Document Status Pills */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
             {STANDARD_REQUIRED_DOCS.map((docItem) => {
               const doc = getTraineeDocItem(submittedDocs, docItem.key);
@@ -2397,13 +2397,13 @@ export function Dashboard() {
           {/* Action Link to dedicated Documents page */}
           <div className="pt-2.5 border-t border-gray-100 flex items-center justify-between">
             <span className="text-[11px] text-gray-500">
-              {isAllDocsPassed ? 'All mandatory pre-requirement documents are complete.' : `Upload or manage all ${totalRequired} pre-requirements in the document center.`}
+              {isAllDocsPassed ? 'All mandatory OJT documents are complete.' : `Upload or manage all ${totalRequired} OJT documents in the document center.`}
             </span>
             <Link
               to="/app/documents"
               className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl transition-all"
             >
-              <span>Manage Pre-Requirements</span>
+              <span>Manage OJT Documents</span>
               <ChevronRight size={13} />
             </Link>
           </div>

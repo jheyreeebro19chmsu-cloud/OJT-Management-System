@@ -690,7 +690,7 @@ export function Profile() {
               <FileCheck size={15} className="text-blue-700" />
             </div>
             <div>
-              <h3 className="font-bold text-gray-800 text-sm">Pre-Requirements</h3>
+              <h3 className="font-bold text-gray-800 text-sm">OJT Documents</h3>
               <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/{totalRequired} submitted</p>
             </div>
           </div>

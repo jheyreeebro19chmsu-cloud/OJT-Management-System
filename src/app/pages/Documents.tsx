@@ -360,10 +360,10 @@ export function Documents() {
             </Link>
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <FileCheck className="text-blue-600" size={26} /> Pre-Requirement OJT Documents
+            <FileCheck className="text-blue-600" size={26} /> OJT Documents
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Manage, review, and submit the {totalRequired} mandatory pre-requirement compliance documents required for your OJT internship program.
+            Manage, review, and submit the {totalRequired} mandatory OJT compliance documents required for your internship program.
           </p>
         </div>
 
@@ -418,21 +418,21 @@ export function Documents() {
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               {isAllPassed
-                ? '🎉 All Pre-Requirements Submitted & Verified'
+                ? '🎉 All OJT Documents Submitted & Verified'
                 : isSubmittedAwaitingReview
-                ? '✓ All Pre-Requirements Submitted (Under Review)'
+                ? '✓ All OJT Documents Submitted (Under Review)'
                 : isPendingVerification && missingCount === 0
-                ? '⚠️ Action Required: Pre-Requirements Pending Instructor Review'
-                : '⚠️ Action Required: Submit Missing Pre-Requirements'}
+                ? '⚠️ Action Required: OJT Documents Pending Instructor Review'
+                : '⚠️ Action Required: Submit Missing OJT Documents'}
             </h3>
             <p className="text-xs text-slate-600 mt-0.5">
               {isAllPassed
-                ? `Congratulations! You have fulfilled all ${totalRequired} pre-requirement compliance documents. All documents have been verified and approved by your OJT Instructor.`
+                ? `Congratulations! You have fulfilled all ${totalRequired} OJT compliance documents. All documents have been verified and approved by your OJT Instructor.`
                 : isSubmittedAwaitingReview
-                ? `You have submitted all ${totalRequired} mandatory pre-requirements (${progressPercent}%). They are currently queued for OJT Instructor review.`
+                ? `You have submitted all ${totalRequired} mandatory OJT documents (${progressPercent}%). They are currently queued for OJT Instructor review.`
                 : isPendingVerification && missingCount === 0
-                ? `All ${totalRequired} pre-requirements are uploaded. Your OJT Instructor has requested verification or revisions. Please check document feedback.`
-                : `You have submitted ${uploadedCount} of ${totalRequired} pre-requirements (${progressPercent}%). Please upload the remaining ${missingCount} document${missingCount > 1 ? 's' : ''} to maintain full compliance.`}
+                ? `All ${totalRequired} OJT documents are uploaded. Your OJT Instructor has requested verification or revisions. Please check document feedback.`
+                : `You have submitted ${uploadedCount} of ${totalRequired} documents (${progressPercent}%). Please upload the remaining ${missingCount} document${missingCount > 1 ? 's' : ''} to maintain full compliance.`}
             </p>
           </div>
           <div className="text-right shrink-0">
@@ -484,7 +484,7 @@ export function Documents() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-sm sm:text-base font-extrabold text-amber-950 flex items-center gap-2">
-                  Missing or Incomplete Pre-Requirements ({missingDocs.length} remaining)
+                  Missing or Incomplete OJT Documents ({missingDocs.length} remaining)
                 </h3>
                 <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200">
                   Pre-Deployment Requirement
@@ -526,14 +526,14 @@ export function Documents() {
             <h4 className={`text-xs sm:text-sm font-bold ${
               isAllPassed ? 'text-emerald-900' : 'text-blue-900'
             }`}>
-              {isAllPassed ? 'All Pre-Requirements Complete & Verified' : 'All Pre-Requirements Uploaded (Pending Coordinator Review)'}
+              {isAllPassed ? 'All OJT Documents Complete & Verified' : 'All OJT Documents Uploaded (Pending Coordinator Review)'}
             </h4>
             <p className={`text-[11px] ${
               isAllPassed ? 'text-emerald-800' : 'text-blue-800'
             }`}>
               {isAllPassed
-                ? 'You have fulfilled all pre-requirement documentary compliance. Your coordinator has approved your credentials.'
-                : `All ${totalRequired} pre-requirement documents are safely in file. Your OJT Instructor will verify and certify your submissions.`}
+                ? 'You have fulfilled all OJT documentary compliance. Your coordinator has approved your credentials.'
+                : `All ${totalRequired} OJT documents are safely in file. Your OJT Instructor will verify and certify your submissions.`}
             </p>
           </div>
         </motion.div>
@@ -800,7 +800,7 @@ export function Documents() {
                     <FileCheck size={20} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base">Submit Pre-Requirement</h3>
+                    <h3 className="font-bold text-slate-900 text-base">Submit OJT Document</h3>
                     <p className="text-xs text-slate-500">{submitDialog.title}</p>
                   </div>
                 </div>
