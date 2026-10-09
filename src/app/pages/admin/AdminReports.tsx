@@ -1085,7 +1085,9 @@ export function AdminReports() {
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-gray-200 text-[11px] font-extrabold text-gray-600 uppercase tracking-wider">
                     <th className="py-3 px-4">Trainee</th>
-                    <th className="py-3 px-3">HTE Establishment</th>
+                    <th className="py-3 px-3">HTE</th>
+                    <th className="py-3 px-3">Office / Department</th>
+                    <th className="py-3 px-3 text-center">Position</th>
                     <th className="py-3 px-2 text-center" title="Quality of Work (25%)">Work (25%)</th>
                     <th className="py-3 px-2 text-center" title="Attendance & Punctuality (20%)">Attd (20%)</th>
                     <th className="py-3 px-2 text-center" title="Professional Attitude (20%)">Attitude (20%)</th>
@@ -1099,7 +1101,7 @@ export function AdminReports() {
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {evaluatedTraineesList.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-12 text-center text-gray-400">
+                      <td colSpan={12} className="py-12 text-center text-gray-400">
                         No trainees match the selected filters.
                       </td>
                     </tr>
@@ -1133,6 +1135,23 @@ export function AdminReports() {
                             <p className="text-[10px] text-gray-400 truncate max-w-[170px]">
                               Supv: {evaluation?.evaluatorName || emp.supervisorName || 'Pending'}
                             </p>
+                          </td>
+
+                          {/* Office / Department */}
+                          <td className="py-3 px-3">
+                            <p className="font-semibold text-gray-800 truncate max-w-[150px]" title={emp.department || 'College of Computer Studies'}>
+                              {emp.department || 'College of Computer Studies'}
+                            </p>
+                            <p className="text-[10px] text-gray-500 truncate max-w-[150px]" title={emp.course || 'BS Information Systems'}>
+                              {emp.course || 'BS Information Systems'}
+                            </p>
+                          </td>
+
+                          {/* Position */}
+                          <td className="py-3 px-3 text-center">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                              {emp.position || 'OJT Trainee'}
+                            </span>
                           </td>
 
                           {/* Domain Scores */}
@@ -1480,7 +1499,9 @@ export function AdminReports() {
                         <ArrowUpDown size={12} className={traineeSortBy === 'name' ? 'text-blue-600' : 'text-slate-400'} />
                       </div>
                     </th>
-                    <th className="py-3 px-4 border-r border-slate-200/80">Academic &amp; Placement</th>
+                    <th className="py-3 px-4 border-r border-slate-200/80">HTE</th>
+                    <th className="py-3 px-4 border-r border-slate-200/80">Office / Department</th>
+                    <th className="py-3 px-3 border-r border-slate-200/80 text-center">Position</th>
                     <th
                       className="py-3 px-4 border-r border-slate-200/80 cursor-pointer hover:bg-slate-200/60 transition-colors select-none"
                       onClick={() => setTraineeSortBy(traineeSortBy === 'hours' ? 'progress' : 'hours')}
@@ -1550,18 +1571,34 @@ export function AdminReports() {
                           </div>
                         </td>
 
-                        {/* 2. Academic & Placement Column */}
+                        {/* 2. HTE Column */}
                         <td className="py-3.5 px-4 border-r border-slate-150">
-                          <p className="font-bold text-slate-800 text-xs">
+                          <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
+                            <Building size={13} className="text-blue-600 shrink-0" />
+                            <span className="truncate max-w-[170px]" title={emp.companyName || 'Host Training Establishment'}>
+                              {emp.companyName || 'Unassigned HTE'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[170px]">
+                            {emp.supervisorName ? `Supv: ${emp.supervisorName}` : 'HTE Partner Workplace'}
+                          </p>
+                        </td>
+
+                        {/* 3. Office / Department Column */}
+                        <td className="py-3.5 px-4 border-r border-slate-150">
+                          <p className="font-bold text-slate-800 text-xs truncate max-w-[170px]" title={emp.department || 'College of Computer Studies'}>
                             {emp.department || 'College of Computer Studies'}
                           </p>
-                          <p className="text-[11px] text-slate-600 mt-0.5">
+                          <p className="text-[11px] text-slate-600 mt-0.5 truncate max-w-[170px]" title={emp.course || 'BS Information Systems'}>
                             {emp.course || 'BS Information Systems'}
                           </p>
-                          <div className="flex items-center gap-1 mt-1.5 text-[11px] font-bold text-blue-800 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200 inline-flex max-w-full">
-                            <Building size={11} className="text-blue-600 shrink-0" />
-                            <span className="truncate">{emp.companyName || 'Host Training Establishment'}</span>
-                          </div>
+                        </td>
+
+                        {/* 4. Position Column */}
+                        <td className="py-3.5 px-3 border-r border-slate-150 text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                            {emp.position || 'OJT Trainee'}
+                          </span>
                         </td>
 
                         {/* 3. Hours & Progress Column */}

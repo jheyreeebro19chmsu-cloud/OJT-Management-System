@@ -215,12 +215,15 @@ export function HTERecords() {
         studentName: displayName,
         ojtCode: displayCode || 'OJT-TRAINEE',
         course: emp?.course || 'OJT Trainee',
+        department: emp?.department || 'College of Computer Studies',
+        position: emp?.position || 'OJT Trainee',
+        companyName: emp?.companyName || currentCompany || 'Host Training Establishment',
         schoolName: emp?.schoolName || 'CHMSU',
         photo: emp?.photo || '',
         renderedHours,
       };
     });
-  }, [timeRecords, employees]);
+  }, [timeRecords, employees, currentCompany]);
 
   const filtered = useMemo(() => {
     return enrichedRecords.filter((r) => {
@@ -385,7 +388,9 @@ export function HTERecords() {
                 <th className="px-4 py-3 w-14 text-center">Profile</th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Student Name</th>
-                <th className="px-4 py-3">Course / Department</th>
+                <th className="px-4 py-3">HTE</th>
+                <th className="px-4 py-3">Office / Department</th>
+                <th className="px-4 py-3">Position</th>
                 <th className="px-4 py-3">Time In</th>
                 <th className="px-4 py-3">Time Out</th>
                 <th className="px-4 py-3">Rendered</th>
@@ -408,7 +413,18 @@ export function HTERecords() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 font-medium">{r.course}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-slate-800 text-xs">{r.companyName}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-xs text-slate-800 font-medium">{r.department}</div>
+                    <div className="text-[11px] text-slate-400 font-mono">{r.course}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      {r.position}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
                     {r.timeIn || '—'}
                   </td>
@@ -490,7 +506,7 @@ export function HTERecords() {
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-14 text-center">
+                  <td colSpan={11} className="py-14 text-center">
                     <div className="max-w-md mx-auto space-y-2">
                       <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
                         <Clock size={24} />

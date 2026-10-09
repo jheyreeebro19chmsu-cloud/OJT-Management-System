@@ -756,7 +756,9 @@ export function HTEEvaluations() {
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold">
               <tr>
                 <th className="px-4 py-3">Student Intern</th>
-                <th className="px-4 py-3">Course / Department</th>
+                <th className="px-4 py-3">HTE</th>
+                <th className="px-4 py-3">Office / Department</th>
+                <th className="px-4 py-3">Position</th>
                 <th className="px-4 py-3">Rendered Hours</th>
                 <th className="px-4 py-3">Evaluation Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -787,8 +789,20 @@ export function HTEEvaluations() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="font-bold text-blue-700 text-xs">{emp.course || 'OJT Trainee'}</div>
-                      <div className="text-[11px] text-slate-500">{emp.schoolName || 'CHMSU'}</div>
+                      <div className="font-semibold text-slate-800 text-xs">
+                        {emp.companyName || companyName || 'Host Training Establishment'}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="text-xs text-slate-800 font-medium">{emp.department || 'College of Computer Studies'}</div>
+                      <div className="text-[11px] text-slate-400 font-mono">{emp.course || 'OJT Trainee'}</div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {emp.position || 'OJT Trainee'}
+                      </span>
                     </td>
 
                     <td className="px-4 py-3">
@@ -905,7 +919,7 @@ export function HTEEvaluations() {
 
               {filteredTrainees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-14 text-center">
+                  <td colSpan={7} className="py-14 text-center">
                     <div className="max-w-md mx-auto space-y-2">
                       <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
                         <Users size={24} />

@@ -388,10 +388,13 @@ export function HTEDashboard() {
           employeeName: displayName,
           ojtCode: displayCode || 'OJT-TRAINEE',
           course: emp?.course || 'OJT Trainee',
+          department: emp?.department || 'College of Computer Studies',
+          position: emp?.position || 'OJT Trainee',
+          companyName: emp?.companyName || companyName || 'Host Training Establishment',
           photo: emp?.photo || '',
         };
       });
-  }, [timeRecords, employees]);
+  }, [timeRecords, employees, companyName]);
 
   const [logPage, setLogPage] = useState(1);
   const LOGS_PER_PAGE = 10;
@@ -544,7 +547,9 @@ export function HTEDashboard() {
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500 font-bold">
               <tr>
                 <th className="px-4 py-3">Student Intern</th>
-                <th className="px-4 py-3">Course / Department</th>
+                <th className="px-4 py-3">HTE</th>
+                <th className="px-4 py-3">Office / Department</th>
+                <th className="px-4 py-3">Position</th>
                 <th className="px-4 py-3">Rendered Hours</th>
                 <th className="px-4 py-3">Evaluation</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -575,8 +580,18 @@ export function HTEDashboard() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-xs font-bold text-blue-700">{t.course || 'OJT Trainee'}</div>
-                    <div className="text-[11px] text-slate-500">{t.schoolName || 'CHMSU'}</div>
+                    <div className="font-semibold text-slate-800 text-xs">
+                      {t.companyName || companyName || 'Host Training Establishment'}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-xs text-slate-800 font-medium">{t.department || 'College of Computer Studies'}</div>
+                    <div className="text-[11px] text-slate-400 font-mono">{t.course || 'OJT Trainee'}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      {t.position || 'OJT Trainee'}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="w-36 space-y-1">
@@ -619,7 +634,7 @@ export function HTEDashboard() {
 
               {filteredTrainees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center">
+                  <td colSpan={7} className="py-12 text-center">
                     <div className="max-w-md mx-auto space-y-2">
                       <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
                         <Users size={24} />
@@ -742,6 +757,9 @@ export function HTEDashboard() {
                 <th className="px-4 py-3 w-14 text-center">Profile</th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Student Name</th>
+                <th className="px-4 py-3">HTE</th>
+                <th className="px-4 py-3">Office / Department</th>
+                <th className="px-4 py-3">Position</th>
                 <th className="px-4 py-3">Time In</th>
                 <th className="px-4 py-3">Time Out</th>
                 <th className="px-4 py-3">Geofence Status</th>
@@ -756,12 +774,23 @@ export function HTEDashboard() {
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{log.date}</td>
                   <td className="px-4 py-3">
                     <div className="font-bold text-slate-900">{log.employeeName}</div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="mt-0.5">
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
                         {log.ojtCode}
                       </span>
-                      <span className="text-xs text-slate-500">• {log.course}</span>
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-slate-800 text-xs">{log.companyName}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-xs text-slate-800 font-medium">{log.department}</div>
+                    <div className="text-[11px] text-slate-400 font-mono">{log.course}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      {log.position}
+                    </span>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
                     {log.timeIn || '—'}
@@ -786,7 +815,7 @@ export function HTEDashboard() {
               ))}
               {allRecentLogs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                  <td colSpan={9} className="py-8 text-center text-slate-400">
                     No recent time logs recorded yet.
                   </td>
                 </tr>

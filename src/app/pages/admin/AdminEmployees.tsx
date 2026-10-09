@@ -996,100 +996,132 @@ export function AdminEmployees() {
             <p className="text-sm text-gray-500 font-medium">{config.emptyText}</p>
           </div>
         ) : (
-          paginatedItems.map((emp, idx) => {
-            const stats = getEmpStats(emp.id);
-            const progress = Math.min((stats.totalHours / (emp.requiredHours || 1)) * 100, 100);
-            return (
-              <motion.div
-                key={emp.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.04 }}
-              >
-                <div
-                  onClick={() => openView(emp)}
-                  className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[2fr_1.5fr_1.5fr_auto]' : 'grid-cols-[2fr_1fr_1fr_1fr_auto]'} gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors`}
-                >
-                  <div className="flex items-center gap-3">
-                    {(() => {
-                      const photoUrl = getPhotoUrl(emp.photo);
-                      const avatarClass = isInstructorGroup
-                        ? 'bg-purple-100 text-purple-700'
-                        : isHteGroup
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-blue-100 text-blue-700';
-                      return (
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none ${avatarClass}`}>
-                          <span className="font-bold text-sm">{emp.name.charAt(0)}</span>
-                          {photoUrl && (
-                            <img
-                              src={photoUrl}
-                              alt=""
-                              className="w-full h-full object-cover absolute inset-0 z-10"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                          )}
-                        </div>
-                      );
-                    })()}
-                    <div>
-                      <p className="font-semibold text-gray-800 text-sm hover:text-blue-700 transition-colors">{emp.name}</p>
-                      <p className="text-xs text-gray-400">
-                        {emp.employeeId} • {emp.email}
-                      </p>
-                      {emp.academicYear && isTraineeGroup && (
-                        <span className="inline-block mt-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
-                          A.Y. {emp.academicYear}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-700">{emp.department || 'General'}</p>
-                    <p className="text-xs text-gray-400">{isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || emp.position)}</p>
-                    {isTraineeGroup && (
-                      <div className="mt-1 flex flex-col gap-0.5">
-                        {(() => {
-                          const isDeployed = Boolean(
-                            (emp.hteId || (emp.companyName && !isInvalidHteCompany(emp.companyName))) &&
-                            !isInvalidHteCompany(emp.companyName)
-                          );
-                          const displayHteName = (emp.companyName && !isInvalidHteCompany(emp.companyName))
-                            ? emp.companyName
-                            : (emp.hteId && hteLookup[emp.hteId]?.companyName ? hteLookup[emp.hteId].companyName : null);
+          <>
+            {/* Desktop Table Headers with Separate HTE, Office/Department, Position Columns */}
+            <div className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.2fr_auto]' : 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.1fr_1fr_auto]'} gap-4 items-center px-5 py-3 bg-slate-100/90 border-b border-slate-200 text-[11px] font-extrabold text-slate-700 uppercase tracking-wider rounded-t-2xl`}>
+              <span>{isTraineeGroup ? 'Trainee' : isInstructorGroup ? 'Faculty Coordinator' : isHteGroup ? 'HTE Supervisor' : 'Member'}</span>
+              <span>HTE</span>
+              <span>Office / Department</span>
+              <span className="text-center">Position</span>
+              <span>{isPendingGroup ? 'Status' : 'Hours & Progress'}</span>
+              {!isPendingGroup && <span>Compliance</span>}
+              <span className="text-right">Actions</span>
+            </div>
 
-                          if (isDeployed && displayHteName) {
-                            return (
-                              <>
-                                <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
-                                  <Building size={11} className="text-blue-600 shrink-0" />
-                                  HTE: {displayHteName}
-                                </span>
-                                <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1 w-fit">
-                                  <MapPin size={10} className="text-emerald-600" />
-                                  Deployed to HTE ({emp.registrationLocation?.radius || 40}m)
-                                </span>
-                              </>
-                            );
-                          }
-                          return (
-                            <>
-                              <span className="text-[11px] font-semibold text-amber-800 flex items-center gap-1">
-                                <Building size={11} className="text-amber-600 shrink-0" />
-                                HTE: Unassigned
-                              </span>
-                              <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-flex items-center gap-1 w-fit">
-                                <AlertTriangle size={10} className="text-amber-600" />
-                                Awaiting Instructor Deployment
-                              </span>
-                            </>
-                          );
-                        })()}
+            {paginatedItems.map((emp, idx) => {
+              const stats = getEmpStats(emp.id);
+              const progress = Math.min((stats.totalHours / (emp.requiredHours || 1)) * 100, 100);
+              return (
+                <motion.div
+                  key={emp.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.04 }}
+                >
+                  <div
+                    onClick={() => openView(emp)}
+                    className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.2fr_auto]' : 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.1fr_1fr_auto]'} gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors`}
+                  >
+                    {/* 1. Trainee Identity Column */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      {(() => {
+                        const photoUrl = getPhotoUrl(emp.photo);
+                        const avatarClass = isInstructorGroup
+                          ? 'bg-purple-100 text-purple-700'
+                          : isHteGroup
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-blue-100 text-blue-700';
+                        return (
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden relative select-none ${avatarClass}`}>
+                            <span className="font-bold text-sm">{emp.name.charAt(0)}</span>
+                            {photoUrl && (
+                              <img
+                                src={photoUrl}
+                                alt=""
+                                className="w-full h-full object-cover absolute inset-0 z-10"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      })()}
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-800 text-sm hover:text-blue-700 transition-colors truncate">{emp.name}</p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {emp.employeeId} • {emp.email}
+                        </p>
+                        {emp.academicYear && isTraineeGroup && (
+                          <span className="inline-block mt-0.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
+                            A.Y. {emp.academicYear}
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    </div>
+
+                    {/* 2. HTE Column */}
+                    <div className="min-w-0">
+                      {(() => {
+                        const isDeployed = Boolean(
+                          (emp.hteId || (emp.companyName && !isInvalidHteCompany(emp.companyName))) &&
+                          !isInvalidHteCompany(emp.companyName)
+                        );
+                        const displayHteName = (emp.companyName && !isInvalidHteCompany(emp.companyName))
+                          ? emp.companyName
+                          : (emp.hteId && hteLookup[emp.hteId]?.companyName ? hteLookup[emp.hteId].companyName : null);
+
+                        if (isDeployed && displayHteName) {
+                          return (
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="text-xs font-bold text-slate-900 flex items-center gap-1 truncate" title={displayHteName}>
+                                <Building size={12} className="text-blue-600 shrink-0" />
+                                <span className="truncate">{displayHteName}</span>
+                              </span>
+                              <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 inline-flex items-center gap-1 w-fit">
+                                <MapPin size={9} className="text-emerald-600" />
+                                {emp.supervisorName ? `Supv: ${emp.supervisorName}` : 'Deployed'}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-xs font-semibold text-amber-800 flex items-center gap-1">
+                              <Building size={12} className="text-amber-500 shrink-0" />
+                              <span>Unassigned</span>
+                            </span>
+                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 inline-flex items-center gap-1 w-fit">
+                              <AlertTriangle size={9} className="text-amber-600" />
+                              Awaiting Deployment
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* 3. Office / Department Column */}
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate" title={emp.department || 'College of Computer Studies'}>
+                        {emp.department || 'College of Computer Studies'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate mt-0.5" title={isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || 'BS Information Systems')}>
+                        {isInstructorGroup ? (emp.campus || 'CHMSU Campus') : (emp.course || 'BS Information Systems')}
+                      </p>
+                    </div>
+
+                    {/* 4. Position Column */}
+                    <div className="min-w-0 text-center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold whitespace-nowrap shadow-2xs ${
+                        isInstructorGroup
+                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                          : isHteGroup
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                      }`}>
+                        {emp.position || (isInstructorGroup ? 'OJT Instructor' : isHteGroup ? 'HTE Representative' : 'OJT Trainee')}
+                      </span>
+                    </div>
                   {isTraineeGroup ? (
                     !isPendingGroup ? (
                       <div>
@@ -1562,8 +1594,9 @@ export function AdminEmployees() {
                 </div>
               </motion.div>
             );
-          })
-        )}
+          })}
+        </>
+      )}
 
         {totalPages > 1 && (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3.5 bg-gray-50/75 border-t border-gray-100 text-xs">
@@ -2187,6 +2220,9 @@ export function AdminEmployees() {
                       <thead>
                         <tr className="bg-gray-50/80 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                           <th className="px-5 py-3.5">Student Trainee</th>
+                          <th className="px-4 py-3.5">HTE</th>
+                          <th className="px-4 py-3.5">Office / Department</th>
+                          <th className="px-4 py-3.5 text-center">Position</th>
                           <th className="px-4 py-3.5">Compliance Progress</th>
                           <th className="px-4 py-3.5">Status</th>
                           <th className="px-4 py-3.5">Uploaded Credentials Matrix</th>
@@ -2219,20 +2255,39 @@ export function AdminEmployees() {
                                       {trainee.name}
                                     </p>
                                     <p className="text-[11px] font-mono text-gray-500 mt-0.5">{trainee.employeeId}</p>
-                                    <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500">
-                                      <span className="truncate max-w-[140px] text-blue-700 font-medium">{trainee.course || 'BS Information Systems'}</span>
-                                      {trainee.companyName && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="truncate max-w-[140px] text-gray-600 flex items-center gap-1">
-                                            <Building size={11} className="text-gray-400" />
-                                            {trainee.companyName}
-                                          </span>
-                                        </>
-                                      )}
-                                    </div>
+                                    <p className="text-[10px] text-gray-400 truncate mt-0.5">{trainee.email}</p>
                                   </div>
                                 </div>
+                              </td>
+
+                              {/* HTE Column */}
+                              <td className="px-4 py-4 min-w-[150px]">
+                                <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                                  <Building size={13} className="text-blue-600 shrink-0" />
+                                  <span className="truncate max-w-[150px]" title={trainee.companyName || 'Unassigned'}>
+                                    {trainee.companyName || 'Unassigned HTE'}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[150px]">
+                                  {trainee.supervisorName ? `Supv: ${trainee.supervisorName}` : 'HTE Partner'}
+                                </p>
+                              </td>
+
+                              {/* Office / Department Column */}
+                              <td className="px-4 py-4 min-w-[160px]">
+                                <p className="font-bold text-slate-800 text-xs truncate max-w-[160px]" title={trainee.department || 'College of Computer Studies'}>
+                                  {trainee.department || 'College of Computer Studies'}
+                                </p>
+                                <p className="text-[11px] text-slate-500 truncate max-w-[160px] mt-0.5" title={trainee.course || 'BS Information Systems'}>
+                                  {trainee.course || 'BS Information Systems'}
+                                </p>
+                              </td>
+
+                              {/* Position Column */}
+                              <td className="px-4 py-4 text-center">
+                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                                  {trainee.position || 'OJT Trainee'}
+                                </span>
                               </td>
 
                               {/* Progress bar */}

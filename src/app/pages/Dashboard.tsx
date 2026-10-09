@@ -1337,11 +1337,14 @@ export function Dashboard() {
             <table className="w-full">
               <thead className="bg-gray-50/75 border-b border-gray-100">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="px-6 py-3.5">Student Name</th>
-                  <th className="px-6 py-3.5">Date</th>
-                  <th className="px-6 py-3.5">Hours</th>
-                  <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5 text-right">Action</th>
+                  <th className="px-5 py-3.5">Student Name</th>
+                  <th className="px-4 py-3.5">HTE</th>
+                  <th className="px-4 py-3.5">Office / Department</th>
+                  <th className="px-4 py-3.5">Position</th>
+                  <th className="px-4 py-3.5">Date</th>
+                  <th className="px-4 py-3.5">Hours</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1353,7 +1356,7 @@ export function Dashboard() {
                       className="hover:bg-blue-50/60 transition-all cursor-pointer group"
                       title="Click to view student information & OJT progress"
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           {record.photo ? (
                             <img
@@ -1375,17 +1378,33 @@ export function Dashboard() {
                             <p className="font-semibold text-gray-900 group-hover:text-blue-700 transition-colors leading-tight">
                               {record.student_name}
                             </p>
-                            <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs text-gray-500 mt-1">
                               <span className="font-mono bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[11px] font-medium">
                                 {record.student_id}
                               </span>
-                              <span className="text-gray-300">•</span>
-                              <span className="text-gray-600">{record.course}</span>
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-xs text-slate-800">
+                          {record.rawEmployee?.companyName || 'Host Training Establishment'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="text-xs text-slate-800 font-medium">
+                          {record.rawEmployee?.department || 'College of Computer Studies'}
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          {record.course}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {record.rawEmployee?.position || 'OJT Trainee'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
                         {record.date && record.date !== 'No clock-in yet' && !isNaN(Date.parse(record.date)) ? (
                           new Date(record.date).toLocaleDateString('en-US', {
                             month: 'short',
@@ -1396,14 +1415,14 @@ export function Dashboard() {
                           <span className="text-xs italic text-gray-400">No clock-in yet</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm font-medium">
+                      <td className="px-4 py-4 text-sm font-medium">
                         {Number(record.hours_rendered || 0) > 0 ? (
                           <span className="text-emerald-700 font-semibold">{Number(record.hours_rendered).toFixed(1)} hrs</span>
                         ) : (
                           <span className="text-gray-400">0.0 hrs</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-4 py-4 text-sm">
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
                             record.status === 'Present' || record.status === 'Approved'
@@ -1418,7 +1437,7 @@ export function Dashboard() {
                           {record.status || (record.is_approved ? 'Approved' : 'Pending')}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-right">
+                      <td className="px-4 py-4 text-sm text-right">
                         <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 group-hover:text-blue-700 bg-blue-50 group-hover:bg-blue-100/90 px-3 py-1.5 rounded-xl transition-all">
                           <Eye size={13} />
                           View Info
@@ -1428,7 +1447,7 @@ export function Dashboard() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={8} className="px-6 py-10 text-center text-gray-500">
                       <Users size={36} className="mx-auto mb-2 text-gray-300" />
                       <p className="text-sm font-medium text-gray-600">No student records yet</p>
                       <p className="text-xs text-gray-400 mt-0.5">Enrolled student trainees and their daily time entries will appear here.</p>
@@ -1678,6 +1697,12 @@ export function Dashboard() {
                           <div className="flex justify-between">
                             <span className="text-slate-400 font-medium">Department:</span>
                             <span className="font-medium text-slate-700">{target.department || 'College of Computer Studies'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400 font-medium">Position:</span>
+                            <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                              {target.position || 'OJT Trainee'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400 font-medium">Email:</span>

@@ -904,10 +904,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             </div>
             <div className="flex items-baseline">
               <span className="font-bold text-[10px] print:text-[7.5pt] text-slate-700 whitespace-nowrap mr-2">
-                HOST TRAINING ESTABLISHMENT (HTE) / AGENCY:
+                HOST TRAINING ESTABLISHMENT (HTE):
               </span>
               <span className="flex-1 font-semibold text-xs print:text-[8pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
                 {companyName}
+              </span>
+            </div>
+            <div className="flex items-baseline">
+              <span className="font-bold text-[10px] print:text-[7.5pt] text-slate-700 whitespace-nowrap mr-2">
+                POSITION / DESIGNATION:
+              </span>
+              <span className="flex-1 font-semibold text-xs print:text-[8pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
+                {selectedEmployee?.position || 'OJT Trainee'}
               </span>
             </div>
           </div>
@@ -917,6 +925,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
               <span className="font-bold text-[11px] print:text-[8pt] text-slate-900 whitespace-nowrap mr-2">MONTH &amp; YEAR:</span>
               <span className="flex-1 font-bold text-sm print:text-[9pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5">
                 {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+              </span>
+            </div>
+            <div className="flex items-baseline">
+              <span className="font-bold text-[10px] print:text-[7.5pt] text-slate-700 whitespace-nowrap mr-2">
+                OFFICE / DEPARTMENT:
+              </span>
+              <span className="flex-1 text-xs print:text-[8pt] text-slate-900 border-b border-slate-800 px-1 pb-0.5 truncate">
+                {selectedEmployee?.department || 'College of Computer Studies'}
               </span>
             </div>
             <div className="flex items-baseline">
