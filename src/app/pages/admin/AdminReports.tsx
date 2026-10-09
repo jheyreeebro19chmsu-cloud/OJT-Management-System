@@ -1087,7 +1087,7 @@ export function AdminReports() {
                     <th className="py-3 px-4">Trainee</th>
                     <th className="py-3 px-3">HTE</th>
                     <th className="py-3 px-3">Office / Department</th>
-                    <th className="py-3 px-3 text-center">Position</th>
+                    <th className="py-3 px-3">Position</th>
                     <th className="py-3 px-2 text-center" title="Quality of Work (25%)">Work (25%)</th>
                     <th className="py-3 px-2 text-center" title="Attendance & Punctuality (20%)">Attd (20%)</th>
                     <th className="py-3 px-2 text-center" title="Professional Attitude (20%)">Attitude (20%)</th>
@@ -1148,10 +1148,12 @@ export function AdminReports() {
                           </td>
 
                           {/* Position */}
-                          <td className="py-3 px-3 text-center">
-                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
-                              {emp.position || 'OJT Trainee'}
-                            </span>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center justify-start">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                                {emp.position || 'OJT Trainee'}
+                              </span>
+                            </div>
                           </td>
 
                           {/* Domain Scores */}
@@ -1501,7 +1503,7 @@ export function AdminReports() {
                     </th>
                     <th className="py-3 px-4 border-r border-slate-200/80">HTE</th>
                     <th className="py-3 px-4 border-r border-slate-200/80">Office / Department</th>
-                    <th className="py-3 px-3 border-r border-slate-200/80 text-center">Position</th>
+                    <th className="py-3 px-4 border-r border-slate-200/80">Position</th>
                     <th
                       className="py-3 px-4 border-r border-slate-200/80 cursor-pointer hover:bg-slate-200/60 transition-colors select-none"
                       onClick={() => setTraineeSortBy(traineeSortBy === 'hours' ? 'progress' : 'hours')}
@@ -1595,10 +1597,12 @@ export function AdminReports() {
                         </td>
 
                         {/* 4. Position Column */}
-                        <td className="py-3.5 px-3 border-r border-slate-150 text-center">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
-                            {emp.position || 'OJT Trainee'}
-                          </span>
+                        <td className="py-3.5 px-4 border-r border-slate-150">
+                          <div className="flex items-center justify-start">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                              {emp.position || 'OJT Trainee'}
+                            </span>
+                          </div>
                         </td>
 
                         {/* 3. Hours & Progress Column */}

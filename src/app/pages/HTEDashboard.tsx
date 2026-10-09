@@ -589,9 +589,11 @@ export function HTEDashboard() {
                     <div className="text-[11px] text-slate-400 font-mono">{t.course || 'OJT Trainee'}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {t.position || 'OJT Trainee'}
-                    </span>
+                    <div className="flex items-center justify-start">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                        {t.position || 'OJT Trainee'}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="w-36 space-y-1">
@@ -788,9 +790,11 @@ export function HTEDashboard() {
                     <div className="text-[11px] text-slate-400 font-mono">{log.course}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {log.position}
-                    </span>
+                    <div className="flex items-center justify-start">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                        {log.position}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
                     {log.timeIn || '—'}

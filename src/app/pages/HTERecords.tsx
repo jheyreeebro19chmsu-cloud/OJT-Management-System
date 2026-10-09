@@ -421,9 +421,11 @@ export function HTERecords() {
                     <div className="text-[11px] text-slate-400 font-mono">{r.course}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {r.position}
-                    </span>
+                    <div className="flex items-center justify-start">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                        {r.position}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">
                     {r.timeIn || '—'}

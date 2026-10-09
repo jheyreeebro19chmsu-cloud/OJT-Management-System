@@ -800,9 +800,11 @@ export function HTEEvaluations() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        {emp.position || 'OJT Trainee'}
-                      </span>
+                      <div className="flex items-center justify-start">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                          {emp.position || 'OJT Trainee'}
+                        </span>
+                      </div>
                     </td>
 
                     <td className="px-4 py-3">

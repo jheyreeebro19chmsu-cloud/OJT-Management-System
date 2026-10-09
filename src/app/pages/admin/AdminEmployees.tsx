@@ -1002,7 +1002,7 @@ export function AdminEmployees() {
               <span>{isTraineeGroup ? 'Trainee' : isInstructorGroup ? 'Faculty Coordinator' : isHteGroup ? 'HTE Supervisor' : 'Member'}</span>
               <span>HTE</span>
               <span>Office / Department</span>
-              <span className="text-center">Position</span>
+              <span>Position</span>
               <span>{isPendingGroup ? 'Status' : 'Hours & Progress'}</span>
               {!isPendingGroup && <span>Compliance</span>}
               <span className="text-right">Actions</span>
@@ -1111,8 +1111,8 @@ export function AdminEmployees() {
                     </div>
 
                     {/* 4. Position Column */}
-                    <div className="min-w-0 text-center">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold whitespace-nowrap shadow-2xs ${
+                    <div className="min-w-0 flex items-center justify-start">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold whitespace-nowrap shadow-2xs ${
                         isInstructorGroup
                           ? 'bg-purple-50 text-purple-700 border border-purple-200'
                           : isHteGroup
@@ -2222,7 +2222,7 @@ export function AdminEmployees() {
                           <th className="px-5 py-3.5">Student Trainee</th>
                           <th className="px-4 py-3.5">HTE</th>
                           <th className="px-4 py-3.5">Office / Department</th>
-                          <th className="px-4 py-3.5 text-center">Position</th>
+                          <th className="px-4 py-3.5">Position</th>
                           <th className="px-4 py-3.5">Compliance Progress</th>
                           <th className="px-4 py-3.5">Status</th>
                           <th className="px-4 py-3.5">Uploaded Credentials Matrix</th>
@@ -2284,10 +2284,12 @@ export function AdminEmployees() {
                               </td>
 
                               {/* Position Column */}
-                              <td className="px-4 py-4 text-center">
-                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
-                                  {trainee.position || 'OJT Trainee'}
-                                </span>
+                              <td className="px-4 py-4">
+                                <div className="flex items-center justify-start">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap shadow-2xs">
+                                    {trainee.position || 'OJT Trainee'}
+                                  </span>
+                                </div>
                               </td>
 
                               {/* Progress bar */}
