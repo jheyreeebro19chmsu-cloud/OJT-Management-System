@@ -41,7 +41,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -79,6 +79,26 @@ function formatMetricHours(val: number | string | undefined | null): string {
   const rounded = Math.round(num * 10) / 10;
   return rounded % 1 === 0 ? rounded.toString() : rounded.toFixed(1);
 }
+
+const getStoredSeenAnnouncements = (key: string): Set<string> => {
+  try {
+    const raw = localStorage.getItem(`seen_dashboard_announcements_${key}`);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+};
+
+const storeSeenAnnouncement = (id: string, key: string) => {
+  try {
+    const raw = localStorage.getItem(`seen_dashboard_announcements_${key}`);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(id)) {
+      list.push(id);
+      localStorage.setItem(`seen_dashboard_announcements_${key}`, JSON.stringify(list));
+    }
+  } catch {}
+};
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -333,7 +353,17 @@ export function Dashboard() {
   const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
   const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [dismissedAnn, setDismissedAnn] = useState<Set<string>>(new Set());
+  const userKey = currentUser?.id || currentUser?.email || empLookupId || 'default_user';
+  const [dismissedAnn, setDismissedAnn] = useState<Set<string>>(() => getStoredSeenAnnouncements(userKey));
+
+  const dismissAnnouncement = useCallback((id: string) => {
+    setDismissedAnn((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    storeSeenAnnouncement(id, userKey);
+  }, [userKey]);
   const [pendingApps, setPendingApps] = useState<Employee[]>([]);
   const [hteRequests, setHteRequests] = useState<any[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -658,9 +688,35 @@ export function Dashboard() {
     }
   };
 
-  const activeAnnouncements = getActiveAnnouncements(isAdmin ? 'admin' : 'employee').filter(
-    (a) => !dismissedAnn.has(a.id)
-  );
+  const activeAnnouncements = useMemo(() => {
+    return getActiveAnnouncements(isAdmin ? 'admin' : 'employee').filter(
+      (a) => !dismissedAnn.has(a.id)
+    );
+  }, [getActiveAnnouncements, isAdmin, dismissedAnn]);
+
+  // Automatically remove announcements from Dashboard after they have been seen for 7 seconds
+  useEffect(() => {
+    if (activeAnnouncements.length === 0) return;
+
+    const timer = setTimeout(() => {
+      activeAnnouncements.forEach((a) => {
+        dismissAnnouncement(a.id);
+      });
+    }, 7000);
+
+    return () => clearTimeout(timer);
+  }, [activeAnnouncements, dismissAnnouncement]);
+
+  // When the user leaves/unmounts the dashboard after viewing, ensure displayed announcements are marked seen
+  useEffect(() => {
+    return () => {
+      if (activeAnnouncements.length > 0) {
+        activeAnnouncements.forEach((a) => {
+          storeSeenAnnouncement(a.id, userKey);
+        });
+      }
+    };
+  }, [activeAnnouncements, userKey]);
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -1843,9 +1899,12 @@ export function Dashboard() {
                       <span className={c.icon}>{ANN_ICON[ann.type]}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {ann.isPinned && <span className="text-xs font-bold text-gray-500">📌</span>}
                         <p className="text-xs font-bold text-gray-800 truncate">{ann.title}</p>
+                        <span className="text-[10px] text-gray-400 flex items-center gap-0.5 ml-auto font-medium">
+                          <Eye size={10} /> Auto-removes after viewing
+                        </span>
                       </div>
                       <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{ann.content}</p>
                       <p className="text-xs text-gray-400 mt-1">
@@ -1853,14 +1912,13 @@ export function Dashboard() {
                         {ann.createdBy}
                       </p>
                     </div>
-                    {!ann.isPinned && (
-                      <button
-                        onClick={() => setDismissedAnn((prev) => new Set([...prev, ann.id]))}
-                        className="text-gray-400 hover:text-gray-600 shrink-0"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => dismissAnnouncement(ann.id)}
+                      title="Dismiss announcement"
+                      className="text-gray-400 hover:text-gray-600 shrink-0 p-1 rounded-lg hover:bg-black/5 transition-colors cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 </motion.div>
               );
