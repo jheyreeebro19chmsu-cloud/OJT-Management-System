@@ -488,7 +488,7 @@ export function Register() {
           localStorage.getItem('oauth_given_name') || '',
           localStorage.getItem('oauth_family_name') || ''
         );
-        toast.info('Instructor information pre-filled from Google. Please review and complete your registration.');
+
         return;
       }
 
@@ -500,7 +500,7 @@ export function Register() {
           localStorage.getItem('oauth_given_name') || '',
           localStorage.getItem('oauth_family_name') || ''
         );
-        toast.info('HTE company details pre-filled from Google. Please review and complete your registration.');
+
         return;
       }
     }
@@ -642,7 +642,7 @@ export function Register() {
           oauthGivenName || '',
           oauthFamilyName || ''
         );
-        toast.success(`Google verified! Review your instructor details below and create your account.`);
+
         return;
       } else if (h === 'hte' || pending === 'hte') {
         prefillHTEGoogleData(
@@ -652,7 +652,7 @@ export function Register() {
           oauthGivenName || '',
           oauthFamilyName || ''
         );
-        toast.success(`Google verified! Review your HTE company details below and create your account.`);
+
         return;
       } else if (h === 'trainee' || pending === 'trainee' || (pending as any) === 'employee') {
         setRole('trainee');
@@ -675,7 +675,7 @@ export function Register() {
           setGoogleAvatar(oauthPhoto);
           setPhoto(oauthPhoto);
         }
-        toast.info(`Google account connected (${oauthEmail || 'verified'}). Please complete your registration details.`);
+
       }
 
       // Check active Supabase Google session on mount
@@ -2076,11 +2076,7 @@ export function Register() {
                     }`}>
                       {role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee'}
                     </span>
-                    {isGoogleAuth && (
-                      <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200 font-medium truncate max-w-xs">
-                        Google: {form.email}
-                      </span>
-                    )}
+
                   </div>
                   <button
                     type="button"
