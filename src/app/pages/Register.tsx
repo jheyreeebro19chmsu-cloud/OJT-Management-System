@@ -33,7 +33,7 @@ import {
   Navigation,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { downloadDocument } from '../utils/attachmentHelper';
+
 import { QRCodeSVG } from 'qrcode.react';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
@@ -44,7 +44,7 @@ import { toast } from 'sonner';
 import { FaceCapture } from '../components/FaceCapture';
 import { sendWelcomeEmail, sendOtpEmail } from '../lib/resend';
 import { TraineeDocuments, TraineeDocumentItem, User as AuthUser } from '../types';
-import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
+import { REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 
 
 import { PH_ADDRESS_DATA, getBarangaysForCity } from '../data/ph_address_data';
@@ -56,7 +56,7 @@ import { Country, State, City } from 'country-state-city';
 
 import { authAPI } from '../services/authApi';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { createEmployee as createEmployeeDb, uploadDocumentToStorage } from '../services/supabaseService';
+import { createEmployee as createEmployeeDb } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
@@ -235,71 +235,7 @@ export function Register() {
 
   const [faceRegistered, setFaceRegistered] = useState(false);
   const [photo, setPhoto] = useState<string | undefined>();
-  const [previewRegDoc, setPreviewRegDoc] = useState<{ title: string; fileName: string; fileUrl?: string } | null>(null);
-  const [documents, setDocuments] = useState<TraineeDocuments>({});
-
-  const handleDocumentUpload = async (docKey: keyof TraineeDocuments, file: File | null) => {
-    if (!file) return;
-    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
-    const ALLOWED_MIME = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
-    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-      toast.error(`Unsupported file: "${file.name}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`);
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please choose a file up to 10MB.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string;
-      const cleanEmpId = form.employeeId || 'trainee_registration';
-
-      let finalUrl = dataUrl;
-      try {
-        const storedUrl = await uploadDocumentToStorage(cleanEmpId, docKey as string, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http')) {
-          finalUrl = storedUrl;
-        }
-      } catch {}
-
-      setDocuments((prev) => ({
-        ...prev,
-        [docKey]: {
-          name: file.name,
-          size: file.size,
-          dataUrl: finalUrl,
-          fileType: file.type || 'application/octet-stream',
-          uploadedAt: new Date().toISOString(),
-          status: 'pending',
-          source: 'registration',
-        },
-      }));
-      toast.success(`${file.name} attached for verification (Pending Instructor Review)`);
-    };
-    reader.onerror = () => {
-      toast.error('Failed to read file. Please try again.');
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleDocumentRemove = (docKey: keyof TraineeDocuments) => {
-    setDocuments((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
-      return next;
-    });
-    toast.info('Document removed — status changed to PENDING');
-  };
+  const [documents] = useState<TraineeDocuments>({});
   const [otpRequested, setOtpRequested] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState<boolean>(() => {
@@ -4016,135 +3952,6 @@ export function Register() {
                     </p>
                   </div>
 
-                  {/* Required OJT Documents Section */}
-                  <div className="pt-3 border-t border-gray-100 space-y-2.5">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                      <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5 min-w-0">
-                        <ShieldCheck size={14} className="text-blue-600 shrink-0" />
-                        <span className="truncate">Supporting OJT Documents ({REQUIRED_TRAINEE_DOCUMENTS.length} Requirements)</span>
-                      </label>
-                      <span className="self-start sm:self-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-                        {REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(documents[k])).length} of {REQUIRED_TRAINEE_DOCUMENTS.length} Attached
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-500">
-                      Attach your onboarding credentials now or complete them later in your Trainee Dashboard. Submissions reflect directly in your assigned Instructor's account.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 pb-1">
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium">Pictures (JPG, PNG)</span>
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium">PDF</span>
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 font-medium">DOC / DOCX</span>
-                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold border border-blue-100">Supports 5–10MB</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {REQUIRED_TRAINEE_DOCUMENTS.map((item) => {
-                        const uploaded = documents[item.key];
-                        const Icon = item.icon;
-                        return (
-                          <div
-                            key={item.key}
-                            className={`p-3 rounded-2xl border transition-all ${
-                              uploaded
-                                ? 'bg-emerald-50/40 border-emerald-200 shadow-sm shadow-emerald-50'
-                                : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <div
-                                  className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                                    uploaded ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'
-                                  }`}
-                                >
-                                  {item.num}
-                                </div>
-                                <h4 className="text-xs font-bold text-gray-800 truncate" title={item.title}>{item.title}</h4>
-                              </div>
-                              <span
-                                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0 whitespace-nowrap ${
-                                  uploaded
-                                    ? 'bg-blue-100 text-blue-700 border-blue-300'
-                                    : 'bg-amber-100 text-amber-700 border-amber-300'
-                                }`}
-                              >
-                                {uploaded ? (
-                                  <>
-                                    <Clock size={9} className="stroke-[2.5]" /> ATTACHED (PENDING REVIEW)
-                                  </>
-                                ) : (
-                                  <>
-                                    <Clock size={9} /> PENDING
-                                  </>
-                                )}
-                              </span>
-                            </div>
-
-                            <p className="text-[10px] text-gray-500 leading-tight mb-2.5 line-clamp-2">{item.desc}</p>
-
-                            <div className="pt-2 border-t border-gray-100">
-                              <input
-                                type="file"
-                                id={`reg-doc-${item.key}`}
-                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0] || null;
-                                  handleDocumentUpload(item.key, file);
-                                }}
-                                className="hidden"
-                              />
-
-                              {uploaded ? (
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-[11px] font-medium text-emerald-700 truncate max-w-[120px]" title={uploaded.name}>
-                                    📎 {uploaded.name}
-                                  </span>
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewRegDoc({ title: item.title, fileName: uploaded.name, fileUrl: uploaded.dataUrl })}
-                                      className="text-[10px] font-bold text-violet-600 hover:text-violet-800 transition-colors inline-flex items-center gap-0.5 cursor-pointer"
-                                      title="Preview attached file"
-                                    >
-                                      <Eye size={10} /> View
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => downloadDocument(uploaded.dataUrl, uploaded.name)}
-                                      className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors inline-flex items-center gap-0.5"
-                                      title="Download attached file"
-                                    >
-                                      <Download size={10} /> Save
-                                    </button>
-                                    <label
-                                      htmlFor={`reg-doc-${item.key}`}
-                                      className="cursor-pointer text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                                    >
-                                      Replace
-                                    </label>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDocumentRemove(item.key)}
-                                      className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <label
-                                  htmlFor={`reg-doc-${item.key}`}
-                                  className="cursor-pointer w-full py-1.5 px-3 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                                >
-                                  <Upload size={12} /> Upload Document
-                                </label>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
                 </div>
               </motion.div>
             )}
@@ -4435,70 +4242,6 @@ export function Register() {
         </div>
       </motion.div>
 
-      {/* Registration Attached Document Preview Modal */}
-      {previewRegDoc && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <div>
-                <h3 className="font-bold text-gray-900 text-base">{previewRegDoc.title}</h3>
-                <p className="text-xs text-gray-500 font-mono truncate">{previewRegDoc.fileName}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {previewRegDoc.fileUrl && (
-                  <button
-                    type="button"
-                    onClick={() => downloadDocument(previewRegDoc.fileUrl!, previewRegDoc.fileName)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition-all shadow-sm"
-                  >
-                    <Download size={13} /> Download
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPreviewRegDoc(null)}
-                  className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 bg-slate-50 flex items-center justify-center min-h-[360px]">
-              {previewRegDoc.fileUrl ? (
-                previewRegDoc.fileUrl.startsWith('data:image/') || previewRegDoc.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i) ? (
-                  <img
-                    src={previewRegDoc.fileUrl}
-                    alt={previewRegDoc.title}
-                    className="max-h-[500px] object-contain rounded-xl shadow border border-slate-200"
-                  />
-                ) : previewRegDoc.fileName?.match(/\.(doc|docx)$/i) ? (
-                  <div className="text-center p-6 bg-white rounded-2xl border border-slate-200 max-w-sm">
-                    <FileText size={48} className="mx-auto text-blue-600 mb-3" />
-                    <h4 className="font-bold text-sm text-gray-800 mb-1">{previewRegDoc.title}</h4>
-                    <p className="text-xs text-gray-500 mb-4">{previewRegDoc.fileName}</p>
-                    <button
-                      type="button"
-                      onClick={() => downloadDocument(previewRegDoc.fileUrl!, previewRegDoc.fileName)}
-                      className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-bold"
-                    >
-                      Download Document
-                    </button>
-                  </div>
-                ) : (
-                  <iframe
-                    src={previewRegDoc.fileUrl}
-                    className="w-full h-[460px] rounded-xl border border-gray-200 bg-white"
-                    title="Document Preview"
-                  />
-                )
-              ) : (
-                <p className="text-gray-400 text-xs">No preview available</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
