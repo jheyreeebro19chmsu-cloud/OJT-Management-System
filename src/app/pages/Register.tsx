@@ -1616,9 +1616,9 @@ export function Register() {
         if (!form.campus) errors.push('Please select your Campus');
         if (!form.department) errors.push('Please select your Department');
         if (!form.course) errors.push('Please select your Program / Course');
-        // Employee/Student ID is optional but must be unique if provided
+        // Student ID is optional but must be unique if provided
         if (form.employeeId?.trim() && employeeIdTaken === true) {
-          errors.push('This Student/Employee ID is already taken. Please use a different ID or leave it blank.');
+          errors.push('This Student ID is already taken. Please use a different ID or leave it blank.');
         }
       }
       if (step === 3) {
@@ -3517,15 +3517,17 @@ export function Register() {
                           <p className="text-xs text-red-500 mt-1 font-medium">Please enter your Street Address / House Number</p>
                         )}
                       </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
-                        <input
-                          value={form.employeeId}
-                          onChange={(e) => update('employeeId', e.target.value)}
-                          placeholder="Auto-generated if empty"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
-                      </div>
+                      {role === 'admin' && (
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">Employee ID (optional)</label>
+                          <input
+                            value={form.employeeId}
+                            onChange={(e) => update('employeeId', e.target.value)}
+                            placeholder="Auto-generated if empty"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                        </div>
+                      )}
 
                       {/* Admin / Instructor Workplace GPS Verification */}
                       {role === 'admin' && (
@@ -3969,11 +3971,11 @@ export function Register() {
                     </select>
                   </div>
 
-                  {/* Employee / Student ID — optional but unique */}
+                  {/* Student ID — optional but unique */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-xs font-semibold text-gray-600 flex items-center gap-1">
-                        Student / Employee ID
+                        Student ID
                         <span className="text-[10px] text-gray-400 font-normal ml-1">(optional)</span>
                       </label>
                       {employeeIdChecking && (
