@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Printer,
   Download,
@@ -13,6 +13,7 @@ import {
   AlertCircle,
   PenTool,
   X,
+  Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
@@ -106,10 +107,21 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
   const [editDayEntries, setEditDayEntries] = useState<Record<number, MonthlyDttrDayEntry>>({});
-  const [editHoursRaw, setEditHoursRaw] = useState<Record<number, string>>({}); // raw string for hours input
   const [signerName, setSignerName] = useState('');
   const [signerTitle, setSignerTitle] = useState('HTE Supervisor');
   const [signNotes, setSignNotes] = useState('');
+
+  // Inline table task editing & sending states
+  const [taskEdits, setTaskEdits] = useState<Record<number, string>>({});
+  const [sendingDays, setSendingDays] = useState<Record<number, boolean>>({});
+  const [justSentDays, setJustSentDays] = useState<Set<number>>(new Set());
+  const [isSavingAll, setIsSavingAll] = useState(false);
+
+  // Reset drafts on employee or month/year change
+  useEffect(() => {
+    setTaskEdits({});
+    setJustSentDays(new Set());
+  }, [selectedEmployeeId, selectedMonth, selectedYear]);
 
   // Helper: parse "HH:MM AM/PM" or "HH:MM" into total minutes since midnight
   const parseTimeToMinutes = (t: string): number | null => {
@@ -308,74 +320,156 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     supervisorFromHost?.name ||
     (viewerRole === 'hte' && currentUser?.name ? currentUser.name : 'HTE Supervisor');
 
-  // Start editing tasks
-  const handleOpenEditTasks = () => {
-    const entries: Record<number, MonthlyDttrDayEntry> = {};
-    const rawHours: Record<number, string> = {};
-    dailyRows.forEach((r) => {
-      entries[r.day] = {
-        day: r.day,
-        amArrival: r.amArrival,
-        amDeparture: r.amDeparture,
-        pmArrival: r.pmArrival,
-        pmDeparture: r.pmDeparture,
-        hours: r.hours,
-        tasks: r.tasks,
-      };
-      rawHours[r.day] = r.hours > 0 ? String(r.hours) : '';
-    });
-    setEditDayEntries(entries);
-    setEditHoursRaw(rawHours);
-    setIsEditingTasks(true);
+  // Change task text for a single day
+  const handleTaskChange = (day: number, val: string) => {
+    setTaskEdits((prev) => ({
+      ...prev,
+      [day]: val,
+    }));
   };
 
-  const handleSaveTasks = () => {
-    if (!selectedEmployee) return;
-    setIsSaving(true);
-    try {
-      // Finalize entries: if hours field was left empty/0, auto-compute from time slots
-      const finalEntries: Record<number, MonthlyDttrDayEntry> = {};
-      Object.entries(editDayEntries).forEach(([dayStr, entry]) => {
-        const day = Number(dayStr);
-        const rawHrs = editHoursRaw[day];
-        let hrs = rawHrs !== undefined && rawHrs !== '' ? parseFloat(rawHrs) : entry.hours;
-        if (isNaN(hrs) || hrs < 0) hrs = 0;
-        // If hours is still 0 but time slots are filled, auto-compute
-        if (hrs === 0 && (entry.amArrival || entry.pmDeparture || entry.pmArrival || entry.amDeparture)) {
-          hrs = computeHoursFromTimes(entry);
-        }
-        finalEntries[day] = { ...entry, hours: hrs };
+  // Count modified tasks waiting to be sent
+  const modifiedDayCount = useMemo(() => {
+    return Object.keys(taskEdits).filter((dayStr) => {
+      const day = Number(dayStr);
+      const row = dailyRows.find((r) => r.day === day);
+      const originalText = row?.tasks || '';
+      return taskEdits[day] !== undefined && taskEdits[day].trim() !== originalText.trim();
+    }).length;
+  }, [taskEdits, dailyRows]);
 
-        // Synchronize edited tasks and hours to system time_records
+  // Send / Save a single task for a specific day ONLY (preserves arrival, departure, and hours)
+  const handleSendSingleTask = async (day: number) => {
+    if (!selectedEmployee) {
+      toast.error('No trainee intern selected.');
+      return;
+    }
+
+    const row = dailyRows.find((r) => r.day === day);
+    const originalText = row?.tasks || '';
+    const currentVal = taskEdits[day] !== undefined ? taskEdits[day] : originalText;
+    const taskText = currentVal.trim();
+
+    setSendingDays((prev) => ({ ...prev, [day]: true }));
+    try {
+      const autoRec = monthTimeRecordsMap.get(day);
+      const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+      // 1. Sync task text to system time_records notes
+      if (autoRec) {
+        updateTimeRecord(autoRec.id, {
+          notes: taskText,
+        });
+      } else if (taskText) {
+        addTimeRecord({
+          employeeId: selectedEmployee.id,
+          date: dateStr,
+          timeIn: '08:00',
+          timeOut: '17:00',
+          totalHours: 0,
+          status: 'present',
+          notes: taskText,
+          approvalStatus: 'approved',
+          timeInGeofenced: true,
+          timeOutGeofenced: true,
+          timeInFaceVerified: true,
+          timeOutFaceVerified: true,
+        });
+      }
+
+      // 2. Sync to MonthlyDttrRecord (ONLY tasks are updated; arrivals & hours remain unchanged)
+      const existingCustom: Record<number, MonthlyDttrDayEntry> = {
+        ...(savedDttr?.customEntries || {}),
+      };
+      const existingEntry = existingCustom[day] || {};
+      existingCustom[day] = {
+        ...existingEntry,
+        day,
+        tasks: taskText,
+      };
+
+      const record: MonthlyDttrRecord = {
+        id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
+        employeeId: selectedEmployee.id,
+        year: selectedYear,
+        month: selectedMonth,
+        customEntries: existingCustom,
+        hteSupervisorName: savedDttr?.hteSupervisorName,
+        hteSupervisorTitle: savedDttr?.hteSupervisorTitle,
+        hteSignedAt: savedDttr?.hteSignedAt,
+        hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
+        hteSignatureNotes: savedDttr?.hteSignatureNotes,
+        studentSignedAt: savedDttr?.studentSignedAt,
+      };
+      saveMonthlyDttr(record);
+
+      // 3. Clear draft for this day
+      setTaskEdits((prev) => {
+        const next = { ...prev };
+        delete next[day];
+        return next;
+      });
+
+      // 4. Mark visual feedback
+      setJustSentDays((prev) => new Set([...prev, day]));
+      setTimeout(() => {
+        setJustSentDays((prev) => {
+          const next = new Set(prev);
+          next.delete(day);
+          return next;
+        });
+      }, 3000);
+
+      toast.success(`Task for Day ${day} sent and saved successfully!`);
+    } catch (err: any) {
+      console.error(`Failed to send task for Day ${day}:`, err);
+      toast.error(`Failed to send task for Day ${day}. Please try again.`);
+    } finally {
+      setSendingDays((prev) => ({ ...prev, [day]: false }));
+    }
+  };
+
+  // Send all edited tasks at once (ONLY tasks are updated)
+  const handleSendAllTasks = async () => {
+    if (!selectedEmployee) {
+      toast.error('No trainee intern selected.');
+      return;
+    }
+
+    const modifiedDays = Object.keys(taskEdits)
+      .map(Number)
+      .filter((day) => {
+        const row = dailyRows.find((r) => r.day === day);
+        return taskEdits[day].trim() !== (row?.tasks || '').trim();
+      });
+
+    if (modifiedDays.length === 0) {
+      toast.info('No modified tasks to send.');
+      return;
+    }
+
+    setIsSavingAll(true);
+    try {
+      const existingCustom: Record<number, MonthlyDttrDayEntry> = {
+        ...(savedDttr?.customEntries || {}),
+      };
+
+      modifiedDays.forEach((day) => {
+        const taskText = (taskEdits[day] || '').trim();
         const autoRec = monthTimeRecordsMap.get(day);
         const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
         if (autoRec) {
-          const updatedNotes = entry.tasks !== undefined ? entry.tasks : autoRec.notes;
-          const updatedHours = typeof hrs === 'number' && hrs > 0 ? hrs : autoRec.totalHours;
-          updateTimeRecord(autoRec.id, {
-            notes: updatedNotes,
-            totalHours: updatedHours,
-          });
-        } else if (hrs > 0 || (entry.tasks && entry.tasks.trim()) || entry.amArrival || entry.pmDeparture) {
-          const padTime = (t?: string) => {
-            if (!t) return '08:00';
-            const m = t.match(/(\d{1,2}):(\d{2})/);
-            if (!m) return '08:00';
-            let hh = parseInt(m[1], 10);
-            if (/pm/i.test(t) && hh < 12) hh += 12;
-            if (/am/i.test(t) && hh === 12) hh = 0;
-            return `${String(hh).padStart(2, '0')}:${m[2]}`;
-          };
-
+          updateTimeRecord(autoRec.id, { notes: taskText });
+        } else if (taskText) {
           addTimeRecord({
             employeeId: selectedEmployee.id,
             date: dateStr,
-            timeIn: padTime(entry.amArrival || entry.pmArrival),
-            timeOut: padTime(entry.pmDeparture || entry.amDeparture || '17:00'),
-            totalHours: hrs,
+            timeIn: '08:00',
+            timeOut: '17:00',
+            totalHours: 0,
             status: 'present',
-            notes: entry.tasks || '',
+            notes: taskText,
             approvalStatus: 'approved',
             timeInGeofenced: true,
             timeOutGeofenced: true,
@@ -383,6 +477,13 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             timeOutFaceVerified: true,
           });
         }
+
+        const existingEntry = existingCustom[day] || {};
+        existingCustom[day] = {
+          ...existingEntry,
+          day,
+          tasks: taskText,
+        };
       });
 
       const record: MonthlyDttrRecord = {
@@ -390,18 +491,112 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         employeeId: selectedEmployee.id,
         year: selectedYear,
         month: selectedMonth,
-        customEntries: finalEntries,
+        customEntries: existingCustom,
         hteSupervisorName: savedDttr?.hteSupervisorName,
         hteSupervisorTitle: savedDttr?.hteSupervisorTitle,
         hteSignedAt: savedDttr?.hteSignedAt,
         hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
+        hteSignatureNotes: savedDttr?.hteSignatureNotes,
+        studentSignedAt: savedDttr?.studentSignedAt,
+      };
+
+      saveMonthlyDttr(record);
+      setTaskEdits({});
+      setJustSentDays(new Set(modifiedDays));
+      setTimeout(() => setJustSentDays(new Set()), 3000);
+
+      toast.success(`Successfully sent and updated ${modifiedDays.length} task(s)!`);
+    } catch (err: any) {
+      console.error('Failed to send all tasks:', err);
+      toast.error('Failed to send tasks. Please try again.');
+    } finally {
+      setIsSavingAll(false);
+    }
+  };
+
+  // Start batch editing tasks modal (ONLY tasks are editable)
+  const handleOpenEditTasks = () => {
+    const entries: Record<number, MonthlyDttrDayEntry> = {};
+    dailyRows.forEach((r) => {
+      const draft = taskEdits[r.day];
+      entries[r.day] = {
+        day: r.day,
+        amArrival: r.amArrival,
+        amDeparture: r.amDeparture,
+        pmArrival: r.pmArrival,
+        pmDeparture: r.pmDeparture,
+        hours: r.hours,
+        tasks: draft !== undefined ? draft : r.tasks,
+      };
+    });
+    setEditDayEntries(entries);
+    setIsEditingTasks(true);
+  };
+
+  // Save tasks from the batch modal (ONLY tasks are updated)
+  const handleSaveTasks = () => {
+    if (!selectedEmployee) return;
+    setIsSaving(true);
+    try {
+      const existingCustom: Record<number, MonthlyDttrDayEntry> = {
+        ...(savedDttr?.customEntries || {}),
+      };
+
+      Object.entries(editDayEntries).forEach(([dayStr, entry]) => {
+        const day = Number(dayStr);
+        const taskText = (entry.tasks || '').trim();
+        const autoRec = monthTimeRecordsMap.get(day);
+        const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+        if (autoRec) {
+          updateTimeRecord(autoRec.id, {
+            notes: taskText,
+          });
+        } else if (taskText) {
+          addTimeRecord({
+            employeeId: selectedEmployee.id,
+            date: dateStr,
+            timeIn: '08:00',
+            timeOut: '17:00',
+            totalHours: 0,
+            status: 'present',
+            notes: taskText,
+            approvalStatus: 'approved',
+            timeInGeofenced: true,
+            timeOutGeofenced: true,
+            timeInFaceVerified: true,
+            timeOutFaceVerified: true,
+          });
+        }
+
+        const existingEntry = existingCustom[day] || {};
+        existingCustom[day] = {
+          ...existingEntry,
+          day,
+          tasks: taskText,
+        };
+      });
+
+      const record: MonthlyDttrRecord = {
+        id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
+        employeeId: selectedEmployee.id,
+        year: selectedYear,
+        month: selectedMonth,
+        customEntries: existingCustom,
+        hteSupervisorName: savedDttr?.hteSupervisorName,
+        hteSupervisorTitle: savedDttr?.hteSupervisorTitle,
+        hteSignedAt: savedDttr?.hteSignedAt,
+        hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
+        hteSignatureNotes: savedDttr?.hteSignatureNotes,
+        studentSignedAt: savedDttr?.studentSignedAt,
       };
       saveMonthlyDttr(record);
+      setTaskEdits({});
       setIsEditingTasks(false);
-      toast.success('Monthly DTTR changes and task records saved successfully!');
+      toast.success('Tasks updated and sent successfully!');
     } catch (err: any) {
-      console.error('Failed to save monthly DTTR:', err);
-      toast.error('Failed to save. Please try again.');
+      console.error('Failed to save tasks:', err);
+      toast.error('Failed to save tasks. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -502,11 +697,31 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={handleSendAllTasks}
+              disabled={isSavingAll || modifiedDayCount === 0}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                modifiedDayCount > 0
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 cursor-pointer'
+                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+              }`}
+              title={modifiedDayCount > 0 ? `Send ${modifiedDayCount} edited task(s)` : 'No edited tasks to send'}
+            >
+              {isSavingAll ? (
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Send size={14} />
+              )}
+              <span>{modifiedDayCount > 0 ? `Send Tasks (${modifiedDayCount})` : 'Send Tasks'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleOpenEditTasks}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
+              title="Open batch modal to edit tasks"
             >
               <Edit3 size={14} />
-              <span>Edit Tasks & Hours</span>
+              <span>Batch Edit Tasks</span>
             </button>
 
             {(viewerRole === 'hte' || viewerRole === 'admin') && (
@@ -741,9 +956,15 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 </th>
                 <th
                   rowSpan={2}
-                  className="px-2 py-1.5 print:py-0.5 text-left text-[11px] print:text-[7.5pt] font-black uppercase tracking-wider"
+                  className="px-2 py-1.5 print:py-0.5 text-left text-[11px] print:text-[7.5pt] font-black uppercase tracking-wider min-w-[280px]"
                 >
-                  TASKS / ASSIGNMENTS PERFORMED
+                  <div className="flex items-center justify-between gap-2">
+                    <span>TASKS / ASSIGNMENTS PERFORMED</span>
+                    <span className="print:hidden text-[9px] font-bold tracking-normal normal-case text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <Edit3 size={9} />
+                      <span>Editable • Enter / Send</span>
+                    </span>
+                  </div>
                 </th>
               </tr>
 
@@ -808,9 +1029,76 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                     </td>
 
                     {/* TASKS / ASSIGNMENTS PERFORMED */}
-                    <td className="text-left px-2 py-0.5 print:py-0 print:px-1 text-[11px] print:text-[7pt] text-slate-800 leading-tight truncate max-w-[320px] sm:max-w-none print:max-w-none print:overflow-visible print:whitespace-normal">
-                      {r.tasks || ''}
-                    </td>
+                    {(() => {
+                      const taskValue = taskEdits[r.day] !== undefined ? taskEdits[r.day] : (r.tasks || '');
+                      const isModified = taskEdits[r.day] !== undefined && taskEdits[r.day].trim() !== (r.tasks || '').trim();
+                      const isSending = !!sendingDays[r.day];
+                      const isJustSent = justSentDays.has(r.day);
+
+                      return (
+                        <td className="text-left px-1.5 py-0.5 print:py-0 print:px-1 text-[11px] print:text-[7pt] text-slate-800 leading-tight">
+                          {/* Official Print View (Pure clean text for paper / PDF export) */}
+                          <div className="hidden print:block print:overflow-visible print:whitespace-normal">
+                            {taskValue || ''}
+                          </div>
+
+                          {/* Screen View: Interactive Editable Task with Instant Send */}
+                          <div className="print:hidden flex items-center gap-1.5 w-full group">
+                            <input
+                              type="text"
+                              value={taskValue}
+                              onChange={(e) => handleTaskChange(r.day, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSendSingleTask(r.day);
+                                }
+                              }}
+                              placeholder={hasData ? "Enter task / assignment..." : "Enter task if any..."}
+                              className={`flex-1 min-w-0 px-2 py-1 text-xs rounded-lg border transition-all duration-150 focus:outline-none ${
+                                isModified
+                                  ? 'bg-blue-50/80 border-blue-400 text-slate-900 font-medium focus:ring-1 focus:ring-blue-500 shadow-xs'
+                                  : isJustSent
+                                  ? 'bg-emerald-50/70 border-emerald-400 text-slate-900 font-medium'
+                                  : 'bg-transparent border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800'
+                              }`}
+                            />
+
+                            {/* Direct Row Send Button */}
+                            {isSending ? (
+                              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 rounded-md border border-blue-200">
+                                <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                <span className="hidden sm:inline">Sending</span>
+                              </span>
+                            ) : isJustSent ? (
+                              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200">
+                                <CheckCircle2 size={11} className="text-emerald-600" />
+                                <span className="hidden sm:inline">Sent</span>
+                              </span>
+                            ) : isModified ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSendSingleTask(r.day)}
+                                title={`Send task for Day ${r.day} (or press Enter)`}
+                                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-md shadow-xs transition-colors cursor-pointer"
+                              >
+                                <Send size={11} />
+                                <span>Send</span>
+                              </button>
+                            ) : taskValue.trim() ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSendSingleTask(r.day)}
+                                title={`Resend task for Day ${r.day}`}
+                                className="shrink-0 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-70 group-hover:opacity-100 cursor-pointer"
+                              >
+                                <Send size={12} />
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      );
+                    })()}
                   </tr>
                 );
               })}
@@ -909,7 +1197,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       </div>
 
       {/* =========================================================
-          MODAL: EDIT DAILY TASKS & HOURS
+          MODAL: BATCH EDIT DAILY TASKS ONLY
           ========================================================= */}
       {isEditingTasks && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 no-print overflow-y-auto">
@@ -918,10 +1206,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
               <div>
                 <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                   <Edit3 size={18} className="text-blue-600" />
-                  <span>Edit Daily Tasks &amp; Hours ({MONTH_NAMES[selectedMonth - 1]} {selectedYear})</span>
+                  <span>Edit Daily Tasks &amp; Assignments ({MONTH_NAMES[selectedMonth - 1]} {selectedYear})</span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Update daily tasks performed and manual arrival/departure adjustments for {selectedEmployee?.name}
+                  Update daily tasks performed for {selectedEmployee?.name}. Official attendance hours and arrival/departure logs remain strictly verified and protected.
                 </p>
               </div>
               <button
@@ -944,132 +1232,28 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                   hours: r.hours,
                   tasks: r.tasks,
                 };
+                const hasHours = r.hours > 0;
 
                 return (
                   <div
                     key={r.day}
                     className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center gap-2"
                   >
-                    <div className="w-10 font-black text-slate-800 text-xs text-center shrink-0">
+                    <div className="w-14 font-black text-slate-800 text-xs text-center shrink-0">
                       Day {r.day}
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1.5 text-[10px] w-full sm:w-64 shrink-0">
-                      <input
-                        type="text"
-                        placeholder="AM In"
-                        value={entry.amArrival || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditDayEntries((prev) => {
-                            const base = prev[r.day] || {
-                              day: r.day,
-                              amArrival: r.amArrival,
-                              amDeparture: r.amDeparture,
-                              pmArrival: r.pmArrival,
-                              pmDeparture: r.pmDeparture,
-                              hours: r.hours,
-                              tasks: r.tasks,
-                            };
-                            return { ...prev, [r.day]: { ...base, day: r.day, amArrival: val } };
-                          });
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
-                      />
-                      <input
-                        type="text"
-                        placeholder="AM Out"
-                        value={entry.amDeparture || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditDayEntries((prev) => {
-                            const base = prev[r.day] || {
-                              day: r.day,
-                              amArrival: r.amArrival,
-                              amDeparture: r.amDeparture,
-                              pmArrival: r.pmArrival,
-                              pmDeparture: r.pmDeparture,
-                              hours: r.hours,
-                              tasks: r.tasks,
-                            };
-                            return { ...prev, [r.day]: { ...base, day: r.day, amDeparture: val } };
-                          });
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
-                      />
-                      <input
-                        type="text"
-                        placeholder="PM In"
-                        value={entry.pmArrival || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditDayEntries((prev) => {
-                            const base = prev[r.day] || {
-                              day: r.day,
-                              amArrival: r.amArrival,
-                              amDeparture: r.amDeparture,
-                              pmArrival: r.pmArrival,
-                              pmDeparture: r.pmDeparture,
-                              hours: r.hours,
-                              tasks: r.tasks,
-                            };
-                            return { ...prev, [r.day]: { ...base, day: r.day, pmArrival: val } };
-                          });
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
-                      />
-                      <input
-                        type="text"
-                        placeholder="PM Out"
-                        value={entry.pmDeparture || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditDayEntries((prev) => {
-                            const base = prev[r.day] || {
-                              day: r.day,
-                              amArrival: r.amArrival,
-                              amDeparture: r.amDeparture,
-                              pmArrival: r.pmArrival,
-                              pmDeparture: r.pmDeparture,
-                              hours: r.hours,
-                              tasks: r.tasks,
-                            };
-                            return { ...prev, [r.day]: { ...base, day: r.day, pmDeparture: val } };
-                          });
-                        }}
-                        className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
-                      />
-                    </div>
-
-                    <div className="w-16 shrink-0">
-                      <input
-                        type="number"
-                        placeholder="Hrs"
-                        step="0.5"
-                        min="0"
-                        max="24"
-                        value={editHoursRaw[r.day] !== undefined ? editHoursRaw[r.day] : (entry.hours > 0 ? entry.hours : '')}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          setEditHoursRaw((prev) => ({ ...prev, [r.day]: raw }));
-                          const val = raw === '' ? 0 : parseFloat(raw);
-                          if (!isNaN(val) && val >= 0) {
-                            setEditDayEntries((prev) => {
-                              const base = prev[r.day] || {
-                                day: r.day,
-                                amArrival: r.amArrival,
-                                amDeparture: r.amDeparture,
-                                pmArrival: r.pmArrival,
-                                pmDeparture: r.pmDeparture,
-                                hours: r.hours,
-                                tasks: r.tasks,
-                              };
-                              return { ...prev, [r.day]: { ...base, day: r.day, hours: val } };
-                            });
-                          }
-                        }}
-                        className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center"
-                      />
+                    <div className="w-20 shrink-0 text-center">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                          hasHours
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-slate-200/70 text-slate-500'
+                        }`}
+                        title="Rendered hours (automatic / verified)"
+                      >
+                        {hasHours ? `${r.hours} hrs` : '0 hrs'}
+                      </span>
                     </div>
 
                     <div className="flex-1">
@@ -1079,20 +1263,16 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                         value={entry.tasks || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditDayEntries((prev) => {
-                            const base = prev[r.day] || {
+                          setEditDayEntries((prev) => ({
+                            ...prev,
+                            [r.day]: {
+                              ...(prev[r.day] || entry),
                               day: r.day,
-                              amArrival: r.amArrival,
-                              amDeparture: r.amDeparture,
-                              pmArrival: r.pmArrival,
-                              pmDeparture: r.pmDeparture,
-                              hours: r.hours,
-                              tasks: r.tasks,
-                            };
-                            return { ...prev, [r.day]: { ...base, day: r.day, tasks: val } };
-                          });
+                              tasks: val,
+                            },
+                          }));
                         }}
-                        className="w-full px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-900"
                       />
                     </div>
                   </div>
@@ -1113,17 +1293,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 type="button"
                 onClick={handleSaveTasks}
                 disabled={isSaving}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {isSaving ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Saving...</span>
+                    <span>Sending &amp; Saving...</span>
                   </>
                 ) : (
                   <>
-                    <Save size={14} />
-                    <span>Save Changes</span>
+                    <Send size={14} />
+                    <span>Send &amp; Save All Tasks</span>
                   </>
                 )}
               </button>
