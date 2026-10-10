@@ -692,6 +692,106 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   return true;
 }
 
+export async function saveDocumentPassStatus(
+  employeeId: string,
+  payload: {
+    docKey?: string;
+    status?: 'passed' | 'pending';
+    allPassed?: boolean;
+    documentsStatus?: 'passed' | 'pending' | 'submitted' | 'partial';
+    submittedDocuments?: TraineeDocuments;
+    documentItem?: TraineeDocumentItem;
+  }
+): Promise<boolean> {
+  if (!employeeId) return false;
+
+  // 1. Primary path: Dedicated /api/documents endpoint (bypasses RLS with service role)
+  try {
+    const res = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeId,
+        ...payload,
+      }),
+    });
+    if (res.ok) {
+      console.log(`[Database] Successfully saved document pass status for employee ${employeeId}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn('/api/documents endpoint notice:', err);
+  }
+
+  // 2. Secondary path: /api/employees endpoint
+  try {
+    const res = await fetch('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: employeeId,
+        employeeId,
+        updates: {
+          documentsPassed: payload.allPassed,
+          documentsStatus: payload.documentsStatus,
+          submittedDocuments: payload.submittedDocuments || (payload.docKey && payload.documentItem ? { [payload.docKey]: payload.documentItem } : undefined),
+        },
+      }),
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch (err) {
+    console.warn('/api/employees fallback notice:', err);
+  }
+
+  // 3. Tertiary path: Direct Supabase database query fallback
+  if (isSupabaseConfigured()) {
+    try {
+      const isUuidStr = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+      let fetchQuery = supabase.from('employees').select('id, employee_id, registration_location').limit(1);
+      if (isUuidStr(employeeId)) {
+        fetchQuery = fetchQuery.eq('id', employeeId);
+      } else {
+        fetchQuery = fetchQuery.eq('employee_id', String(employeeId).trim());
+      }
+      const { data: empRow } = await fetchQuery.maybeSingle();
+      if (empRow) {
+        const curLoc = typeof empRow.registration_location === 'object' && empRow.registration_location !== null
+          ? { ...empRow.registration_location }
+          : {};
+        const currentDocs = { ...(curLoc.documents || {}) };
+        if (payload.docKey && payload.documentItem) {
+          currentDocs[payload.docKey] = {
+            ...(currentDocs[payload.docKey] || {}),
+            ...payload.documentItem,
+          };
+        }
+        if (payload.submittedDocuments) {
+          Object.assign(currentDocs, payload.submittedDocuments);
+        }
+        const updatedRegLoc = {
+          ...curLoc,
+          documents: sanitizeDocumentsForDb(currentDocs),
+          documentsPassed: payload.allPassed !== undefined ? payload.allPassed : curLoc.documentsPassed,
+          documentsStatus: payload.documentsStatus || curLoc.documentsStatus || 'pending',
+        };
+        const { error: directErr } = await supabase
+          .from('employees')
+          .update({ registration_location: updatedRegLoc })
+          .eq('id', empRow.id);
+        if (!directErr) {
+          return true;
+        }
+      }
+    } catch (dbErr) {
+      console.warn('Direct Supabase document pass query notice:', dbErr);
+    }
+  }
+
+  return false;
+}
+
 export async function batchUpdateEmployees(
   ids: string[],
   updates: Partial<Employee>

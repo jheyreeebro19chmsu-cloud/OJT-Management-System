@@ -9,6 +9,7 @@ import { isSecurityApiConfigured, registerFace } from '../../services/securityAp
 import { useApp } from '../../store/AppContext';
 import { Employee, TraineeDocuments } from '../../types';
 import { getPhotoUrl } from '../../services/config';
+import { saveDocumentPassStatus } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
@@ -3528,18 +3529,25 @@ export function AdminEmployees() {
                                             };
                                             const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
                                             const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-                                            const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
-
+                                            const finalDocStatus = allPassed ? 'passed' : anyPassed ? 'partial' : 'pending';
                                             await updateEmployee(selectedEmp.id, {
                                               submittedDocuments: updatedDocs,
                                               documentsPassed: allPassed,
-                                              documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                              documentsStatus: finalDocStatus,
                                             });
+                                            saveDocumentPassStatus(selectedEmp.id, {
+                                              docKey: docItem.key,
+                                              status: newDocStatus,
+                                              allPassed,
+                                              documentsStatus: finalDocStatus,
+                                              submittedDocuments: updatedDocs,
+                                              documentItem: updatedDocs[docItem.key],
+                                            }).catch(console.warn);
                                             setSelectedEmp({
                                               ...selectedEmp,
                                               submittedDocuments: updatedDocs,
                                               documentsPassed: allPassed,
-                                              documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                              documentsStatus: finalDocStatus,
                                             });
                                             toast.success(
                                               newDocStatus === 'passed'
@@ -3606,6 +3614,11 @@ export function AdminEmployees() {
                                           documentsPassed: willPass,
                                           documentsStatus: willPass ? 'passed' : 'pending',
                                         });
+                                        saveDocumentPassStatus(selectedEmp.id, {
+                                          allPassed: willPass,
+                                          documentsStatus: willPass ? 'passed' : 'pending',
+                                          submittedDocuments: updatedDocs,
+                                        }).catch(console.warn);
                                         setSelectedEmp({
                                           ...selectedEmp,
                                           submittedDocuments: updatedDocs,

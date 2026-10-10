@@ -3029,6 +3029,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           documentsPassed: updatedEmployee?.documentsPassed,
           documentsStatus: updatedEmployee?.documentsStatus,
         });
+
+        if (
+          data.submittedDocuments !== undefined ||
+          data.documentsPassed !== undefined ||
+          data.documentsStatus !== undefined ||
+          updatedEmployee?.submittedDocuments !== undefined
+        ) {
+          supabaseService.saveDocumentPassStatus(id, {
+            allPassed: updatedEmployee?.documentsPassed ?? data.documentsPassed,
+            documentsStatus: updatedEmployee?.documentsStatus ?? data.documentsStatus,
+            submittedDocuments: updatedEmployee?.submittedDocuments ?? data.submittedDocuments,
+          }).catch((err) => console.warn('AppContext saveDocumentPassStatus notice:', err));
+        }
       } catch (dbErr) {
         console.error('Error saving employee update to Supabase:', dbErr);
         dbSuccess = false;

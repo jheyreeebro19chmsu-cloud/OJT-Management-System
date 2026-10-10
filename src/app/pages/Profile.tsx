@@ -43,7 +43,7 @@ import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
-import { uploadDocumentToStorage } from '../services/supabaseService';
+import { uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 import { GeofenceMap } from '../components/GeofenceMap';
 
@@ -365,6 +365,14 @@ export function Profile() {
         documentsPassed: false,
         documentsStatus: 'submitted',
       });
+      saveDocumentPassStatus(employee.id || employee.employeeId, {
+        docKey: docKey as string,
+        status: 'pending',
+        allPassed: false,
+        documentsStatus: 'submitted',
+        submittedDocuments: updatedDocs,
+        documentItem: newDocItem,
+      }).catch(console.warn);
       setDocUploadingKey(null);
       const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
       toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);

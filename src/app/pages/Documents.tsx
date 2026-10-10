@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
-import { uploadDocumentToStorage } from '../services/supabaseService';
+import { uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 
@@ -308,10 +308,21 @@ export function Documents() {
       const allDocsPassed = newUploadedCount === totalRequired && allDocRequirements.every((k) => updatedDocs[k.key]?.status === 'passed');
 
       if (employee) {
+        const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
         updateEmployee(employee.id, {
           submittedDocuments: updatedDocs,
           documentsPassed: allDocsPassed,
-          documentsStatus: allDocsPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial',
+          documentsStatus: finalDocStatus,
+        });
+
+        // Direct persistent database save for document pass / upload status
+        saveDocumentPassStatus(employee.id || employee.employeeId, {
+          docKey,
+          status: 'pending',
+          allPassed: allDocsPassed,
+          documentsStatus: finalDocStatus,
+          submittedDocuments: updatedDocs,
+          documentItem: newDocItem,
         });
       }
 
@@ -362,11 +373,17 @@ export function Documents() {
     }).length;
 
     if (employee) {
+      const removalStatus = remainingCount > 0 ? 'partial' : 'incomplete';
       updateEmployee(employee.id, {
         submittedDocuments: updatedDocs,
         documentsPassed: false,
-        documentsStatus: remainingCount > 0 ? 'partial' : 'incomplete',
+        documentsStatus: removalStatus,
       });
+      saveDocumentPassStatus(employee.id || employee.employeeId, {
+        allPassed: false,
+        documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
+        submittedDocuments: updatedDocs,
+      }).catch(console.warn);
     }
 
     const meta = allDocRequirements.find((d) => d.key === docKey);

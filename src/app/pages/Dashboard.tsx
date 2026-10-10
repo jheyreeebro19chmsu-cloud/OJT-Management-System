@@ -50,7 +50,7 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
-import { transformSupabaseEmployee, uploadDocumentToStorage } from '../services/supabaseService';
+import { transformSupabaseEmployee, uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS, REQUIRED_TRAINEE_DOCUMENTS, getTraineeDocItem } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
@@ -507,13 +507,21 @@ export function Dashboard() {
       };
 
       const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
-      const allPassed = newUploadedCount === totalRequired && docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-
+      const finalStatus = allPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
       updateEmployee(currentEmp.id, {
         submittedDocuments: updatedDocs,
         documentsPassed: allPassed,
-        documentsStatus: allPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial',
+        documentsStatus: finalStatus,
       });
+
+      saveDocumentPassStatus(currentEmp.id || currentEmp.employeeId, {
+        docKey,
+        status: 'pending',
+        allPassed,
+        documentsStatus: finalStatus,
+        submittedDocuments: updatedDocs,
+        documentItem: newDocItem,
+      }).catch(console.warn);
 
       setDashboardUploadingKey(null);
       const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);

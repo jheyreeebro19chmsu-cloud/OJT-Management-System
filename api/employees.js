@@ -107,7 +107,33 @@ async function mapUpdatesToDbPayload(updates) {
   if (dbPayload.registration_lat != null) locObj.lat = Number(dbPayload.registration_lat);
   if (dbPayload.registration_lng != null) locObj.lng = Number(dbPayload.registration_lng);
   if (dbPayload.registration_address) locObj.address = dbPayload.registration_address;
-  if (Object.keys(locObj).length > 0 || updates.registrationLocation !== undefined || updates.registration_location !== undefined) {
+  // Handle documents & document passes
+  if (updates.documentsPassed !== undefined) {
+    locObj.documentsPassed = Boolean(updates.documentsPassed);
+  }
+  if (updates.documentsStatus !== undefined) {
+    locObj.documentsStatus = updates.documentsStatus;
+  }
+  if (updates.submittedDocuments !== undefined || updates.submitted_documents !== undefined || updates.documents !== undefined) {
+    const rawDocs = updates.submittedDocuments || updates.submitted_documents || updates.documents;
+    if (rawDocs && typeof rawDocs === 'object') {
+      locObj.documents = {
+        ...(locObj.documents || {}),
+        ...rawDocs,
+      };
+    }
+  }
+
+  const hasRegLocUpdates =
+    Object.keys(locObj).length > 0 ||
+    updates.registrationLocation !== undefined ||
+    updates.registration_location !== undefined ||
+    updates.documentsPassed !== undefined ||
+    updates.documentsStatus !== undefined ||
+    updates.submittedDocuments !== undefined ||
+    updates.submitted_documents !== undefined;
+
+  if (hasRegLocUpdates) {
     dbPayload.registration_location = {
       ...(typeof updates.registration_location === 'object' ? updates.registration_location : {}),
       ...locObj,
@@ -175,44 +201,84 @@ async function mapUpdatesToDbPayload(updates) {
   return dbPayload;
 }
 
+function sendJson(res, statusCode, data) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json');
+  if (typeof res.status === 'function' && typeof res.json === 'function') {
+    return res.status(statusCode).json(data);
+  }
+  return res.end(JSON.stringify(data));
+}
+
+async function parseBody(req) {
+  if (req.body !== undefined && req.body !== null) {
+    return typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  }
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+function parseQuery(req) {
+  if (req.query && typeof req.query === 'object') return req.query;
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    return Object.fromEntries(url.searchParams.entries());
+  } catch {
+    return {};
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.statusCode = 200;
+    return res.end();
   }
 
   try {
+    const query = parseQuery(req);
+
     // GET: Fetch employees
     if (req.method === 'GET') {
-      const id = req.query?.id;
-      const email = req.query?.email;
+      const id = query?.id;
+      const email = query?.email;
 
-      let query = supabase.from('employees').select('*').order('created_at', { ascending: false });
+      let queryBuilder = supabase.from('employees').select('*').order('created_at', { ascending: false });
       if (id) {
         if (isUuid(id)) {
-          query = query.eq('id', id);
+          queryBuilder = queryBuilder.eq('id', id);
         } else {
-          query = query.eq('employee_id', id);
+          queryBuilder = queryBuilder.eq('employee_id', id);
         }
       } else if (email) {
-        query = query.eq('email', email.trim().toLowerCase());
+        queryBuilder = queryBuilder.eq('email', email.trim().toLowerCase());
       }
 
-      const { data, error } = await query;
+      const { data, error } = await queryBuilder;
       if (error) {
-        return res.status(500).json({ error: error.message });
+        return sendJson(res, 500, { error: error.message });
       }
 
-      return res.status(200).json(data || []);
+      return sendJson(res, 200, data || []);
     }
 
     // POST / PUT: Update or Upsert employee
     if (req.method === 'POST' || req.method === 'PUT') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      const targetId = body.id || req.query?.id;
+      const body = await parseBody(req);
+      const targetId = body.id || query?.id;
       const updates = body.updates || body;
 
       // Handle batch / bulk updates
@@ -234,24 +300,59 @@ export default async function handler(req, res) {
         const error = results.find((r) => r.error)?.error;
         if (error) {
           console.error('Batch update employees error:', error);
-          return res.status(500).json({ error: error.message });
+          return sendJson(res, 500, { error: error.message });
         }
-        return res.status(200).json({ success: true, count: ids.length, updated: dbPayload });
+        return sendJson(res, 200, { success: true, count: ids.length, updated: dbPayload });
       }
 
       const targetEmail = updates.email || body.email;
       const targetEmpId = updates.employeeId || updates.employee_id || body.employeeId || body.employee_id;
 
       if (!targetId && !targetEmail && !targetEmpId) {
-        return res.status(400).json({ error: 'Missing employee identifier (id, employeeId, or email)' });
+        return sendJson(res, 400, { error: 'Missing employee identifier (id, employeeId, or email)' });
       }
 
       const dbPayload = await mapUpdatesToDbPayload(updates);
 
-      // Target selection
-      let updateQuery = supabase.from('employees').update(dbPayload);
+      // 1. Fetch existing employee to merge location and document passes
+      let empQuery = supabase.from('employees').select('id, employee_id, email, name, registration_location').limit(1);
       if (targetId && isUuid(targetId)) {
-        updateQuery = updateQuery.eq('id', targetId);
+        empQuery = empQuery.eq('id', targetId);
+      } else if (targetEmail) {
+        empQuery = empQuery.eq('email', String(targetEmail).trim().toLowerCase());
+      } else if (targetEmpId) {
+        empQuery = empQuery.eq('employee_id', String(targetEmpId).trim());
+      } else if (targetId) {
+        empQuery = empQuery.eq('employee_id', String(targetId).trim());
+      }
+      const { data: existingRows } = await empQuery;
+      const existingEmp = existingRows?.[0];
+      const targetEmpUuid = existingEmp?.id || (targetId && isUuid(targetId) ? targetId : null);
+
+      if (existingEmp && dbPayload.registration_location) {
+        const curLoc = typeof existingEmp.registration_location === 'object' && existingEmp.registration_location !== null
+          ? existingEmp.registration_location
+          : {};
+        dbPayload.registration_location = {
+          ...curLoc,
+          ...dbPayload.registration_location,
+          documents: {
+            ...(curLoc.documents || {}),
+            ...(dbPayload.registration_location.documents || {}),
+          },
+          documentsPassed: dbPayload.registration_location.documentsPassed !== undefined
+            ? dbPayload.registration_location.documentsPassed
+            : (curLoc.documentsPassed !== undefined ? curLoc.documentsPassed : false),
+          documentsStatus: dbPayload.registration_location.documentsStatus !== undefined
+            ? dbPayload.registration_location.documentsStatus
+            : (curLoc.documentsStatus || 'pending'),
+        };
+      }
+
+      // 2. Perform employee update
+      let updateQuery = supabase.from('employees').update(dbPayload);
+      if (targetEmpUuid) {
+        updateQuery = updateQuery.eq('id', targetEmpUuid);
       } else if (targetEmail) {
         updateQuery = updateQuery.eq('email', String(targetEmail).trim().toLowerCase());
       } else if (targetEmpId) {
@@ -264,35 +365,64 @@ export default async function handler(req, res) {
 
       if (error) {
         console.error('api/employees update error:', error);
-        return res.status(500).json({ error: error.message });
+        return sendJson(res, 500, { error: error.message });
       }
 
-      // If no rows updated, attempt an insert
-      if (!data || data.length === 0) {
-        const insertPayload = {
-          ...(targetId && isUuid(targetId) ? { id: targetId } : {}),
-          ...dbPayload,
-        };
-        const { data: inserted, error: insertError } = await supabase
-          .from('employees')
-          .insert([insertPayload])
-          .select();
-
-        if (insertError) {
-          console.error('api/employees insert error:', insertError);
-          return res.status(500).json({ error: insertError.message });
+      // 3. Sync documents into dedicated documents table in database
+      if (targetEmpUuid && dbPayload.registration_location?.documents) {
+        try {
+          const docEntries = Object.entries(dbPayload.registration_location.documents);
+          for (const [docKey, docVal] of docEntries) {
+            if (docVal && typeof docVal === 'object') {
+              const fileName = docVal.name || `${docKey}.pdf`;
+              const filePath = docVal.fileUrl || docVal.dataUrl || '';
+              if (filePath) {
+                await supabase.from('documents').delete().eq('employee_id', targetEmpUuid).eq('file_name', fileName);
+                await supabase.from('documents').insert({
+                  employee_id: targetEmpUuid,
+                  file_name: fileName,
+                  file_path: filePath,
+                  file_type: docVal.fileType || 'application/pdf',
+                  file_size: docVal.size || 0,
+                  created_at: docVal.uploadedAt || new Date().toISOString(),
+                });
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Sync to documents table notice:', syncErr);
         }
-        return res.status(200).json({ success: true, data: inserted });
       }
 
-      return res.status(200).json({ success: true, data });
+      // 4. If no rows updated and no existing employee, attempt an insert
+      if (!data || data.length === 0) {
+        if (!existingEmp && dbPayload.name) {
+          const insertPayload = {
+            ...(targetId && isUuid(targetId) ? { id: targetId } : {}),
+            ...dbPayload,
+          };
+          const { data: inserted, error: insertError } = await supabase
+            .from('employees')
+            .insert([insertPayload])
+            .select();
+
+          if (insertError) {
+            console.error('api/employees insert error:', insertError);
+            return sendJson(res, 500, { error: insertError.message });
+          }
+          return sendJson(res, 200, { success: true, data: inserted });
+        }
+        return sendJson(res, 200, { success: true, data: existingEmp ? [existingEmp] : [] });
+      }
+
+      return sendJson(res, 200, { success: true, data });
     }
 
     // DELETE: Delete employee
     if (req.method === 'DELETE') {
-      const id = req.query?.id || (typeof req.body === 'string' ? JSON.parse(req.body)?.id : req.body?.id);
+      const id = query?.id || (typeof req.body === 'string' ? JSON.parse(req.body)?.id : req.body?.id);
       if (!id) {
-        return res.status(400).json({ error: 'Missing employee id' });
+        return sendJson(res, 400, { error: 'Missing employee id' });
       }
 
       let deleteQuery = supabase.from('employees').delete();
@@ -304,15 +434,15 @@ export default async function handler(req, res) {
 
       const { error } = await deleteQuery;
       if (error) {
-        return res.status(500).json({ error: error.message });
+        return sendJson(res, 500, { error: error.message });
       }
 
-      return res.status(200).json({ success: true });
+      return sendJson(res, 200, { success: true });
     }
 
-    return res.status(405).json({ error: 'Method not allowed' });
+    return sendJson(res, 405, { error: 'Method not allowed' });
   } catch (err) {
     console.error('api/employees exception:', err);
-    return res.status(500).json({ error: err.message || 'Internal server error' });
+    return sendJson(res, 500, { error: err.message || 'Internal server error' });
   }
 }
