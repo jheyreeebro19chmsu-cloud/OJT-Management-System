@@ -115,17 +115,24 @@ export function getFileCategory(nameOrType: string): 'pdf' | 'doc' | 'picture' |
   if (
     str.endsWith('.doc') ||
     str.endsWith('.docx') ||
+    str.endsWith('.docs') ||
     str.includes('msword') ||
-    str.includes('wordprocessingml')
+    str.includes('wordprocessingml') ||
+    str.includes('officedocument') ||
+    str.includes('vnd.ms-word')
   ) {
     return 'doc';
   }
   if (
     str.endsWith('.jpg') ||
     str.endsWith('.jpeg') ||
+    str.endsWith('.jfif') ||
     str.endsWith('.png') ||
     str.endsWith('.webp') ||
     str.endsWith('.gif') ||
+    str.endsWith('.bmp') ||
+    str.endsWith('.heic') ||
+    str.endsWith('.heif') ||
     str.includes('image/')
   ) {
     return 'picture';
@@ -138,6 +145,7 @@ export async function downloadDocument(url: string, fileName?: string): Promise<
   const resolvedFileName = fileName || 'downloaded-document';
 
   try {
+    // If it's a base64 or blob URL, trigger instant client-side download
     if (url.startsWith('data:') || url.startsWith('blob:')) {
       const a = document.createElement('a');
       a.href = url;
@@ -148,8 +156,50 @@ export async function downloadDocument(url: string, fileName?: string): Promise<
       return;
     }
 
+    // Safety guard against known Supabase error payloads saved as URL
+    if (
+      url.includes('NoSuchKey') ||
+      url.includes('NoSuchBucket') ||
+      url.includes('Bucket not found') ||
+      url.includes('statusCode')
+    ) {
+      console.warn('Cannot download document from invalid storage error URL:', url);
+      return;
+    }
+
     const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Download HTTP error status: ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
     const blob = await response.blob();
+
+    // Guard against small JSON error responses (<150 bytes) being saved as corrupted docs
+    if (contentType.includes('application/json') || blob.size < 150) {
+      const text = await blob.text();
+      if (
+        text.includes('statusCode') ||
+        text.includes('NoSuchKey') ||
+        text.includes('Bucket not found') ||
+        text.includes('NoSuchBucket') ||
+        text.includes('error')
+      ) {
+        throw new Error('Storage returned error payload instead of binary file');
+      }
+      // Re-create blob with binary type if it passed
+      const validBlob = new Blob([text], { type: contentType || 'application/octet-stream' });
+      const blobUrl = window.URL.createObjectURL(validBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = resolvedFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+      return;
+    }
+
     const blobUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
@@ -159,13 +209,9 @@ export async function downloadDocument(url: string, fileName?: string): Promise<
     document.body.removeChild(a);
     setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
   } catch (err) {
-    console.warn('Direct blob download failed, falling back to window navigation:', err);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = resolvedFileName;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    console.warn('Direct blob download notice, falling back to window navigation:', err);
+    if (url.startsWith('http')) {
+      window.open(url, '_blank');
+    }
   }
 }

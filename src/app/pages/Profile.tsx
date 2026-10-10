@@ -286,17 +286,25 @@ export function Profile() {
   const handleProfileDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file) return;
 
-    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    // Validate file type — Pictures (JPG, PNG, WEBP, HEIC, JFIF), PDF, Word (DOC, DOCX, DOCS)
     const ALLOWED_MIME = [
       'application/pdf',
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/webp',
+      'image/jfif',
+      'image/pjpeg',
+      'image/bmp',
+      'image/heic',
+      'image/heif',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/octet-stream',
+      'application/x-zip-compressed',
+      'application/vnd.ms-word',
     ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|jfif|png|webp|heic|heif|bmp|doc|docx|docs)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
       toast.error(
         `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
@@ -316,26 +324,33 @@ export function Profile() {
       const dataUrl = e.target?.result as string;
       const empId = employee?.id || employee?.employeeId || '';
 
+      // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
       try {
+        localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+        localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
         localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
         localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
       } catch {}
 
-      let finalUrl = dataUrl;
+      // Attempt cloud storage upload for permanent URL
+      let remoteUrl = '';
       try {
         const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http')) {
-          finalUrl = storedUrl;
+        if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
+          remoteUrl = storedUrl;
           try {
-            localStorage.setItem(`ojt_doc_${empId}_${docKey}`, storedUrl);
+            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
           } catch {}
         }
-      } catch {}
+      } catch (uploadErr) {
+        console.warn('Profile storage upload notice:', uploadErr);
+      }
 
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl: finalUrl,
+        dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
+        fileUrl: remoteUrl || dataUrl, // Public URL when available
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
         status: 'pending',
@@ -801,7 +816,7 @@ export function Profile() {
                     <input
                       type="file"
                       id={`profile-doc-${item.key}`}
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                       className="hidden"
                       disabled={isUploading}
                       onChange={(e) => handleProfileDocUpload(item.key, e.target.files?.[0] || null)}
@@ -1275,12 +1290,14 @@ export function Profile() {
                   const isImg =
                     cat === 'picture' ||
                     previewDocModal.fileUrl.startsWith('data:image/') ||
-                    previewDocModal.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+                    previewDocModal.fileUrl.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)($|\?)/i) ||
+                    previewDocModal.fileName?.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)$/i);
                   const isWord =
                     cat === 'doc' ||
                     previewDocModal.fileUrl.startsWith('data:application/msword') ||
                     previewDocModal.fileUrl.startsWith('data:application/vnd') ||
-                    previewDocModal.fileName?.match(/\.(doc|docx)$/i);
+                    previewDocModal.fileUrl.startsWith('data:application/x-zip-compressed') ||
+                    previewDocModal.fileName?.match(/\.(doc|docx|docs)$/i);
 
                   if (isImg) {
                     return (

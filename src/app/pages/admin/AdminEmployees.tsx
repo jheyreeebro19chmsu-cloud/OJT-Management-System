@@ -4614,12 +4614,14 @@ export function AdminEmployees() {
                   const isImg =
                     cat === 'picture' ||
                     previewInstructorDoc.fileUrl.startsWith('data:image/') ||
-                    previewInstructorDoc.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                    previewInstructorDoc.fileUrl.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)($|\?)/i) ||
+                    previewInstructorDoc.fileName?.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)$/i);
                   const isWord =
                     cat === 'doc' ||
                     previewInstructorDoc.fileUrl.startsWith('data:application/msword') ||
                     previewInstructorDoc.fileUrl.startsWith('data:application/vnd') ||
-                    previewInstructorDoc.fileName?.match(/\.(doc|docx)$/i);
+                    previewInstructorDoc.fileUrl.startsWith('data:application/x-zip-compressed') ||
+                    previewInstructorDoc.fileName?.match(/\.(doc|docx|docs)$/i);
 
                   if (isImg) {
                     return (

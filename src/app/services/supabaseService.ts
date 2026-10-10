@@ -135,14 +135,32 @@ function sanitizeDocumentsForDb(docs: any): any {
   for (const [key, val] of Object.entries(docs)) {
     if (val && typeof val === 'object') {
       const docItem = val as any;
+      const dataUrl = docItem.dataUrl || '';
+      const fileUrl = docItem.fileUrl || '';
+
+      // Guard against saving Supabase 400/404 error payloads as URLs
+      const isBadUrl = (u?: string) =>
+        Boolean(
+          u &&
+          typeof u === 'string' &&
+          (u.includes('NoSuchKey') ||
+            u.includes('NoSuchBucket') ||
+            u.includes('Bucket not found') ||
+            u.includes('documents/unassigned/moa_'))
+        );
+
+      const validDataUrl = isBadUrl(dataUrl) ? '' : dataUrl;
+      const validFileUrl = isBadUrl(fileUrl) ? '' : fileUrl;
+
       clean[key] = {
         name: docItem.name || 'document',
         size: docItem.size,
         fileType: docItem.fileType || 'application/pdf',
         uploadedAt: docItem.uploadedAt || new Date().toISOString(),
         status: docItem.status || 'pending',
-        // Preserve dataUrl or fileUrl so documents can be viewed and previewed
-        dataUrl: docItem.dataUrl || docItem.fileUrl || '',
+        // Preserve dataUrl and fileUrl so documents can be viewed and previewed
+        dataUrl: validDataUrl || validFileUrl || '',
+        fileUrl: validFileUrl || validDataUrl || '',
         description: docItem.description || '',
         notes: docItem.notes || docItem.feedback || '',
         feedback: docItem.feedback || '',
@@ -191,16 +209,24 @@ export async function uploadDocumentToStorage(
     }
 
     const cleanEmpId = (employeeId || 'unassigned').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const ext = fileName?.split('.').pop() || (contentType.includes('image') ? 'jpg' : 'pdf');
-    const storagePath = `${cleanEmpId}/${docKey}_${Date.now()}.${ext}`;
+    const rawExt = fileName?.split('.').pop() || '';
+    const ext = rawExt
+      ? rawExt.toLowerCase()
+      : contentType.includes('image')
+        ? 'jpg'
+        : contentType.includes('word') || contentType.includes('officedocument')
+          ? 'docx'
+          : 'pdf';
+    const storagePath = `documents/${cleanEmpId}/${docKey}_${Date.now()}.${ext}`;
 
-    const bucketsToTry = ['documents', 'trainee-documents', 'avatars', 'face-photos'];
+    // face-photos is confirmed public and has open RLS policy allowing anonymous uploads and reading
+    const bucketsToTry = ['face-photos', 'documents'];
     for (const bucket of bucketsToTry) {
       try {
         const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
           contentType,
           upsert: true,
-          cacheControl: '604800', // 7 days: documents rarely change once uploaded, so repeat views should hit cache instead of re-downloading from origin every time
+          cacheControl: '604800', // 7 days cache
         });
         if (!error && data) {
           const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
@@ -209,8 +235,8 @@ export async function uploadDocumentToStorage(
             return urlData.publicUrl;
           }
         }
-      } catch {
-        // try next bucket
+      } catch (bucketErr) {
+        console.warn(`[Storage] Upload to "${bucket}" notice:`, bucketErr);
       }
     }
   } catch (err) {

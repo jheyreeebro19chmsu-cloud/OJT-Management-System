@@ -431,17 +431,25 @@ export function Dashboard() {
   const handleDashboardDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
     if (!file || !currentEmp) return;
 
-    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
+    // Validate file type — Pictures (JPG, PNG, WEBP, HEIC, JFIF), PDF, Word (DOC, DOCX, DOCS)
     const ALLOWED_MIME = [
       'application/pdf',
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/webp',
+      'image/jfif',
+      'image/pjpeg',
+      'image/bmp',
+      'image/heic',
+      'image/heif',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/octet-stream',
+      'application/x-zip-compressed',
+      'application/vnd.ms-word',
     ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
+    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|jfif|png|webp|heic|heif|bmp|doc|docx|docs)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
       toast.error(
         `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
@@ -460,27 +468,34 @@ export function Dashboard() {
       const dataUrl = e.target?.result as string;
       const empId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || '';
 
+      // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
       try {
+        localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+        localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
         localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
         localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
       } catch {}
 
-      let finalUrl = dataUrl;
+      // Attempt cloud storage upload for permanent URL
+      let remoteUrl = '';
       try {
         const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http')) {
-          finalUrl = storedUrl;
+        if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
+          remoteUrl = storedUrl;
           try {
-            localStorage.setItem(`ojt_doc_${empId}_${docKey}`, storedUrl);
+            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
           } catch {}
         }
-      } catch {}
+      } catch (uploadErr) {
+        console.warn('Dashboard storage upload notice:', uploadErr);
+      }
 
       const currentDocs: TraineeDocuments = currentEmp.submittedDocuments || {};
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl: finalUrl,
+        dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
+        fileUrl: remoteUrl || dataUrl, // Public URL when available
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
         status: 'pending',
@@ -2799,12 +2814,14 @@ export function Dashboard() {
                     const isImg =
                       cat === 'picture' ||
                       dashboardPreviewDoc.dataUrl.startsWith('data:image/') ||
-                      dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                      dashboardPreviewDoc.dataUrl.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)($|\?)/i) ||
+                      dashboardPreviewDoc.fileName?.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)$/i);
                     const isWord =
                       cat === 'doc' ||
                       dashboardPreviewDoc.dataUrl.startsWith('data:application/msword') ||
                       dashboardPreviewDoc.dataUrl.startsWith('data:application/vnd') ||
-                      dashboardPreviewDoc.fileName?.match(/\.(doc|docx)$/i);
+                      dashboardPreviewDoc.dataUrl.startsWith('data:application/x-zip-compressed') ||
+                      dashboardPreviewDoc.fileName?.match(/\.(doc|docx|docs)$/i);
 
                     if (isImg) {
                       return (
@@ -2913,7 +2930,7 @@ export function Dashboard() {
                       <Upload size={14} /> Attach File for Live Preview
                       <input
                         type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];

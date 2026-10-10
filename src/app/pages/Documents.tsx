@@ -151,32 +151,71 @@ export function Documents() {
   const progressPercent = totalRequired > 0 ? Math.round((uploadedCount / totalRequired) * 100) : 100;
 
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
-    if (docItem?.dataUrl) return docItem.dataUrl;
-    if ((docItem as any)?.fileUrl) return (docItem as any).fileUrl;
+    const isBadUrl = (u?: string) =>
+      !u ||
+      typeof u !== 'string' ||
+      u.includes('NoSuchKey') ||
+      u.includes('NoSuchBucket') ||
+      u.includes('Bucket not found') ||
+      u.includes('statusCode') ||
+      u.includes('documents/unassigned/moa_');
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
+
+    // 1. If docItem has valid base64 dataUrl, use it immediately (zero network failure)
+    if (docItem?.dataUrl && !isBadUrl(docItem.dataUrl)) {
+      if (docItem.dataUrl.startsWith('data:') || docItem.dataUrl.startsWith('blob:')) {
+        return docItem.dataUrl;
+      }
+    }
+
+    // 2. Check dedicated base64 cache in localStorage
+    try {
+      const b64 =
+        localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}`) ||
+        localStorage.getItem(`ojt_doc_base64_${docKey}`);
+      if (b64 && (b64.startsWith('data:') || b64.startsWith('blob:'))) {
+        return b64;
+      }
+    } catch {}
+
+    // 3. If docItem has a working remote URL (fileUrl or dataUrl), use it
+    if (docItem?.dataUrl && !isBadUrl(docItem.dataUrl)) return docItem.dataUrl;
+    if ((docItem as any)?.fileUrl && !isBadUrl((docItem as any).fileUrl)) return (docItem as any).fileUrl;
+
+    // 4. Check general localStorage cache
     try {
       const cached =
         localStorage.getItem(`ojt_doc_${empId}_${docKey}`) ||
         localStorage.getItem(`ojt_doc_${docKey}`) ||
         localStorage.getItem(`ojt_doc_current_${docKey}`);
-      if (cached) return cached;
+      if (cached && !isBadUrl(cached)) return cached;
     } catch {}
+
     return '';
   };
+
+  const ALLOWED_MIME = [
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/jfif',
+    'image/pjpeg',
+    'image/bmp',
+    'image/heic',
+    'image/heif',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/octet-stream',
+    'application/x-zip-compressed',
+    'application/vnd.ms-word',
+  ];
+  const ALLOWED_EXT = /\.(pdf|jpg|jpeg|jfif|png|webp|heic|heif|bmp|doc|docx|docs)$/i;
 
   const onSelectFile = (docKey: string, title: string, file: File | null) => {
     if (!file) return;
 
-    const ALLOWED_MIME = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
       toast.error(
         `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
@@ -206,17 +245,6 @@ export function Documents() {
   const handleFileUpload = (docKey: string, file: File | null, customDescription?: string, customNotes?: string) => {
     if (!file) return;
 
-    // Validate file type — Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX)
-    const ALLOWED_MIME = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    const ALLOWED_EXT = /\.(pdf|jpg|jpeg|png|webp|doc|docx)$/i;
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
       toast.error(
         `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
@@ -237,28 +265,33 @@ export function Documents() {
       const dataUrl = e.target?.result as string;
       const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
 
-      // Cache locally immediately so user can always view even before network sync
+      // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
       try {
+        localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+        localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
         localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
         localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
       } catch {}
 
       // Attempt cloud storage upload for permanent URL
-      let finalUrl = dataUrl;
+      let remoteUrl = '';
       try {
         const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http')) {
-          finalUrl = storedUrl;
+        if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
+          remoteUrl = storedUrl;
           try {
-            localStorage.setItem(`ojt_doc_${empId}_${docKey}`, storedUrl);
+            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
           } catch {}
         }
-      } catch {}
+      } catch (uploadErr) {
+        console.warn('Document storage upload notice:', uploadErr);
+      }
 
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl: finalUrl,
+        dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
+        fileUrl: remoteUrl || dataUrl, // Public URL when available for instructor/coordinator review
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
         status: 'pending',
@@ -313,6 +346,9 @@ export function Documents() {
     try {
       localStorage.removeItem(`ojt_doc_${empId}_${docKey}`);
       localStorage.removeItem(`ojt_doc_${docKey}`);
+      localStorage.removeItem(`ojt_doc_base64_${empId}_${docKey}`);
+      localStorage.removeItem(`ojt_doc_base64_${docKey}`);
+      localStorage.removeItem(`ojt_doc_url_${empId}_${docKey}`);
       localStorage.removeItem(`ojt_doc_current_${docKey}`);
     } catch {}
 
@@ -743,7 +779,7 @@ export function Documents() {
                     <input
                       type="file"
                       id={`replace-doc-${item.key}`}
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null;
                         onSelectFile(item.key, item.title, file);
@@ -767,7 +803,7 @@ export function Documents() {
                     <input
                       type="file"
                       id={`upload-doc-${item.key}`}
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null;
                         onSelectFile(item.key, item.title, file);
@@ -992,12 +1028,14 @@ export function Documents() {
                     const isImg =
                       cat === 'picture' ||
                       previewDoc.dataUrl.startsWith('data:image/') ||
-                      previewDoc.dataUrl.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                      previewDoc.dataUrl.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)($|\?)/i) ||
+                      previewDoc.fileName?.match(/\.(jpeg|jpg|jfif|gif|png|webp|bmp|heic)$/i);
                     const isWord =
                       cat === 'doc' ||
                       previewDoc.dataUrl.startsWith('data:application/msword') ||
                       previewDoc.dataUrl.startsWith('data:application/vnd') ||
-                      previewDoc.fileName?.match(/\.(doc|docx)$/i);
+                      previewDoc.dataUrl.startsWith('data:application/x-zip-compressed') ||
+                      previewDoc.fileName?.match(/\.(doc|docx|docs)$/i);
 
                     if (isImg) {
                       return (
@@ -1112,7 +1150,7 @@ export function Documents() {
                       <Upload size={14} /> Attach File for Live Preview
                       <input
                         type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
