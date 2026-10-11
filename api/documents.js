@@ -82,6 +82,107 @@ export default async function handler(req, res) {
         });
       }
 
+      // Action: Stream / proxy file content for viewing & downloading
+      if (action === 'view') {
+        let storagePath = query.path;
+        let bucket = query.bucket || 'face-photos';
+        const rawUrl = query.url;
+        if (rawUrl) {
+          try {
+            const decoded = decodeURIComponent(rawUrl);
+            const match = decoded.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?|$)/);
+            if (match) {
+              bucket = match[1];
+              storagePath = match[2];
+            } else {
+              storagePath = decoded;
+            }
+          } catch {
+            storagePath = rawUrl;
+          }
+        }
+        if (!storagePath) {
+          return sendJson(res, 400, { error: 'Missing path or url parameter' });
+        }
+
+        storagePath = storagePath.replace(/^\/+/, '');
+
+        const bucketsToTry = [bucket, bucket === 'face-photos' ? 'documents' : 'face-photos', 'submission-photos', 'task-submissions'];
+        let fileBlob = null;
+        for (const b of bucketsToTry) {
+          try {
+            const { data, error } = await supabase.storage.from(b).download(storagePath);
+            if (!error && data) {
+              fileBlob = data;
+              break;
+            }
+          } catch {}
+        }
+
+        if (!fileBlob) {
+          try {
+            const { data: signData } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 3600);
+            if (signData?.signedUrl) {
+              res.statusCode = 302;
+              res.setHeader('Location', signData.signedUrl);
+              return res.end();
+            }
+          } catch {}
+          return sendJson(res, 404, { error: 'Document file not found in storage' });
+        }
+
+        const arrayBuffer = await fileBlob.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Guard against corrupted error responses saved as files
+        if (buffer.length < 150 && buffer.toString('utf8').includes('statusCode') && buffer.toString('utf8').includes('Bucket not found')) {
+          return sendJson(res, 404, { error: 'Stored document was a server error record' });
+        }
+
+        let contentType = fileBlob.type || 'application/octet-stream';
+        const ext = storagePath.split('.').pop()?.toLowerCase();
+        if (ext === 'png') contentType = 'image/png';
+        else if (ext === 'jpg' || ext === 'jpeg') contentType = 'image/jpeg';
+        else if (ext === 'webp') contentType = 'image/webp';
+        else if (ext === 'pdf') contentType = 'application/pdf';
+        else if (ext === 'docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else if (ext === 'doc') contentType = 'application/msword';
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', buffer.length);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Content-Disposition', 'inline');
+        return res.end(buffer);
+      }
+
+      // Action: Generate signed download URL
+      if (action === 'get-download-url') {
+        let storagePath = query.path;
+        let bucket = query.bucket || 'face-photos';
+        if (query.url) {
+          try {
+            const decoded = decodeURIComponent(query.url);
+            const match = decoded.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?|$)/);
+            if (match) {
+              bucket = match[1];
+              storagePath = match[2];
+            } else {
+              storagePath = decoded;
+            }
+          } catch {}
+        }
+        if (!storagePath) {
+          return sendJson(res, 400, { error: 'Missing path or url parameter' });
+        }
+        storagePath = storagePath.replace(/^\/+/, '');
+        const { data: signData, error: signErr } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 3600 * 24);
+        if (signErr) {
+          return sendJson(res, 500, { error: signErr.message });
+        }
+        return sendJson(res, 200, { success: true, signedUrl: signData.signedUrl });
+      }
+
       const empId = query.employeeId || query.id || query.employee_id;
       if (!empId) {
         return sendJson(res, 400, { error: 'Missing employeeId query parameter' });

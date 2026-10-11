@@ -28,7 +28,7 @@ import { useApp } from '../store/AppContext';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
 import { uploadDocumentToStorage, saveDocumentPassStatus, fetchEmployeeDocuments } from '../services/supabaseService';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
-import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
+import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl } from '../utils/attachmentHelper';
 
 export const STANDARD_REQUIRED_DOCS = REQUIRED_TRAINEE_DOCUMENTS;
 
@@ -261,6 +261,11 @@ export function Documents() {
       return;
     }
 
+    if (file.size < 200) {
+      toast.error('The selected file is empty or corrupted (under 200 bytes). Please upload a valid document or picture.');
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) {
       toast.error('File size exceeds 10MB limit. Please upload a file up to 10MB.');
       return;
@@ -287,6 +292,11 @@ export function Documents() {
       toast.error(
         `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
       );
+      return;
+    }
+
+    if (file.size < 200) {
+      toast.error('The selected file is empty or corrupted (under 200 bytes). Please upload a valid document or picture.');
       return;
     }
 
@@ -821,7 +831,7 @@ export function Documents() {
                     <button
                       type="button"
                       onClick={() => {
-                        const resolvedUrl = resolveDocDataUrl(item.key, doc);
+                        const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
                         setPreviewDoc({
                           key: item.key,
                           title: item.title,
@@ -843,7 +853,7 @@ export function Documents() {
                     <button
                       type="button"
                       onClick={() => {
-                        const resolvedUrl = resolveDocDataUrl(item.key, doc);
+                        const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
                         downloadDocument(resolvedUrl, doc?.name || `${item.key}_document`);
                       }}
                       className="py-2 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
@@ -1127,7 +1137,16 @@ export function Documents() {
                             src={previewDoc.dataUrl}
                             alt={previewDoc.title}
                             className="max-h-[520px] max-w-full object-contain rounded-2xl shadow-lg border border-slate-200 bg-white"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = 'none';
+                              const el = document.getElementById('preview-doc-img-err');
+                              if (el) el.style.display = 'flex';
+                            }}
                           />
+                          <div id="preview-doc-img-err" style={{ display: 'none' }} className="flex-col items-center justify-center p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-center max-w-sm">
+                            <p className="text-xs font-bold">Image preview unavailable in browser</p>
+                            <p className="text-[11px] text-amber-700 mt-0.5">Click Download Picture below to view the original file.</p>
+                          </div>
                           <button
                             type="button"
                             onClick={() => downloadDocument(previewDoc.dataUrl || '', previewDoc.fileName)}

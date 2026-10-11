@@ -13,7 +13,7 @@ import { saveDocumentPassStatus } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
-import { downloadDocument, getFileCategory } from '../../utils/attachmentHelper';
+import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl } from '../../utils/attachmentHelper';
 import { isWithinNegrosOccidental } from '../../utils/geo';
 import { getPaginationWindow } from '../../utils/pagination';
 import { resolveHteLocation, isInvalidHteCompany } from '../../utils/hteLocation';
@@ -2362,7 +2362,7 @@ export function AdminEmployees() {
                                               studentId: trainee.employeeId,
                                               title: `${req.num}. ${req.title}`,
                                               fileName: doc?.name || `${req.key}.pdf`,
-                                              fileUrl: doc?.dataUrl || undefined,
+                                              fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
                                               note: doc?.name
                                                 ? `Uploaded file: ${doc.name}${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}`
                                                 : `Verified requirement.`,
@@ -2389,7 +2389,7 @@ export function AdminEmployees() {
                                               studentId: trainee.employeeId,
                                               title: `${req.num}. ${req.title}`,
                                               fileName: doc?.name || `${req.key}.pdf`,
-                                              fileUrl: doc?.dataUrl || undefined,
+                                              fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
                                               note: doc?.name
                                                 ? `Attached: ${doc.name} (Awaiting Coordinator Review)${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}`
                                                 : undefined,
@@ -3482,7 +3482,7 @@ export function AdminEmployees() {
                                               studentId: selectedEmp.employeeId,
                                               title: `${docItem.num}. ${docItem.title}`,
                                               fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                              fileUrl: doc?.dataUrl || undefined,
+                                              fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
                                               note: doc?.name
                                                 ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
                                                 : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
@@ -4323,7 +4323,7 @@ export function AdminEmployees() {
                                     studentId: selectedEmp.employeeId,
                                     title: `${docItem.num}. ${docItem.title}`,
                                     fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                    fileUrl: doc?.dataUrl || undefined,
+                                    fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
                                     note: doc?.name
                                       ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}${doc.source ? ` • Source: ${doc.source === 'registration' ? 'Pre-Registration' : 'Trainee Portal'}` : ''}`
                                       : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
@@ -4643,7 +4643,16 @@ export function AdminEmployees() {
                           src={previewInstructorDoc.fileUrl}
                           alt="Document preview"
                           className="max-h-[500px] object-contain rounded-xl shadow border border-gray-200"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                            const el = document.getElementById('preview-img-err');
+                            if (el) el.style.display = 'flex';
+                          }}
                         />
+                        <div id="preview-img-err" style={{ display: 'none' }} className="flex-col items-center justify-center p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-center max-w-sm">
+                          <p className="text-xs font-bold">Image preview unavailable in browser</p>
+                          <p className="text-[11px] text-amber-700 mt-0.5">Click Download Picture below to view the original file.</p>
+                        </div>
                         <button
                           type="button"
                           onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}

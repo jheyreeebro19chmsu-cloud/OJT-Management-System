@@ -140,15 +140,47 @@ export function getFileCategory(nameOrType: string): 'pdf' | 'doc' | 'picture' |
   return 'other';
 }
 
+export function resolveSafeDocumentViewUrl(url?: string): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+  if (
+    trimmed.includes('NoSuchKey') ||
+    trimmed.includes('NoSuchBucket') ||
+    trimmed.includes('Bucket not found') ||
+    trimmed.includes('statusCode') ||
+    trimmed.includes('documents/unassigned/moa_')
+  ) {
+    return '';
+  }
+
+  // If already an API view proxy, return clean
+  if (trimmed.startsWith('/api/documents?action=view') || trimmed.includes('/api/documents?action=view')) {
+    return trimmed;
+  }
+
+  // If it's a Supabase storage URL, route it through /api/documents?action=view
+  if (trimmed.includes('supabase.co/storage/v1/object/')) {
+    return `/api/documents?action=view&url=${encodeURIComponent(trimmed)}`;
+  }
+
+  return trimmed;
+}
+
 export async function downloadDocument(url: string, fileName?: string): Promise<void> {
   if (!url) return;
+  const safeUrl = resolveSafeDocumentViewUrl(url);
+  if (!safeUrl) {
+    console.warn('Cannot download document from invalid storage error URL:', url);
+    return;
+  }
   const resolvedFileName = fileName || 'downloaded-document';
 
   try {
     // If it's a base64 or blob URL, trigger instant client-side download
-    if (url.startsWith('data:') || url.startsWith('blob:')) {
+    if (safeUrl.startsWith('data:') || safeUrl.startsWith('blob:')) {
       const a = document.createElement('a');
-      a.href = url;
+      a.href = safeUrl;
       a.download = resolvedFileName;
       document.body.appendChild(a);
       a.click();
@@ -156,18 +188,7 @@ export async function downloadDocument(url: string, fileName?: string): Promise<
       return;
     }
 
-    // Safety guard against known Supabase error payloads saved as URL
-    if (
-      url.includes('NoSuchKey') ||
-      url.includes('NoSuchBucket') ||
-      url.includes('Bucket not found') ||
-      url.includes('statusCode')
-    ) {
-      console.warn('Cannot download document from invalid storage error URL:', url);
-      return;
-    }
-
-    const response = await fetch(url);
+    const response = await fetch(safeUrl);
     if (!response.ok) {
       throw new Error(`Download HTTP error status: ${response.status}`);
     }
