@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   FileText,
   FileCheck,
@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { TraineeDocuments, TraineeDocumentItem } from '../types';
-import { uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
+import { uploadDocumentToStorage, saveDocumentPassStatus, fetchEmployeeDocuments } from '../services/supabaseService';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 
@@ -62,8 +62,38 @@ export function Documents() {
   const [previewDoc, setPreviewDoc] = useState<PreviewModalState | null>(null);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [submitDialog, setSubmitDialog] = useState<SubmitDialogState | null>(null);
+  const [databaseDocs, setDatabaseDocs] = useState<TraineeDocuments | null>(null);
 
-  const submittedDocs: TraineeDocuments = employee?.submittedDocuments || {};
+  // Sync documents from database on mount or user change to prevent disappearance on refresh
+  useEffect(() => {
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id;
+    if (!empId) return;
+
+    fetchEmployeeDocuments(empId)
+      .then((res) => {
+        if (res && res.documents && Object.keys(res.documents).length > 0) {
+          setDatabaseDocs((prev) => ({ ...(res.documents || {}), ...(prev || {}) }));
+          if (employee) {
+            updateEmployee(employee.id, {
+              submittedDocuments: {
+                ...(res.documents || {}),
+                ...(employee.submittedDocuments || {}),
+              },
+              documentsPassed: res.documentsPassed ?? employee.documentsPassed,
+              documentsStatus: res.documentsStatus ?? employee.documentsStatus,
+            });
+          }
+        }
+      })
+      .catch((err) => console.warn('Failed to fetch documents from database on load:', err));
+  }, [employee?.id, currentUser?.employeeId, currentUser?.id]);
+
+  const submittedDocs: TraineeDocuments = useMemo(() => {
+    return {
+      ...(employee?.submittedDocuments || {}),
+      ...(databaseDocs || {}),
+    };
+  }, [employee?.submittedDocuments, databaseDocs]);
 
   // Helper to safely get document item supporting legacy aliases
   const getDocItem = (key: string): TraineeDocumentItem | undefined => {
@@ -124,11 +154,11 @@ export function Documents() {
   const totalRequired = allDocRequirements.length;
   const uploadedCount = allDocRequirements.filter((k) => {
     const doc = getDocItem(k.key);
-    return Boolean(doc?.dataUrl || doc?.name);
+    return Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
   }).length;
   const passedCount = allDocRequirements.filter((k) => {
     const doc = getDocItem(k.key);
-    return doc?.status === 'passed' && Boolean(doc?.dataUrl || doc?.name);
+    return doc?.status === 'passed' && Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
   }).length;
   const isAllPassed =
     uploadedCount === totalRequired &&
@@ -144,7 +174,7 @@ export function Documents() {
   const missingDocs = useMemo(() => {
     return allDocRequirements.filter((item) => {
       const doc = getDocItem(item.key);
-      return !doc?.dataUrl && !doc?.name;
+      return !doc?.dataUrl && !doc?.name && !doc?.fileUrl;
     });
   }, [allDocRequirements, submittedDocs]);
   const missingCount = missingDocs.length;
@@ -179,10 +209,18 @@ export function Documents() {
     } catch {}
 
     // 3. If docItem has a working remote URL (fileUrl or dataUrl), use it
-    if (docItem?.dataUrl && !isBadUrl(docItem.dataUrl)) return docItem.dataUrl;
     if ((docItem as any)?.fileUrl && !isBadUrl((docItem as any).fileUrl)) return (docItem as any).fileUrl;
+    if (docItem?.dataUrl && !isBadUrl(docItem.dataUrl)) return docItem.dataUrl;
 
-    // 4. Check general localStorage cache
+    // 4. Check dedicated URL cache in localStorage
+    try {
+      const storedUrl =
+        localStorage.getItem(`ojt_doc_url_${empId}_${docKey}`) ||
+        localStorage.getItem(`ojt_doc_url_${docKey}`);
+      if (storedUrl && !isBadUrl(storedUrl)) return storedUrl;
+    } catch {}
+
+    // 5. Check general localStorage cache
     try {
       const cached =
         localStorage.getItem(`ojt_doc_${empId}_${docKey}`) ||
@@ -304,26 +342,35 @@ export function Documents() {
         [docKey]: newDocItem,
       };
 
-      const newUploadedCount = allDocRequirements.filter((k) => Boolean(updatedDocs[k.key]?.dataUrl || updatedDocs[k.key]?.name)).length;
-      const allDocsPassed = newUploadedCount === totalRequired && allDocRequirements.every((k) => updatedDocs[k.key]?.status === 'passed');
+      const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+
+      const newUploadedCount = allDocRequirements.filter((k) => {
+        const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
+        return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
+      }).length;
+      const allDocsPassed = newUploadedCount === totalRequired && allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
+      const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
+
+      setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
 
       if (employee) {
-        const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
         updateEmployee(employee.id, {
           submittedDocuments: updatedDocs,
           documentsPassed: allDocsPassed,
           documentsStatus: finalDocStatus,
         });
+      }
 
+      if (targetEmpId) {
         // Direct persistent database save for document pass / upload status
-        saveDocumentPassStatus(employee.id || employee.employeeId, {
+        saveDocumentPassStatus(targetEmpId, {
           docKey,
           status: 'pending',
           allPassed: allDocsPassed,
           documentsStatus: finalDocStatus,
           submittedDocuments: updatedDocs,
           documentItem: newDocItem,
-        });
+        }).catch(console.warn);
       }
 
       setUploadingKey(null);
@@ -353,6 +400,16 @@ export function Documents() {
       }
     }
 
+    setDatabaseDocs((prev) => {
+      if (!prev) return null;
+      const n = { ...prev };
+      delete (n as any)[docKey];
+      if (docKey === 'consent') delete (n as any).parent_consent;
+      if (docKey === 'moa') delete (n as any).endorsement;
+      if (docKey === 'medical') delete (n as any).clearance;
+      return n;
+    });
+
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
     try {
       localStorage.removeItem(`ojt_doc_${empId}_${docKey}`);
@@ -369,9 +426,10 @@ export function Documents() {
         (req.key === 'consent' ? (updatedDocs as any).parent_consent : undefined) ||
         (req.key === 'moa' ? (updatedDocs as any).endorsement : undefined) ||
         (req.key === 'medical' ? (updatedDocs as any).clearance : undefined);
-      return Boolean(doc?.dataUrl || doc?.name);
+      return Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
     }).length;
 
+    const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
     if (employee) {
       const removalStatus = remainingCount > 0 ? 'partial' : 'incomplete';
       updateEmployee(employee.id, {
@@ -379,7 +437,15 @@ export function Documents() {
         documentsPassed: false,
         documentsStatus: removalStatus,
       });
-      saveDocumentPassStatus(employee.id || employee.employeeId, {
+      if (targetEmpId) {
+        saveDocumentPassStatus(targetEmpId, {
+          allPassed: false,
+          documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
+          submittedDocuments: updatedDocs,
+        }).catch(console.warn);
+      }
+    } else if (targetEmpId) {
+      saveDocumentPassStatus(targetEmpId, {
         allPassed: false,
         documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
         submittedDocuments: updatedDocs,

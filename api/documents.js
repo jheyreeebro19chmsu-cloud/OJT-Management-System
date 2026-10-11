@@ -59,8 +59,29 @@ export default async function handler(req, res) {
   try {
     const query = parseQuery(req);
 
-    // GET: Query documents & document pass status for an employee
+    // GET: Query documents & document pass status OR generate signed upload URL
     if (req.method === 'GET') {
+      const action = query.action;
+      if (action === 'get-upload-url') {
+        const storagePath = query.path;
+        if (!storagePath) {
+          return sendJson(res, 400, { error: 'Missing path parameter' });
+        }
+        const bucket = query.bucket || 'face-photos';
+        const { data: signData, error: signErr } = await supabase.storage.from(bucket).createSignedUploadUrl(storagePath);
+        if (signErr) {
+          return sendJson(res, 500, { error: signErr.message });
+        }
+        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+        return sendJson(res, 200, {
+          success: true,
+          signedUrl: signData.signedUrl,
+          token: signData.token,
+          path: signData.path,
+          publicUrl: urlData?.publicUrl,
+        });
+      }
+
       const empId = query.employeeId || query.id || query.employee_id;
       if (!empId) {
         return sendJson(res, 400, { error: 'Missing employeeId query parameter' });
@@ -84,10 +105,34 @@ export default async function handler(req, res) {
       }
 
       const regLoc = empData?.registration_location || {};
+      const regDocs = { ...(regLoc.documents || {}) };
+
+      // Ensure any document recorded in the documents table is present in the documents object
+      for (const row of docRows) {
+        const matchKey = Object.keys(regDocs).find((k) => regDocs[k]?.name === row.file_name);
+        if (!matchKey && row.file_name) {
+          const standardKey = [
+            'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
+            'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
+          ].find((k) => row.file_name.toLowerCase().includes(k.toLowerCase()));
+          if (standardKey && !regDocs[standardKey]) {
+            regDocs[standardKey] = {
+              name: row.file_name,
+              fileUrl: row.file_path,
+              dataUrl: row.file_path,
+              fileType: row.file_type || 'application/pdf',
+              size: row.file_size || 0,
+              uploadedAt: row.created_at,
+              status: 'pending',
+            };
+          }
+        }
+      }
+
       return sendJson(res, 200, {
         success: true,
         employee: empData,
-        documents: regLoc.documents || {},
+        documents: regDocs,
         documentsPassed: Boolean(regLoc.documentsPassed),
         documentsStatus: regLoc.documentsStatus || 'pending',
         storedDocuments: docRows,
@@ -97,6 +142,41 @@ export default async function handler(req, res) {
     // POST / PUT: Save document upload, update document pass status
     if (req.method === 'POST' || req.method === 'PUT') {
       const body = await parseBody(req);
+
+      // Support server-side direct storage upload via service role
+      if (body.action === 'upload') {
+        const { path, dataUrl, base64, contentType } = body;
+        if (!path || (!dataUrl && !base64)) {
+          return sendJson(res, 400, { error: 'Missing path or data' });
+        }
+        let rawBase64 = base64 || '';
+        let mime = contentType || 'application/pdf';
+        if (dataUrl && typeof dataUrl === 'string') {
+          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            mime = match[1];
+            rawBase64 = match[2];
+          } else {
+            rawBase64 = dataUrl;
+          }
+        }
+        const buffer = Buffer.from(rawBase64, 'base64');
+        const bucket = body.bucket || 'face-photos';
+        const { data: upData, error: upErr } = await supabase.storage.from(bucket).upload(path, buffer, {
+          contentType: mime,
+          upsert: true,
+        });
+        if (upErr) {
+          return sendJson(res, 500, { error: upErr.message });
+        }
+        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
+        return sendJson(res, 200, {
+          success: true,
+          publicUrl: urlData?.publicUrl,
+          path: upData?.path,
+        });
+      }
+
       const empIdentifier = body.employeeId || body.id || body.employee_id || body.email;
 
       if (!empIdentifier) {

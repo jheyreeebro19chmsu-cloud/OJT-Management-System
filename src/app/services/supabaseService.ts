@@ -50,13 +50,27 @@ export const EMPLOYEE_CORE_COLUMNS = [
 export async function fetchEmployees(): Promise<Employee[]> {
   if (!isSupabaseConfigured()) return [];
 
+  // 1. Primary path: Service role endpoint /api/employees (bypasses RLS to guarantee complete student documents and pass status)
+  try {
+    const res = await fetch('/api/employees');
+    if (res.ok) {
+      const apiData = await res.json();
+      if (Array.isArray(apiData) && apiData.length > 0) {
+        return apiData.map(transformSupabaseEmployee);
+      }
+    }
+  } catch (apiErr) {
+    console.warn('fetchEmployees /api/employees notice:', apiErr);
+  }
+
+  // 2. Direct Supabase fallback
   try {
     const { data, error } = await supabase
       .from('employees')
       .select(EMPLOYEE_CORE_COLUMNS)
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
+    if (!error && data && data.length > 0) {
       return data.map(transformSupabaseEmployee);
     }
 
@@ -141,16 +155,32 @@ function sanitizeDocumentsForDb(docs: any): any {
       // Guard against saving Supabase 400/404 error payloads as URLs
       const isBadUrl = (u?: string) =>
         Boolean(
-          u &&
-          typeof u === 'string' &&
-          (u.includes('NoSuchKey') ||
-            u.includes('NoSuchBucket') ||
-            u.includes('Bucket not found') ||
-            u.includes('documents/unassigned/moa_'))
+          !u ||
+          typeof u !== 'string' ||
+          u.includes('NoSuchKey') ||
+          u.includes('NoSuchBucket') ||
+          u.includes('Bucket not found') ||
+          u.includes('statusCode') ||
+          u.includes('documents/unassigned/moa_')
         );
 
       const validDataUrl = isBadUrl(dataUrl) ? '' : dataUrl;
       const validFileUrl = isBadUrl(fileUrl) ? '' : fileUrl;
+
+      // Extract permanent remote HTTP public URL
+      const httpUrl =
+        (validFileUrl.startsWith('http://') || validFileUrl.startsWith('https://') ? validFileUrl : '') ||
+        (validDataUrl.startsWith('http://') || validDataUrl.startsWith('https://') ? validDataUrl : '');
+
+      let resolvedUrl = httpUrl;
+      if (!resolvedUrl) {
+        // If no HTTP URL is available yet, only allow small data strings (<50KB) in database JSON to prevent 413
+        if (validDataUrl.startsWith('data:') && validDataUrl.length < 50000) {
+          resolvedUrl = validDataUrl;
+        } else if (validFileUrl.startsWith('data:') && validFileUrl.length < 50000) {
+          resolvedUrl = validFileUrl;
+        }
+      }
 
       clean[key] = {
         name: docItem.name || 'document',
@@ -158,9 +188,8 @@ function sanitizeDocumentsForDb(docs: any): any {
         fileType: docItem.fileType || 'application/pdf',
         uploadedAt: docItem.uploadedAt || new Date().toISOString(),
         status: docItem.status || 'pending',
-        // Preserve dataUrl and fileUrl so documents can be viewed and previewed
-        dataUrl: validDataUrl || validFileUrl || '',
-        fileUrl: validFileUrl || validDataUrl || '',
+        dataUrl: resolvedUrl,
+        fileUrl: httpUrl || resolvedUrl,
         description: docItem.description || '',
         notes: docItem.notes || docItem.feedback || '',
         feedback: docItem.feedback || '',
@@ -181,8 +210,6 @@ export async function uploadDocumentToStorage(
   fileDataOrBlob: string | Blob | File,
   fileName?: string
 ): Promise<string> {
-  if (!isSupabaseConfigured()) return typeof fileDataOrBlob === 'string' ? fileDataOrBlob : '';
-
   try {
     let blob: Blob;
     let contentType = 'application/pdf';
@@ -219,24 +246,81 @@ export async function uploadDocumentToStorage(
           : 'pdf';
     const storagePath = `documents/${cleanEmpId}/${docKey}_${Date.now()}.${ext}`;
 
-    // face-photos is confirmed public and has open RLS policy allowing anonymous uploads and reading
-    const bucketsToTry = ['face-photos', 'documents'];
-    for (const bucket of bucketsToTry) {
-      try {
-        const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
-          contentType,
-          upsert: true,
-          cacheControl: '604800', // 7 days cache
-        });
-        if (!error && data) {
-          const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-          if (urlData?.publicUrl) {
-            console.log(`[Storage] Uploaded document ${docKey} to bucket "${bucket}":`, urlData.publicUrl);
-            return urlData.publicUrl;
+    // 1. Primary path: Signed Upload URL via service-role backend
+    try {
+      const signRes = await fetch(`/api/documents?action=get-upload-url&path=${encodeURIComponent(storagePath)}&bucket=face-photos`);
+      if (signRes.ok) {
+        const signInfo = await signRes.json();
+        if (signInfo?.token && signInfo?.path && isSupabaseConfigured()) {
+          const { error: upErr } = await supabase.storage.from('face-photos').uploadToSignedUrl(signInfo.path, signInfo.token, blob, {
+            contentType,
+          });
+          if (!upErr && signInfo.publicUrl) {
+            console.log(`[Storage] Uploaded document ${docKey} via signed URL:`, signInfo.publicUrl);
+            return signInfo.publicUrl;
           }
         }
-      } catch (bucketErr) {
-        console.warn(`[Storage] Upload to "${bucket}" notice:`, bucketErr);
+      }
+    } catch (signErr) {
+      console.warn('[Storage] Signed upload URL notice:', signErr);
+    }
+
+    // 2. Secondary path: Direct server upload via /api/documents?action=upload
+    try {
+      let b64 = '';
+      if (typeof fileDataOrBlob === 'string') {
+        b64 = fileDataOrBlob;
+      } else {
+        b64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(blob);
+        });
+      }
+      if (b64 && b64.length < 4000000) {
+        const srvRes = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload',
+            path: storagePath,
+            dataUrl: b64,
+            contentType,
+            bucket: 'face-photos',
+          }),
+        });
+        if (srvRes.ok) {
+          const srvData = await srvRes.json();
+          if (srvData?.publicUrl) {
+            console.log(`[Storage] Server uploaded document ${docKey}:`, srvData.publicUrl);
+            return srvData.publicUrl;
+          }
+        }
+      }
+    } catch (srvErr) {
+      console.warn('[Storage] Server upload fallback notice:', srvErr);
+    }
+
+    // 3. Tertiary path: Direct anonymous upload fallback
+    if (isSupabaseConfigured()) {
+      const bucketsToTry = ['face-photos', 'documents'];
+      for (const bucket of bucketsToTry) {
+        try {
+          const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
+            contentType,
+            upsert: true,
+            cacheControl: '604800',
+          });
+          if (!error && data) {
+            const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+            if (urlData?.publicUrl) {
+              return urlData.publicUrl;
+            }
+          }
+        } catch (bucketErr) {
+          console.warn(`[Storage] Upload to "${bucket}" notice:`, bucketErr);
+        }
       }
     }
   } catch (err) {
@@ -692,6 +776,56 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   return true;
 }
 
+export async function fetchEmployeeDocuments(employeeId: string): Promise<{
+  success: boolean;
+  documents?: TraineeDocuments;
+  documentsPassed?: boolean;
+  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
+  storedDocuments?: any[];
+} | null> {
+  if (!employeeId) return null;
+
+  // 1. Primary path: Service role endpoint /api/documents (bypasses RLS)
+  try {
+    const res = await fetch(`/api/documents?employeeId=${encodeURIComponent(employeeId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('fetchEmployeeDocuments API notice:', err);
+  }
+
+  // 2. Secondary path: Direct Supabase fallback
+  if (isSupabaseConfigured()) {
+    try {
+      const isUuidStr = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+      let q = supabase.from('employees').select('id, employee_id, registration_location').limit(1);
+      if (isUuidStr(employeeId)) {
+        q = q.eq('id', employeeId);
+      } else {
+        q = q.eq('employee_id', String(employeeId).trim());
+      }
+      const { data: row } = await q.maybeSingle();
+      if (row?.registration_location) {
+        const reg = typeof row.registration_location === 'string' ? JSON.parse(row.registration_location) : row.registration_location;
+        return {
+          success: true,
+          documents: reg?.documents || {},
+          documentsPassed: Boolean(reg?.documentsPassed),
+          documentsStatus: reg?.documentsStatus || 'pending',
+        };
+      }
+    } catch (dbErr) {
+      console.warn('fetchEmployeeDocuments direct DB notice:', dbErr);
+    }
+  }
+
+  return null;
+}
+
 export async function saveDocumentPassStatus(
   employeeId: string,
   payload: {
@@ -705,6 +839,19 @@ export async function saveDocumentPassStatus(
 ): Promise<boolean> {
   if (!employeeId) return false;
 
+  const sanitizedSubmittedDocs = payload.submittedDocuments
+    ? sanitizeDocumentsForDb(payload.submittedDocuments)
+    : undefined;
+  const sanitizedDocItem = payload.documentItem
+    ? sanitizeDocumentsForDb({ item: payload.documentItem })?.item
+    : undefined;
+
+  const cleanPayload = {
+    ...payload,
+    submittedDocuments: sanitizedSubmittedDocs,
+    documentItem: sanitizedDocItem,
+  };
+
   // 1. Primary path: Dedicated /api/documents endpoint (bypasses RLS with service role)
   try {
     const res = await fetch('/api/documents', {
@@ -712,7 +859,7 @@ export async function saveDocumentPassStatus(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         employeeId,
-        ...payload,
+        ...cleanPayload,
       }),
     });
     if (res.ok) {
@@ -734,7 +881,7 @@ export async function saveDocumentPassStatus(
         updates: {
           documentsPassed: payload.allPassed,
           documentsStatus: payload.documentsStatus,
-          submittedDocuments: payload.submittedDocuments || (payload.docKey && payload.documentItem ? { [payload.docKey]: payload.documentItem } : undefined),
+          submittedDocuments: sanitizedSubmittedDocs || (cleanPayload.docKey && cleanPayload.documentItem ? { [cleanPayload.docKey]: cleanPayload.documentItem } : undefined),
         },
       }),
     });

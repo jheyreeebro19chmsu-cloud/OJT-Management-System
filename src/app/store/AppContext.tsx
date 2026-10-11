@@ -473,9 +473,6 @@ function migrateGeofenceStorageOnce(): void {
 function migrateInstructorPositionOnce(): void {
   try {
     if (isSupabaseConfigured()) {
-      try {
-        localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
-      } catch {}
       localStorage.setItem('ojt_migrated_instructor_positions', 'done');
       return;
     }
@@ -549,11 +546,8 @@ function sanitizeValueForStorage(key: string, value: any): any {
 function cleanupStorageQuota(): void {
   try {
     if (isSupabaseConfigured()) {
-      localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
       localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
-      localStorage.removeItem(STORAGE_KEYS.HOST_SUPERVISORS);
       localStorage.removeItem('ojt_passwords');
-      return;
     }
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
     if (raw && raw.length > 300000) {
@@ -627,13 +621,8 @@ export function clearAuthStorage(): void {
 }
 
 function saveToStorage<T>(key: string, value: T): void {
-  // Pure database mode: User accounts, passwords, and credentials MUST NEVER be stored in localStorage when Supabase is active
-  if (
-    isSupabaseConfigured() &&
-    (key === STORAGE_KEYS.EMPLOYEES ||
-      key === STORAGE_KEYS.PASSWORDS ||
-      key === STORAGE_KEYS.HOST_SUPERVISORS)
-  ) {
+  // Passwords MUST NEVER be stored in localStorage
+  if (key === STORAGE_KEYS.PASSWORDS || key === 'ojt_passwords') {
     try {
       localStorage.removeItem(key);
     } catch {}
