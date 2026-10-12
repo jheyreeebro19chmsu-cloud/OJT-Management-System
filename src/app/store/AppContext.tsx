@@ -1164,6 +1164,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // ignore migration errors
           }
 
+          const isAuthRoute = typeof window !== 'undefined' && (
+            window.location.pathname.startsWith('/register') ||
+            window.location.pathname.startsWith('/login') ||
+            window.location.pathname.startsWith('/reset-password')
+          );
+
           // Fetch all data from Supabase in parallel and update state dynamically
           Promise.allSettled([
             supabaseService.fetchEmployees().then((emp) => {
@@ -1200,15 +1206,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 }
               }
             }),
-            supabaseService.fetchTimeRecords().then((recs) => {
-              if (isMounted && recs && recs.length > 0) {
-                setTimeRecords((prev) => {
-                  const merged = mergeTimeRecords(recs, prev);
-                  saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-                  return merged;
-                });
-              }
-            }),
+            (!isAuthRoute || currentUser
+              ? supabaseService.fetchTimeRecords().then((recs) => {
+                  if (isMounted && recs && recs.length > 0) {
+                    setTimeRecords((prev) => {
+                      const merged = mergeTimeRecords(recs, prev);
+                      saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+                      return merged;
+                    });
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
             supabaseService.fetchGeofenceZones().then((zones) => {
               if (isMounted && zones) {
                 const sanitized = sanitizeGeofenceZones(zones);
@@ -1241,12 +1249,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 });
               }
             }),
-            supabaseService.fetchEvaluations().then((ev) => {
-              if (isMounted && ev && ev.length > 0) {
-                setEvaluations(ev);
-                saveToStorage(STORAGE_KEYS.EVALUATIONS, ev);
-              }
-            }),
+            (!isAuthRoute || currentUser
+              ? supabaseService.fetchEvaluations().then((ev) => {
+                  if (isMounted && ev && ev.length > 0) {
+                    setEvaluations(ev);
+                    saveToStorage(STORAGE_KEYS.EVALUATIONS, ev);
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
             supabaseService.fetchAnnouncements().then((ann) => {
               if (isMounted && ann && ann.length > 0) {
                 setAnnouncements(ann);
@@ -1308,7 +1318,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Real-time Supabase Broadcast Subscription across all 3 roles (Instructor, Employee/Trainee, HTE)
   useEffect(() => {
-    if (!useSupabase) return;
+    if (!useSupabase || !currentUser) return;
 
     const channel = supabase
       .channel('public-realtime-system-binding')
@@ -1491,13 +1501,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('pagehide', handlePageHide);
       supabase.removeChannel(channel);
     };
-  }, [useSupabase]);
+  }, [useSupabase, currentUser]);
 
   const lastRefreshTimeRef = useRef<number>(0);
 
   // Periodic polling & window focus auto-sync across all open tabs/devices
   const refreshData = useCallback(async (options?: { force?: boolean }) => {
     if (!useSupabase && !isSupabaseConfigured()) return;
+    if (!currentUser && !options?.force) return;
     const now = Date.now();
     // Throttle automated refresh calls to at most once every 15 seconds unless explicitly forced
     if (!options?.force && now - lastRefreshTimeRef.current < 15000) {
@@ -1591,10 +1602,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn('Manual or auto refreshData failed:', err);
     }
-  }, [useSupabase]);
+  }, [useSupabase, currentUser]);
 
   useEffect(() => {
     if (!useSupabase && !isSupabaseConfigured()) return;
+    if (!currentUser) return;
 
     const onFocus = () => {
       refreshData();
@@ -1603,7 +1615,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Immediately re-fetch data when Supabase Auth session establishes or changes
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
+      if (session?.user && currentUser) {
         refreshData();
       }
     });
@@ -1619,7 +1631,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clearInterval(syncInterval);
       authListener?.subscription?.unsubscribe();
     };
-  }, [refreshData, useSupabase]);
+  }, [refreshData, useSupabase, currentUser]);
 
   // Save to localStorage only when not using Supabase
   useEffect(() => {

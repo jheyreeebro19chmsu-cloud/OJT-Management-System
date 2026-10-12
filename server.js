@@ -9,6 +9,7 @@ import announcementsHandler from './api/announcements.js';
 import sendEmailHandler from './api/send-email.js';
 import employeesHandler from './api/employees.js';
 import documentsHandler from './api/documents.js';
+import timeRecordsHandler from './api/time-records.js';
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION AT STARTUP/RUNTIME:', err);
@@ -175,6 +176,11 @@ const server = http.createServer((req, res) => {
   // ====== ANNOUNCEMENTS API ROUTE (Service Role RLS Bypass) ======
   if (req.url.startsWith('/api/announcements')) {
     return announcementsHandler(req, res);
+  }
+
+  // ====== TIME RECORDS API ROUTE (Service Role RLS Bypass) ======
+  if (req.url.startsWith('/api/time-records')) {
+    return timeRecordsHandler(req, res);
   }
 
   // ====== SEND EMAIL API ROUTE ======

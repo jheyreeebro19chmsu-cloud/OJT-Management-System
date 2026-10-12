@@ -1079,39 +1079,43 @@ export async function deleteEmployee(id: string): Promise<boolean> {
 // ─── Time Records ────────────────────────────────────────────────────────────
 
 export async function fetchTimeRecords(): Promise<TimeRecord[]> {
+  // 1. Primary path: Service role endpoint /api/time-records (bypasses RLS to eliminate PostgREST locks & 500 timeouts)
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/time-records');
+      if (res.ok) {
+        const apiData = await res.json();
+        if (Array.isArray(apiData) && apiData.length > 0) {
+          return apiData.map(transformSupabaseTimeRecord);
+        }
+      }
+    } catch (apiErr) {
+      console.warn('fetchTimeRecords /api/time-records notice:', apiErr);
+    }
+  }
+
+  // 2. Secondary path: Direct Supabase client with safe limit
   if (!isSupabaseConfigured()) return [];
 
   try {
-    const { data, error } = await supabase.from('time_records').select('*').order('date', { ascending: false });
+    const { data, error } = await supabase
+      .from('time_records')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(1000);
 
     if (!error && data && data.length > 0) {
       return data.map(transformSupabaseTimeRecord);
     }
 
-    // Fallback: If Supabase client returns 0 records (due to unauthenticated RLS restriction),
-    // fetch securely through serverless proxy with service role credentials
-    if (typeof window !== 'undefined') {
-      try {
-        const res = await fetch('/api/time-records');
-        if (res.ok) {
-          const apiData = await res.json();
-          if (Array.isArray(apiData) && apiData.length > 0) {
-            return apiData.map(transformSupabaseTimeRecord);
-          }
-        }
-      } catch (apiErr) {
-        console.warn('API fallback notice:', apiErr);
-      }
-    }
-
     if (error) {
-      console.error('Error fetching time records:', error);
+      console.warn('Notice fetching time records from Supabase client:', error.message || error);
       return [];
     }
 
     return (data || []).map(transformSupabaseTimeRecord);
   } catch (err) {
-    console.error('fetchTimeRecords exception:', err);
+    console.warn('fetchTimeRecords exception:', err);
     return [];
   }
 }
