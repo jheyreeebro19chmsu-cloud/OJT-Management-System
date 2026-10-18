@@ -26,11 +26,12 @@ import {
   CheckSquare,
   Square,
   X,
+  ChevronLeft,
   ChevronRight,
   TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
@@ -44,6 +45,7 @@ import {
 } from '../types';
 import { MonitoringReportPrintView } from '../components/MonitoringReportPrintView';
 import { buildDefaultReportsForTrainee } from '../utils/monitoringReportGenerator';
+import { getPaginationWindow } from '../utils/pagination';
 
 export function getReportTerm(report: IMonitoringReport): MonitoringTermType {
   if (report.term) return report.term;
@@ -238,6 +240,10 @@ export function MonitoringReport() {
   const [activeSubFilter, setActiveSubFilter] = useState<'all' | 'weekly' | 'monthly' | 'evaluation'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(6);
+
   // Modals
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [editingReport, setEditingReport] = useState<IMonitoringReport | null>(null);
@@ -355,6 +361,17 @@ export function MonitoringReport() {
       return true;
     });
   }, [myReports, activeTermTab, activeSubFilter, searchQuery]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTermTab, activeSubFilter, searchQuery, itemsPerPage]);
+
+  const totalReportPages = Math.max(1, Math.ceil(filteredReports.length / itemsPerPage));
+  const paginatedReports = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredReports.slice(start, start + itemsPerPage);
+  }, [filteredReports, currentPage, itemsPerPage]);
 
   // Open Submit Modal for New Report
   const openNewSubmitModal = (
@@ -1230,8 +1247,115 @@ export function MonitoringReport() {
         </div>
       ) : (
         /* FOCUSED TERM / FILTERED GRID */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredReports.map((report) => renderReportCard(report))}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedReports.map((report) => renderReportCard(report))}
+          </div>
+
+          {/* Pagination Footer */}
+          {filteredReports.length > 0 && (
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs mt-4">
+              <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
+                <span>
+                  Showing{' '}
+                  <strong className="text-slate-900">
+                    {(currentPage - 1) * itemsPerPage + 1}
+                  </strong>{' '}
+                  to{' '}
+                  <strong className="text-slate-900">
+                    {Math.min(currentPage * itemsPerPage, filteredReports.length)}
+                  </strong>{' '}
+                  of <strong className="text-slate-900">{filteredReports.length}</strong> reports
+                </span>
+                <span className="text-slate-300">|</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500 text-[11px]">Per page:</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                    className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 cursor-pointer"
+                  >
+                    <option value={3}>3</option>
+                    <option value={6}>6</option>
+                    <option value={9}>9</option>
+                    <option value={12}>12</option>
+                  </select>
+                </div>
+              </div>
+
+              {totalReportPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed font-semibold text-xs flex items-center gap-1 cursor-pointer shadow-2xs"
+                  >
+                    <ChevronLeft size={14} /> Prev
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {(() => {
+                      const pages = getPaginationWindow(currentPage, totalReportPages, 7);
+                      return (
+                        <>
+                          {pages[0] > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPage(1)}
+                                className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              >
+                                1
+                              </button>
+                              {pages[0] > 2 && <span className="px-1 text-slate-400 font-bold">...</span>}
+                            </>
+                          )}
+                          {pages.map((p) => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setCurrentPage(p)}
+                              className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                currentPage === p
+                                  ? 'bg-[#146B4D] text-white shadow-xs'
+                                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                          {pages[pages.length - 1] < totalReportPages && (
+                            <>
+                              {pages[pages.length - 1] < totalReportPages - 1 && (
+                                <span className="px-1 text-slate-400 font-bold">...</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPage(totalReportPages)}
+                                className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              >
+                                {totalReportPages}
+                              </button>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalReportPages, p + 1))}
+                    disabled={currentPage === totalReportPages}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed font-semibold text-xs flex items-center gap-1 cursor-pointer shadow-2xs"
+                  >
+                    Next <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

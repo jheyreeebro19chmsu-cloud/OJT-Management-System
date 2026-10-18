@@ -23,6 +23,7 @@ import {
   Users,
   Check,
   X,
+  ChevronLeft,
   ChevronRight,
   TrendingUp,
   Award,
@@ -35,10 +36,11 @@ import {
   Lightbulb,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../../store/AppContext';
+import { getPaginationWindow } from '../../utils/pagination';
 import {
   MonitoringReport,
   MonitoringPeriodType,
@@ -141,6 +143,12 @@ export function AdminMonitoringReport() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'submitted' | 'reviewed'>('all');
   const [filterCourse, setFilterCourse] = useState<string>('all');
   const [filterTrainee, setFilterTrainee] = useState<string>('all');
+
+  // Pagination states
+  const [reportPage, setReportPage] = useState(1);
+  const [reportsPerPage, setReportsPerPage] = useState(9);
+  const [rosterPage, setRosterPage] = useState(1);
+  const [rosterPerPage, setRosterPerPage] = useState(10);
 
   // Modal states
   const [reviewReport, setReviewReport] = useState<MonitoringReport | null>(null);
@@ -269,6 +277,50 @@ export function AdminMonitoringReport() {
       return true;
     });
   }, [monitoringReports, activeTab, activeSubFilter, filterStatus, filterCourse, filterTrainee, searchQuery]);
+
+  // Filtered trainees for Roster matrix
+  const filteredTrainees = useMemo(() => {
+    let list = allTrainees;
+    if (filterCourse !== 'all') {
+      list = list.filter((t) => t.course === filterCourse);
+    }
+    if (filterTrainee !== 'all') {
+      list = list.filter((t) => t.id === filterTrainee || t.employeeId === filterTrainee);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (t) =>
+          (t.name || '').toLowerCase().includes(q) ||
+          (t.employeeId || t.id || '').toLowerCase().includes(q) ||
+          (t.companyName || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [allTrainees, filterCourse, filterTrainee, searchQuery]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setReportPage(1);
+  }, [activeTab, activeSubFilter, filterStatus, filterCourse, filterTrainee, searchQuery, reportsPerPage]);
+
+  useEffect(() => {
+    setRosterPage(1);
+  }, [filterCourse, filterTrainee, searchQuery, rosterPerPage]);
+
+  // Paginated Reports calculation
+  const totalReportPages = Math.max(1, Math.ceil(filteredReports.length / reportsPerPage));
+  const paginatedReports = useMemo(() => {
+    const start = (reportPage - 1) * reportsPerPage;
+    return filteredReports.slice(start, start + reportsPerPage);
+  }, [filteredReports, reportPage, reportsPerPage]);
+
+  // Paginated Roster Trainees calculation
+  const totalRosterPages = Math.max(1, Math.ceil(filteredTrainees.length / rosterPerPage));
+  const paginatedTrainees = useMemo(() => {
+    const start = (rosterPage - 1) * rosterPerPage;
+    return filteredTrainees.slice(start, start + rosterPerPage);
+  }, [filteredTrainees, rosterPage, rosterPerPage]);
 
   // Handle opening Review Modal
   const openReviewModal = (report: MonitoringReport) => {
@@ -862,99 +914,224 @@ export function AdminMonitoringReport() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {allTrainees.map((trainee) => {
-                  const traineeReports = monitoringReports.filter(
-                    (r) => r.traineeId === trainee.id || r.studentId === trainee.employeeId
-                  );
-                  const midWeekly = traineeReports.find((r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'weekly');
-                  const midMonthly = traineeReports.find((r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'monthly');
-                  const midEval = traineeReports.find((r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'evaluation');
-                  const endWeekly = traineeReports.find((r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'weekly');
-                  const endMonthly = traineeReports.find((r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'monthly');
-                  const endEval = traineeReports.find((r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'evaluation');
+                {paginatedTrainees.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                      No trainee accounts found matching your filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedTrainees.map((trainee) => {
+                    const traineeReports = monitoringReports.filter(
+                      (r) => r.traineeId === trainee.id || r.studentId === trainee.employeeId
+                    );
+                    const midWeekly = traineeReports.find(
+                      (r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'weekly'
+                    );
+                    const midMonthly = traineeReports.find(
+                      (r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'monthly'
+                    );
+                    const midEval = traineeReports.find(
+                      (r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'evaluation'
+                    );
+                    const endWeekly = traineeReports.find(
+                      (r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'weekly'
+                    );
+                    const endMonthly = traineeReports.find(
+                      (r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'monthly'
+                    );
+                    const endEval = traineeReports.find(
+                      (r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'evaluation'
+                    );
 
-                  const rendered = getRenderedHoursForTrainee(trainee.id, trainee.employeeId);
-                  const required = trainee.requiredHours || 600;
-                  const progressPct = Math.min(100, Math.round((rendered / required) * 100));
+                    const rendered = getRenderedHoursForTrainee(trainee.id, trainee.employeeId);
+                    const required = trainee.requiredHours || 600;
+                    const progressPct = Math.min(100, Math.round((rendered / required) * 100));
 
-                  const renderStatusPill = (rep?: MonitoringReport) => {
-                    if (!rep) {
-                      return (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
-                          Missing
-                        </span>
-                      );
-                    }
-                    if (rep.status === 'reviewed') {
+                    const renderStatusPill = (rep?: MonitoringReport) => {
+                      if (!rep) {
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
+                            Missing
+                          </span>
+                        );
+                      }
+                      if (rep.status === 'reviewed') {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setViewDetailsReport(rep)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full cursor-pointer"
+                          >
+                            <CheckCircle2 size={11} className="text-emerald-600" /> Reviewed
+                          </button>
+                        );
+                      }
                       return (
                         <button
                           type="button"
-                          onClick={() => setViewDetailsReport(rep)}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full cursor-pointer"
+                          onClick={() => openReviewModal(rep)}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full cursor-pointer"
                         >
-                          <CheckCircle2 size={11} className="text-emerald-600" /> Reviewed
+                          <Clock size={11} className="text-amber-600" /> Review
                         </button>
                       );
-                    }
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => openReviewModal(rep)}
-                        className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full cursor-pointer"
-                      >
-                        <Clock size={11} className="text-amber-600" /> Review
-                      </button>
-                    );
-                  };
+                    };
 
-                  return (
-                    <tr key={trainee.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <UserAvatar
-                            name={trainee.name}
-                            avatarUrl={trainee.avatar}
-                            size="sm"
-                          />
-                          <div>
-                            <p className="font-bold text-slate-900">{trainee.name}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">
-                              {trainee.employeeId || trainee.id} • {trainee.course || 'BSIT'}
-                            </p>
+                    return (
+                      <tr key={trainee.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar
+                              name={trainee.name}
+                              avatarUrl={trainee.avatar}
+                              size="sm"
+                            />
+                            <div>
+                              <p className="font-bold text-slate-900">{trainee.name}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">
+                                {trainee.employeeId || trainee.id} • {trainee.course || 'BSIT'}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <p className="font-semibold text-slate-700 truncate max-w-[160px]">
-                          {trainee.companyName || 'Host Training Establishment'}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          {trainee.supervisorName || 'Supervisor Assigned'}
-                        </p>
-                      </td>
-                      <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midWeekly)}</td>
-                      <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midMonthly)}</td>
-                      <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midEval)}</td>
-                      <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endWeekly)}</td>
-                      <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endMonthly)}</td>
-                      <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endEval)}</td>
-                      <td className="py-3 px-4 text-right">
-                        <p className="font-bold text-slate-900">
-                          {Math.round(rendered)} / {required}h
-                        </p>
-                        <div className="w-16 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
-                          <div
-                            className="bg-emerald-600 h-1.5 rounded-full"
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="py-3 px-3">
+                          <p className="font-semibold text-slate-700 truncate max-w-[160px]">
+                            {trainee.companyName || 'Host Training Establishment'}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {trainee.supervisorName || 'Supervisor Assigned'}
+                          </p>
+                        </td>
+                        <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midWeekly)}</td>
+                        <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midMonthly)}</td>
+                        <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midEval)}</td>
+                        <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endWeekly)}</td>
+                        <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endMonthly)}</td>
+                        <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endEval)}</td>
+                        <td className="py-3 px-4 text-right">
+                          <p className="font-bold text-slate-900">
+                            {Math.round(rendered)} / {required}h
+                          </p>
+                          <div className="w-16 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
+                            <div
+                              className="bg-emerald-600 h-1.5 rounded-full"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Roster Pagination Footer */}
+          {filteredTrainees.length > 0 && (
+            <div className="p-4 border-t border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
+                <span>
+                  Showing{' '}
+                  <strong className="text-slate-900">
+                    {(rosterPage - 1) * rosterPerPage + 1}
+                  </strong>{' '}
+                  to{' '}
+                  <strong className="text-slate-900">
+                    {Math.min(rosterPage * rosterPerPage, filteredTrainees.length)}
+                  </strong>{' '}
+                  of <strong className="text-slate-900">{filteredTrainees.length}</strong> trainee accounts
+                </span>
+                <span className="text-slate-300">|</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500 text-[11px]">Rows:</span>
+                  <select
+                    value={rosterPerPage}
+                    onChange={(e) => setRosterPerPage(Number(e.target.value))}
+                    className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={15}>15</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+              </div>
+
+              {totalRosterPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setRosterPage((p) => Math.max(1, p - 1))}
+                    disabled={rosterPage === 1}
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed font-semibold text-xs flex items-center gap-0.5 cursor-pointer shadow-2xs"
+                  >
+                    <ChevronLeft size={13} /> Prev
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {(() => {
+                      const pages = getPaginationWindow(rosterPage, totalRosterPages, 7);
+                      return (
+                        <>
+                          {pages[0] > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setRosterPage(1)}
+                                className="min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              >
+                                1
+                              </button>
+                              {pages[0] > 2 && <span className="px-1 text-slate-400 font-bold">...</span>}
+                            </>
+                          )}
+                          {pages.map((p) => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setRosterPage(p)}
+                              className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                rosterPage === p
+                                  ? 'bg-[#146B4D] text-white shadow-xs'
+                                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                          {pages[pages.length - 1] < totalRosterPages && (
+                            <>
+                              {pages[pages.length - 1] < totalRosterPages - 1 && (
+                                <span className="px-1 text-slate-400 font-bold">...</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setRosterPage(totalRosterPages)}
+                                className="min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              >
+                                {totalRosterPages}
+                              </button>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setRosterPage((p) => Math.min(totalRosterPages, p + 1))}
+                    disabled={rosterPage === totalRosterPages}
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed font-semibold text-xs flex items-center gap-0.5 cursor-pointer shadow-2xs"
+                  >
+                    Next <ChevronRight size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         /* REPORTS LIST */
@@ -1034,8 +1211,9 @@ export function AdminMonitoringReport() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredReports.map((report) => {
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedReports.map((report) => {
                 const conf = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
                 const rTerm = getReportTerm(report);
                 const rFreq = getReportFrequency(report);
@@ -1207,7 +1385,114 @@ export function AdminMonitoringReport() {
                 );
               })}
             </div>
-          )}
+
+            {/* Reports Grid Pagination Footer */}
+            {filteredReports.length > 0 && (
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs mt-4">
+                <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
+                  <span>
+                    Showing{' '}
+                    <strong className="text-slate-900">
+                      {(reportPage - 1) * reportsPerPage + 1}
+                    </strong>{' '}
+                    to{' '}
+                    <strong className="text-slate-900">
+                      {Math.min(reportPage * reportsPerPage, filteredReports.length)}
+                    </strong>{' '}
+                    of <strong className="text-slate-900">{filteredReports.length}</strong> reports
+                  </span>
+                  <span className="text-slate-300">|</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 text-[11px]">Per page:</span>
+                    <select
+                      value={reportsPerPage}
+                      onChange={(e) => setReportsPerPage(Number(e.target.value))}
+                      className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 cursor-pointer"
+                    >
+                      <option value={6}>6</option>
+                      <option value={9}>9</option>
+                      <option value={12}>12</option>
+                      <option value={24}>24</option>
+                      <option value={48}>48</option>
+                    </select>
+                  </div>
+                </div>
+
+                {totalReportPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setReportPage((p) => Math.max(1, p - 1))}
+                      disabled={reportPage === 1}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed font-semibold text-xs flex items-center gap-1 cursor-pointer shadow-2xs"
+                    >
+                      <ChevronLeft size={14} /> Prev
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      {(() => {
+                        const pages = getPaginationWindow(reportPage, totalReportPages, 7);
+                        return (
+                          <>
+                            {pages[0] > 1 && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setReportPage(1)}
+                                  className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                >
+                                  1
+                                </button>
+                                {pages[0] > 2 && <span className="px-1 text-slate-400 font-bold">...</span>}
+                              </>
+                            )}
+                            {pages.map((p) => (
+                              <button
+                                key={p}
+                                type="button"
+                                onClick={() => setReportPage(p)}
+                                className={`min-w-[32px] h-8 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  reportPage === p
+                                    ? 'bg-[#146B4D] text-white shadow-xs'
+                                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            ))}
+                            {pages[pages.length - 1] < totalReportPages && (
+                              <>
+                                {pages[pages.length - 1] < totalReportPages - 1 && (
+                                  <span className="px-1 text-slate-400 font-bold">...</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setReportPage(totalReportPages)}
+                                  className="min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                >
+                                  {totalReportPages}
+                                </button>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setReportPage((p) => Math.min(totalReportPages, p + 1))}
+                      disabled={reportPage === totalReportPages}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed font-semibold text-xs flex items-center gap-1 cursor-pointer shadow-2xs"
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         </div>
       )}
 
