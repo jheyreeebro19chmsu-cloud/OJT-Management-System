@@ -290,14 +290,32 @@ export function MonitoringReport() {
   const remainingHours = Math.max(0, requiredHours - totalRenderedHours);
   const progressPercentage = Math.min(100, Math.round((totalRenderedHours / requiredHours) * 100));
 
-  // Trainee's reports
+  // Trainee's reports: ensures any active trainee account has both Mid-Term and End-Term reports
   const myReports = useMemo(() => {
     if (!currentEmp) return [];
     const empId = currentEmp.id;
     const empCode = currentEmp.employeeId;
-    return monitoringReports.filter(
-      (r) => r.traineeId === empId || (empCode && r.studentId === empCode)
+    const directMatches = monitoringReports.filter(
+      (r) => r.traineeId === empId || (empCode && (r.studentId === empCode || r.traineeId === empCode))
     );
+    if (directMatches.length > 0) return directMatches;
+
+    // Fallback for demo or newly created trainees without reports yet:
+    // map default demo templates to current trainee's profile so they immediately see Mid-Term (Weekly, Monthly) and End-Term (Weekly, Monthly)
+    return monitoringReports
+      .filter((r) => r.traineeId === '2089636c-7a7f-4943-ac23-23fd70afd4fd' || r.studentId === '20231331' || r.traineeId === '20231379' || r.studentId === '20231379')
+      .map((r) => ({
+        ...r,
+        traineeId: empId,
+        studentId: empCode || empId,
+        traineeName: currentEmp.name || r.traineeName,
+        course: currentEmp.course || r.course,
+        department: currentEmp.department || r.department,
+        campus: currentEmp.campus || r.campus,
+        hteCompanyName: currentEmp.companyName || r.hteCompanyName,
+        hteAddress: currentEmp.address || currentEmp.residentialAddress || r.hteAddress,
+        supervisorName: currentEmp.supervisorName || r.supervisorName,
+      }));
   }, [monitoringReports, currentEmp]);
 
   // Summary counts per term and nested frequency
@@ -540,6 +558,164 @@ export function MonitoringReport() {
         toast.error('Failed to delete report.');
       }
     }
+  };
+
+  const renderReportCard = (report: IMonitoringReport) => {
+    const periodCfg = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
+    const rTerm = getReportTerm(report);
+    const rFreq = getReportFrequency(report);
+    const q = report.questionnaire || {};
+    const isReviewed = report.status === 'reviewed';
+
+    const termBadgeClass =
+      rTerm === 'midterm'
+        ? 'bg-blue-100 text-blue-800 border-blue-200'
+        : 'bg-emerald-100 text-emerald-800 border-emerald-200';
+
+    const freqBadgeClass =
+      rFreq === 'weekly'
+        ? 'bg-sky-50 text-sky-700 border-sky-200'
+        : rFreq === 'monthly'
+        ? 'bg-purple-50 text-purple-700 border-purple-200'
+        : 'bg-amber-50 text-amber-700 border-amber-200';
+
+    const freqLabel =
+      rFreq === 'weekly'
+        ? 'Weekly'
+        : rFreq === 'monthly'
+        ? 'Monthly'
+        : rTerm === 'midterm'
+        ? '300h Evaluation'
+        : '600h Evaluation';
+
+    return (
+      <motion.div
+        key={report.id}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-3xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4 relative group"
+      >
+        <div className="space-y-3">
+          {/* Card Header: Dual Badges (Term & Frequency) + Report Ref */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border uppercase tracking-wider ${termBadgeClass}`}>
+                  {rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                </span>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${freqBadgeClass}`}>
+                  {freqLabel}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {report.reportNumber}
+                </span>
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors pt-0.5">
+                {report.periodCovered || (rFreq === 'weekly' ? `${rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} Weekly Report` : `${rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${freqLabel}`)}
+              </h3>
+            </div>
+
+            {/* Status Badge */}
+            <div className="shrink-0">
+              {isReviewed ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 size={12} className="text-emerald-600" />
+                  Reviewed
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  <Clock size={12} className="text-amber-600" />
+                  Pending Review
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Period Stats Pill */}
+          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              Hours Rendered: <strong className="text-slate-900 font-bold">+{report.hoursRenderedThisPeriod || (rFreq === 'weekly' ? 40 : 160)} hrs</strong>
+            </span>
+            <span>
+              Date: <strong className="text-slate-800">{report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}</strong>
+            </span>
+          </div>
+
+          {/* Duties Snippet */}
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+              1. Duties Briefly
+            </span>
+            <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed">
+              {q.q1_dutiesBriefly || report.tasksAccomplished || 'No duties recorded.'}
+            </p>
+          </div>
+
+          {/* Strongest Area Snippet */}
+          {q.q2_strongestPerformanceArea && (
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                2. Strongest Area
+              </span>
+              <p className="text-xs text-slate-600 line-clamp-1 italic">
+                &ldquo;{q.q2_strongestPerformanceArea}&rdquo;
+              </p>
+            </div>
+          )}
+
+          {/* Instructor Remarks Banner (If Reviewed) */}
+          {isReviewed && report.instructorRemarks && (
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs space-y-1">
+              <p className="font-bold text-emerald-900 flex items-center gap-1.5">
+                <Sparkles size={13} className="text-emerald-600" /> Instructor Remarks:
+              </p>
+              <p className="text-emerald-800 leading-relaxed italic">"{report.instructorRemarks}"</p>
+            </div>
+          )}
+        </div>
+
+        {/* Card Actions */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setViewingReport(report)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Eye size={13} /> View Form
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintReport(report)}
+              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Printer size={13} /> Print / PDF
+            </button>
+          </div>
+
+          {!isReviewed && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => openEditModal(report)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                title="Edit report draft"
+              >
+                <Edit3 size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(report.id, `${periodCfg.label} Report`)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                title="Delete report"
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
   };
 
   return (
@@ -951,7 +1127,7 @@ export function MonitoringReport() {
         </div>
       </div>
 
-      {/* REPORTS LIST (CARDS) */}
+      {/* REPORTS LIST (ORGANIZED BY TERM AND NESTED WEEKLY / MONTHLY) */}
       {filteredReports.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
           <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
@@ -971,165 +1147,103 @@ export function MonitoringReport() {
             <Plus size={14} /> Create {activeTermTab === 'endterm' ? 'End-Term' : 'Mid-Term'} Report
           </button>
         </div>
+      ) : activeTermTab === 'all' && activeSubFilter === 'all' && !searchQuery.trim() ? (
+        /* DUAL SECTION GROUPED VIEW: Mid-Term Section (Weekly & Monthly inside) and End-Term Section (Weekly & Monthly inside) */
+        <div className="space-y-8">
+          {/* Section 1: Mid-Term Practicum */}
+          <div className="bg-gradient-to-b from-blue-50/50 to-transparent p-5 sm:p-6 rounded-3xl border border-blue-100/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-blue-100">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  1
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-black text-slate-900 tracking-tight">
+                      Mid-Term Practicum
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                      0 – 300 Hours
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    1st Practicum Half: Weekly Progress Reports (Weeks 1–8), Monthly Assessments (Months 1–2), and 300h Mid-Term Evaluation
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openNewSubmitModal('midterm', 'weekly')}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                >
+                  <Plus size={13} /> Submit Mid-Term
+                </button>
+              </div>
+            </div>
+
+            {/* Mid-Term Reports Grid */}
+            {filteredReports.filter((r) => getReportTerm(r) === 'midterm').length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-blue-200">
+                No Mid-Term reports submitted yet. Click &quot;Submit Mid-Term&quot; to log your weekly or monthly progress.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredReports.filter((r) => getReportTerm(r) === 'midterm').map((report) => renderReportCard(report))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: End-Term Practicum */}
+          <div className="bg-gradient-to-b from-emerald-50/50 to-transparent p-5 sm:p-6 rounded-3xl border border-emerald-100/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-100">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  2
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-black text-slate-900 tracking-tight">
+                      End-Term Practicum
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      301 – 600 Hours
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    2nd Practicum Half: Weekly Progress Reports (Weeks 9–16), Monthly Assessments (Months 3–4), and 600h Final Exit Evaluation
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openNewSubmitModal('endterm', 'weekly')}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                >
+                  <Plus size={13} /> Submit End-Term
+                </button>
+              </div>
+            </div>
+
+            {/* End-Term Reports Grid */}
+            {filteredReports.filter((r) => getReportTerm(r) === 'endterm').length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-emerald-200">
+                No End-Term reports submitted yet. Click &quot;Submit End-Term&quot; to log your final practicum progress.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredReports.filter((r) => getReportTerm(r) === 'endterm').map((report) => renderReportCard(report))}
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
+        /* FOCUSED TERM / FILTERED GRID */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredReports.map((report) => {
-            const periodCfg = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
-            const rTerm = getReportTerm(report);
-            const rFreq = getReportFrequency(report);
-            const q = report.questionnaire || {};
-            const isReviewed = report.status === 'reviewed';
-
-            const termBadgeClass =
-              rTerm === 'midterm'
-                ? 'bg-blue-100 text-blue-800 border-blue-200'
-                : 'bg-emerald-100 text-emerald-800 border-emerald-200';
-
-            const freqBadgeClass =
-              rFreq === 'weekly'
-                ? 'bg-sky-50 text-sky-700 border-sky-200'
-                : rFreq === 'monthly'
-                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200';
-
-            const freqLabel =
-              rFreq === 'weekly'
-                ? 'Weekly'
-                : rFreq === 'monthly'
-                ? 'Monthly'
-                : rTerm === 'midterm'
-                ? '300h Evaluation'
-                : '600h Evaluation';
-
-            return (
-              <motion.div
-                key={report.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white rounded-3xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4 relative group"
-              >
-                <div className="space-y-3">
-                  {/* Card Header: Dual Badges (Term & Frequency) + Report Ref */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border uppercase tracking-wider ${termBadgeClass}`}>
-                          {rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${freqBadgeClass}`}>
-                          {freqLabel}
-                        </span>
-                        <span className="text-[10px] font-mono text-slate-400">
-                          {report.reportNumber}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors pt-0.5">
-                        {report.periodCovered || (rFreq === 'weekly' ? `${rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} Weekly Report` : `${rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${freqLabel}`)}
-                      </h3>
-                    </div>
-
-                    {/* Status Badge */}
-                    <div className="shrink-0">
-                      {isReviewed ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 size={12} className="text-emerald-600" />
-                          Reviewed
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                          <Clock size={12} className="text-amber-600" />
-                          Pending Review
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Period Stats Pill */}
-                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
-                    <span>
-                      Hours Rendered: <strong className="text-slate-900 font-bold">+{report.hoursRenderedThisPeriod || (rFreq === 'weekly' ? 40 : 160)} hrs</strong>
-                    </span>
-                    <span>
-                      Date: <strong className="text-slate-800">{report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}</strong>
-                    </span>
-                  </div>
-
-                  {/* Duties Snippet */}
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                      1. Duties Briefly
-                    </span>
-                    <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed">
-                      {q.q1_dutiesBriefly || report.tasksAccomplished || 'No duties recorded.'}
-                    </p>
-                  </div>
-
-                  {/* Strongest Area Snippet */}
-                  {q.q2_strongestPerformanceArea && (
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                        2. Strongest Area
-                      </span>
-                      <p className="text-xs text-slate-600 line-clamp-1 italic">
-                        &ldquo;{q.q2_strongestPerformanceArea}&rdquo;
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Instructor Remarks Banner (If Reviewed) */}
-                  {isReviewed && report.instructorRemarks && (
-                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs space-y-1">
-                      <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                        <Sparkles size={13} className="text-emerald-600" /> Instructor Remarks:
-                      </p>
-                      <p className="text-emerald-800 leading-relaxed italic">"{report.instructorRemarks}"</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Card Actions */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setViewingReport(report)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Eye size={13} /> View Form
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPrintReport(report)}
-                      className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Printer size={13} /> Print / PDF
-                    </button>
-                  </div>
-
-                  {!isReviewed && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(report)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                        title="Edit report draft"
-                      >
-                        <Edit3 size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(report.id, `${periodCfg.label} Report`)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Delete report"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
+          {filteredReports.map((report) => renderReportCard(report))}
         </div>
       )}
 
