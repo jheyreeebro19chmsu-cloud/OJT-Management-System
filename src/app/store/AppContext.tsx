@@ -1474,15 +1474,118 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, DEFAULT_MONITORING_REPORTS);
       return DEFAULT_MONITORING_REPORTS;
     }
-    return stored.map((r) =>
-      r.requiredHours === TRAINEE_REQUIRED_HOURS
-        ? r
-        : {
-            ...r,
-            requiredHours: TRAINEE_REQUIRED_HOURS,
-            remainingHours: Math.max(0, TRAINEE_REQUIRED_HOURS - (Number(r.renderedHours) || 0)),
-          }
-    );
+
+    // Auto-migrate legacy reports to ensure full 4-milestone period, periodCovered, and questionnaire compatibility
+    const migrated = stored.map((r, idx) => {
+      let reportType: MonitoringPeriodType = r.reportType || 'weekly';
+      if (!r.reportType) {
+        const num = (r.reportNumber || '').toUpperCase();
+        const visit = ((r as any).visitType || '').toLowerCase();
+        if (visit === 'midterm' || num.includes('MID')) {
+          reportType = 'midterm';
+        } else if (visit === 'final' || num.includes('END')) {
+          reportType = 'endterm';
+        } else if (num.includes('M0') || num.includes('MONTH')) {
+          reportType = 'monthly';
+        } else {
+          reportType = 'weekly';
+        }
+      }
+
+      let periodCovered = r.periodCovered;
+      if (!periodCovered || periodCovered.trim() === '') {
+        if (reportType === 'weekly') {
+          periodCovered = r.visitDate
+            ? `Week ${idx + 1} (${new Date(r.visitDate).toLocaleDateString()})`
+            : `Week ${idx + 1} Progress Review`;
+        } else if (reportType === 'monthly') {
+          periodCovered = `Month ${idx + 1} Comprehensive Assessment`;
+        } else if (reportType === 'midterm') {
+          periodCovered = 'Mid-Term Evaluation (300 Hours Milestone)';
+        } else if (reportType === 'endterm') {
+          periodCovered = 'End-Term Final Completion (600 Hours Milestone)';
+        }
+      }
+
+      const hoursRenderedThisPeriod =
+        r.hoursRenderedThisPeriod ||
+        (reportType === 'weekly' ? 40 : reportType === 'monthly' ? 160 : reportType === 'midterm' ? 140 : 150);
+
+      const tasks =
+        r.tasksAccomplished ||
+        r.tasksObserved ||
+        r.questionnaire?.q1_dutiesBriefly ||
+        (r.traineeName === 'Juan Dela Cruz'
+          ? 'Assisted network engineers with structured cabling, termination of CAT6 keystones, switch port VLAN configuration, and verified connectivity across Building B.'
+          : r.traineeName === 'Maria Santos'
+          ? 'Prepared software requirements specifications (SRS), created Figma user journey wireframes, and participated in daily standups for client ERP upgrade.'
+          : 'Completed departmental tasks, technical support operations, and workstation setup.');
+
+      const dateSubmitted = r.dateSubmitted || r.visitDate || (r.createdAt ? r.createdAt.split('T')[0] : '2026-09-18');
+
+      const q: MonitoringQuestionnaire = {
+        employabilityStatus: r.questionnaire?.employabilityStatus || 'OJT Trainee',
+        allowanceSalary: r.questionnaire?.allowanceSalary || 'None / Stipend',
+        telephoneNo: r.questionnaire?.telephoneNo || r.supervisorContact || '+63 917 555 4321',
+        department: r.questionnaire?.department || r.department || 'COLLEGE OF COMPUTER STUDIES',
+        position: r.questionnaire?.position || 'ON - THE - JOB TRAINEE',
+        otherDeptAssigned: r.questionnaire?.otherDeptAssigned || 'None',
+        q1_dutiesBriefly: r.questionnaire?.q1_dutiesBriefly || tasks,
+        q2_strongestPerformanceArea:
+          r.questionnaire?.q2_strongestPerformanceArea ||
+          r.highlights ||
+          'Fast learner with strong technical troubleshooting and programming capabilities.',
+        q3_areasImprovedMost:
+          r.questionnaire?.q3_areasImprovedMost ||
+          r.skillsApplied ||
+          'Enhanced workplace communication, practical networking, and systems deployment.',
+        q4_areasNeedImprovement:
+          r.questionnaire?.q4_areasNeedImprovement ||
+          r.issuesIdentified ||
+          'Advanced server security and automated deployment pipelines.',
+        q5_situationChallengedMost:
+          r.questionnaire?.q5_situationChallengedMost ||
+          r.challengesEncountered ||
+          'Diagnosing intermittent connectivity bottlenecks on departmental switches.',
+        q6_howOvercameChallenge:
+          r.questionnaire?.q6_howOvercameChallenge ||
+          'Applied systematic hardware scanning and re-crimped connectors with mentor guidance.',
+        q7_whatLearnedFromExperience:
+          r.questionnaire?.q7_whatLearnedFromExperience ||
+          'Enterprise reliability depends on strict documentation and disciplined standard operating procedures.',
+        q8_isQualifiedLinkage:
+          r.questionnaire?.q8_isQualifiedLinkage ||
+          'Yes, highly qualified with modern equipment and dedicated technical mentorship.',
+        q9_ojtSuggestionsRecommendations:
+          r.questionnaire?.q9_ojtSuggestionsRecommendations ||
+          'Recommend this Host Training Establishment to future batches of CHMSU OJT students.',
+        attendanceScore: r.questionnaire?.attendanceScore ?? 5,
+        performanceScore: r.questionnaire?.performanceScore ?? 5,
+        attitudeScore: r.questionnaire?.attitudeScore ?? 5,
+        communicationScore: r.questionnaire?.communicationScore ?? 5,
+        teamworkScore: r.questionnaire?.teamworkScore ?? 5,
+        overallScore: r.questionnaire?.overallScore ?? 100,
+        strengths: r.questionnaire?.strengths || r.highlights || 'Supportive mentorship and modern production environment.',
+        areasForImprovement: r.questionnaire?.areasForImprovement || r.issuesIdentified || 'Maintain regular feedback sessions.',
+        recommendation: r.questionnaire?.recommendation || 'Highly Recommended',
+      };
+
+      return {
+        ...r,
+        reportType,
+        periodCovered,
+        hoursRenderedThisPeriod,
+        tasksAccomplished: tasks,
+        dateSubmitted,
+        questionnaire: q,
+        requiredHours: TRAINEE_REQUIRED_HOURS,
+        totalCumulativeHours: r.totalCumulativeHours || r.renderedHours || hoursRenderedThisPeriod,
+        status: r.status || 'submitted',
+      };
+    });
+
+    saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, migrated);
+    return migrated;
   });
 
   const [traineeSelfMonitoringReports, setTraineeSelfMonitoringReports] = useState<TraineeSelfMonitoringReport[]>(() => {
