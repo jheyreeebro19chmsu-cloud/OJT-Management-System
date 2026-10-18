@@ -499,6 +499,9 @@ export function MonitoringReport() {
     try {
       if (editingReport) {
         await updateMonitoringReport(editingReport.id, {
+          traineeId: currentEmp?.id || currentUser?.id || editingReport.traineeId,
+          studentId: currentEmp?.employeeId || currentEmp?.id || editingReport.studentId,
+          traineeName: currentEmp?.name || currentUser?.name || editingReport.traineeName,
           term: formTerm,
           frequency: formFrequency,
           reportType: derivedType,
@@ -509,7 +512,7 @@ export function MonitoringReport() {
           challengesEncountered: qAnswers.q5_situationChallengedMost,
           questionnaire,
         });
-        toast.success(`${formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${formFrequency.toUpperCase()} Report updated!`);
+        toast.success(`${formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} questionnaire updated successfully!`);
       } else {
         await addMonitoringReport({
           term: formTerm,
@@ -675,8 +678,8 @@ export function MonitoringReport() {
         </div>
 
         {/* Card Actions */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
+        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => setViewingReport(report)}
@@ -686,32 +689,30 @@ export function MonitoringReport() {
             </button>
             <button
               type="button"
+              onClick={() => openEditModal(report)}
+              className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              title="Edit Questionnaire"
+            >
+              <Edit3 size={13} className="text-amber-700" /> Edit Questionnaire
+            </button>
+            <button
+              type="button"
               onClick={() => setPrintReport(report)}
               className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
             >
-              <Printer size={13} /> Print / PDF
+              <Printer size={13} /> Print
             </button>
           </div>
 
           {!isReviewed && (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => openEditModal(report)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                title="Edit report draft"
-              >
-                <Edit3 size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(report.id, `${periodCfg.label} Report`)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                title="Delete report"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => handleDelete(report.id, `${periodCfg.label} Report`)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+              title="Delete report"
+            >
+              <Trash2 size={15} />
+            </button>
           )}
         </div>
       </motion.div>
@@ -1265,10 +1266,12 @@ export function MonitoringReport() {
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-900 text-base">
-                      {editingReport ? 'Edit Monitoring Report' : 'Submit OJT Monitoring Report'}
+                      {editingReport ? 'Edit Monitoring Report & Questionnaire' : 'Submit OJT Monitoring Report'}
                     </h3>
                     <p className="text-xs text-slate-500">
-                      CHMSU College of Computer Studies • On-The-Job Training Evaluation Form
+                      {editingReport
+                        ? 'Trainee Questionnaire Editor • Update your responses and reflections'
+                        : 'CHMSU College of Computer Studies • On-The-Job Training Evaluation Form'}
                     </p>
                   </div>
                 </div>
@@ -1661,7 +1664,7 @@ export function MonitoringReport() {
                     type="submit"
                     className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-[#146B4D] hover:bg-[#10563e] shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
                   >
-                    <Send size={14} /> {editingReport ? 'Update Report' : `Submit ${PERIOD_CONFIG[formType].label} Report`}
+                    <Send size={14} /> {editingReport ? 'Save Changes to Questionnaire' : `Submit ${PERIOD_CONFIG[formType].label} Report`}
                   </button>
                 </div>
               </form>
@@ -1781,25 +1784,38 @@ export function MonitoringReport() {
                 )}
               </div>
 
-              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    const r = viewingReport;
+                    const rep = viewingReport;
                     setViewingReport(null);
-                    setPrintReport(r);
+                    openEditModal(rep);
                   }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
                 >
-                  <Printer size={14} /> Print CHMSU Form
+                  <Edit3 size={14} className="text-amber-800" /> Edit Questionnaire
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setViewingReport(null)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 cursor-pointer"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const r = viewingReport;
+                      setViewingReport(null);
+                      setPrintReport(r);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer size={14} /> Print CHMSU Form
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewingReport(null)}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
