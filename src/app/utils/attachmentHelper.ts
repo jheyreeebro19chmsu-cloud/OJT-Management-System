@@ -154,16 +154,21 @@ export function resolveSafeDocumentViewUrl(url?: string): string {
     return '';
   }
 
-  // If already an API view proxy, return clean
-  if (trimmed.startsWith('/api/documents?action=view') || trimmed.includes('/api/documents?action=view')) {
-    return trimmed;
+  // If an API proxy URL was previously saved or passed, extract and unwrap the actual original storage URL
+  if (trimmed.includes('/api/documents?action=view') || trimmed.includes('/api/documents')) {
+    try {
+      const match = trimmed.match(/[?&]url=([^&]+)/);
+      if (match) {
+        const decoded = decodeURIComponent(match[1]);
+        if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://'))) {
+          return decoded;
+        }
+      }
+    } catch {}
   }
 
-  // If it's a Supabase storage URL, route it through /api/documents?action=view
-  if (trimmed.includes('supabase.co/storage/v1/object/')) {
-    return `/api/documents?action=view&url=${encodeURIComponent(trimmed)}`;
-  }
-
+  // Direct Supabase storage URLs (or any direct http/https URLs) should be loaded directly
+  // by the browser for images, PDFs, downloads, etc. - NEVER rewritten to a 404 relative endpoint
   return trimmed;
 }
 
@@ -291,8 +296,9 @@ export async function downloadDocument(url: string, fileName?: string): Promise<
     setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
   } catch (err) {
     console.warn('Direct blob download notice, falling back to window navigation:', err);
-    if (url.startsWith('http')) {
-      window.open(url, '_blank');
+    const navUrl = safeUrl.startsWith('http') ? safeUrl : url.startsWith('http') ? url : '';
+    if (navUrl) {
+      window.open(navUrl, '_blank');
     }
   }
 }
