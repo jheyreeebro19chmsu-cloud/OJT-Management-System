@@ -19,6 +19,8 @@ import {
   Info,
   Image as ImageIcon,
   File as FileGeneric,
+  Paperclip,
+  Search,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -65,6 +67,9 @@ export function Documents() {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [submitDialog, setSubmitDialog] = useState<SubmitDialogState | null>(null);
   const [databaseDocs, setDatabaseDocs] = useState<TraineeDocuments | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'attached' | 'missing'>('all');
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   // Sync documents from database on mount or user change to prevent disappearance on refresh
   useEffect(() => {
@@ -231,6 +236,30 @@ export function Documents() {
   const missingCount = missingDocs.length;
   const progressPercent = totalRequired > 0 ? Math.round((uploadedCount / totalRequired) * 100) : 100;
 
+  const filteredDocRequirements = useMemo(() => {
+    return allDocRequirements.filter((item) => {
+      const doc = getDocItem(item.key);
+      const hasFile = Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
+
+      // Status filter
+      if (statusFilter === 'attached' && !hasFile) return false;
+      if (statusFilter === 'missing' && hasFile) return false;
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchTitle = item.title?.toLowerCase().includes(q);
+        const matchDesc = item.desc?.toLowerCase().includes(q);
+        const matchNum = String(item.num || '').includes(q);
+        const matchFile = doc?.name?.toLowerCase().includes(q);
+        const matchInstructor = (item as any).instructorDoc?.fileName?.toLowerCase().includes(q);
+        return Boolean(matchTitle || matchDesc || matchNum || matchFile || matchInstructor);
+      }
+
+      return true;
+    });
+  }, [allDocRequirements, submittedDocs, statusFilter, searchQuery]);
+
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
     const isBadUrl = (u?: string) =>
       !u ||
@@ -336,6 +365,28 @@ export function Documents() {
       });
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverKey(key);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverKey(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, item: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverKey(null);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      onSelectFile(item.key, item.title, file, item.instructorDoc?.fileName);
+    }
   };
 
   const handleFileUpload = (
@@ -734,325 +785,403 @@ export function Documents() {
         </motion.div>
       )}
 
-      {/* Required Documents Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-        {allDocRequirements.map((item) => {
-          const doc = getDocItem(item.key);
-          const hasFile = Boolean(doc?.dataUrl || doc?.name);
-          const isPassed = doc?.status === 'passed' && hasFile;
-          const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
-          const isUploading = uploadingKey === item.key;
-          const Icon = item.icon || FileText;
-          const docCategory = doc ? getFileCategory(doc.name || doc.fileType || '') : 'other';
-
-          return (
-            <motion.div
-              key={item.key}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`rounded-3xl bg-white border p-5 transition-all shadow-sm flex flex-col justify-between ${
-                isPassed
-                  ? 'border-emerald-200/80 hover:border-emerald-300 shadow-emerald-50/50'
-                  : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+      {/* Document Attachments Manager (File Checklist & Attach Interface) */}
+      <div className="space-y-4">
+        {/* Attachment Filter & Search Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-200'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              <div>
-                {/* Header Row */}
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md bg-gradient-to-br ${item.color || 'from-blue-600 to-indigo-600'}`}
-                    >
-                      <Icon size={20} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">DOC #{item.num}</span>
-                        {item.custom && (
-                          <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded border border-purple-200">
-                            Custom Requirement
+              All Requirements ({totalRequired})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('attached')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'attached'
+                  ? 'bg-emerald-600 text-white shadow-xs shadow-emerald-200'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Paperclip size={13} />
+              Attached ({uploadedCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('missing')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'missing'
+                  ? 'bg-amber-600 text-white shadow-xs shadow-amber-200'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Clock size={13} />
+              Action Needed ({missingCount})
+            </button>
+          </div>
+
+          <div className="relative w-full sm:w-72">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search document or file name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Attachment Rows List */}
+        {filteredDocRequirements.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+            <FileGeneric size={32} className="mx-auto text-slate-300 mb-2" />
+            <p className="text-sm font-semibold text-slate-700">No documents found matching your filter</p>
+            <p className="text-xs text-slate-400 mt-1">Try clearing your search query or selecting "All Requirements".</p>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+                setSearchQuery('');
+              }}
+              className="mt-3 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs divide-y divide-slate-100 overflow-hidden">
+            {filteredDocRequirements.map((item) => {
+              const doc = getDocItem(item.key);
+              const hasFile = Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
+              const isPassed = doc?.status === 'passed' && hasFile;
+              const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
+              const isUploading = uploadingKey === item.key;
+              const Icon = item.icon || FileText;
+              const docCategory = doc ? getFileCategory(doc.name || doc.fileType || '') : 'other';
+              const isDragTarget = dragOverKey === item.key;
+
+              return (
+                <div
+                  key={item.key}
+                  onDragOver={(e) => handleDragOver(e, item.key)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, item)}
+                  className={`p-4 sm:p-5 transition-colors ${
+                    isDragTarget
+                      ? 'bg-blue-50/70 border-2 border-dashed border-blue-400'
+                      : isPassed
+                      ? 'hover:bg-emerald-50/20'
+                      : hasFile
+                      ? 'hover:bg-blue-50/20'
+                      : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Left Column: Requirement Information */}
+                    <div className="flex items-start gap-3 min-w-0 lg:max-w-[36%]">
+                      <div
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs bg-gradient-to-br ${
+                          item.color || 'from-blue-600 to-indigo-600'
+                        }`}
+                      >
+                        <Icon size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                            DOC #{item.num}
                           </span>
+                          {item.custom && (
+                            <span className="text-[9px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded border border-purple-200">
+                              Custom
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            • PDF, DOCX, Pictures (Max 10MB)
+                          </span>
+                        </div>
+                        <h3 className="text-sm font-bold text-slate-900 leading-snug">{item.title}</h3>
+                        <p className="text-xs text-slate-500 leading-relaxed mt-0.5 line-clamp-2" title={item.desc}>
+                          {item.desc}
+                        </p>
+
+                        {/* Instructor Template Chip if provided */}
+                        {(item as any).instructorDoc && (
+                          <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200/80 text-violet-900 text-[11px]">
+                            <FileText size={13} className="text-violet-600 shrink-0" />
+                            <span className="font-semibold truncate max-w-[170px]" title={(item as any).instructorDoc.fileName}>
+                              Template: {(item as any).instructorDoc.fileName}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const docInfo = (item as any).instructorDoc;
+                                  const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
+                                  setPreviewDoc({
+                                    key: item.key,
+                                    title: `Instructor Document: ${item.title}`,
+                                    subtitle: docInfo.fileName,
+                                    fileName: docInfo.fileName || `${item.key}_template.pdf`,
+                                    dataUrl: url,
+                                    fileSize: docInfo.fileSize,
+                                    status: 'passed',
+                                    description: item.desc,
+                                    notes: docInfo.notes,
+                                  });
+                                }}
+                                className="text-violet-700 hover:text-violet-900 font-bold hover:underline"
+                              >
+                                View
+                              </button>
+                              <span>•</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const docInfo = (item as any).instructorDoc;
+                                  const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
+                                  downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
+                                }}
+                                className="text-violet-700 hover:text-violet-900 font-bold hover:underline"
+                              >
+                                Download
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
-                      <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">{item.title}</h3>
                     </div>
-                  </div>
 
-                  <span
-                    className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border flex items-center gap-1 shrink-0 ${
-                      isPassed
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 shadow-sm'
-                        : isPending
-                          ? 'bg-blue-100 text-blue-800 border-blue-300'
-                          : 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
-                    }`}
-                  >
-                    {isPassed ? (
-                      <>
-                        <Check size={12} className="stroke-[3]" /> PASSED
-                      </>
-                    ) : isPending ? (
-                      <>
-                        <Clock size={11} /> PENDING REVIEW
-                      </>
-                    ) : (
-                      <>
-                        <Clock size={11} /> PENDING
-                      </>
-                    )}
-                  </span>
-                </div>
-
-                <p className="text-xs text-slate-600 leading-relaxed mb-3">{item.desc}</p>
-
-                {/* Instructor-Provided Template Document Card */}
-                {(item as any).instructorDoc && (
-                  <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-violet-50/95 via-indigo-50/70 to-purple-50/85 border border-violet-200/90 shadow-2xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-start sm:items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                          <FileText size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-violet-200 text-violet-900 border border-violet-300 tracking-wide">
-                              Instructor's Document
-                            </span>
-                            {(item as any).instructorDoc.fileSize ? (
-                              <span className="text-[10px] text-violet-700 font-mono font-medium">
-                                • {formatFileSize((item as any).instructorDoc.fileSize)}
-                              </span>
-                            ) : null}
+                    {/* Middle Column: Attachment Slot ("Attach a File" / Attached File Preview) */}
+                    <div className="flex-1 min-w-0">
+                      {hasFile && doc ? (
+                        /* Attached File Chip */
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/90 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                docCategory === 'picture'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : docCategory === 'doc'
+                                  ? 'bg-indigo-100 text-indigo-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              {docCategory === 'picture' ? (
+                                <ImageIcon size={15} />
+                              ) : docCategory === 'doc' ? (
+                                <FileText size={15} />
+                              ) : (
+                                <FileGeneric size={15} />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
+                                {doc.name}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                                <span>{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}</span>
+                                {doc.size ? <span>• {formatFileSize(doc.size)}</span> : null}
+                                <span className="uppercase font-semibold text-slate-500">
+                                  ({docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
+                                </span>
+                              </div>
+                              {(doc.description || doc.notes) && (
+                                <p className="text-[11px] text-slate-600 truncate mt-0.5" title={`${doc.description ? `Desc: ${doc.description}` : ''} ${doc.notes ? `| Note: ${doc.notes}` : ''}`}>
+                                  {doc.description ? <span className="font-semibold text-slate-700">{doc.description}</span> : null}
+                                  {doc.description && doc.notes ? ' — ' : ''}
+                                  {doc.notes ? <span className="italic text-slate-500">{doc.notes}</span> : null}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-xs font-bold text-violet-950 truncate mt-0.5" title={(item as any).instructorDoc.fileName}>
-                            {(item as any).instructorDoc.fileName}
-                          </p>
-                          {(item as any).instructorDoc.notes && (
-                            <p className="text-[11px] text-violet-800 italic mt-0.5 line-clamp-2">
-                              Note from Instructor: {(item as any).instructorDoc.notes}
-                            </p>
-                          )}
+
+                          {/* Quick File Action Buttons (View, Download, Remove) */}
+                          <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
+                                setPreviewDoc({
+                                  key: item.key,
+                                  title: item.title,
+                                  subtitle: item.subtitle,
+                                  fileName: doc?.name || `${item.key}_document.pdf`,
+                                  dataUrl: resolvedUrl,
+                                  uploadedAt: doc?.uploadedAt,
+                                  fileSize: doc?.size,
+                                  status: doc?.status || 'passed',
+                                  description: doc?.description,
+                                  notes: doc?.notes,
+                                });
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-blue-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              title="Preview attached file"
+                            >
+                              <Eye size={13} /> View
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
+                                downloadDocument(resolvedUrl, doc?.name || `${item.key}_document`);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-emerald-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              title="Download attached file"
+                            >
+                              <Download size={13} /> Download
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDoc(item.key)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              title="Remove file"
+                              aria-label={`Remove ${item.title}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const docInfo = (item as any).instructorDoc;
-                            const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
-                            setPreviewDoc({
-                              key: item.key,
-                              title: `Instructor Document: ${item.title}`,
-                              subtitle: docInfo.fileName,
-                              fileName: docInfo.fileName || `${item.key}_template.pdf`,
-                              dataUrl: url,
-                              fileSize: docInfo.fileSize,
-                              status: 'passed',
-                              description: item.desc,
-                              notes: docInfo.notes,
-                            });
-                          }}
-                          className="py-1.5 px-3 rounded-xl bg-white text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                          title="Preview instructor document"
-                        >
-                          <Eye size={13} /> View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const docInfo = (item as any).instructorDoc;
-                            const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
-                            downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
-                          }}
-                          className="py-1.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs shadow-violet-200 transition-all cursor-pointer"
-                          title="Download instructor document"
-                        >
-                          <Download size={13} /> Download
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Accepted format pills */}
-                <div className="flex flex-wrap items-center gap-1.5 mb-4">
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                    Pictures (JPG/PNG)
-                  </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                    PDF
-                  </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                    DOC / DOCX
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-                    5–10MB Max
-                  </span>
-                </div>
-
-                {/* Uploaded File Info Card with Description & Notes */}
-                {hasFile && doc && (
-                  <div className="mb-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex items-center gap-2">
-                        <div
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                            docCategory === 'picture'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : docCategory === 'doc'
-                                ? 'bg-indigo-100 text-indigo-700'
-                                : 'bg-blue-100 text-blue-700'
+                      ) : (
+                        /* Empty Attachment Slot - "Attach a File" dropzone */
+                        <label
+                          htmlFor={`attach-file-slot-${item.key}`}
+                          className={`w-full py-3 px-4 rounded-xl border border-dashed border-slate-300 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 transition-all flex items-center justify-between gap-3 cursor-pointer group ${
+                            isUploading ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
                         >
-                          {docCategory === 'picture' ? (
-                            <ImageIcon size={16} />
-                          ) : docCategory === 'doc' ? (
-                            <FileText size={16} />
-                          ) : (
-                            <FileGeneric size={16} />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
-                            {doc.name}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Uploaded'}
-                            {doc.size ? ` • ${formatFileSize(doc.size)}` : ''}
-                            <span className="ml-1.5 font-semibold text-slate-500 uppercase">
-                              ({docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveDoc(item.key);
-                        }}
-                        className="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors shrink-0 cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center touch-manipulation"
-                        title="Remove file"
-                        aria-label={`Remove ${item.title}`}
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 group-hover:text-blue-600 group-hover:border-blue-200 flex items-center justify-center shrink-0 transition-colors shadow-2xs">
+                              <Paperclip size={14} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">
+                                {isUploading ? 'Uploading attachment...' : 'Attach document file (Click or drag & drop)'}
+                              </p>
+                              <p className="text-[10px] text-slate-400">
+                                Accepted: PDF, Word (DOC/DOCX), or Pictures up to 10MB
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-blue-600 group-hover:text-blue-700 whitespace-nowrap hidden sm:inline-flex items-center gap-1">
+                            Browse <Upload size={12} />
+                          </span>
+                          <input
+                            type="file"
+                            id={`attach-file-slot-${item.key}`}
+                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                            disabled={isUploading}
+                          />
+                        </label>
+                      )}
                     </div>
 
-                    {/* Description and Notes Details */}
-                    {(doc.description || doc.notes) && (
-                      <div className="pt-2 border-t border-slate-200/60 text-[11px] space-y-1 bg-white/70 p-2 rounded-xl">
-                        {doc.description && (
-                          <p className="text-slate-700">
-                            <strong className="text-slate-900 font-semibold">Description:</strong> {doc.description}
-                          </p>
+                    {/* Right Column: Status Badge & Main Action */}
+                    <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                      <span
+                        className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border flex items-center gap-1.5 shrink-0 ${
+                          isPassed
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : isPending
+                            ? 'bg-blue-100 text-blue-800 border-blue-300'
+                            : 'bg-amber-100 text-amber-800 border-amber-300'
+                        }`}
+                      >
+                        {isPassed ? (
+                          <>
+                            <Check size={12} className="stroke-[3]" /> PASSED
+                          </>
+                        ) : isPending ? (
+                          <>
+                            <Clock size={11} /> PENDING REVIEW
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle size={11} /> NOT ATTACHED
+                          </>
                         )}
-                        {doc.notes && (
-                          <p className="text-slate-500 italic">
-                            <strong className="text-slate-700 font-semibold not-italic">Notes:</strong> {doc.notes}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                      </span>
+
+                      {/* Primary Action Button */}
+                      {hasFile ? (
+                        <>
+                          <label
+                            htmlFor={`replace-doc-${item.key}`}
+                            className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 shadow-2xs"
+                          >
+                            <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
+                            {isUploading ? 'Uploading...' : 'Replace'}
+                          </label>
+                          <input
+                            type="file"
+                            id={`replace-doc-${item.key}`}
+                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                            disabled={isUploading}
+                          />
+                        </>
+                      ) : (
+                        <label
+                          htmlFor={`attach-doc-btn-${item.key}`}
+                          className={`py-1.5 px-3.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+                            isUploading
+                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                          }`}
+                        >
+                          <Paperclip size={13} className={isUploading ? 'animate-spin' : ''} />
+                          {isUploading ? 'Uploading...' : 'Attach File'}
+                          <input
+                            type="file"
+                            id={`attach-doc-btn-${item.key}`}
+                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                            disabled={isUploading}
+                          />
+                        </label>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                {hasFile ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
-                        setPreviewDoc({
-                          key: item.key,
-                          title: item.title,
-                          subtitle: item.subtitle,
-                          fileName: doc?.name || `${item.key}_document.pdf`,
-                          dataUrl: resolvedUrl,
-                          uploadedAt: doc?.uploadedAt,
-                          fileSize: doc?.size,
-                          status: doc?.status || 'passed',
-                          description: doc?.description,
-                          notes: doc?.notes,
-                        });
-                      }}
-                      className="flex-1 py-2 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                    >
-                      <Eye size={14} /> View File
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
-                        downloadDocument(resolvedUrl, doc?.name || `${item.key}_document`);
-                      }}
-                      className="py-2 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                      title="Download file"
-                    >
-                      <Download size={13} /> Download
-                    </button>
-
-                    <label
-                      htmlFor={`replace-doc-${item.key}`}
-                      className="py-2 px-3 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                    >
-                      <RefreshCw size={13} className={isUploading ? 'animate-spin' : ''} />
-                      {isUploading ? 'Uploading...' : 'Replace'}
-                    </label>
-                    <input
-                      type="file"
-                      id={`replace-doc-${item.key}`}
-                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                      disabled={isUploading}
-                    />
-                  </>
-                ) : (
-                  <label
-                    htmlFor={`upload-doc-${item.key}`}
-                    className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${
-                      isUploading
-                        ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                        : (item as any).instructorDoc
-                        ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white shadow-md shadow-indigo-200'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow-blue-200 hover:shadow-lg'
-                    }`}
-                  >
-                    <Upload size={14} className={isUploading ? 'animate-spin' : ''} />
-                    {isUploading
-                      ? 'Uploading File...'
-                      : (item as any).instructorDoc
-                      ? `Upload & Pass According to Instructor's Doc`
-                      : 'Upload & Pass Document'}
-                    <input
-                      type="file"
-                      id={`upload-doc-${item.key}`}
-                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                      disabled={isUploading}
-                    />
-                  </label>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Submit Document with Description & Notes Dialog Modal */}
