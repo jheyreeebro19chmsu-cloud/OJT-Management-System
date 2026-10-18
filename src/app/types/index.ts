@@ -446,6 +446,8 @@ export interface RequiredDocumentSubmission {
 
 export type RequirementStatus = 'missing' | 'incomplete' | 'complete';
 
+export type MonitoringPeriodType = 'weekly' | 'monthly' | 'midterm' | 'endterm';
+
 export type MonitoringVisitType =
   | 'on_site'
   | 'virtual'
@@ -460,9 +462,22 @@ export type MonitoringOverallStatus =
   | 'needs_guidance'
   | 'critical';
 
+export interface MonitoringQuestionnaire {
+  attendanceScore: number;     // 1-5 (Work Environment & Safety)
+  performanceScore: number;    // 1-5 (Mentorship & Supervision)
+  attitudeScore: number;       // 1-5 (Learning & Skill Acquisition)
+  communicationScore: number;  // 1-5 (Workplace Culture & Professionalism)
+  teamworkScore: number;       // 1-5 (Resources & Equipment Support)
+  overallScore: number;        // 0-100%
+  strengths: string;           // Key strengths observed in HTE
+  areasForImprovement: string; // Areas for improvement
+  recommendation: 'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended';
+}
+
 export interface MonitoringReport {
   id: string;
   reportNumber: string;
+  reportType: MonitoringPeriodType;
   traineeId: string;
   traineeName: string;
   studentId?: string;
@@ -476,34 +491,47 @@ export interface MonitoringReport {
   supervisorContact?: string;
   supervisorDesignation?: string;
   instructorId?: string;
-  instructorName: string;
-  visitDate: string;
-  visitTime?: string;
-  visitType: MonitoringVisitType;
+  instructorName?: string;
+  periodCovered: string;
+  dateSubmitted: string;
+  hoursRenderedThisPeriod: number;
+  totalCumulativeHours?: number;
   requiredHours?: number;
-  renderedHours?: number;
   remainingHours?: number;
+  tasksAccomplished: string;
+  skillsApplied?: string;
+  challengesEncountered?: string;
+  questionnaire: MonitoringQuestionnaire;
+  status: 'submitted' | 'reviewed' | 'acknowledged';
+  instructorRemarks?: string;
+  reviewedByInstructorAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+
+  // Optional legacy fields for backward compatibility
+  visitDate?: string;
+  visitTime?: string;
+  visitType?: MonitoringVisitType;
   attendanceConsistency?: string;
-  ratings: {
+  ratings?: {
     workQuality: number;
     punctuality: number;
     professionalism: number;
     technicalCompetence: number;
     policyAdherence: number;
   };
-  tasksObserved: string;
+  tasksObserved?: string;
   highlights?: string;
   issuesIdentified?: string;
-  recommendations: string;
+  recommendations?: string;
   actionTaken?: string;
-  overallStatus: MonitoringOverallStatus;
+  overallStatus?: MonitoringOverallStatus;
   nextVisitDate?: string;
   instructorSignature?: string;
   isAcknowledgedByTrainee?: boolean;
   traineeAcknowledgedAt?: string;
   traineeFeedback?: string;
-  createdAt: string;
-  updatedAt?: string;
+  renderedHours?: number;
 }
 
 export interface TraineeSelfMonitoringReport {

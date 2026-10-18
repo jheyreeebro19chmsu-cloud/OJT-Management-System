@@ -19,23 +19,93 @@ import {
   Phone,
   MapPin,
   RefreshCw,
-  ExternalLink,
-  MessageSquare,
   FileText,
   Users,
   Check,
   X,
   ChevronRight,
   TrendingUp,
+  Award,
+  BookOpen,
+  Send,
+  MessageSquare,
+  ShieldCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../../store/AppContext';
-import { MonitoringReport, MonitoringVisitType, MonitoringOverallStatus, Employee, TraineeSelfMonitoringReport } from '../../types';
+import {
+  MonitoringReport,
+  MonitoringPeriodType,
+  MonitoringQuestionnaire,
+  Employee,
+} from '../../types';
 import { MonitoringReportPrintView } from '../../components/MonitoringReportPrintView';
 import { UserAvatar } from '../../components/UserAvatar';
+
+const PERIOD_CONFIG: Record<
+  MonitoringPeriodType,
+  { label: string; badgeColor: string; bgSoft: string; border: string; desc: string }
+> = {
+  weekly: {
+    label: 'Weekly',
+    badgeColor: 'bg-blue-600 text-white',
+    bgSoft: 'bg-blue-50/70',
+    border: 'border-blue-200',
+    desc: 'Weekly progress and training reflection',
+  },
+  monthly: {
+    label: 'Monthly',
+    badgeColor: 'bg-emerald-600 text-white',
+    bgSoft: 'bg-emerald-50/70',
+    border: 'border-emerald-200',
+    desc: 'Monthly comprehensive training assessment',
+  },
+  midterm: {
+    label: 'Mid-Term',
+    badgeColor: 'bg-purple-600 text-white',
+    bgSoft: 'bg-purple-50/70',
+    border: 'border-purple-200',
+    desc: '300-hour midpoint milestone evaluation',
+  },
+  endterm: {
+    label: 'End-Term',
+    badgeColor: 'bg-amber-600 text-white',
+    bgSoft: 'bg-amber-50/70',
+    border: 'border-amber-200',
+    desc: '600-hour final practicum exit & completion',
+  },
+};
+
+const HOST_FEEDBACK_QUESTIONS = [
+  {
+    key: 'attendanceScore',
+    label: 'Work Environment & Workplace Safety',
+    description: 'Physical workplace conditions, safety measures, clean workstations, and accessibility.',
+  },
+  {
+    key: 'performanceScore',
+    label: 'Mentorship, Guidance & Supervision',
+    description: 'Availability of designated supervisor, constructive feedback, and coaching support.',
+  },
+  {
+    key: 'attitudeScore',
+    label: 'Learning Opportunities & Skill Acquisition',
+    description: 'Alignment with degree curriculum, exposure to real projects, and hands-on technical skills.',
+  },
+  {
+    key: 'communicationScore',
+    label: 'Workplace Culture & Professionalism',
+    description: 'Welcoming atmosphere, ethical standards, team collaboration, and diversity.',
+  },
+  {
+    key: 'teamworkScore',
+    label: 'Resources, Tools & Equipment Support',
+    description: 'Access to required hardware, software, office supplies, and relevant technical materials.',
+  },
+] as const;
 
 export function AdminMonitoringReport() {
   const {
@@ -43,75 +113,53 @@ export function AdminMonitoringReport() {
     getCurrentEmployee,
     employees,
     timeRecords,
-    settings,
     monitoringReports,
     addMonitoringReport,
-    updateMonitoringReport,
     deleteMonitoringReport,
-    traineeSelfMonitoringReports,
-    reviewTraineeSelfMonitoringReport,
-    deleteTraineeSelfMonitoringReport,
+    reviewMonitoringReport,
   } = useApp();
 
   const currentEmp = getCurrentEmployee();
-  const instructorName = currentUser?.name || currentEmp?.name || 'OJT Instructor';
+  const instructorName = currentUser?.name || currentEmp?.name || 'Prof. Ma. Cristina Ramos, MIT';
 
-  // Active tab
-  const [activeTab, setActiveTab] = useState<'official' | 'self_reports' | 'roster'>('official');
+  // Active tab filter: 'all' | 'weekly' | 'monthly' | 'midterm' | 'endterm' | 'roster'
+  const [activeTab, setActiveTab] = useState<'all' | MonitoringPeriodType | 'roster'>('all');
 
-  // Search & Filters
+  // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterModality, setFilterModality] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'submitted' | 'reviewed'>('all');
   const [filterCourse, setFilterCourse] = useState<string>('all');
 
   // Modal states
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingReport, setEditingReport] = useState<MonitoringReport | null>(null);
+  const [reviewReport, setReviewReport] = useState<MonitoringReport | null>(null);
+  const [reviewRemarksInput, setReviewRemarksInput] = useState('');
   const [printReport, setPrintReport] = useState<MonitoringReport | null>(null);
+  const [viewDetailsReport, setViewDetailsReport] = useState<MonitoringReport | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Review self report modal
-  const [reviewSelfReport, setReviewSelfReport] = useState<TraineeSelfMonitoringReport | null>(null);
-  const [instructorRemarksInput, setInstructorRemarksInput] = useState('');
+  // Create Form State
+  const [createTraineeId, setCreateTraineeId] = useState('');
+  const [createReportType, setCreateReportType] = useState<MonitoringPeriodType>('weekly');
+  const [createPeriodCovered, setCreatePeriodCovered] = useState('');
+  const [createHoursThisPeriod, setCreateHoursThisPeriod] = useState(40);
+  const [createTasks, setCreateTasks] = useState('');
+  const [createSkills, setCreateSkills] = useState('');
+  const [createChallenges, setCreateChallenges] = useState('');
+  const [createRatings, setCreateRatings] = useState({
+    attendanceScore: 5,
+    performanceScore: 5,
+    attitudeScore: 5,
+    communicationScore: 5,
+    teamworkScore: 5,
+  });
+  const [createStrengths, setCreateStrengths] = useState('');
+  const [createImprovements, setCreateImprovements] = useState('');
+  const [createRecommendation, setCreateRecommendation] = useState<
+    'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended'
+  >('Highly Recommended');
+  const [createInstructorRemarks, setCreateInstructorRemarks] = useState('');
 
-  // Trainee selection in create modal
-  const [selectedTraineeId, setSelectedTraineeId] = useState('');
-
-  // Form states
-  const [formTraineeName, setFormTraineeName] = useState('');
-  const [formStudentId, setFormStudentId] = useState('');
-  const [formCourse, setFormCourse] = useState('');
-  const [formDepartment, setFormDepartment] = useState('');
-  const [formCampus, setFormCampus] = useState('');
-  const [formHteCompany, setFormHteCompany] = useState('');
-  const [formHteAddress, setFormHteAddress] = useState('');
-  const [formSupervisorName, setFormSupervisorName] = useState('');
-  const [formSupervisorContact, setFormSupervisorContact] = useState('');
-  const [formSupervisorDesignation, setFormSupervisorDesignation] = useState('');
-  const [formVisitDate, setFormVisitDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [formVisitTime, setFormVisitTime] = useState('10:00 AM');
-  const [formVisitType, setFormVisitType] = useState<MonitoringVisitType>('on_site');
-  const [formRequiredHours, setFormRequiredHours] = useState<number>(600);
-  const [formRenderedHours, setFormRenderedHours] = useState<number>(0);
-  const [formAttendanceConsistency, setFormAttendanceConsistency] = useState('Regular & Consistently Punctual');
-
-  // Ratings (1 - 5)
-  const [ratingWorkQuality, setRatingWorkQuality] = useState(5);
-  const [ratingPunctuality, setRatingPunctuality] = useState(5);
-  const [ratingProfessionalism, setRatingProfessionalism] = useState(5);
-  const [ratingTechnical, setRatingTechnical] = useState(5);
-  const [ratingPolicy, setRatingPolicy] = useState(5);
-
-  // Qualitative
-  const [formTasksObserved, setFormTasksObserved] = useState('');
-  const [formHighlights, setFormHighlights] = useState('');
-  const [formIssues, setFormIssues] = useState('');
-  const [formRecommendations, setFormRecommendations] = useState('');
-  const [formActionTaken, setFormActionTaken] = useState('');
-  const [formOverallStatus, setFormOverallStatus] = useState<MonitoringOverallStatus>('commendable');
-  const [formNextVisitDate, setFormNextVisitDate] = useState('');
-
-  // Filter student trainees only
+  // Trainee student accounts only
   const allTrainees = useMemo(() => {
     return employees.filter((emp) => {
       const pos = (emp.position || '').toLowerCase();
@@ -129,7 +177,7 @@ export function AdminMonitoringReport() {
     });
   }, [employees]);
 
-  // List of courses for filtering
+  // Available courses
   const availableCourses = useMemo(() => {
     const set = new Set<string>();
     allTrainees.forEach((t) => {
@@ -138,7 +186,7 @@ export function AdminMonitoringReport() {
     return Array.from(set).sort();
   }, [allTrainees]);
 
-  // Helper to compute rendered hours for a trainee
+  // Compute rendered hours
   const getRenderedHoursForTrainee = (traineeId: string, employeeIdCode?: string) => {
     return (timeRecords || [])
       .filter(
@@ -149,546 +197,760 @@ export function AdminMonitoringReport() {
       .reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
   };
 
-  // When a trainee is chosen in the Create Report modal, auto-fill all details
-  const handleSelectTrainee = (empId: string) => {
-    setSelectedTraineeId(empId);
-    const emp = allTrainees.find((t) => t.id === empId || t.employeeId === empId);
-    if (!emp) return;
-
-    setFormTraineeName(emp.name || '');
-    setFormStudentId(emp.employeeId || emp.id || '');
-    setFormCourse(emp.course || 'BS Information Technology');
-    setFormDepartment(emp.department || 'College of Computer Studies');
-    setFormCampus(emp.campus || 'Talisay (Main Campus)');
-    setFormHteCompany(emp.companyName || 'Host Training Establishment');
-    setFormHteAddress(emp.address || emp.residentialAddress || 'Official Assigned Workplace Station');
-    setFormSupervisorName(emp.supervisorName || 'Department Head / Mentor');
-    setFormSupervisorContact(emp.contactPhone || emp.phone || '+63 917 555 4321');
-    setFormSupervisorDesignation('OJT Mentor & Supervisor');
-
-    const reqHours = emp.requiredHours || 600;
-    setFormRequiredHours(reqHours);
-
-    const rendered = getRenderedHoursForTrainee(emp.id, emp.employeeId);
-    setFormRenderedHours(Math.round(rendered));
-  };
-
-  const openCreateModal = () => {
-    setEditingReport(null);
-    setSelectedTraineeId('');
-    setFormTraineeName('');
-    setFormStudentId('');
-    setFormCourse('');
-    setFormDepartment('');
-    setFormCampus('');
-    setFormHteCompany('');
-    setFormHteAddress('');
-    setFormSupervisorName('');
-    setFormSupervisorContact('');
-    setFormSupervisorDesignation('OJT Mentor & Supervisor');
-    setFormVisitDate(new Date().toISOString().split('T')[0]);
-    setFormVisitTime('10:00 AM');
-    setFormVisitType('on_site');
-    setFormRequiredHours(600);
-    setFormRenderedHours(0);
-    setFormAttendanceConsistency('Regular & Consistently Punctual');
-    setRatingWorkQuality(5);
-    setRatingPunctuality(5);
-    setRatingProfessionalism(5);
-    setRatingTechnical(5);
-    setRatingPolicy(5);
-    setFormTasksObserved('');
-    setFormHighlights('');
-    setFormIssues('');
-    setFormRecommendations('');
-    setFormActionTaken('');
-    setFormOverallStatus('commendable');
-    setFormNextVisitDate('');
-    setShowCreateModal(true);
-  };
-
-  const openEditModal = (report: MonitoringReport) => {
-    setEditingReport(report);
-    setSelectedTraineeId(report.traineeId);
-    setFormTraineeName(report.traineeName);
-    setFormStudentId(report.studentId || report.traineeId);
-    setFormCourse(report.course || '');
-    setFormDepartment(report.department || '');
-    setFormCampus(report.campus || '');
-    setFormHteCompany(report.hteCompanyName);
-    setFormHteAddress(report.hteAddress || '');
-    setFormSupervisorName(report.supervisorName || '');
-    setFormSupervisorContact(report.supervisorContact || '');
-    setFormSupervisorDesignation(report.supervisorDesignation || '');
-    setFormVisitDate(report.visitDate);
-    setFormVisitTime(report.visitTime || '10:00 AM');
-    setFormVisitType(report.visitType);
-    setFormRequiredHours(report.requiredHours || 600);
-    setFormRenderedHours(report.renderedHours || 0);
-    setFormAttendanceConsistency(report.attendanceConsistency || 'Regular');
-    setRatingWorkQuality(report.ratings.workQuality);
-    setRatingPunctuality(report.ratings.punctuality);
-    setRatingProfessionalism(report.ratings.professionalism);
-    setRatingTechnical(report.ratings.technicalCompetence);
-    setRatingPolicy(report.ratings.policyAdherence);
-    setFormTasksObserved(report.tasksObserved);
-    setFormHighlights(report.highlights || '');
-    setFormIssues(report.issuesIdentified || '');
-    setFormRecommendations(report.recommendations);
-    setFormActionTaken(report.actionTaken || '');
-    setFormOverallStatus(report.overallStatus);
-    setFormNextVisitDate(report.nextVisitDate || '');
-    setShowCreateModal(true);
-  };
-
-  const handleSaveReport = async () => {
-    if (!formTraineeName.trim()) {
-      toast.error('Please select or enter the Trainee Name.');
-      return;
-    }
-    if (!formHteCompany.trim()) {
-      toast.error('Please specify the Host Training Establishment (HTE).');
-      return;
-    }
-    if (!formTasksObserved.trim()) {
-      toast.error('Please describe the key tasks observed during this visit.');
-      return;
-    }
-
-    const payload = {
-      traineeId: selectedTraineeId || formStudentId || `trainee-${Date.now()}`,
-      traineeName: formTraineeName.trim(),
-      studentId: formStudentId.trim(),
-      course: formCourse.trim(),
-      department: formDepartment.trim() || 'College of Computer Studies',
-      campus: formCampus.trim() || 'Talisay (Main Campus)',
-      academicYear: settings.activeAcademicYear || '2026-2027',
-      hteCompanyName: formHteCompany.trim(),
-      hteAddress: formHteAddress.trim(),
-      supervisorName: formSupervisorName.trim(),
-      supervisorContact: formSupervisorContact.trim(),
-      supervisorDesignation: formSupervisorDesignation.trim(),
-      instructorId: currentUser?.id || currentEmp?.id,
-      instructorName,
-      visitDate: formVisitDate,
-      visitTime: formVisitTime,
-      visitType: formVisitType,
-      requiredHours: formRequiredHours,
-      renderedHours: formRenderedHours,
-      remainingHours: Math.max(0, formRequiredHours - formRenderedHours),
-      attendanceConsistency: formAttendanceConsistency,
-      ratings: {
-        workQuality: ratingWorkQuality,
-        punctuality: ratingPunctuality,
-        professionalism: ratingProfessionalism,
-        technicalCompetence: ratingTechnical,
-        policyAdherence: ratingPolicy,
-      },
-      tasksObserved: formTasksObserved.trim(),
-      highlights: formHighlights.trim(),
-      issuesIdentified: formIssues.trim(),
-      recommendations: formRecommendations.trim(),
-      actionTaken: formActionTaken.trim(),
-      overallStatus: formOverallStatus,
-      nextVisitDate: formNextVisitDate.trim(),
-      instructorSignature: instructorName,
-    };
-
-    if (editingReport) {
-      await updateMonitoringReport(editingReport.id, payload);
-      toast.success(`Monitoring report ${editingReport.reportNumber} updated successfully!`);
-    } else {
-      const created = await addMonitoringReport(payload);
-      toast.success(`Monitoring report ${created.reportNumber} generated & published to trainee portal!`);
-    }
-
-    setShowCreateModal(false);
-  };
-
-  // Filtered official reports
-  const filteredOfficialReports = useMemo(() => {
-    return monitoringReports.filter((r) => {
-      const q = searchQuery.toLowerCase().trim();
-      if (q) {
-        const matchName = r.traineeName.toLowerCase().includes(q);
-        const matchId = (r.studentId || '').toLowerCase().includes(q);
-        const matchHte = r.hteCompanyName.toLowerCase().includes(q);
-        const matchNum = r.reportNumber.toLowerCase().includes(q);
-        if (!matchName && !matchId && !matchHte && !matchNum) return false;
-      }
-      if (filterModality !== 'all' && r.visitType !== filterModality) return false;
-      if (filterStatus !== 'all' && r.overallStatus !== filterStatus) return false;
-      if (filterCourse !== 'all' && r.course !== filterCourse) return false;
-      return true;
-    });
-  }, [monitoringReports, searchQuery, filterModality, filterStatus, filterCourse]);
-
-  // Statistics
-  const stats = useMemo(() => {
-    const totalTrainees = allTrainees.length;
-    const totalReports = monitoringReports.length;
-    const onSiteVisits = monitoringReports.filter((r) => r.visitType === 'on_site').length;
-    const virtualVisits = monitoringReports.filter((r) => r.visitType === 'virtual').length;
-    const needsGuidance = monitoringReports.filter(
-      (r) => r.overallStatus === 'needs_guidance' || r.overallStatus === 'critical'
-    ).length;
-    const pendingSelfReports = traineeSelfMonitoringReports.filter((s) => s.status === 'submitted').length;
+  // Metrics
+  const metrics = useMemo(() => {
+    const weeklyCount = monitoringReports.filter((r) => r.reportType === 'weekly').length;
+    const monthlyCount = monitoringReports.filter((r) => r.reportType === 'monthly').length;
+    const midtermCount = monitoringReports.filter((r) => r.reportType === 'midterm').length;
+    const endtermCount = monitoringReports.filter((r) => r.reportType === 'endterm').length;
+    const pendingCount = monitoringReports.filter((r) => r.status === 'submitted').length;
+    const reviewedCount = monitoringReports.filter((r) => r.status === 'reviewed').length;
 
     return {
-      totalTrainees,
-      totalReports,
-      onSiteVisits,
-      virtualVisits,
-      needsGuidance,
-      pendingSelfReports,
+      total: monitoringReports.length,
+      weeklyCount,
+      monthlyCount,
+      midtermCount,
+      endtermCount,
+      pendingCount,
+      reviewedCount,
     };
-  }, [allTrainees, monitoringReports, traineeSelfMonitoringReports]);
+  }, [monitoringReports]);
+
+  // Filtered reports
+  const filteredReports = useMemo(() => {
+    return monitoringReports.filter((r) => {
+      // Period filter
+      if (activeTab !== 'all' && activeTab !== 'roster') {
+        if (r.reportType !== activeTab) return false;
+      }
+
+      // Status filter
+      if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+
+      // Course filter
+      if (filterCourse !== 'all' && r.course !== filterCourse) return false;
+
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = (r.traineeName || '').toLowerCase().includes(q);
+        const matchId = (r.studentId || r.traineeId || '').toLowerCase().includes(q);
+        const matchHte = (r.hteCompanyName || '').toLowerCase().includes(q);
+        const matchPeriod = (r.periodCovered || '').toLowerCase().includes(q);
+        const matchNum = (r.reportNumber || '').toLowerCase().includes(q);
+        if (!matchName && !matchId && !matchHte && !matchPeriod && !matchNum) return false;
+      }
+
+      return true;
+    });
+  }, [monitoringReports, activeTab, filterStatus, filterCourse, searchQuery]);
+
+  // Handle opening Review Modal
+  const openReviewModal = (report: MonitoringReport) => {
+    setReviewReport(report);
+    setReviewRemarksInput(report.instructorRemarks || '');
+  };
+
+  // Handle submitting instructor review
+  const handleSubmitReview = async () => {
+    if (!reviewReport) return;
+    try {
+      await reviewMonitoringReport(reviewReport.id, reviewRemarksInput, 'reviewed');
+      toast.success(`Monitoring report for ${reviewReport.traineeName} reviewed and endorsed successfully!`);
+      setReviewReport(null);
+      setReviewRemarksInput('');
+    } catch {
+      toast.error('Failed to submit review remarks.');
+    }
+  };
+
+  // Handle Deleting a report
+  const handleDeleteReport = async (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to delete this monitoring report for ${name}?`)) {
+      try {
+        await deleteMonitoringReport(id);
+        toast.success('Monitoring report deleted.');
+      } catch {
+        toast.error('Failed to delete report.');
+      }
+    }
+  };
+
+  // Create Modal Auto-populate
+  const handleSelectCreateTrainee = (id: string) => {
+    setCreateTraineeId(id);
+    const emp = allTrainees.find((t) => t.id === id || t.employeeId === id);
+    if (!emp) return;
+    if (!createPeriodCovered) {
+      if (createReportType === 'weekly') setCreatePeriodCovered('Week 1 Progress Review');
+      else if (createReportType === 'monthly') setCreatePeriodCovered('Month 1 Comprehensive Assessment');
+      else if (createReportType === 'midterm') setCreatePeriodCovered('Mid-Term (300h Milestone Evaluation)');
+      else if (createReportType === 'endterm') setCreatePeriodCovered('End-Term (600h Exit & Practicum Completion)');
+    }
+  };
+
+  // Handle Creating a Report as Instructor
+  const handleCreateReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const emp = allTrainees.find((t) => t.id === createTraineeId || t.employeeId === createTraineeId);
+    if (!emp) {
+      toast.error('Please select an active student intern.');
+      return;
+    }
+    if (!createTasks.trim()) {
+      toast.error('Please input tasks accomplished.');
+      return;
+    }
+
+    const totalRatings =
+      createRatings.attendanceScore +
+      createRatings.performanceScore +
+      createRatings.attitudeScore +
+      createRatings.communicationScore +
+      createRatings.teamworkScore;
+    const overallScore = Math.round((totalRatings / 25) * 100);
+
+    const questionnaire: MonitoringQuestionnaire = {
+      ...createRatings,
+      overallScore,
+      strengths: createStrengths,
+      areasForImprovement: createImprovements,
+      recommendation: createRecommendation,
+    };
+
+    const rendered = getRenderedHoursForTrainee(emp.id, emp.employeeId);
+    const required = emp.requiredHours || 600;
+
+    try {
+      await addMonitoringReport({
+        reportType: createReportType,
+        traineeId: emp.id,
+        traineeName: emp.name,
+        studentId: emp.employeeId || emp.id,
+        course: emp.course || 'BS Information Technology',
+        department: emp.department || 'College of Computer Studies',
+        campus: emp.campus || 'Talisay (Main Campus)',
+        academicYear: '2026-2027',
+        hteCompanyName: emp.companyName || 'Host Training Establishment',
+        hteAddress: emp.address || emp.residentialAddress || 'Official Assigned Workplace Station',
+        supervisorName: emp.supervisorName || 'Department Mentor',
+        supervisorContact: emp.contactPhone || emp.phone || '+63 917 555 4321',
+        supervisorDesignation: 'OJT Mentor / Supervisor',
+        instructorName,
+        periodCovered: createPeriodCovered || `${PERIOD_CONFIG[createReportType].label} Period`,
+        dateSubmitted: new Date().toISOString().split('T')[0],
+        hoursRenderedThisPeriod: Number(createHoursThisPeriod) || 40,
+        totalCumulativeHours: Math.round(rendered),
+        requiredHours: required,
+        remainingHours: Math.max(0, required - Math.round(rendered)),
+        tasksAccomplished: createTasks,
+        skillsApplied: createSkills,
+        challengesEncountered: createChallenges,
+        questionnaire,
+        status: createInstructorRemarks.trim() ? 'reviewed' : 'submitted',
+        instructorRemarks: createInstructorRemarks,
+        reviewedByInstructorAt: createInstructorRemarks.trim() ? new Date().toISOString() : undefined,
+      });
+
+      toast.success(`${PERIOD_CONFIG[createReportType].label} Monitoring Report successfully logged!`);
+      setShowCreateModal(false);
+      // Reset form
+      setCreateTraineeId('');
+      setCreateTasks('');
+      setCreateSkills('');
+      setCreateChallenges('');
+      setCreateStrengths('');
+      setCreateImprovements('');
+      setCreateInstructorRemarks('');
+    } catch {
+      toast.error('Failed to create monitoring report.');
+    }
+  };
 
   return (
-    <div className="space-y-6 pb-12 max-w-7xl mx-auto">
-      {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-sm relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-80 h-full bg-gradient-to-l from-indigo-50/70 to-transparent pointer-events-none" />
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs relative overflow-hidden">
+        <div className="absolute -top-12 -right-12 w-48 h-48 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full blur-2xl opacity-60 pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold">
-              <ClipboardCheck size={14} className="text-indigo-600" />
-              <span>OJT Trainee Monitoring Module</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-              <span className="text-slate-500 font-medium">Instructor & Trainee Hub</span>
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              Trainee Monitoring & Visitation Reports
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-              Conduct official supervisory visits, log workplace performance assessments, and review weekly/monthly self-monitoring journals across all partner Host Training Establishments.
-            </p>
+        <div className="relative z-10">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-blue-800 text-xs font-semibold mb-2">
+            <ClipboardCheck size={14} className="text-blue-600" />
+            <span>OJT Monitoring & Milestone Assessment System</span>
           </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Monitoring Reports
+          </h1>
+          <p className="text-sm text-slate-500 mt-1 max-w-2xl">
+            Monitor, assess, and endorse student practicum reports across <strong>Weekly</strong>,{' '}
+            <strong>Monthly</strong>, <strong>Mid-Term</strong>, and <strong>End-Term</strong> milestones,
+            featuring complete Host Feedback questionnaires.
+          </p>
+        </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <button
-              type="button"
-              onClick={openCreateModal}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-md shadow-indigo-300 transition-all cursor-pointer"
-            >
-              <Plus size={16} /> + Log Monitoring Visit
-            </button>
-          </div>
+        <div className="flex items-center gap-2.5 relative z-10 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-2xl text-xs font-bold shadow-lg shadow-blue-700/20 transition-all cursor-pointer"
+          >
+            <Plus size={16} /> Log Monitoring Report
+          </button>
         </div>
       </div>
 
-      {/* 4 Stat KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Users size={18} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-gray-500">Supervised Trainees</p>
-              <p className="text-xl font-bold text-gray-900">{stats.totalTrainees}</p>
-            </div>
+      {/* METRIC STATS CARDS */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+        {/* Weekly */}
+        <div
+          onClick={() => setActiveTab('weekly')}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            activeTab === 'weekly'
+              ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20'
+              : 'bg-white text-slate-800 border-slate-200 hover:border-blue-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className={activeTab === 'weekly' ? 'text-blue-100 font-bold' : 'text-slate-500 font-semibold'}>
+              Weekly Reports
+            </span>
+            <span className={`w-2 h-2 rounded-full ${activeTab === 'weekly' ? 'bg-white' : 'bg-blue-500'}`} />
           </div>
+          <p className="text-2xl font-black">{metrics.weeklyCount}</p>
+          <p className={`text-[11px] mt-1 ${activeTab === 'weekly' ? 'text-blue-100' : 'text-slate-400'}`}>
+            Routine weekly progress
+          </p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <CheckCircle2 size={18} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-gray-500">Monitoring Reports</p>
-              <p className="text-xl font-bold text-emerald-700">{stats.totalReports}</p>
-            </div>
+        {/* Monthly */}
+        <div
+          onClick={() => setActiveTab('monthly')}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            activeTab === 'monthly'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/20'
+              : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className={activeTab === 'monthly' ? 'text-emerald-100 font-bold' : 'text-slate-500 font-semibold'}>
+              Monthly Reports
+            </span>
+            <span className={`w-2 h-2 rounded-full ${activeTab === 'monthly' ? 'bg-white' : 'bg-emerald-500'}`} />
           </div>
+          <p className="text-2xl font-black">{metrics.monthlyCount}</p>
+          <p className={`text-[11px] mt-1 ${activeTab === 'monthly' ? 'text-emerald-100' : 'text-slate-400'}`}>
+            Monthly assessments
+          </p>
         </div>
 
-        <div className={`p-4 rounded-2xl border shadow-xs transition-all ${
-          stats.pendingSelfReports > 0 ? 'bg-amber-50/70 border-amber-200' : 'bg-white border-gray-100'
-        }`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-              <Clock size={18} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-gray-500">Trainee Self-Reports</p>
-              <p className="text-xl font-bold text-amber-800">
-                {stats.pendingSelfReports}
-                {stats.pendingSelfReports > 0 && (
-                  <span className="text-[10px] font-bold text-amber-800 ml-1.5 px-1.5 py-0.5 rounded bg-amber-200">
-                    Needs Review
-                  </span>
-                )}
-              </p>
-            </div>
+        {/* Mid-Term */}
+        <div
+          onClick={() => setActiveTab('midterm')}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            activeTab === 'midterm'
+              ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20'
+              : 'bg-white text-slate-800 border-slate-200 hover:border-purple-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className={activeTab === 'midterm' ? 'text-purple-100 font-bold' : 'text-slate-500 font-semibold'}>
+              Mid-Term (300h)
+            </span>
+            <span className={`w-2 h-2 rounded-full ${activeTab === 'midterm' ? 'bg-white' : 'bg-purple-500'}`} />
           </div>
+          <p className="text-2xl font-black">{metrics.midtermCount}</p>
+          <p className={`text-[11px] mt-1 ${activeTab === 'midterm' ? 'text-purple-100' : 'text-slate-400'}`}>
+            Midpoint evaluations
+          </p>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-              <AlertTriangle size={18} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-gray-500">Needs Guidance</p>
-              <p className="text-xl font-bold text-rose-700">{stats.needsGuidance}</p>
-            </div>
+        {/* End-Term */}
+        <div
+          onClick={() => setActiveTab('endterm')}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            activeTab === 'endterm'
+              ? 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/20'
+              : 'bg-white text-slate-800 border-slate-200 hover:border-amber-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className={activeTab === 'endterm' ? 'text-amber-100 font-bold' : 'text-slate-500 font-semibold'}>
+              End-Term (600h)
+            </span>
+            <span className={`w-2 h-2 rounded-full ${activeTab === 'endterm' ? 'bg-white' : 'bg-amber-500'}`} />
           </div>
+          <p className="text-2xl font-black">{metrics.endtermCount}</p>
+          <p className={`text-[11px] mt-1 ${activeTab === 'endterm' ? 'text-amber-100' : 'text-slate-400'}`}>
+            Final completion reports
+          </p>
+        </div>
+
+        {/* Pending Review */}
+        <div
+          onClick={() => {
+            setActiveTab('all');
+            setFilterStatus('submitted');
+          }}
+          className={`p-4 rounded-2xl border col-span-2 lg:col-span-1 transition-all cursor-pointer ${
+            filterStatus === 'submitted'
+              ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20'
+              : 'bg-white text-slate-800 border-slate-200 hover:border-rose-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className={filterStatus === 'submitted' ? 'text-rose-100 font-bold' : 'text-rose-600 font-bold'}>
+              Action Needed
+            </span>
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+          </div>
+          <p className="text-2xl font-black">{metrics.pendingCount}</p>
+          <p className={`text-[11px] mt-1 ${filterStatus === 'submitted' ? 'text-rose-100' : 'text-slate-400'}`}>
+            Pending your review
+          </p>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+      {/* PERIOD TABS */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
         <button
           type="button"
-          onClick={() => setActiveTab('official')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'official'
-              ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
-              : 'text-gray-600 hover:bg-gray-100'
+          onClick={() => {
+            setActiveTab('all');
+            setFilterStatus('all');
+          }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'all' && filterStatus === 'all'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <ClipboardCheck size={14} /> Official Monitoring Visits ({monitoringReports.length})
+          All Periods ({metrics.total})
         </button>
-
         <button
           type="button"
-          onClick={() => setActiveTab('self_reports')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'self_reports'
-              ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
-              : 'text-gray-600 hover:bg-gray-100'
+          onClick={() => setActiveTab('weekly')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'weekly'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <FileText size={14} /> Trainee Self-Monitoring Progress ({traineeSelfMonitoringReports.length})
-          {stats.pendingSelfReports > 0 && (
-            <span className="w-2 h-2 rounded-full bg-amber-400" />
-          )}
+          Weekly ({metrics.weeklyCount})
         </button>
-
+        <button
+          type="button"
+          onClick={() => setActiveTab('monthly')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'monthly'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          Monthly ({metrics.monthlyCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('midterm')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'midterm'
+              ? 'bg-purple-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          Mid-Term ({metrics.midtermCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('endterm')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'endterm'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          End-Term ({metrics.endtermCount})
+        </button>
         <button
           type="button"
           onClick={() => setActiveTab('roster')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ml-auto flex items-center gap-1.5 ${
             activeTab === 'roster'
-              ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
-              : 'text-gray-600 hover:bg-gray-100'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Users size={14} /> Trainee Monitoring Roster ({allTrainees.length})
+          <Users size={14} /> Trainee Progress Matrix
         </button>
       </div>
 
-      {/* TAB 1: Official Monitoring Reports */}
-      {activeTab === 'official' && (
-        <div className="space-y-4">
-          {/* Search & Filter Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by student name, ID, HTE company, report #..."
-                className="w-full pl-9 pr-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              />
+      {/* TAB CONTENT: ROSTER PROGRESS MATRIX OR REPORTS LIST */}
+      {activeTab === 'roster' ? (
+        /* ROSTER MATRIX: SHOWS EVERY TRAINEE AND THEIR 4 PERIOD STATUSES */
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Trainee Milestone Completion Matrix
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Overview of all student interns and their submission status across the 4 monitoring periods.
+              </p>
             </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <select
-                value={filterModality}
-                onChange={(e) => setFilterModality(e.target.value)}
-                className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-medium focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="all">All Modalities</option>
-                <option value="on_site">On-Site Workplace</option>
-                <option value="virtual">Virtual Conference</option>
-                <option value="phone">Phone Check-in</option>
-                <option value="midterm">Midterm Review</option>
-                <option value="final">Final Exit</option>
-                <option value="spot_check">Spot Inspection</option>
-              </select>
-
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-medium focus:ring-1 focus:ring-indigo-500"
-              >
-                <option value="all">All Statuses</option>
-                <option value="commendable">Commendable</option>
-                <option value="satisfactory">Satisfactory</option>
-                <option value="needs_guidance">Needs Guidance</option>
-                <option value="critical">Critical</option>
-              </select>
-
-              {availableCourses.length > 0 && (
-                <select
-                  value={filterCourse}
-                  onChange={(e) => setFilterCourse(e.target.value)}
-                  className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white font-medium focus:ring-1 focus:ring-indigo-500 max-w-[180px] truncate"
-                >
-                  <option value="all">All Courses</option>
-                  {availableCourses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              )}
+            <div className="text-xs text-slate-500 font-medium">
+              Total Enrolled Interns: <strong className="text-slate-800">{allTrainees.length}</strong>
             </div>
           </div>
 
-          {/* Reports Grid */}
-          {filteredOfficialReports.length === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-gray-200 space-y-3">
-              <ClipboardCheck size={40} className="text-gray-300 mx-auto" />
-              <p className="text-sm font-bold text-gray-700">No monitoring reports match your filters.</p>
-              <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                Click &ldquo;+ Log Monitoring Visit&rdquo; above to record your first official supervisory visit.
-              </p>
-              <button
-                type="button"
-                onClick={openCreateModal}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-indigo-700 cursor-pointer"
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3.5 px-4">Student Intern</th>
+                  <th className="py-3.5 px-3">HTE Company</th>
+                  <th className="py-3.5 px-3 text-center">Weekly</th>
+                  <th className="py-3.5 px-3 text-center">Monthly</th>
+                  <th className="py-3.5 px-3 text-center">Mid-Term (300h)</th>
+                  <th className="py-3.5 px-3 text-center">End-Term (600h)</th>
+                  <th className="py-3.5 px-4 text-right">Cumulative</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {allTrainees.map((trainee) => {
+                  const traineeReports = monitoringReports.filter(
+                    (r) => r.traineeId === trainee.id || r.studentId === trainee.employeeId
+                  );
+                  const weeklyRep = traineeReports.find((r) => r.reportType === 'weekly');
+                  const monthlyRep = traineeReports.find((r) => r.reportType === 'monthly');
+                  const midtermRep = traineeReports.find((r) => r.reportType === 'midterm');
+                  const endtermRep = traineeReports.find((r) => r.reportType === 'endterm');
+
+                  const rendered = getRenderedHoursForTrainee(trainee.id, trainee.employeeId);
+                  const required = trainee.requiredHours || 600;
+                  const progressPct = Math.min(100, Math.round((rendered / required) * 100));
+
+                  const renderStatusPill = (rep?: MonitoringReport, typeLabel = '') => {
+                    if (!rep) {
+                      return (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
+                          Missing
+                        </span>
+                      );
+                    }
+                    if (rep.status === 'reviewed') {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setViewDetailsReport(rep)}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-full cursor-pointer"
+                        >
+                          <CheckCircle2 size={12} className="text-emerald-600" /> Reviewed
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => openReviewModal(rep)}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-full cursor-pointer animate-pulse"
+                      >
+                        <Clock size={12} className="text-amber-600" /> Needs Review
+                      </button>
+                    );
+                  };
+
+                  return (
+                    <tr key={trainee.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <UserAvatar
+                            name={trainee.name}
+                            avatarUrl={trainee.avatar}
+                            size="sm"
+                          />
+                          <div>
+                            <p className="font-bold text-slate-900">{trainee.name}</p>
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              {trainee.employeeId || trainee.id} • {trainee.course || 'BSIT'}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3">
+                        <p className="font-semibold text-slate-700 truncate max-w-[180px]">
+                          {trainee.companyName || 'Host Training Establishment'}
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          {trainee.supervisorName || 'Supervisor Assigned'}
+                        </p>
+                      </td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(weeklyRep, 'Weekly')}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(monthlyRep, 'Monthly')}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(midtermRep, 'Mid-Term')}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(endtermRep, 'End-Term')}</td>
+                      <td className="py-3.5 px-4 text-right">
+                        <p className="font-bold text-slate-900">
+                          {Math.round(rendered)} / {required}h
+                        </p>
+                        <div className="w-20 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
+                          <div
+                            className="bg-blue-600 h-1.5 rounded-full"
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* REPORTS LIST VIEW */
+        <div className="space-y-4">
+          {/* SEARCH & FILTERS BAR */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="relative w-full md:w-96">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search trainee name, student ID, HTE company..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-blue-500 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+              {/* Status filter */}
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as any)}
+                aria-label="Filter by review status"
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-hidden"
               >
-                <Plus size={14} /> + Log Monitoring Visit
-              </button>
+                <option value="all">All Review Status</option>
+                <option value="submitted">Pending Review (Action Needed)</option>
+                <option value="reviewed">Reviewed & Endorsed</option>
+              </select>
+
+              {/* Course filter */}
+              <select
+                value={filterCourse}
+                onChange={(e) => setFilterCourse(e.target.value)}
+                aria-label="Filter by degree course"
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-hidden max-w-[200px]"
+              >
+                <option value="all">All Degree Courses</option>
+                {availableCourses.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* REPORTS GRID */}
+          {filteredReports.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
+              <ClipboardCheck size={48} className="mx-auto text-slate-300 mb-3" />
+              <h3 className="text-base font-bold text-slate-800">No Monitoring Reports Found</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                No reports match your current period or filter criteria. Student submissions for Weekly, Monthly,
+                Mid-Term, and End-Term will appear here for review.
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredOfficialReports.map((report) => {
-                const avg = (
-                  (report.ratings.workQuality +
-                    report.ratings.punctuality +
-                    report.ratings.professionalism +
-                    report.ratings.technicalCompetence +
-                    report.ratings.policyAdherence) /
-                  5
-                ).toFixed(1);
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredReports.map((report) => {
+                const conf = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
+                const q = report.questionnaire || {
+                  attendanceScore: 5,
+                  performanceScore: 5,
+                  attitudeScore: 5,
+                  communicationScore: 5,
+                  teamworkScore: 5,
+                  overallScore: 100,
+                  strengths: '',
+                  areasForImprovement: '',
+                  recommendation: 'Highly Recommended' as const,
+                };
 
                 return (
                   <div
                     key={report.id}
-                    className="bg-white rounded-3xl p-5 border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all space-y-4 flex flex-col justify-between"
+                    className="bg-white rounded-3xl border border-slate-200 hover:border-slate-300 hover:shadow-lg shadow-xs transition-all flex flex-col justify-between overflow-hidden group"
                   >
                     <div>
-                      {/* Card Header */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
+                      {/* Card Header with Badges */}
+                      <div className="p-5 pb-3 border-b border-slate-100 flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
                           <UserAvatar
                             name={report.traineeName}
-                            role="employee"
                             size="md"
-                            className="border border-indigo-100 shrink-0"
                           />
-                          <div className="min-w-0">
-                            <h4 className="font-bold text-sm text-gray-900 truncate" title={report.traineeName}>
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-700 transition-colors">
                               {report.traineeName}
-                            </h4>
-                            <p className="text-xs text-gray-500 font-mono">
-                              {report.studentId || report.traineeId} • {report.course || 'IT Intern'}
+                            </h3>
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              {report.studentId || report.traineeId}
                             </p>
                           </div>
                         </div>
 
-                        <span
-                          className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border shrink-0 ${
-                            report.overallStatus === 'commendable'
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : report.overallStatus === 'satisfactory'
-                              ? 'bg-blue-100 text-blue-800 border-blue-300'
-                              : report.overallStatus === 'needs_guidance'
-                              ? 'bg-amber-100 text-amber-800 border-amber-300'
-                              : 'bg-rose-100 text-rose-800 border-rose-300'
-                          }`}
-                        >
-                          {report.overallStatus.replace('_', ' ')}
+                        <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${conf.badgeColor}`}>
+                          {conf.label}
                         </span>
                       </div>
 
-                      {/* HTE and Visit Details */}
-                      <div className="mt-3.5 p-3 rounded-2xl bg-gray-50 border border-gray-150 space-y-1.5 text-xs text-gray-700">
-                        <div className="flex items-center gap-2">
-                          <Building size={14} className="text-indigo-600 shrink-0" />
-                          <span className="font-semibold text-gray-900 truncate" title={report.hteCompanyName}>
-                            {report.hteCompanyName}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-gray-500">
-                          <span>Supervisor: {report.supervisorName || 'Department Mentor'}</span>
-                          <span>Visit: <strong className="text-indigo-900 font-semibold">{report.visitDate}</strong></span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-200">
-                          <span>Modality: <strong className="text-gray-800 capitalize">{report.visitType.replace('_', ' ')}</strong></span>
-                          <span>Rendered: <strong className="text-emerald-700 font-semibold">{report.renderedHours || 0} / {report.requiredHours || 600}h</strong></span>
-                        </div>
-                      </div>
-
-                      {/* Observed Tasks & Recommendations */}
-                      <div className="mt-3 space-y-1.5 text-xs">
-                        <p className="text-gray-600 line-clamp-2">
-                          <strong className="text-gray-800">Tasks Observed:</strong> {report.tasksObserved}
-                        </p>
-                        {report.recommendations && (
-                          <p className="text-indigo-950 font-medium line-clamp-2 bg-indigo-50/60 p-2 rounded-xl border border-indigo-100 text-[11px]">
-                            <strong>Guidance:</strong> {report.recommendations}
+                      {/* Card Body */}
+                      <div className="p-5 space-y-3.5 text-xs text-slate-600">
+                        {/* HTE Details */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-800 font-bold">
+                            <Building size={13} className="text-slate-400 shrink-0" />
+                            <span className="truncate">{report.hteCompanyName}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 pl-4 truncate">
+                            Supervisor: {report.supervisorName || 'Department Mentor'}
                           </p>
+                        </div>
+
+                        {/* Period & Hours */}
+                        <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Period Covered:</span>
+                            <span className="font-bold text-slate-800 text-right truncate max-w-[160px]">
+                              {report.periodCovered}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Hours Rendered:</span>
+                            <span className="font-bold text-blue-700">
+                              +{report.hoursRenderedThisPeriod || 0}h (Total: {report.totalCumulativeHours || report.renderedHours || 0}h)
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Date Submitted:</span>
+                            <span className="font-semibold text-slate-700">
+                              {report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Host Feedback Questionnaire Preview */}
+                        <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-200/60 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-950 text-[11px] flex items-center gap-1">
+                              <Star size={13} className="text-amber-500 fill-amber-500" /> Host Feedback
+                            </span>
+                            <span className="font-black text-xs text-amber-900">
+                              {q.overallScore}% Rating
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1 text-center">
+                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
+                              <p className="text-[9px] text-slate-400">Safety</p>
+                              <p className="font-black text-slate-800 text-xs">{q.attendanceScore}★</p>
+                            </div>
+                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
+                              <p className="text-[9px] text-slate-400">Mentor</p>
+                              <p className="font-black text-slate-800 text-xs">{q.performanceScore}★</p>
+                            </div>
+                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
+                              <p className="text-[9px] text-slate-400">Skills</p>
+                              <p className="font-black text-slate-800 text-xs">{q.attitudeScore}★</p>
+                            </div>
+                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
+                              <p className="text-[9px] text-slate-400">Culture</p>
+                              <p className="font-black text-slate-800 text-xs">{q.communicationScore}★</p>
+                            </div>
+                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
+                              <p className="text-[9px] text-slate-400">Tools</p>
+                              <p className="font-black text-slate-800 text-xs">{q.teamworkScore}★</p>
+                            </div>
+                          </div>
+                          {q.recommendation && (
+                            <p className="text-[10px] text-amber-900 font-medium">
+                              Recommendation: <strong className="font-bold">{q.recommendation}</strong>
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Status & Remarks */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-400">Review Status:</span>
+                          {report.status === 'reviewed' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 size={12} className="text-emerald-600" /> Reviewed & Endorsed
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                              <Clock size={12} className="text-amber-700" /> Pending Review
+                            </span>
+                          )}
+                        </div>
+
+                        {report.instructorRemarks && (
+                          <div className="p-2.5 bg-blue-50/50 rounded-xl border border-blue-100 text-[11px] text-blue-900 italic">
+                            &ldquo;{report.instructorRemarks}&rdquo;
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Footer Actions */}
-                    <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-900 text-xs font-black">
-                          <Star size={11} className="fill-indigo-700 text-indigo-700" />
-                          {avg} / 5
-                        </span>
-                        {report.isAcknowledgedByTrainee ? (
-                          <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                            <CheckCircle2 size={11} /> Signed by Trainee
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-gray-400 italic">
-                            Pending student sign-off
-                          </span>
-                        )}
-                      </div>
-
+                    {/* Card Footer Actions */}
+                    <div className="p-4 pt-0 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
+                          onClick={() => setViewDetailsReport(report)}
+                          className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                          title="View Full Details"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setPrintReport(report)}
-                          className="p-1.5 rounded-lg text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
-                          title="Print / View Official Document"
+                          className="p-2 rounded-xl text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                          title="Print / Save PDF"
                         >
                           <Printer size={15} />
                         </button>
                         <button
                           type="button"
-                          onClick={() => openEditModal(report)}
-                          className="p-1.5 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
-                          title="Edit Report"
-                        >
-                          <Edit3 size={15} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`Delete monitoring report ${report.reportNumber}?`)) {
-                              deleteMonitoringReport(report.id);
-                              toast.success('Report deleted.');
-                            }
-                          }}
-                          className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition-colors cursor-pointer"
+                          onClick={() => handleDeleteReport(report.id, report.traineeName)}
+                          className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                           title="Delete Report"
                         >
                           <Trash2 size={15} />
                         </button>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => openReviewModal(report)}
+                        className={`inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          report.status === 'reviewed'
+                            ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                            : 'bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white shadow-sm'
+                        }`}
+                      >
+                        <Edit3 size={13} /> {report.status === 'reviewed' ? 'Edit Remarks' : 'Review & Endorse'}
+                      </button>
                     </div>
                   </div>
                 );
@@ -698,519 +960,196 @@ export function AdminMonitoringReport() {
         </div>
       )}
 
-      {/* TAB 2: Trainee Self-Monitoring Progress Reports */}
-      {activeTab === 'self_reports' && (
-        <div className="space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">Trainee Periodic Self-Monitoring Journals</h3>
-              <p className="text-xs text-gray-500">
-                Submitted by student interns detailing tasks, milestones, and challenges for OJT Instructor review.
-              </p>
-            </div>
-            <span className="text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1 rounded-xl">
-              {traineeSelfMonitoringReports.length} Submissions
-            </span>
-          </div>
-
-          {traineeSelfMonitoringReports.length === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-gray-200 space-y-2">
-              <FileText size={36} className="text-gray-300 mx-auto" />
-              <p className="text-sm font-bold text-gray-700">No self-monitoring submissions yet.</p>
-              <p className="text-xs text-gray-500">
-                When student interns submit their periodic progress journals, they will appear here for review.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {traineeSelfMonitoringReports.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white p-5 rounded-3xl border border-gray-200 hover:border-indigo-200 shadow-xs space-y-3"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
-                    <div className="flex items-center gap-3">
-                      <UserAvatar name={item.traineeName} role="employee" size="md" />
-                      <div>
-                        <h4 className="font-bold text-sm text-gray-900">{item.traineeName}</h4>
-                        <p className="text-xs text-gray-500 font-mono">
-                          {item.studentId || item.traineeId} • {item.course}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        {item.periodCovered}
-                      </span>
-                      <span
-                        className={`text-xs font-extrabold px-2.5 py-1 rounded-full border uppercase ${
-                          item.status === 'reviewed' || item.status === 'acknowledged'
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                            : 'bg-amber-100 text-amber-800 border-amber-300'
-                        }`}
-                      >
-                        {item.status === 'reviewed' ? '✓ Reviewed' : 'Pending Review'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div className="p-3 bg-gray-50 rounded-2xl border border-gray-150 space-y-1">
-                      <p className="text-gray-500 font-semibold uppercase text-[10px]">Host Company & Period</p>
-                      <p className="font-bold text-gray-900">{item.hteCompanyName}</p>
-                      <p className="text-gray-600">Supervisor: {item.supervisorName || 'Assigned Mentor'}</p>
-                      <p className="text-gray-600">Hours Rendered this Period: <strong className="text-indigo-900">{item.hoursRenderedThisPeriod}h</strong></p>
-                    </div>
-
-                    <div className="p-3 bg-gray-50 rounded-2xl border border-gray-150 space-y-1">
-                      <p className="text-gray-500 font-semibold uppercase text-[10px]">Trainee Self-Assessment</p>
-                      <p className="text-gray-800 leading-relaxed"><strong className="text-gray-900">Key Accomplishments:</strong> {item.keyAccomplishments}</p>
-                      {item.challengesEncountered && (
-                        <p className="text-gray-700 leading-relaxed mt-1"><strong className="text-gray-900">Challenges & Resolution:</strong> {item.challengesEncountered}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {item.instructorRemarks && (
-                    <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-200 text-xs text-indigo-950 space-y-0.5">
-                      <p className="font-bold text-indigo-900">Instructor Remarks & Guidance:</p>
-                      <p className="italic">&ldquo;{item.instructorRemarks}&rdquo;</p>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                    <span className="text-[11px] text-gray-400">
-                      Submitted: {new Date(item.dateSubmitted || item.createdAt).toLocaleDateString()}
-                    </span>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReviewSelfReport(item);
-                          setInstructorRemarksInput(item.instructorRemarks || '');
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs cursor-pointer"
-                      >
-                        {item.instructorRemarks ? 'Edit Remarks' : 'Review & Add Remarks'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm('Delete this self-monitoring journal entry?')) {
-                            deleteTraineeSelfMonitoringReport(item.id);
-                            toast.success('Entry deleted.');
-                          }
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg cursor-pointer"
-                        title="Delete entry"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: Trainee Roster & Quick Log */}
-      {activeTab === 'roster' && (
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">Assigned Trainee Monitoring Roster</h3>
-              <p className="text-xs text-gray-500">
-                Track rendered training hours and last supervisory visitation date for each deployed student.
-              </p>
-            </div>
-            <span className="text-xs font-bold text-gray-600 bg-gray-100 px-3 py-1 rounded-xl">
-              {allTrainees.length} Students
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-gray-600 uppercase text-[10px] tracking-wider border-b border-gray-200">
-                <tr>
-                  <th className="py-3 px-4 font-bold">Student Trainee</th>
-                  <th className="py-3 px-4 font-bold">Host Establishment (HTE)</th>
-                  <th className="py-3 px-4 font-bold">Training Hours Progress</th>
-                  <th className="py-3 px-4 font-bold">Monitoring Status</th>
-                  <th className="py-3 px-4 font-bold text-right">Quick Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-150">
-                {allTrainees.map((trainee) => {
-                  const rendered = getRenderedHoursForTrainee(trainee.id, trainee.employeeId);
-                  const required = trainee.requiredHours || 600;
-                  const pct = Math.min(100, Math.round((rendered / required) * 100));
-                  const reports = monitoringReports.filter(
-                    (r) => r.traineeId === trainee.id || r.studentId === trainee.employeeId
-                  );
-                  const lastReport = reports[0];
-
-                  return (
-                    <tr key={trainee.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <UserAvatar name={trainee.name} role="employee" size="sm" />
-                          <div>
-                            <p className="font-bold text-gray-900">{trainee.name}</p>
-                            <p className="text-[10px] text-gray-500 font-mono">
-                              {trainee.employeeId} • {trainee.course || 'IT Intern'}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <p className="font-semibold text-gray-900">{trainee.companyName || 'Host Pending'}</p>
-                        <p className="text-[10px] text-gray-500">{trainee.supervisorName || 'Supervisor TBA'}</p>
-                      </td>
-
-                      <td className="py-3.5 px-4 min-w-[160px]">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-bold text-gray-800">{Math.round(rendered)}h / {required}h</span>
-                            <span className="font-mono text-gray-500">{pct}%</span>
-                          </div>
-                          <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="h-full bg-emerald-500 rounded-full transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        {lastReport ? (
-                          <div>
-                            <span
-                              className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-                                lastReport.overallStatus === 'commendable'
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : 'bg-blue-100 text-blue-800 border-blue-300'
-                              }`}
-                            >
-                              {lastReport.overallStatus}
-                            </span>
-                            <p className="text-[10px] text-gray-400 mt-0.5">
-                              Last visit: {lastReport.visitDate}
-                            </p>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-semibold">
-                            No visits logged yet
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            openCreateModal();
-                            handleSelectTrainee(trainee.id);
-                          }}
-                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus size={12} /> Log Visit
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE / EDIT MONITORING REPORT MODAL */}
+      {/* REVIEW & REMARKS MODAL */}
       <AnimatePresence>
-        {showCreateModal && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+        {reviewReport && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-3xl shadow-2xl border border-gray-100 max-h-[92vh] flex flex-col overflow-hidden"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden"
             >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-gray-100 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
-                    <ClipboardCheck size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-gray-900">
-                      {editingReport ? `Edit Report — ${editingReport.reportNumber}` : 'Log New Supervisory Monitoring Visit'}
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+                    <h3 className="font-black text-slate-900 text-base">
+                      Review {PERIOD_CONFIG[reviewReport.reportType]?.label || 'Milestone'} Report
                     </h3>
-                    <p className="text-xs text-gray-500">Record observations, ratings, and recommendations for this trainee.</p>
                   </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Trainee: <strong>{reviewReport.traineeName}</strong> ({reviewReport.studentId || reviewReport.traineeId})
+                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+                  onClick={() => setReviewReport(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              {/* Modal Body */}
-              <div className="flex-1 overflow-y-auto py-4 space-y-4">
-                {/* 1. Trainee Autocomplete Picker */}
-                <div>
-                  <label className="text-xs font-bold text-gray-800 block mb-1">
-                    Select Student Intern / Trainee *
-                  </label>
-                  <select
-                    value={selectedTraineeId}
-                    onChange={(e) => handleSelectTrainee(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
-                  >
-                    <option value="">-- Choose a Deployed Trainee to Auto-fill --</option>
-                    {allTrainees.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.employeeId || 'ID Pending'}) — {t.companyName || 'Host Pending'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-6 overflow-y-auto space-y-5 text-xs">
+                {/* Summary Box */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">Trainee Full Name *</label>
-                    <input
-                      type="text"
-                      value={formTraineeName}
-                      onChange={(e) => setFormTraineeName(e.target.value)}
-                      placeholder="e.g. Juan Dela Cruz"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                    />
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Host Establishment</span>
+                    <span className="font-bold text-slate-800">{reviewReport.hteCompanyName}</span>
                   </div>
-
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">Student ID / Number</label>
-                    <input
-                      type="text"
-                      value={formStudentId}
-                      onChange={(e) => setFormStudentId(e.target.value)}
-                      placeholder="e.g. 20231379"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                    />
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Period Covered</span>
+                    <span className="font-bold text-slate-800">{reviewReport.periodCovered}</span>
                   </div>
-
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">Host Establishment (HTE) *</label>
-                    <input
-                      type="text"
-                      value={formHteCompany}
-                      onChange={(e) => setFormHteCompany(e.target.value)}
-                      placeholder="e.g. Provincial Capitol IT Division"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">Immediate Supervisor</label>
-                    <input
-                      type="text"
-                      value={formSupervisorName}
-                      onChange={(e) => setFormSupervisorName(e.target.value)}
-                      placeholder="e.g. Engr. Roberto Tan"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                    />
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Hours Rendered</span>
+                    <span className="font-bold text-blue-700">+{reviewReport.hoursRenderedThisPeriod || 0} Hours</span>
                   </div>
                 </div>
 
-                {/* 2. Visit Specifics */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-gray-200/80 space-y-3">
-                  <h4 className="text-xs font-bold text-gray-800">Visit Modality & Schedule</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                    <div>
-                      <label className="text-[11px] font-semibold text-gray-700 block mb-1">Visit Modality</label>
-                      <select
-                        value={formVisitType}
-                        onChange={(e) => setFormVisitType(e.target.value as MonitoringVisitType)}
-                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white"
-                      >
-                        <option value="on_site">On-Site Workplace Visitation</option>
-                        <option value="virtual">Virtual Video Conference</option>
-                        <option value="phone">Phone / Remote Coordination</option>
-                        <option value="midterm">Midterm Milestone Review</option>
-                        <option value="final">Final Exit Verification</option>
-                        <option value="spot_check">Spot Inspection</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-semibold text-gray-700 block mb-1">Visit Date</label>
-                      <input
-                        type="date"
-                        value={formVisitDate}
-                        onChange={(e) => setFormVisitDate(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-semibold text-gray-700 block mb-1">Visit Time</label>
-                      <input
-                        type="text"
-                        value={formVisitTime}
-                        onChange={(e) => setFormVisitTime(e.target.value)}
-                        placeholder="e.g. 10:30 AM"
-                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white"
-                      />
-                    </div>
-                  </div>
+                {/* Trainee Tasks */}
+                <div className="space-y-1.5">
+                  <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px]">Tasks Accomplished</span>
+                  <p className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 leading-relaxed text-slate-800 whitespace-pre-line">
+                    {reviewReport.tasksAccomplished}
+                  </p>
                 </div>
 
-                {/* 3. Rating Matrix (1 to 5) */}
-                <div className="p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-indigo-950">
-                      Performance Evaluation Matrix (Score: 1 - 5)
-                    </h4>
-                    <span className="text-xs font-extrabold text-indigo-700">
-                      Average: {((ratingWorkQuality + ratingPunctuality + ratingProfessionalism + ratingTechnical + ratingPolicy) / 5).toFixed(1)} / 5.0
-                    </span>
+                {reviewReport.skillsApplied && (
+                  <div className="space-y-1.5">
+                    <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px]">Skills & Tools Applied</span>
+                    <p className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/60 leading-relaxed text-blue-950 whitespace-pre-line">
+                      {reviewReport.skillsApplied}
+                    </p>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    {[
-                      { label: 'Work Quality & Output', val: ratingWorkQuality, set: setRatingWorkQuality },
-                      { label: 'Punctuality & Attendance', val: ratingPunctuality, set: setRatingPunctuality },
-                      { label: 'Professionalism & Conduct', val: ratingProfessionalism, set: setRatingProfessionalism },
-                      { label: 'Technical Competence', val: ratingTechnical, set: setRatingTechnical },
-                      { label: 'Adherence to Policies', val: ratingPolicy, set: setRatingPolicy },
-                    ].map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-indigo-100">
-                        <span className="font-medium text-gray-800">{item.label}</span>
-                        <select
-                          value={item.val}
-                          onChange={(e) => item.set(Number(e.target.value))}
-                          className="px-2 py-1 text-xs font-bold text-indigo-900 border border-indigo-200 rounded-lg bg-indigo-50"
-                        >
-                          <option value={5}>5 - Excellent</option>
-                          <option value={4}>4 - Very Good</option>
-                          <option value={3}>3 - Good</option>
-                          <option value={2}>2 - Fair</option>
-                          <option value={1}>1 - Poor</option>
-                        </select>
+                {/* Complete Host Feedback Questionnaire Display */}
+                {reviewReport.questionnaire && (
+                  <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200/70 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-950 uppercase tracking-wide text-[11px] flex items-center gap-1.5">
+                        <Star size={14} className="text-amber-500 fill-amber-500" /> Host Feedback Questionnaire Ratings
+                      </span>
+                      <span className="font-black text-amber-900 text-sm">
+                        Overall Score: {reviewReport.questionnaire.overallScore}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
+                        <span className="text-slate-600">1. Work Environment & Safety:</span>
+                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.attendanceScore} / 5 ★</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 4. Qualitative Fields */}
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-gray-800 block mb-1">
-                      Key Tasks & Duties Observed *
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={formTasksObserved}
-                      onChange={(e) => setFormTasksObserved(e.target.value)}
-                      placeholder="e.g. Assisting the network infrastructure team with structured cabling and switch configuration."
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 resize-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-gray-800 block mb-1">
-                      Trainee Commendations / Highlights
-                    </label>
-                    <input
-                      type="text"
-                      value={formHighlights}
-                      onChange={(e) => setFormHighlights(e.target.value)}
-                      placeholder="e.g. Supervisor commended proactive attitude and fast learning curve."
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-semibold text-gray-800 block mb-1">
-                        Issues / Concerns Raised (if any)
-                      </label>
-                      <input
-                        type="text"
-                        value={formIssues}
-                        onChange={(e) => setFormIssues(e.target.value)}
-                        placeholder="e.g. None observed, or occasional internet latency"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                      />
+                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
+                        <span className="text-slate-600">2. Mentorship & Guidance:</span>
+                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.performanceScore} / 5 ★</span>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
+                        <span className="text-slate-600">3. Learning & Skill Growth:</span>
+                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.attitudeScore} / 5 ★</span>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
+                        <span className="text-slate-600">4. Workplace Culture:</span>
+                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.communicationScore} / 5 ★</span>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between sm:col-span-2">
+                        <span className="text-slate-600">5. Resources & Equipment:</span>
+                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.teamworkScore} / 5 ★</span>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="font-semibold text-gray-800 block mb-1">
-                        Overall Evaluation Status
-                      </label>
-                      <select
-                        value={formOverallStatus}
-                        onChange={(e) => setFormOverallStatus(e.target.value as MonitoringOverallStatus)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold text-gray-800"
-                      >
-                        <option value="commendable">Commendable Performance</option>
-                        <option value="satisfactory">Satisfactory Progress</option>
-                        <option value="needs_guidance">Needs Guidance & Follow-up</option>
-                        <option value="critical">Critical / At-Risk</option>
-                      </select>
-                    </div>
+                    {reviewReport.questionnaire.strengths && (
+                      <div>
+                        <span className="font-semibold text-amber-950 block mb-1">HTE Strengths Commended:</span>
+                        <p className="p-2.5 bg-white rounded-xl border border-amber-100 text-slate-800">
+                          {reviewReport.questionnaire.strengths}
+                        </p>
+                      </div>
+                    )}
+
+                    {reviewReport.questionnaire.areasForImprovement && (
+                      <div>
+                        <span className="font-semibold text-amber-950 block mb-1">Areas for Improvement / Suggestions:</span>
+                        <p className="p-2.5 bg-white rounded-xl border border-amber-100 text-slate-800">
+                          {reviewReport.questionnaire.areasForImprovement}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Instructor Remarks Input */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-900 uppercase tracking-wide text-[11px] flex items-center gap-1.5">
+                      <MessageSquare size={14} className="text-blue-600" /> Instructor Remarks & Guidance
+                    </label>
+                    <span className="text-[10px] text-slate-400">Visible on student's portal & printout</span>
                   </div>
 
-                  <div>
-                    <label className="font-semibold text-gray-800 block mb-1">
-                      Instructor Recommendations & Guidance for Student *
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={formRecommendations}
-                      onChange={(e) => setFormRecommendations(e.target.value)}
-                      placeholder="e.g. Continue active participation in network security protocol reviews and keep DTR logs updated daily."
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 resize-none"
-                    />
+                  {/* Preset Quick Remarks */}
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReviewRemarksInput(
+                          'Satisfactory milestone completion. Well-documented tasks and good supervisory feedback.'
+                        )
+                      }
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-medium transition-colors cursor-pointer"
+                    >
+                      + Satisfactory milestone
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReviewRemarksInput(
+                          'Commendable performance observed this period. Continue maintaining excellent work ethic and prompt attendance.'
+                        )
+                      }
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-medium transition-colors cursor-pointer"
+                    >
+                      + Commendable progress
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReviewRemarksInput(
+                          'Exemplary practicum completion! All 600 hours successfully fulfilled with outstanding industry commendation.'
+                        )
+                      }
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-medium transition-colors cursor-pointer"
+                    >
+                      + Final completion endorsement
+                    </button>
                   </div>
 
-                  <div>
-                    <label className="font-semibold text-gray-800 block mb-1">
-                      Next Recommended Monitoring Visit Date
-                    </label>
-                    <input
-                      type="date"
-                      value={formNextVisitDate}
-                      onChange={(e) => setFormNextVisitDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
+                  <textarea
+                    rows={4}
+                    value={reviewRemarksInput}
+                    onChange={(e) => setReviewRemarksInput(e.target.value)}
+                    placeholder="Enter official instructor feedback, commendations, or recommendations for this trainee..."
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-blue-500 transition-all leading-relaxed"
+                  />
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="flex items-center justify-between pt-4 border-t border-gray-100 shrink-0">
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                  onClick={() => setReviewReport(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleSaveReport}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all cursor-pointer"
+                  onClick={handleSubmitReview}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-700/20 transition-all cursor-pointer"
                 >
-                  {editingReport ? 'Save Changes' : 'Generate & Publish Monitoring Report'}
+                  <CheckCircle2 size={15} /> Save & Endorse Report
                 </button>
               </div>
             </motion.div>
@@ -1218,72 +1157,321 @@ export function AdminMonitoringReport() {
         )}
       </AnimatePresence>
 
-      {/* REVIEW TRAINEE SELF REPORT MODAL */}
+      {/* VIEW DETAILS MODAL */}
       <AnimatePresence>
-        {reviewSelfReport && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        {viewDetailsReport && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-gray-100 space-y-4"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden"
             >
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <h3 className="text-sm font-bold text-gray-900">
-                  Review Trainee Self-Monitoring Journal
-                </h3>
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${PERIOD_CONFIG[viewDetailsReport.reportType]?.badgeColor || 'bg-slate-900 text-white'}`}>
+                    {PERIOD_CONFIG[viewDetailsReport.reportType]?.label} Report
+                  </span>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {viewDetailsReport.reportNumber}
+                  </h3>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setReviewSelfReport(null)}
-                  className="p-1 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+                  onClick={() => setViewDetailsReport(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="p-3 bg-gray-50 rounded-2xl border border-gray-150 space-y-1 text-xs">
-                <p><strong>Intern:</strong> {reviewSelfReport.traineeName}</p>
-                <p><strong>Period:</strong> {reviewSelfReport.periodCovered}</p>
-                <p><strong>Accomplishments:</strong> {reviewSelfReport.keyAccomplishments}</p>
+              <div className="p-6 overflow-y-auto space-y-4 text-xs">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Trainee</span>
+                    <span className="font-bold text-slate-900">{viewDetailsReport.traineeName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Degree Course</span>
+                    <span className="font-semibold text-slate-800">{viewDetailsReport.course}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Host Establishment</span>
+                    <span className="font-semibold text-slate-800">{viewDetailsReport.hteCompanyName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Hours Rendered</span>
+                    <span className="font-bold text-blue-700">+{viewDetailsReport.hoursRenderedThisPeriod || 0} Hours</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px] block mb-1">Tasks Accomplished</span>
+                  <p className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-800 whitespace-pre-line leading-relaxed">
+                    {viewDetailsReport.tasksAccomplished}
+                  </p>
+                </div>
+
+                {viewDetailsReport.skillsApplied && (
+                  <div>
+                    <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px] block mb-1">Skills Applied</span>
+                    <p className="p-3 bg-blue-50/50 rounded-xl border border-blue-200 text-blue-950 whitespace-pre-line leading-relaxed">
+                      {viewDetailsReport.skillsApplied}
+                    </p>
+                  </div>
+                )}
+
+                {viewDetailsReport.instructorRemarks && (
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-1">
+                    <span className="font-bold text-emerald-950 flex items-center gap-1">
+                      <Sparkles size={13} className="text-emerald-700" /> Instructor Remarks:
+                    </span>
+                    <p className="text-emerald-900 italic leading-relaxed">
+                      &ldquo;{viewDetailsReport.instructorRemarks}&rdquo;
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-gray-800 block mb-1">
-                  Instructor Remarks & Feedback for Intern *
-                </label>
-                <textarea
-                  rows={3}
-                  value={instructorRemarksInput}
-                  onChange={(e) => setInstructorRemarksInput(e.target.value)}
-                  placeholder="Provide encouragement, constructive feedback, or recommendations..."
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl focus:ring-1 focus:ring-indigo-500 resize-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setReviewSelfReport(null)}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!instructorRemarksInput.trim()) {
-                      toast.error('Please enter your remarks before marking as reviewed.');
-                      return;
-                    }
-                    await reviewTraineeSelfMonitoringReport(reviewSelfReport.id, instructorRemarksInput.trim(), 'reviewed');
-                    toast.success('Remarks saved & trainee progress acknowledged!');
-                    setReviewSelfReport(null);
+                  onClick={() => {
+                    const r = viewDetailsReport;
+                    setViewDetailsReport(null);
+                    setPrintReport(r);
                   }}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 flex items-center gap-1.5 cursor-pointer"
                 >
-                  Save & Acknowledge
+                  <Printer size={14} /> Print Report
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewDetailsReport(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 cursor-pointer"
+                >
+                  Close
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* CREATE / LOG MONITORING REPORT MODAL */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[94vh] flex flex-col overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">
+                    Log Official OJT Monitoring Report
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Select a student intern and enter assessment details for one of the 4 milestone periods.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateReport} className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+                {/* Trainee Selection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700">Select Student Intern *</label>
+                    <select
+                      required
+                      value={createTraineeId}
+                      onChange={(e) => handleSelectCreateTrainee(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                    >
+                      <option value="">-- Choose Student Intern --</option>
+                      {allTrainees.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.employeeId || t.id}) — {t.companyName || 'HTE'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700">Monitoring Period Milestone *</label>
+                    <select
+                      value={createReportType}
+                      onChange={(e) => setCreateReportType(e.target.value as MonitoringPeriodType)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                    >
+                      <option value="weekly">Weekly Progress Report (40h typical)</option>
+                      <option value="monthly">Monthly Progress Assessment (160h typical)</option>
+                      <option value="midterm">Mid-Term Evaluation (300h milestone)</option>
+                      <option value="endterm">End-Term Completion Report (600h exit)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Period Covered & Hours */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700">Period Covered Description *</label>
+                    <input
+                      type="text"
+                      required
+                      value={createPeriodCovered}
+                      onChange={(e) => setCreatePeriodCovered(e.target.value)}
+                      placeholder="e.g., Week 2 (Sept 8 - Sept 12) or Mid-Term 300h"
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700">Hours Rendered This Period</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={600}
+                      value={createHoursThisPeriod}
+                      onChange={(e) => setCreateHoursThisPeriod(Number(e.target.value))}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+
+                {/* Tasks Accomplished */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700">Key Tasks Accomplished & Observed *</label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={createTasks}
+                    onChange={(e) => setCreateTasks(e.target.value)}
+                    placeholder="Describe specific duties, technical projects, or workplace assignments completed..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                  />
+                </div>
+
+                {/* Skills Applied */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700">Skills & Competencies Applied</label>
+                  <input
+                    type="text"
+                    value={createSkills}
+                    onChange={(e) => setCreateSkills(e.target.value)}
+                    placeholder="e.g., Network cabling, Python API endpoints, UI design..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                  />
+                </div>
+
+                {/* Host Feedback Questionnaire (5 Dimensions) */}
+                <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200/70 space-y-4">
+                  <div className="flex items-center gap-1.5">
+                    <Star size={16} className="text-amber-500 fill-amber-500" />
+                    <h4 className="font-bold text-amber-950 text-xs">
+                      Host Feedback Questionnaire (Rating 1 - 5 Stars)
+                    </h4>
+                  </div>
+
+                  <div className="space-y-3">
+                    {HOST_FEEDBACK_QUESTIONS.map((q) => (
+                      <div
+                        key={q.key}
+                        className="bg-white p-3 rounded-xl border border-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      >
+                        <div>
+                          <p className="font-bold text-slate-900">{q.label}</p>
+                          <p className="text-[11px] text-slate-500">{q.description}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() =>
+                                setCreateRatings((prev) => ({
+                                  ...prev,
+                                  [q.key]: star,
+                                }))
+                              }
+                              className={`p-1 text-base transition-transform hover:scale-110 cursor-pointer ${
+                                star <= createRatings[q.key as keyof typeof createRatings]
+                                  ? 'text-amber-500'
+                                  : 'text-slate-300'
+                              }`}
+                            >
+                              ★
+                            </button>
+                          ))}
+                          <span className="font-bold text-slate-700 ml-1.5 text-xs">
+                            {createRatings[q.key as keyof typeof createRatings]} / 5
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Key Strengths of HTE</label>
+                      <input
+                        type="text"
+                        value={createStrengths}
+                        onChange={(e) => setCreateStrengths(e.target.value)}
+                        placeholder="Notable positive aspects observed..."
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Areas for Improvement</label>
+                      <input
+                        type="text"
+                        value={createImprovements}
+                        onChange={(e) => setCreateImprovements(e.target.value)}
+                        placeholder="Suggestions for training enhancement..."
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Instructor Remarks */}
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700">Official Instructor Remarks & Guidance</label>
+                  <textarea
+                    rows={2}
+                    value={createInstructorRemarks}
+                    onChange={(e) => setCreateInstructorRemarks(e.target.value)}
+                    placeholder="Enter assessment remarks and guidance for the student intern..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-700/20 cursor-pointer"
+                  >
+                    Submit & Save Report
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

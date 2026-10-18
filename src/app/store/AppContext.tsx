@@ -115,8 +115,9 @@ const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [];
 
 const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
   {
-    id: 'mr-demo-1',
-    reportNumber: 'CHMSU-MR-2026-001',
+    id: 'mr-demo-weekly-1',
+    reportNumber: 'CHMSU-MR-2026-W04',
+    reportType: 'weekly',
     traineeId: '20231379',
     traineeName: 'Juan Dela Cruz',
     studentId: '20231379',
@@ -130,36 +131,35 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     supervisorContact: '+63 917 555 4321',
     supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
     instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    visitDate: '2026-09-18',
-    visitTime: '10:30 AM',
-    visitType: 'on_site',
+    periodCovered: 'Week 4 (October 12 – October 16, 2026)',
+    dateSubmitted: '2026-10-16',
+    hoursRenderedThisPeriod: 40,
+    totalCumulativeHours: 160,
     requiredHours: TRAINEE_REQUIRED_HOURS,
-    renderedHours: 240,
-    remainingHours: 360,
-    attendanceConsistency: 'Regular / Consistently Punctual',
-    ratings: {
-      workQuality: 5,
-      punctuality: 5,
-      professionalism: 5,
-      technicalCompetence: 4,
-      policyAdherence: 5,
+    remainingHours: 440,
+    tasksAccomplished: 'Assisted network engineers with structured cabling, termination of CAT6 keystones, switch port VLAN configuration, and verified connectivity across Building B.',
+    skillsApplied: 'LAN Switching, RJ45 crimping, IP subnetting, network troubleshooting tools.',
+    challengesEncountered: 'Encountered intermittent packet loss on port 14 of floor switch; resolved by replacing damaged patch cord.',
+    questionnaire: {
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 5,
+      communicationScore: 4,
+      teamworkScore: 5,
+      overallScore: 96,
+      strengths: 'Very organized workplace; mentor Engr. Tan patiently walks through network topologies before deployment.',
+      areasForImprovement: 'Would appreciate exposure to firewall configuration rules and router access control lists.',
+      recommendation: 'Highly Recommended',
     },
-    tasksObserved: 'Assisting network operations team in structured cabling, LAN deployment, and database backup verification.',
-    highlights: 'Supervisor reported trainee is exceptionally dependable, proactive, and communicates clearly with department staff.',
-    issuesIdentified: 'None. Trainee is adapting swiftly to server configuration routines.',
-    recommendations: 'Allow trainee to participate in upcoming Active Directory and cybersecurity protocol audit.',
-    actionTaken: 'Endorsed trainee for specialized module on network security maintenance.',
-    overallStatus: 'commendable',
-    nextVisitDate: '2026-10-25',
-    instructorSignature: 'Prof. Ma. Cristina Ramos, MIT',
-    isAcknowledgedByTrainee: true,
-    traineeAcknowledgedAt: '2026-09-19T08:15:00Z',
-    traineeFeedback: 'Thank you Ma\'am for visiting our station! I am learning so much in enterprise networking.',
-    createdAt: '2026-09-18T11:45:00Z',
+    status: 'reviewed',
+    instructorRemarks: 'Excellent weekly monitoring submission Juan! Your structured documentation of the VLAN setup is commendable.',
+    reviewedByInstructorAt: '2026-10-17T09:30:00Z',
+    createdAt: '2026-10-16T17:00:00Z',
   },
   {
-    id: 'mr-demo-2',
-    reportNumber: 'CHMSU-MR-2026-002',
+    id: 'mr-demo-monthly-1',
+    reportNumber: 'CHMSU-MR-2026-M01',
+    reportType: 'monthly',
     traineeId: 'emp-1',
     traineeName: 'Maria Santos',
     studentId: '20231380',
@@ -173,32 +173,113 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     supervisorContact: '+63 920 888 1234',
     supervisorDesignation: 'Lead Business Analyst',
     instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    visitDate: '2026-09-22',
-    visitTime: '02:00 PM',
-    visitType: 'virtual',
+    periodCovered: 'Month 1 (September 2026)',
+    dateSubmitted: '2026-09-30',
+    hoursRenderedThisPeriod: 160,
+    totalCumulativeHours: 160,
     requiredHours: TRAINEE_REQUIRED_HOURS,
-    renderedHours: 180,
-    remainingHours: 420,
-    attendanceConsistency: 'Punctual with occasional approved schedule shifts',
-    ratings: {
-      workQuality: 4,
-      punctuality: 4,
-      professionalism: 5,
-      technicalCompetence: 4,
-      policyAdherence: 5,
+    remainingHours: 440,
+    tasksAccomplished: 'Prepared software requirements specifications (SRS), created Figma user journey wireframes, and participated in daily standups for client ERP upgrade.',
+    skillsApplied: 'Agile/Scrum, Business Process Modeling (BPMN), Figma UI prototyping, JIRA backlog management.',
+    challengesEncountered: 'Shifting client requirement priorities during sprint mid-cycle.',
+    questionnaire: {
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 4,
+      communicationScore: 5,
+      teamworkScore: 5,
+      overallScore: 96,
+      strengths: 'Exceptional mentorship and collaborative team atmosphere. Supervisors provide detailed feedback on every wireframe.',
+      areasForImprovement: 'Provide access to actual test staging server earlier in the sprint.',
+      recommendation: 'Highly Recommended',
     },
-    tasksObserved: 'Conducted virtual progress review via Zoom. Trainee presented user story documentation and wireframes for client ERP portal.',
-    highlights: 'High analytical rigor; documentation follows industry standard ISO specifications.',
-    issuesIdentified: 'Client workload occasionally shifts priorities; trainee needs to manage multi-tasking effectively.',
-    recommendations: 'Continue weekly sprint retrospective with mentor to balance backlog tasks.',
-    actionTaken: 'Discussed workload balance with mentor Ms. Gomez.',
-    overallStatus: 'satisfactory',
-    nextVisitDate: '2026-10-28',
-    instructorSignature: 'Prof. Ma. Cristina Ramos, MIT',
-    isAcknowledgedByTrainee: true,
-    traineeAcknowledgedAt: '2026-09-23T09:00:00Z',
-    traineeFeedback: 'Understood Ma\'am. Will pace backlog tasks during sprint planning.',
-    createdAt: '2026-09-22T15:00:00Z',
+    status: 'reviewed',
+    instructorRemarks: 'Impressive progress Maria. Continue refining your system requirement documents according to ISO specifications.',
+    reviewedByInstructorAt: '2026-10-02T10:15:00Z',
+    createdAt: '2026-09-30T16:30:00Z',
+  },
+  {
+    id: 'mr-demo-midterm-1',
+    reportNumber: 'CHMSU-MR-2026-MID',
+    reportType: 'midterm',
+    traineeId: '20231379',
+    traineeName: 'Juan Dela Cruz',
+    studentId: '20231379',
+    course: 'Bachelor of Science in Information Technology',
+    department: 'College of Computer Studies',
+    campus: 'Talisay (Main Campus)',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
+    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
+    supervisorName: 'Engr. Roberto M. Tan',
+    supervisorContact: '+63 917 555 4321',
+    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
+    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
+    periodCovered: 'Mid-Term Evaluation (300 Hours Milestone)',
+    dateSubmitted: '2026-10-10',
+    hoursRenderedThisPeriod: 140,
+    totalCumulativeHours: 300,
+    requiredHours: TRAINEE_REQUIRED_HOURS,
+    remainingHours: 300,
+    tasksAccomplished: 'Completed midterm evaluation milestone. Deployed centralized Active Directory domain accounts, configured automated night backups, and audited 40 departmental workstations.',
+    skillsApplied: 'Windows Server 2022, Active Directory, PowerShell scripting, RAID storage maintenance.',
+    challengesEncountered: 'Legacy backup script syntax errors during server migration.',
+    questionnaire: {
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 5,
+      communicationScore: 5,
+      teamworkScore: 5,
+      overallScore: 100,
+      strengths: 'First-rate enterprise equipment, supportive management, and meaningful technical responsibility given to interns.',
+      areasForImprovement: 'Keep up the current training program pace; opportunity to observe disaster recovery drill.',
+      recommendation: 'Highly Recommended',
+    },
+    status: 'reviewed',
+    instructorRemarks: 'Congratulations on reaching the 300-hour midpoint Juan! Your supervisor notes you are functioning on par with junior IT personnel.',
+    reviewedByInstructorAt: '2026-10-12T11:00:00Z',
+    createdAt: '2026-10-10T15:00:00Z',
+  },
+  {
+    id: 'mr-demo-endterm-1',
+    reportNumber: 'CHMSU-MR-2026-END',
+    reportType: 'endterm',
+    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
+    traineeName: 'Jhey Ree C Ebro',
+    studentId: '20231331',
+    course: 'Bachelor of Science in Information Systems',
+    department: 'College of Computer Studies',
+    campus: 'Talisay (Main Campus)',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Concentrix',
+    hteAddress: 'Bacolod City, Negros Occidental',
+    supervisorName: 'Jhey Ree C Ebro',
+    supervisorContact: '+63 917 123 4567',
+    supervisorDesignation: 'OJT Training Supervisor',
+    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
+    periodCovered: 'End-Term Final Completion (600 Hours Milestone)',
+    dateSubmitted: '2026-10-18',
+    hoursRenderedThisPeriod: 150,
+    totalCumulativeHours: 600,
+    requiredHours: 600,
+    remainingHours: 0,
+    tasksAccomplished: 'Completed full 600-hour practicum! Finalized OJT management system database migrations, API error handling, trainee document compliance verification, and deployment documentation.',
+    skillsApplied: 'Full-stack development, PostgreSQL, Supabase, React/TypeScript, Vercel cloud deployment, automated testing.',
+    challengesEncountered: 'Handling large base64 file payloads and serverless timeout boundaries.',
+    questionnaire: {
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 5,
+      communicationScore: 5,
+      teamworkScore: 5,
+      overallScore: 100,
+      strengths: 'Outstanding learning environment, high-velocity real project exposure, and top-tier mentorship.',
+      areasForImprovement: 'Maintain current industry partnership programs for succeeding student batches.',
+      recommendation: 'Highly Recommended',
+    },
+    status: 'submitted',
+    instructorRemarks: '',
+    createdAt: '2026-10-18T18:00:00Z',
   },
 ];
 
@@ -467,11 +548,12 @@ interface AppContextType {
   saveMonthlyDttr: (record: MonthlyDttrRecord) => void;
   getMonthlyDttr: (employeeId: string, year: number, month: number) => MonthlyDttrRecord | null;
   signMonthlyDttr: (employeeId: string, year: number, month: number, supervisorName: string, supervisorTitle?: string) => void;
-  // Official OJT Monitoring Reports
+  // Official OJT Monitoring Reports (Weekly, Monthly, MidTerm, EndTerm)
   monitoringReports: MonitoringReport[];
   addMonitoringReport: (data: Omit<MonitoringReport, 'id' | 'reportNumber' | 'createdAt'>) => Promise<MonitoringReport>;
   updateMonitoringReport: (id: string, data: Partial<MonitoringReport>) => Promise<void>;
   deleteMonitoringReport: (id: string) => Promise<void>;
+  reviewMonitoringReport: (id: string, instructorRemarks: string, status?: 'reviewed' | 'acknowledged') => Promise<void>;
   getTraineeMonitoringReports: (traineeId: string) => MonitoringReport[];
   acknowledgeMonitoringReport: (id: string, feedback?: string) => Promise<void>;
   // Trainee Self-Monitoring Progress Reports
@@ -5190,6 +5272,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMonitoringReports((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
+  const reviewMonitoringReport = useCallback(
+    async (id: string, instructorRemarks: string, status: 'reviewed' | 'acknowledged' = 'reviewed') => {
+      setMonitoringReports((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                instructorRemarks,
+                status,
+                reviewedByInstructorAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+            : r
+        )
+      );
+    },
+    []
+  );
+
   const getTraineeMonitoringReports = useCallback(
     (traineeId: string) => {
       return monitoringReports.filter(
@@ -5362,6 +5463,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addMonitoringReport,
         updateMonitoringReport,
         deleteMonitoringReport,
+        reviewMonitoringReport,
         getTraineeMonitoringReports,
         acknowledgeMonitoringReport,
         traineeSelfMonitoringReports,
