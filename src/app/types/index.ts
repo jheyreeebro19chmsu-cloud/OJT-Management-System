@@ -448,6 +448,9 @@ export type RequirementStatus = 'missing' | 'incomplete' | 'complete';
 
 export type MonitoringPeriodType = 'weekly' | 'monthly' | 'midterm' | 'endterm';
 
+export type MonitoringTermType = 'midterm' | 'endterm';
+export type MonitoringFrequencyType = 'weekly' | 'monthly' | 'evaluation';
+
 export type MonitoringVisitType =
   | 'on_site'
   | 'virtual'
@@ -503,6 +506,8 @@ export interface MonitoringReport {
   id: string;
   reportNumber: string;
   reportType: MonitoringPeriodType;
+  term?: MonitoringTermType;
+  frequency?: MonitoringFrequencyType;
   traineeId: string;
   traineeName: string;
   studentId?: string;

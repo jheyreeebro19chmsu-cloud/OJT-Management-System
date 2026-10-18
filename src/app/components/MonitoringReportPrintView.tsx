@@ -14,7 +14,17 @@ export function MonitoringReportPrintView({ report, onClose }: MonitoringReportP
 
   const q = report.questionnaire || {};
 
-  const getPeriodTitle = (type: string) => {
+  const getPeriodTitle = (type: string, term?: string, frequency?: string) => {
+    if (term === 'midterm') {
+      if (frequency === 'weekly') return 'MID-TERM WEEKLY OJT MONITORING & EVALUATION REPORT';
+      if (frequency === 'monthly') return 'MID-TERM MONTHLY OJT MONITORING & EVALUATION REPORT';
+      return 'MID-TERM OJT MONITORING & EVALUATION REPORT (300 HOURS)';
+    }
+    if (term === 'endterm') {
+      if (frequency === 'weekly') return 'END-TERM WEEKLY OJT MONITORING & EVALUATION REPORT';
+      if (frequency === 'monthly') return 'END-TERM MONTHLY OJT MONITORING & EVALUATION REPORT';
+      return 'END-TERM OJT MONITORING & EVALUATION REPORT (600 HOURS)';
+    }
     switch (type) {
       case 'weekly':
         return 'WEEKLY OJT MONITORING & EVALUATION REPORT';
@@ -29,7 +39,7 @@ export function MonitoringReportPrintView({ report, onClose }: MonitoringReportP
     }
   };
 
-  const periodTitle = getPeriodTitle(report.reportType || 'weekly');
+  const periodTitle = getPeriodTitle(report.reportType || 'weekly', report.term, report.frequency);
 
   const employabilityStatus = q.employabilityStatus || 'OJT Trainee';
   const allowanceSalary = q.allowanceSalary || 'None / Stipend';

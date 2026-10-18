@@ -118,6 +118,8 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     id: 'mr-demo-weekly-1',
     reportNumber: 'CHMSU-MR-2026-W04',
     reportType: 'weekly',
+    term: 'midterm',
+    frequency: 'weekly',
     traineeId: '20231379',
     traineeName: 'Juan Dela Cruz',
     studentId: '20231379',
@@ -131,7 +133,7 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     supervisorContact: '+63 917 555 4321',
     supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
     instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Week 4 (October 12 – October 16, 2026)',
+    periodCovered: 'Mid-Term Week 4 (October 12 – October 16, 2026)',
     dateSubmitted: '2026-10-16',
     hoursRenderedThisPeriod: 40,
     totalCumulativeHours: 160,
@@ -175,6 +177,8 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     id: 'mr-demo-monthly-1',
     reportNumber: 'CHMSU-MR-2026-M01',
     reportType: 'monthly',
+    term: 'midterm',
+    frequency: 'monthly',
     traineeId: 'emp-1',
     traineeName: 'Maria Santos',
     studentId: '20231380',
@@ -188,7 +192,7 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     supervisorContact: '+63 920 888 1234',
     supervisorDesignation: 'Lead Business Analyst',
     instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Month 1 (September 2026)',
+    periodCovered: 'Mid-Term Month 1 (September 2026)',
     dateSubmitted: '2026-09-30',
     hoursRenderedThisPeriod: 160,
     totalCumulativeHours: 160,
@@ -232,6 +236,8 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     id: 'mr-demo-midterm-1',
     reportNumber: 'CHMSU-MR-2026-MID',
     reportType: 'midterm',
+    term: 'midterm',
+    frequency: 'evaluation',
     traineeId: '20231379',
     traineeName: 'Juan Dela Cruz',
     studentId: '20231379',
@@ -286,9 +292,129 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     createdAt: '2026-10-10T15:00:00Z',
   },
   {
+    id: 'mr-demo-endterm-w1',
+    reportNumber: 'CHMSU-MR-2026-EW09',
+    reportType: 'weekly',
+    term: 'endterm',
+    frequency: 'weekly',
+    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
+    traineeName: 'Jhey Ree C Ebro',
+    studentId: '20231331',
+    course: 'Bachelor of Science in Information Systems',
+    department: 'College of Computer Studies',
+    campus: 'Talisay (Main Campus)',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Concentrix',
+    hteAddress: 'Bacolod City, Negros Occidental',
+    supervisorName: 'Jhey Ree C Ebro',
+    supervisorContact: '+63 917 123 4567',
+    supervisorDesignation: 'OJT Training Supervisor',
+    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
+    periodCovered: 'End-Term Week 9 (October 19 – October 23, 2026)',
+    dateSubmitted: '2026-10-23',
+    hoursRenderedThisPeriod: 40,
+    totalCumulativeHours: 360,
+    requiredHours: 600,
+    remainingHours: 240,
+    tasksAccomplished: 'Initiated second half of practicum. Implemented real-time biometric synchronization and offline caching for field staff attendance devices.',
+    skillsApplied: 'IndexedDB, Service Workers, TypeScript, REST API.',
+    challengesEncountered: 'Handling state consistency during sudden network disconnects.',
+    questionnaire: {
+      employabilityStatus: 'OJT Trainee',
+      allowanceSalary: 'None / Stipend',
+      telephoneNo: 'N/A',
+      department: 'COLLEGE OF COMPUTER STUDIES',
+      position: 'ON - THE - JOB TRAINEE',
+      otherDeptAssigned: 'None',
+      q1_dutiesBriefly: 'Developing offline-first sync mechanisms and IndexedDB schemas for field attendance tracking.',
+      q2_strongestPerformanceArea: 'High problem-solving velocity and clean TypeScript architecture.',
+      q3_areasImprovedMost: 'PWA lifecycle management and background sync APIs.',
+      q4_areasNeedImprovement: 'Complex SQL window functions.',
+      q5_situationChallengedMost: 'Race conditions when synchronizing concurrent offline logs.',
+      q6_howOvercameChallenge: 'Applied idempotent transaction queues with UUID tracking.',
+      q7_whatLearnedFromExperience: 'Robust software accounts for unstable network environments from day one.',
+      q8_isQualifiedLinkage: 'Yes, outstanding technical environment.',
+      q9_ojtSuggestionsRecommendations: 'Maintain strong industry collaboration with CHMSU.',
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 5,
+      communicationScore: 5,
+      teamworkScore: 5,
+      overallScore: 100,
+      strengths: 'First-rate enterprise equipment and supportive management.',
+      areasForImprovement: 'Continue current mentoring schedule.',
+      recommendation: 'Highly Recommended',
+    },
+    status: 'reviewed',
+    instructorRemarks: 'Great start to your End-Term practicum phase Jhey Ree! The offline sync architecture is impressive.',
+    reviewedByInstructorAt: '2026-10-24T10:00:00Z',
+    createdAt: '2026-10-23T17:00:00Z',
+  },
+  {
+    id: 'mr-demo-endterm-m1',
+    reportNumber: 'CHMSU-MR-2026-EM03',
+    reportType: 'monthly',
+    term: 'endterm',
+    frequency: 'monthly',
+    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
+    traineeName: 'Jhey Ree C Ebro',
+    studentId: '20231331',
+    course: 'Bachelor of Science in Information Systems',
+    department: 'College of Computer Studies',
+    campus: 'Talisay (Main Campus)',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Concentrix',
+    hteAddress: 'Bacolod City, Negros Occidental',
+    supervisorName: 'Jhey Ree C Ebro',
+    supervisorContact: '+63 917 123 4567',
+    supervisorDesignation: 'OJT Training Supervisor',
+    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
+    periodCovered: 'End-Term Month 3 (October 2026)',
+    dateSubmitted: '2026-10-31',
+    hoursRenderedThisPeriod: 160,
+    totalCumulativeHours: 480,
+    requiredHours: 600,
+    remainingHours: 120,
+    tasksAccomplished: 'Monthly End-Term milestone review. Optimized PostgreSQL database query execution plans, authored audit trails, and conducted load testing for 500 concurrent trainee sessions.',
+    skillsApplied: 'PostgreSQL, query planning, indexing, performance profiling.',
+    challengesEncountered: 'Slow join performance on large attendance logs table.',
+    questionnaire: {
+      employabilityStatus: 'OJT Trainee',
+      allowanceSalary: 'None / Stipend',
+      telephoneNo: 'N/A',
+      department: 'COLLEGE OF COMPUTER STUDIES',
+      position: 'ON - THE - JOB TRAINEE',
+      otherDeptAssigned: 'None',
+      q1_dutiesBriefly: 'Database tuning, index optimization, and high-concurrency load testing.',
+      q2_strongestPerformanceArea: 'Database query optimization and performance profiling.',
+      q3_areasImprovedMost: 'PostgreSQL execution plan analysis and index strategy.',
+      q4_areasNeedImprovement: 'Automated CI/CD deployment pipelines.',
+      q5_situationChallengedMost: 'High latency query bottleneck on non-indexed timestamp columns.',
+      q6_howOvercameChallenge: 'Created composite B-tree indices and partitioned historical data.',
+      q7_whatLearnedFromExperience: 'Proper indexing and database normalization are essential for production scale.',
+      q8_isQualifiedLinkage: 'Yes, highly recommended.',
+      q9_ojtSuggestionsRecommendations: 'Continue the institutional partnership with CHMSU.',
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 5,
+      communicationScore: 5,
+      teamworkScore: 5,
+      overallScore: 100,
+      strengths: 'Modern enterprise infrastructure and high developer autonomy.',
+      areasForImprovement: 'Keep up the current pace.',
+      recommendation: 'Highly Recommended',
+    },
+    status: 'reviewed',
+    instructorRemarks: 'Excellent progress towards completion Jhey Ree! 480 hours successfully documented.',
+    reviewedByInstructorAt: '2026-11-02T09:00:00Z',
+    createdAt: '2026-10-31T17:00:00Z',
+  },
+  {
     id: 'mr-demo-endterm-1',
     reportNumber: 'CHMSU-MR-2026-END',
     reportType: 'endterm',
+    term: 'endterm',
+    frequency: 'evaluation',
     traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
     traineeName: 'Jhey Ree C Ebro',
     studentId: '20231331',
@@ -304,7 +430,7 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     instructorName: 'Prof. Ma. Cristina Ramos, MIT',
     periodCovered: 'End-Term Final Completion (600 Hours Milestone)',
     dateSubmitted: '2026-10-18',
-    hoursRenderedThisPeriod: 150,
+    hoursRenderedThisPeriod: 120,
     totalCumulativeHours: 600,
     requiredHours: 600,
     remainingHours: 0,
@@ -342,6 +468,7 @@ const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
     createdAt: '2026-10-18T18:00:00Z',
   },
 ];
+
 
 
 const DEFAULT_TRAINEE_SELF_REPORTS: TraineeSelfMonitoringReport[] = [
@@ -1475,8 +1602,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return DEFAULT_MONITORING_REPORTS;
     }
 
-    // Auto-migrate legacy reports to ensure full 4-milestone period, periodCovered, and questionnaire compatibility
-    const migrated = stored.map((r, idx) => {
+    // Ensure any new default templates are merged if missing
+    const combined = [...stored];
+    for (const def of DEFAULT_MONITORING_REPORTS) {
+      if (!combined.some((r) => r.id === def.id)) {
+        combined.push(def);
+      }
+    }
+
+    // Auto-migrate legacy reports to ensure full 2-term (Mid-Term / End-Term), frequency, periodCovered, and questionnaire compatibility
+    const migrated = combined.map((r, idx) => {
       let reportType: MonitoringPeriodType = r.reportType || 'weekly';
       if (!r.reportType) {
         const num = (r.reportNumber || '').toUpperCase();
@@ -1492,24 +1627,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Assign term: 'midterm' | 'endterm'
+      let term: MonitoringTermType = r.term || (
+        reportType === 'endterm' ||
+        (r.reportNumber || '').toUpperCase().includes('END') ||
+        (r.periodCovered || '').toLowerCase().includes('end-term') ||
+        (r.totalCumulativeHours || 0) > 300
+          ? 'endterm'
+          : 'midterm'
+      );
+
+      // Assign frequency: 'weekly' | 'monthly' | 'evaluation'
+      let frequency: MonitoringFrequencyType = r.frequency || (
+        reportType === 'midterm' || reportType === 'endterm'
+          ? 'evaluation'
+          : reportType === 'monthly' || (r.periodCovered || '').toLowerCase().includes('month')
+          ? 'monthly'
+          : 'weekly'
+      );
+
       let periodCovered = r.periodCovered;
       if (!periodCovered || periodCovered.trim() === '') {
-        if (reportType === 'weekly') {
-          periodCovered = r.visitDate
-            ? `Week ${idx + 1} (${new Date(r.visitDate).toLocaleDateString()})`
-            : `Week ${idx + 1} Progress Review`;
-        } else if (reportType === 'monthly') {
-          periodCovered = `Month ${idx + 1} Comprehensive Assessment`;
-        } else if (reportType === 'midterm') {
-          periodCovered = 'Mid-Term Evaluation (300 Hours Milestone)';
-        } else if (reportType === 'endterm') {
-          periodCovered = 'End-Term Final Completion (600 Hours Milestone)';
+        const termPrefix = term === 'midterm' ? 'Mid-Term' : 'End-Term';
+        if (frequency === 'weekly') {
+          periodCovered = `${termPrefix} Week ${idx + 1} Progress Review`;
+        } else if (frequency === 'monthly') {
+          periodCovered = `${termPrefix} Month ${idx + 1} Assessment`;
+        } else {
+          periodCovered = term === 'midterm'
+            ? 'Mid-Term Evaluation (300 Hours Milestone)'
+            : 'End-Term Final Completion (600 Hours Milestone)';
         }
       }
 
       const hoursRenderedThisPeriod =
         r.hoursRenderedThisPeriod ||
-        (reportType === 'weekly' ? 40 : reportType === 'monthly' ? 160 : reportType === 'midterm' ? 140 : 150);
+        (frequency === 'weekly' ? 40 : frequency === 'monthly' ? 160 : term === 'midterm' ? 140 : 150);
 
       const tasks =
         r.tasksAccomplished ||
@@ -1572,6 +1725,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return {
         ...r,
+        term,
+        frequency,
         reportType,
         periodCovered,
         hoursRenderedThisPeriod,
@@ -5414,8 +5569,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const year = new Date().getFullYear();
       const count = monitoringReports.length + 1;
       const reportNumber = `CHMSU-MR-${year}-${String(count).padStart(3, '0')}`;
+      const term = data.term || (
+        data.reportType === 'endterm' || (data.totalCumulativeHours || 0) > 300
+          ? 'endterm'
+          : 'midterm'
+      );
+      const frequency = data.frequency || (
+        data.reportType === 'midterm' || data.reportType === 'endterm'
+          ? 'evaluation'
+          : data.reportType === 'monthly'
+          ? 'monthly'
+          : 'weekly'
+      );
       const newReport: MonitoringReport = {
         ...data,
+        term,
+        frequency,
         id: `mr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         reportNumber,
         createdAt: new Date().toISOString(),

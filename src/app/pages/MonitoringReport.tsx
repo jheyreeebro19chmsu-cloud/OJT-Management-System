@@ -37,10 +37,32 @@ import { useApp } from '../store/AppContext';
 import {
   MonitoringReport as IMonitoringReport,
   MonitoringPeriodType,
+  MonitoringTermType,
+  MonitoringFrequencyType,
   MonitoringQuestionnaire,
   EmployabilityStatus,
 } from '../types';
 import { MonitoringReportPrintView } from '../components/MonitoringReportPrintView';
+
+export function getReportTerm(report: IMonitoringReport): MonitoringTermType {
+  if (report.term) return report.term;
+  if (
+    report.reportType === 'endterm' ||
+    (report.reportNumber || '').toUpperCase().includes('END') ||
+    (report.periodCovered || '').toLowerCase().includes('end-term') ||
+    (report.totalCumulativeHours || 0) > 300
+  ) {
+    return 'endterm';
+  }
+  return 'midterm';
+}
+
+export function getReportFrequency(report: IMonitoringReport): MonitoringFrequencyType {
+  if (report.frequency) return report.frequency;
+  if (report.reportType === 'midterm' || report.reportType === 'endterm') return 'evaluation';
+  if (report.reportType === 'monthly' || (report.periodCovered || '').toLowerCase().includes('month')) return 'monthly';
+  return 'weekly';
+}
 
 const PERIOD_CONFIG: Record<
   MonitoringPeriodType,
@@ -66,16 +88,16 @@ const PERIOD_CONFIG: Record<
   },
   midterm: {
     label: 'MidTerm',
-    title: 'Mid-Term Monitoring Report',
+    title: 'Mid-Term Evaluation (300h)',
     desc: 'Mid-practicum progress review & intermediate milestone evaluation (300 Hours)',
-    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
-    borderClass: 'border-amber-500',
-    bgClass: 'from-amber-500/10 to-orange-500/10',
+    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    borderClass: 'border-indigo-500',
+    bgClass: 'from-indigo-500/10 to-blue-500/10',
     defaultHours: 300,
   },
   endterm: {
     label: 'EndTerm',
-    title: 'End-Term Monitoring Report',
+    title: 'End-Term Evaluation (600h)',
     desc: 'Final practicum completion evaluation, HTE rating, and exit feedback (600 Hours)',
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     borderClass: 'border-emerald-500',
@@ -208,8 +230,11 @@ export function MonitoringReport() {
 
   const currentEmp = getCurrentEmployee();
 
-  // Active period tab: 'all' | 'weekly' | 'monthly' | 'midterm' | 'endterm'
-  const [activePeriodTab, setActivePeriodTab] = useState<'all' | MonitoringPeriodType>('all');
+  // Navigation tabs:
+  // Top-level term: 'all' | 'midterm' | 'endterm'
+  // Secondary sub-filter: 'all' | 'weekly' | 'monthly' | 'evaluation'
+  const [activeTermTab, setActiveTermTab] = useState<'all' | 'midterm' | 'endterm'>('all');
+  const [activeSubFilter, setActiveSubFilter] = useState<'all' | 'weekly' | 'monthly' | 'evaluation'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
@@ -219,6 +244,8 @@ export function MonitoringReport() {
   const [printReport, setPrintReport] = useState<IMonitoringReport | null>(null);
 
   // Form states
+  const [formTerm, setFormTerm] = useState<MonitoringTermType>('midterm');
+  const [formFrequency, setFormFrequency] = useState<MonitoringFrequencyType>('weekly');
   const [formType, setFormType] = useState<MonitoringPeriodType>('weekly');
   const [formPeriodCovered, setFormPeriodCovered] = useState('');
   const [formHoursRendered, setFormHoursRendered] = useState<number>(40);
@@ -273,11 +300,43 @@ export function MonitoringReport() {
     );
   }, [monitoringReports, currentEmp]);
 
-  // Filtered by active tab and search
+  // Summary counts per term and nested frequency
+  const termCounts = useMemo(() => {
+    const midtermReports = myReports.filter((r) => getReportTerm(r) === 'midterm');
+    const endtermReports = myReports.filter((r) => getReportTerm(r) === 'endterm');
+
+    return {
+      all: myReports.length,
+      midterm: {
+        all: midtermReports.length,
+        weekly: midtermReports.filter((r) => getReportFrequency(r) === 'weekly').length,
+        monthly: midtermReports.filter((r) => getReportFrequency(r) === 'monthly').length,
+        evaluation: midtermReports.filter((r) => getReportFrequency(r) === 'evaluation').length,
+      },
+      endterm: {
+        all: endtermReports.length,
+        weekly: endtermReports.filter((r) => getReportFrequency(r) === 'weekly').length,
+        monthly: endtermReports.filter((r) => getReportFrequency(r) === 'monthly').length,
+        evaluation: endtermReports.filter((r) => getReportFrequency(r) === 'evaluation').length,
+      },
+      totalWeekly: myReports.filter((r) => getReportFrequency(r) === 'weekly').length,
+      totalMonthly: myReports.filter((r) => getReportFrequency(r) === 'monthly').length,
+      totalEvaluation: myReports.filter((r) => getReportFrequency(r) === 'evaluation').length,
+      pendingCount: myReports.filter((r) => r.status === 'submitted').length,
+      reviewedCount: myReports.filter((r) => r.status === 'reviewed').length,
+    };
+  }, [myReports]);
+
+  // Filtered by active term, nested frequency sub-filter, and search
   const filteredReports = useMemo(() => {
     return myReports.filter((r) => {
-      const rType = r.reportType || 'weekly';
-      if (activePeriodTab !== 'all' && rType !== activePeriodTab) {
+      const term = getReportTerm(r);
+      const freq = getReportFrequency(r);
+
+      if (activeTermTab !== 'all' && term !== activeTermTab) {
+        return false;
+      }
+      if (activeSubFilter !== 'all' && freq !== activeSubFilter) {
         return false;
       }
       if (searchQuery.trim()) {
@@ -290,31 +349,38 @@ export function MonitoringReport() {
       }
       return true;
     });
-  }, [myReports, activePeriodTab, searchQuery]);
-
-  // Summary counts per period
-  const periodCounts = useMemo(() => {
-    return {
-      all: myReports.length,
-      weekly: myReports.filter((r) => (r.reportType || 'weekly') === 'weekly').length,
-      monthly: myReports.filter((r) => r.reportType === 'monthly').length,
-      midterm: myReports.filter((r) => r.reportType === 'midterm').length,
-      endterm: myReports.filter((r) => r.reportType === 'endterm').length,
-    };
-  }, [myReports]);
+  }, [myReports, activeTermTab, activeSubFilter, searchQuery]);
 
   // Open Submit Modal for New Report
-  const openNewSubmitModal = (type: MonitoringPeriodType = 'weekly') => {
+  const openNewSubmitModal = (
+    initialTerm: MonitoringTermType = activeTermTab === 'endterm' ? 'endterm' : 'midterm',
+    initialFreq: MonitoringFrequencyType = activeSubFilter !== 'all' ? activeSubFilter : 'weekly'
+  ) => {
     setEditingReport(null);
-    setFormType(type);
-    const cfg = PERIOD_CONFIG[type];
-    setFormHoursRendered(cfg.defaultHours);
+    setFormTerm(initialTerm);
+    setFormFrequency(initialFreq);
+    const derivedType: MonitoringPeriodType =
+      initialFreq === 'evaluation' ? initialTerm : initialFreq;
+    setFormType(derivedType);
+
+    const defaultHours =
+      initialFreq === 'weekly' ? 40 : initialFreq === 'monthly' ? 160 : initialTerm === 'midterm' ? 300 : 600;
+    setFormHoursRendered(defaultHours);
+
+    const termPrefix = initialTerm === 'midterm' ? 'Mid-Term' : 'End-Term';
+    const currentCount =
+      initialFreq === 'weekly'
+        ? termCounts[initialTerm].weekly + 1
+        : initialFreq === 'monthly'
+        ? termCounts[initialTerm].monthly + 1
+        : 1;
+
     setFormPeriodCovered(
-      type === 'weekly'
-        ? `Week ${periodCounts.weekly + 1}`
-        : type === 'monthly'
-        ? `Month ${periodCounts.monthly + 1}`
-        : type === 'midterm'
+      initialFreq === 'weekly'
+        ? `${termPrefix} Week ${initialTerm === 'endterm' ? currentCount + 8 : currentCount}`
+        : initialFreq === 'monthly'
+        ? `${termPrefix} Month ${initialTerm === 'endterm' ? currentCount + 2 : currentCount}`
+        : initialTerm === 'midterm'
         ? 'Mid-Term Evaluation (300 Hours Milestone)'
         : 'End-Term Final Completion (600 Hours Milestone)'
     );
@@ -345,9 +411,13 @@ export function MonitoringReport() {
   // Open Edit Modal
   const openEditModal = (report: IMonitoringReport) => {
     setEditingReport(report);
-    setFormType(report.reportType || 'weekly');
+    const rTerm = getReportTerm(report);
+    const rFreq = getReportFrequency(report);
+    setFormTerm(rTerm);
+    setFormFrequency(rFreq);
+    setFormType(report.reportType || (rFreq === 'evaluation' ? rTerm : rFreq));
     setFormPeriodCovered(report.periodCovered || '');
-    setFormHoursRendered(report.hoursRenderedThisPeriod || 40);
+    setFormHoursRendered(report.hoursRenderedThisPeriod || (rFreq === 'weekly' ? 40 : rFreq === 'monthly' ? 160 : 300));
 
     const q = report.questionnaire || {};
     setFormEmployability(q.employabilityStatus || 'OJT Trainee');
@@ -405,10 +475,15 @@ export function MonitoringReport() {
       recommendation: 'Highly Recommended',
     };
 
+    const derivedType: MonitoringPeriodType =
+      formFrequency === 'evaluation' ? formTerm : formFrequency;
+
     try {
       if (editingReport) {
         await updateMonitoringReport(editingReport.id, {
-          reportType: formType,
+          term: formTerm,
+          frequency: formFrequency,
+          reportType: derivedType,
           periodCovered: formPeriodCovered,
           hoursRenderedThisPeriod: Number(formHoursRendered),
           tasksAccomplished: qAnswers.q1_dutiesBriefly,
@@ -416,10 +491,12 @@ export function MonitoringReport() {
           challengesEncountered: qAnswers.q5_situationChallengedMost,
           questionnaire,
         });
-        toast.success(`${PERIOD_CONFIG[formType].label} Monitoring Report updated!`);
+        toast.success(`${formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${formFrequency.toUpperCase()} Report updated!`);
       } else {
         await addMonitoringReport({
-          reportType: formType,
+          term: formTerm,
+          frequency: formFrequency,
+          reportType: derivedType,
           traineeId: currentEmp?.id || currentUser?.id || 'trainee-current',
           traineeName: currentEmp?.name || currentUser?.name || 'OJT Student Trainee',
           studentId: currentEmp?.employeeId || currentEmp?.id || '2023-XXXX',
@@ -445,7 +522,7 @@ export function MonitoringReport() {
           questionnaire,
           status: 'submitted',
         });
-        toast.success(`${PERIOD_CONFIG[formType].label} Monitoring Report submitted successfully!`);
+        toast.success(`${formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${formFrequency.toUpperCase()} Report submitted successfully!`);
       }
       setShowSubmitModal(false);
     } catch {
@@ -474,22 +551,20 @@ export function MonitoringReport() {
         <div className="relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-blue-800 text-xs font-semibold mb-2">
             <ClipboardCheck size={14} className="text-blue-600" />
-            <span>OJT Milestone Monitoring System</span>
+            <span>CHMSU Practicum Monitoring System</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Monitoring Reports
           </h1>
           <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-            Track and submit your practicum reports across <strong>Weekly</strong>,{' '}
-            <strong>Monthly</strong>, <strong>Mid-Term (300h)</strong>, and{' '}
-            <strong>End-Term (600h)</strong> milestones with the complete CHMSU Questionnaire.
+            Organized into <strong>Mid-Term (0–300h)</strong> and <strong>End-Term (301–600h)</strong> milestones, each containing your routine <strong>Weekly</strong> submissions, <strong>Monthly</strong> assessments, and milestone evaluations with the official CHMSU Questionnaire.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 relative z-10 shrink-0">
           <button
             type="button"
-            onClick={() => openNewSubmitModal('weekly')}
+            onClick={() => openNewSubmitModal(activeTermTab === 'endterm' ? 'endterm' : 'midterm', 'weekly')}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-2xl text-xs font-bold shadow-lg shadow-blue-700/20 transition-all cursor-pointer"
           >
             <Plus size={16} /> Submit Monitoring Report
@@ -497,7 +572,7 @@ export function MonitoringReport() {
         </div>
       </div>
 
-      {/* OVERVIEW STATS & HOURS PROGRESS */}
+      {/* OVERVIEW STATS: PROGRESS, MID-TERM BREAKDOWN, END-TERM BREAKDOWN, STATUS */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Rendered Hours */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
@@ -519,118 +594,359 @@ export function MonitoringReport() {
           </div>
         </div>
 
-        {/* Weekly & Monthly Submissions */}
+        {/* Mid-Term Submissions (0-300 hrs) */}
         <div
-          onClick={() => setActivePeriodTab('weekly')}
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-300 transition-all cursor-pointer group"
+          onClick={() => {
+            setActiveTermTab('midterm');
+            setActiveSubFilter('all');
+          }}
+          className={`p-5 rounded-2xl border shadow-xs flex flex-col justify-between transition-all cursor-pointer group ${
+            activeTermTab === 'midterm'
+              ? 'bg-blue-50/40 border-blue-500 ring-2 ring-blue-500/20'
+              : 'bg-white border-slate-200/80 hover:border-blue-300'
+          }`}
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Weekly Reports</span>
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-              Weekly
+            <span>Mid-Term (0–300h)</span>
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+              1st Half
             </span>
           </div>
-          <div className="my-2">
+          <div className="my-1.5 flex items-baseline gap-2">
             <span className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-blue-700 transition-colors">
-              {periodCounts.weekly}
+              {termCounts.midterm.all}
             </span>
-            <span className="text-xs text-slate-400 font-medium ml-2">submitted</span>
+            <span className="text-xs text-slate-400 font-medium">reports</span>
           </div>
-          <p className="text-[11px] text-slate-400 truncate">Routine weekly tasks</p>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+            <span className="font-semibold text-blue-700">W: {termCounts.midterm.weekly}</span>
+            <span className="text-slate-300">•</span>
+            <span className="font-semibold text-purple-700">M: {termCounts.midterm.monthly}</span>
+            <span className="text-slate-300">•</span>
+            <span className="font-semibold text-indigo-700">Eval: {termCounts.midterm.evaluation}</span>
+          </div>
         </div>
 
-        {/* Monthly Submissions */}
+        {/* End-Term Submissions (301-600 hrs) */}
         <div
-          onClick={() => setActivePeriodTab('monthly')}
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-purple-300 transition-all cursor-pointer group"
+          onClick={() => {
+            setActiveTermTab('endterm');
+            setActiveSubFilter('all');
+          }}
+          className={`p-5 rounded-2xl border shadow-xs flex flex-col justify-between transition-all cursor-pointer group ${
+            activeTermTab === 'endterm'
+              ? 'bg-emerald-50/40 border-emerald-500 ring-2 ring-emerald-500/20'
+              : 'bg-white border-slate-200/80 hover:border-emerald-300'
+          }`}
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Monthly Reports</span>
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-              Monthly
+            <span>End-Term (301–600h)</span>
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              2nd Half
             </span>
           </div>
-          <div className="my-2">
-            <span className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-purple-700 transition-colors">
-              {periodCounts.monthly}
+          <div className="my-1.5 flex items-baseline gap-2">
+            <span className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-emerald-700 transition-colors">
+              {termCounts.endterm.all}
             </span>
-            <span className="text-xs text-slate-400 font-medium ml-2">submitted</span>
+            <span className="text-xs text-slate-400 font-medium">reports</span>
           </div>
-          <p className="text-[11px] text-slate-400 truncate">Comprehensive monthly reviews</p>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 pt-1 border-t border-slate-100">
+            <span className="font-semibold text-blue-700">W: {termCounts.endterm.weekly}</span>
+            <span className="text-slate-300">•</span>
+            <span className="font-semibold text-purple-700">M: {termCounts.endterm.monthly}</span>
+            <span className="text-slate-300">•</span>
+            <span className="font-semibold text-emerald-700">Eval: {termCounts.endterm.evaluation}</span>
+          </div>
         </div>
 
-        {/* MidTerm & EndTerm Milestones */}
-        <div
-          onClick={() => setActivePeriodTab('midterm')}
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-amber-300 transition-all cursor-pointer group"
-        >
+        {/* Overall Submission Review Status */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Milestone Reports</span>
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-              300h / 600h
+            <span>Review Status</span>
+            <CheckCircle2 size={16} className="text-emerald-600" />
+          </div>
+          <div className="my-1.5 flex items-baseline gap-2">
+            <span className="text-2xl sm:text-3xl font-black text-slate-900">
+              {termCounts.all}
+            </span>
+            <span className="text-xs text-slate-400 font-medium">total submitted</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
+            <span className="text-emerald-700 font-bold flex items-center gap-1">
+              <CheckCircle2 size={12} /> {termCounts.reviewedCount} Reviewed
+            </span>
+            <span className="text-amber-700 font-bold flex items-center gap-1">
+              <Clock size={12} /> {termCounts.pendingCount} Pending
             </span>
           </div>
-          <div className="my-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-slate-900 group-hover:text-amber-700 transition-colors">
-              {periodCounts.midterm + periodCounts.endterm}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">
-              ({periodCounts.midterm} Mid / {periodCounts.endterm} End)
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400 truncate">Major milestone evaluations</p>
         </div>
       </div>
 
-      {/* FILTER TABS & SEARCH */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        {/* Period Selector Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-          {(['all', 'weekly', 'monthly', 'midterm', 'endterm'] as const).map((tab) => {
-            const count = tab === 'all' ? periodCounts.all : periodCounts[tab];
-            const isActive = activePeriodTab === tab;
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActivePeriodTab(tab)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer capitalize flex items-center gap-1.5 ${
-                  isActive
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60'
-                }`}
-              >
-                <span>{tab === 'all' ? 'All Reports' : tab === 'midterm' ? 'MidTerm (300h)' : tab === 'endterm' ? 'EndTerm (600h)' : tab}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                    isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search */}
-        <div className="relative w-full sm:w-72">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search tasks, period, or ref..."
-            className="w-full pl-8 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
-          />
-          {searchQuery && (
+      {/* FILTER TABS & SEARCH: PRIMARY TERM TABS + SECONDARY FREQUENCY SUB-TABS */}
+      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
+        {/* Row 1: Primary Term Selector + Search */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          {/* Primary Term Tabs */}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              onClick={() => {
+                setActiveTermTab('all');
+                setActiveSubFilter('all');
+              }}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTermTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
             >
-              <X size={12} />
+              <span>All Reports</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  activeTermTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-800'
+                }`}
+              >
+                {termCounts.all}
+              </span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTermTab('midterm');
+                setActiveSubFilter('all');
+              }}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTermTab === 'midterm'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/60'
+              }`}
+            >
+              <span>Mid-Term (0 – 300h)</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  activeTermTab === 'midterm' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {termCounts.midterm.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTermTab('endterm');
+                setActiveSubFilter('all');
+              }}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                activeTermTab === 'endterm'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60'
+              }`}
+            >
+              <span>End-Term (301 – 600h)</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                  activeTermTab === 'endterm' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                {termCounts.endterm.all}
+              </span>
+            </button>
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative w-full sm:w-72">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search duties, period, or ref..."
+              className="w-full pl-8 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Secondary Sub-Pills (Weekly, Monthly, Evaluation within Selected Term) */}
+        <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+            {activeTermTab === 'midterm'
+              ? 'Mid-Term Sub-Reports:'
+              : activeTermTab === 'endterm'
+              ? 'End-Term Sub-Reports:'
+              : 'Filter Frequency:'}
+          </span>
+
+          {activeTermTab === 'midterm' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('all')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeSubFilter === 'all'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                All Mid-Term ({termCounts.midterm.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('weekly')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'weekly'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Weekly Reports</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-white/20">
+                  {termCounts.midterm.weekly}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('monthly')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'monthly'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Monthly Reports</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-white/20">
+                  {termCounts.midterm.monthly}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('evaluation')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'evaluation'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Mid-Term Evaluation (300h)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-white/20">
+                  {termCounts.midterm.evaluation}
+                </span>
+              </button>
+            </>
+          ) : activeTermTab === 'endterm' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('all')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeSubFilter === 'all'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                All End-Term ({termCounts.endterm.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('weekly')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'weekly'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Weekly Reports</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-white/20">
+                  {termCounts.endterm.weekly}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('monthly')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'monthly'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Monthly Reports</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-white/20">
+                  {termCounts.endterm.monthly}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('evaluation')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'evaluation'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>End-Term Evaluation (600h)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-white/20">
+                  {termCounts.endterm.evaluation}
+                </span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('all')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeSubFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                All Frequency Types ({termCounts.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('weekly')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'weekly'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Weekly ({termCounts.totalWeekly})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('monthly')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'monthly'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Monthly ({termCounts.totalMonthly})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSubFilter('evaluation')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeSubFilter === 'evaluation'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                <span>Evaluations ({termCounts.totalEvaluation})</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -643,24 +959,47 @@ export function MonitoringReport() {
           </div>
           <h3 className="font-bold text-slate-800 text-base">No Monitoring Reports Found</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            {activePeriodTab === 'all'
+            {activeTermTab === 'all'
               ? 'You have not submitted any monitoring reports yet. Click "Submit Monitoring Report" to create your first report.'
-              : `No ${PERIOD_CONFIG[activePeriodTab as MonitoringPeriodType]?.label} monitoring reports match your filters.`}
+              : `No ${activeTermTab === 'midterm' ? 'Mid-Term' : 'End-Term'} reports match the selected filters.`}
           </p>
           <button
             type="button"
-            onClick={() => openNewSubmitModal(activePeriodTab === 'all' ? 'weekly' : activePeriodTab)}
+            onClick={() => openNewSubmitModal(activeTermTab === 'endterm' ? 'endterm' : 'midterm', activeSubFilter !== 'all' ? activeSubFilter : 'weekly')}
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
           >
-            <Plus size={14} /> Create {activePeriodTab === 'all' ? 'Weekly' : PERIOD_CONFIG[activePeriodTab as MonitoringPeriodType]?.label} Report
+            <Plus size={14} /> Create {activeTermTab === 'endterm' ? 'End-Term' : 'Mid-Term'} Report
           </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredReports.map((report) => {
             const periodCfg = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
+            const rTerm = getReportTerm(report);
+            const rFreq = getReportFrequency(report);
             const q = report.questionnaire || {};
             const isReviewed = report.status === 'reviewed';
+
+            const termBadgeClass =
+              rTerm === 'midterm'
+                ? 'bg-blue-100 text-blue-800 border-blue-200'
+                : 'bg-emerald-100 text-emerald-800 border-emerald-200';
+
+            const freqBadgeClass =
+              rFreq === 'weekly'
+                ? 'bg-sky-50 text-sky-700 border-sky-200'
+                : rFreq === 'monthly'
+                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : 'bg-amber-50 text-amber-700 border-amber-200';
+
+            const freqLabel =
+              rFreq === 'weekly'
+                ? 'Weekly'
+                : rFreq === 'monthly'
+                ? 'Monthly'
+                : rTerm === 'midterm'
+                ? '300h Evaluation'
+                : '600h Evaluation';
 
             return (
               <motion.div
@@ -670,24 +1009,27 @@ export function MonitoringReport() {
                 className="bg-white rounded-3xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4 relative group"
               >
                 <div className="space-y-3">
-                  {/* Card Header */}
+                  {/* Card Header: Dual Badges (Term & Frequency) + Report Ref */}
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold border uppercase tracking-wider ${periodCfg.badgeClass}`}>
-                          {periodCfg.label}
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border uppercase tracking-wider ${termBadgeClass}`}>
+                          {rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${freqBadgeClass}`}>
+                          {freqLabel}
                         </span>
                         <span className="text-[10px] font-mono text-slate-400">
                           {report.reportNumber}
                         </span>
                       </div>
-                      <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
-                        {report.periodCovered || (periodCfg.label === 'Weekly' ? `Week 1 (${report.dateSubmitted || 'Active'})` : `${periodCfg.label} Report`)}
+                      <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors pt-0.5">
+                        {report.periodCovered || (rFreq === 'weekly' ? `${rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} Weekly Report` : `${rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${freqLabel}`)}
                       </h3>
                     </div>
 
                     {/* Status Badge */}
-                    <div>
+                    <div className="shrink-0">
                       {isReviewed ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <CheckCircle2 size={12} className="text-emerald-600" />
@@ -705,7 +1047,7 @@ export function MonitoringReport() {
                   {/* Period Stats Pill */}
                   <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs text-slate-600">
                     <span>
-                      Hours Rendered: <strong className="text-slate-900 font-bold">+{report.hoursRenderedThisPeriod || (periodCfg.label === 'Weekly' ? 40 : 160)} hrs</strong>
+                      Hours Rendered: <strong className="text-slate-900 font-bold">+{report.hoursRenderedThisPeriod || (rFreq === 'weekly' ? 40 : 160)} hrs</strong>
                     </span>
                     <span>
                       Date: <strong className="text-slate-800">{report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}</strong>
@@ -827,47 +1169,185 @@ export function MonitoringReport() {
 
               {/* Modal Form Body */}
               <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-800 text-xs">
-                {/* 1. Report Period Type Selector (4 Types) */}
+                {/* 1. Practicum Term Selection */}
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    1. Select Monitoring Report Period Milestone
+                    1. Select Practicum Term Milestone
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {(['weekly', 'monthly', 'midterm', 'endterm'] as MonitoringPeriodType[]).map((type) => {
-                      const cfg = PERIOD_CONFIG[type];
-                      const isSelected = formType === type;
-                      return (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => {
-                            setFormType(type);
-                            if (!editingReport) {
-                              setFormHoursRendered(cfg.defaultHours);
-                              setFormPeriodCovered(
-                                type === 'weekly'
-                                  ? `Week ${periodCounts.weekly + 1}`
-                                  : type === 'monthly'
-                                  ? `Month ${periodCounts.monthly + 1}`
-                                  : type === 'midterm'
-                                  ? 'Mid-Term Evaluation (300 Hours Milestone)'
-                                  : 'End-Term Final Completion (600 Hours Milestone)'
-                              );
-                            }
-                          }}
-                          className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20'
-                              : 'bg-white border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mb-1 ${cfg.badgeClass}`}>
-                            {cfg.label}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Mid-Term Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newTerm: MonitoringTermType = 'midterm';
+                        setFormTerm(newTerm);
+                        const derivedType: MonitoringPeriodType = formFrequency === 'evaluation' ? newTerm : formFrequency;
+                        setFormType(derivedType);
+                        if (!editingReport) {
+                          const count = formFrequency === 'weekly' ? termCounts.midterm.weekly + 1 : formFrequency === 'monthly' ? termCounts.midterm.monthly + 1 : 1;
+                          setFormPeriodCovered(
+                            formFrequency === 'weekly'
+                              ? `Mid-Term Week ${count}`
+                              : formFrequency === 'monthly'
+                              ? `Mid-Term Month ${count}`
+                              : 'Mid-Term Evaluation (300 Hours Milestone)'
+                          );
+                          setFormHoursRendered(formFrequency === 'weekly' ? 40 : formFrequency === 'monthly' ? 160 : 300);
+                        }
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                        formTerm === 'midterm'
+                          ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-500/20'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                            1st Half (0–300h)
                           </span>
-                          <p className="font-bold text-xs text-slate-900 leading-tight">{cfg.title}</p>
-                        </button>
-                      );
-                    })}
+                          <span className="text-[11px] font-bold text-blue-900">Mid-Term</span>
+                        </div>
+                        <p className="font-bold text-xs text-slate-900">Mid-Term Practicum</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Weekly tasks (Weeks 1–8), Monthly progress, and 300h milestone evaluation
+                        </p>
+                      </div>
+                      <span className={`w-4 h-4 rounded-full border-2 shrink-0 mt-1 flex items-center justify-center ${formTerm === 'midterm' ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
+                        {formTerm === 'midterm' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </span>
+                    </button>
+
+                    {/* End-Term Option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newTerm: MonitoringTermType = 'endterm';
+                        setFormTerm(newTerm);
+                        const derivedType: MonitoringPeriodType = formFrequency === 'evaluation' ? newTerm : formFrequency;
+                        setFormType(derivedType);
+                        if (!editingReport) {
+                          const count = formFrequency === 'weekly' ? termCounts.endterm.weekly + 9 : formFrequency === 'monthly' ? termCounts.endterm.monthly + 3 : 1;
+                          setFormPeriodCovered(
+                            formFrequency === 'weekly'
+                              ? `End-Term Week ${count}`
+                              : formFrequency === 'monthly'
+                              ? `End-Term Month ${count}`
+                              : 'End-Term Final Completion (600 Hours Milestone)'
+                          );
+                          setFormHoursRendered(formFrequency === 'weekly' ? 40 : formFrequency === 'monthly' ? 160 : 600);
+                        }
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                        formTerm === 'endterm'
+                          ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            2nd Half (301–600h)
+                          </span>
+                          <span className="text-[11px] font-bold text-emerald-900">End-Term</span>
+                        </div>
+                        <p className="font-bold text-xs text-slate-900">End-Term Practicum</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Weekly tasks (Weeks 9–16), Monthly progress, and 600h final completion
+                        </p>
+                      </div>
+                      <span className={`w-4 h-4 rounded-full border-2 shrink-0 mt-1 flex items-center justify-center ${formTerm === 'endterm' ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300'}`}>
+                        {formTerm === 'endterm' && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Frequency Selection inside Selected Term */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    2. Select Report Type inside {formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Weekly Report */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormFrequency('weekly');
+                        setFormType('weekly');
+                        if (!editingReport) {
+                          setFormHoursRendered(40);
+                          const count = formTerm === 'midterm' ? termCounts.midterm.weekly + 1 : termCounts.endterm.weekly + 9;
+                          setFormPeriodCovered(`${formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} Week ${count}`);
+                        }
+                      }}
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                        formFrequency === 'weekly'
+                          ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500/20'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mb-1 bg-sky-50 text-sky-700 border-sky-200">
+                        Weekly Report
+                      </span>
+                      <p className="font-bold text-xs text-slate-900 leading-tight">Weekly Monitoring</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Regular routine duties (default: 40 hrs)</p>
+                    </button>
+
+                    {/* Monthly Report */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormFrequency('monthly');
+                        setFormType('monthly');
+                        if (!editingReport) {
+                          setFormHoursRendered(160);
+                          const count = formTerm === 'midterm' ? termCounts.midterm.monthly + 1 : termCounts.endterm.monthly + 3;
+                          setFormPeriodCovered(`${formTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} Month ${count} Assessment`);
+                        }
+                      }}
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                        formFrequency === 'monthly'
+                          ? 'bg-purple-50 border-purple-500 ring-2 ring-purple-500/20'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mb-1 bg-purple-50 text-purple-700 border-purple-200">
+                        Monthly Report
+                      </span>
+                      <p className="font-bold text-xs text-slate-900 leading-tight">Monthly Assessment</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Monthly HTE review (default: 160 hrs)</p>
+                    </button>
+
+                    {/* Milestone Evaluation */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormFrequency('evaluation');
+                        setFormType(formTerm);
+                        if (!editingReport) {
+                          setFormHoursRendered(formTerm === 'midterm' ? 300 : 600);
+                          setFormPeriodCovered(
+                            formTerm === 'midterm'
+                              ? 'Mid-Term Evaluation (300 Hours Milestone)'
+                              : 'End-Term Final Completion (600 Hours Milestone)'
+                          );
+                        }
+                      }}
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                        formFrequency === 'evaluation'
+                          ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-500/20'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border mb-1 bg-amber-50 text-amber-700 border-amber-200">
+                        {formTerm === 'midterm' ? '300h Evaluation' : '600h Final Exit'}
+                      </span>
+                      <p className="font-bold text-xs text-slate-900 leading-tight">
+                        {formTerm === 'midterm' ? 'Mid-Term Evaluation' : 'End-Term Completion'}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Formal practicum milestone form</p>
+                    </button>
                   </div>
                 </div>
 
@@ -1088,8 +1568,13 @@ export function MonitoringReport() {
             >
               <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border ${PERIOD_CONFIG[viewingReport.reportType]?.badgeClass || 'bg-slate-100'}`}>
-                    {PERIOD_CONFIG[viewingReport.reportType]?.label || 'Report'}
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border uppercase tracking-wider ${
+                    getReportTerm(viewingReport) === 'midterm' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  }`}>
+                    {getReportTerm(viewingReport) === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider bg-slate-100 text-slate-800 border-slate-200">
+                    {getReportFrequency(viewingReport) === 'weekly' ? 'Weekly' : getReportFrequency(viewingReport) === 'monthly' ? 'Monthly' : 'Evaluation'}
                   </span>
                   <h3 className="font-bold text-slate-900 text-sm">
                     {viewingReport.reportNumber} — {viewingReport.periodCovered}

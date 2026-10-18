@@ -42,12 +42,34 @@ import { useApp } from '../../store/AppContext';
 import {
   MonitoringReport,
   MonitoringPeriodType,
+  MonitoringTermType,
+  MonitoringFrequencyType,
   MonitoringQuestionnaire,
   Employee,
   EmployabilityStatus,
 } from '../../types';
 import { MonitoringReportPrintView } from '../../components/MonitoringReportPrintView';
 import { UserAvatar } from '../../components/UserAvatar';
+
+export function getReportTerm(report: MonitoringReport): MonitoringTermType {
+  if (report.term) return report.term;
+  if (
+    report.reportType === 'endterm' ||
+    (report.reportNumber || '').toUpperCase().includes('END') ||
+    (report.periodCovered || '').toLowerCase().includes('end-term') ||
+    (report.totalCumulativeHours || 0) > 300
+  ) {
+    return 'endterm';
+  }
+  return 'midterm';
+}
+
+export function getReportFrequency(report: MonitoringReport): MonitoringFrequencyType {
+  if (report.frequency) return report.frequency;
+  if (report.reportType === 'midterm' || report.reportType === 'endterm') return 'evaluation';
+  if (report.reportType === 'monthly' || (report.periodCovered || '').toLowerCase().includes('month')) return 'monthly';
+  return 'weekly';
+}
 
 const PERIOD_CONFIG: Record<
   MonitoringPeriodType,
@@ -110,8 +132,9 @@ export function AdminMonitoringReport() {
   const currentEmp = getCurrentEmployee();
   const instructorName = currentUser?.name || currentEmp?.name || 'Prof. Ma. Cristina Ramos, MIT';
 
-  // Active tab filter: 'all' | 'weekly' | 'monthly' | 'midterm' | 'endterm' | 'roster'
-  const [activeTab, setActiveTab] = useState<'all' | MonitoringPeriodType | 'roster'>('all');
+  // Active tab filter: 'all' | 'midterm' | 'endterm' | 'roster'
+  const [activeTab, setActiveTab] = useState<'all' | 'midterm' | 'endterm' | 'roster'>('all');
+  const [activeSubFilter, setActiveSubFilter] = useState<'all' | 'weekly' | 'monthly' | 'evaluation'>('all');
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,6 +150,8 @@ export function AdminMonitoringReport() {
 
   // Create Form State
   const [createTraineeId, setCreateTraineeId] = useState('');
+  const [createTerm, setCreateTerm] = useState<MonitoringTermType>('midterm');
+  const [createFrequency, setCreateFrequency] = useState<MonitoringFrequencyType>('weekly');
   const [createReportType, setCreateReportType] = useState<MonitoringPeriodType>('weekly');
   const [createPeriodCovered, setCreatePeriodCovered] = useState('');
   const [createHoursThisPeriod, setCreateHoursThisPeriod] = useState(40);
@@ -186,30 +211,42 @@ export function AdminMonitoringReport() {
 
   // Metrics
   const metrics = useMemo(() => {
-    const weeklyCount = monitoringReports.filter((r) => (r.reportType || 'weekly') === 'weekly').length;
-    const monthlyCount = monitoringReports.filter((r) => r.reportType === 'monthly').length;
-    const midtermCount = monitoringReports.filter((r) => r.reportType === 'midterm').length;
-    const endtermCount = monitoringReports.filter((r) => r.reportType === 'endterm').length;
-    const pendingCount = monitoringReports.filter((r) => r.status === 'submitted').length;
-    const reviewedCount = monitoringReports.filter((r) => r.status === 'reviewed').length;
+    const midtermReports = monitoringReports.filter((r) => getReportTerm(r) === 'midterm');
+    const endtermReports = monitoringReports.filter((r) => getReportTerm(r) === 'endterm');
 
     return {
       total: monitoringReports.length,
-      weeklyCount,
-      monthlyCount,
-      midtermCount,
-      endtermCount,
-      pendingCount,
-      reviewedCount,
+      midterm: {
+        all: midtermReports.length,
+        weekly: midtermReports.filter((r) => getReportFrequency(r) === 'weekly').length,
+        monthly: midtermReports.filter((r) => getReportFrequency(r) === 'monthly').length,
+        evaluation: midtermReports.filter((r) => getReportFrequency(r) === 'evaluation').length,
+      },
+      endterm: {
+        all: endtermReports.length,
+        weekly: endtermReports.filter((r) => getReportFrequency(r) === 'weekly').length,
+        monthly: endtermReports.filter((r) => getReportFrequency(r) === 'monthly').length,
+        evaluation: endtermReports.filter((r) => getReportFrequency(r) === 'evaluation').length,
+      },
+      totalWeekly: monitoringReports.filter((r) => getReportFrequency(r) === 'weekly').length,
+      totalMonthly: monitoringReports.filter((r) => getReportFrequency(r) === 'monthly').length,
+      totalEvaluation: monitoringReports.filter((r) => getReportFrequency(r) === 'evaluation').length,
+      pendingCount: monitoringReports.filter((r) => r.status === 'submitted').length,
+      reviewedCount: monitoringReports.filter((r) => r.status === 'reviewed').length,
     };
   }, [monitoringReports]);
 
   // Filtered reports
   const filteredReports = useMemo(() => {
     return monitoringReports.filter((r) => {
-      const rType = r.reportType || 'weekly';
+      const term = getReportTerm(r);
+      const freq = getReportFrequency(r);
+
       if (activeTab !== 'all' && activeTab !== 'roster') {
-        if (rType !== activeTab) return false;
+        if (term !== activeTab) return false;
+      }
+      if (activeTab !== 'roster' && activeSubFilter !== 'all') {
+        if (freq !== activeSubFilter) return false;
       }
       if (filterStatus !== 'all' && r.status !== filterStatus) return false;
       if (filterCourse !== 'all' && r.course !== filterCourse) return false;
@@ -226,7 +263,7 @@ export function AdminMonitoringReport() {
 
       return true;
     });
-  }, [monitoringReports, activeTab, filterStatus, filterCourse, searchQuery]);
+  }, [monitoringReports, activeTab, activeSubFilter, filterStatus, filterCourse, searchQuery]);
 
   // Handle opening Review Modal
   const openReviewModal = (report: MonitoringReport) => {
@@ -265,10 +302,56 @@ export function AdminMonitoringReport() {
     const emp = allTrainees.find((t) => t.id === id || t.employeeId === id);
     if (!emp) return;
     if (!createPeriodCovered) {
-      if (createReportType === 'weekly') setCreatePeriodCovered('Week 1 Progress Review');
-      else if (createReportType === 'monthly') setCreatePeriodCovered('Month 1 Comprehensive Assessment');
-      else if (createReportType === 'midterm') setCreatePeriodCovered('Mid-Term (300h Milestone Evaluation)');
-      else if (createReportType === 'endterm') setCreatePeriodCovered('End-Term (600h Exit & Practicum Completion)');
+      const termPrefix = createTerm === 'midterm' ? 'Mid-Term' : 'End-Term';
+      if (createFrequency === 'weekly') {
+        setCreatePeriodCovered(`${termPrefix} Week ${createTerm === 'endterm' ? 9 : 1} Progress Review`);
+      } else if (createFrequency === 'monthly') {
+        setCreatePeriodCovered(`${termPrefix} Month ${createTerm === 'endterm' ? 3 : 1} Comprehensive Assessment`);
+      } else {
+        setCreatePeriodCovered(
+          createTerm === 'midterm'
+            ? 'Mid-Term (300h Milestone Evaluation)'
+            : 'End-Term (600h Exit & Practicum Completion)'
+        );
+      }
+    }
+  };
+
+  const handleTermChange = (term: MonitoringTermType) => {
+    setCreateTerm(term);
+    const termPrefix = term === 'midterm' ? 'Mid-Term' : 'End-Term';
+    if (createFrequency === 'weekly') {
+      setCreatePeriodCovered(`${termPrefix} Week ${term === 'endterm' ? 9 : 1} Progress Review`);
+      setCreateHoursThisPeriod(40);
+    } else if (createFrequency === 'monthly') {
+      setCreatePeriodCovered(`${termPrefix} Month ${term === 'endterm' ? 3 : 1} Comprehensive Assessment`);
+      setCreateHoursThisPeriod(160);
+    } else {
+      setCreatePeriodCovered(
+        term === 'midterm'
+          ? 'Mid-Term (300h Milestone Evaluation)'
+          : 'End-Term (600h Exit & Practicum Completion)'
+      );
+      setCreateHoursThisPeriod(300);
+    }
+  };
+
+  const handleFrequencyChange = (freq: MonitoringFrequencyType) => {
+    setCreateFrequency(freq);
+    const termPrefix = createTerm === 'midterm' ? 'Mid-Term' : 'End-Term';
+    if (freq === 'weekly') {
+      setCreatePeriodCovered(`${termPrefix} Week ${createTerm === 'endterm' ? 9 : 1} Progress Review`);
+      setCreateHoursThisPeriod(40);
+    } else if (freq === 'monthly') {
+      setCreatePeriodCovered(`${termPrefix} Month ${createTerm === 'endterm' ? 3 : 1} Comprehensive Assessment`);
+      setCreateHoursThisPeriod(160);
+    } else {
+      setCreatePeriodCovered(
+        createTerm === 'midterm'
+          ? 'Mid-Term (300h Milestone Evaluation)'
+          : 'End-Term (600h Exit & Practicum Completion)'
+      );
+      setCreateHoursThisPeriod(300);
     }
   };
 
@@ -306,10 +389,14 @@ export function AdminMonitoringReport() {
 
     const rendered = getRenderedHoursForTrainee(emp.id, emp.employeeId);
     const required = emp.requiredHours || 600;
+    const derivedReportType: MonitoringPeriodType =
+      createFrequency === 'evaluation' ? createTerm : createFrequency;
 
     try {
       await addMonitoringReport({
-        reportType: createReportType,
+        term: createTerm,
+        frequency: createFrequency,
+        reportType: derivedReportType,
         traineeId: emp.id,
         traineeName: emp.name,
         studentId: emp.employeeId || emp.id,
@@ -323,7 +410,7 @@ export function AdminMonitoringReport() {
         supervisorContact: emp.contactPhone || emp.phone || '+63 917 555 4321',
         supervisorDesignation: 'OJT Mentor / Supervisor',
         instructorName,
-        periodCovered: createPeriodCovered || `${PERIOD_CONFIG[createReportType].label} Period`,
+        periodCovered: createPeriodCovered || `${createTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${createFrequency.toUpperCase()} Period`,
         dateSubmitted: new Date().toISOString().split('T')[0],
         hoursRenderedThisPeriod: Number(createHoursThisPeriod) || 40,
         totalCumulativeHours: Math.round(rendered),
@@ -338,7 +425,7 @@ export function AdminMonitoringReport() {
         reviewedByInstructorAt: createInstructorRemarks.trim() ? new Date().toISOString() : undefined,
       });
 
-      toast.success(`${PERIOD_CONFIG[createReportType].label} Monitoring Report successfully logged!`);
+      toast.success(`${createTerm === 'midterm' ? 'Mid-Term' : 'End-Term'} ${createFrequency.toUpperCase()} Report successfully logged!`);
       setShowCreateModal(false);
       setCreateTraineeId('');
       setCreateQAnswers({
@@ -390,99 +477,105 @@ export function AdminMonitoringReport() {
         </div>
       </div>
 
-      {/* METRIC STATS CARDS */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
-        {/* Weekly */}
+      {/* METRIC STATS CARDS: OVERVIEW, MID-TERM, END-TERM, ACTION NEEDED */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {/* Total Submissions */}
         <div
-          onClick={() => setActiveTab('weekly')}
+          onClick={() => {
+            setActiveTab('all');
+            setActiveSubFilter('all');
+          }}
           className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            activeTab === 'weekly'
+            activeTab === 'all' && activeSubFilter === 'all'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-md shadow-slate-900/20'
+              : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className={activeTab === 'all' && activeSubFilter === 'all' ? 'text-slate-300 font-bold' : 'text-slate-500 font-semibold'}>
+              Total Submissions
+            </span>
+            <ClipboardCheck size={14} className={activeTab === 'all' ? 'text-white' : 'text-slate-400'} />
+          </div>
+          <p className="text-2xl font-black">{metrics.total}</p>
+          <p className={`text-[11px] mt-1 ${activeTab === 'all' ? 'text-slate-300' : 'text-slate-400'}`}>
+            Across all terms & students
+          </p>
+        </div>
+
+        {/* Mid-Term (0-300h) Breakdown */}
+        <div
+          onClick={() => {
+            setActiveTab('midterm');
+            setActiveSubFilter('all');
+          }}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+            activeTab === 'midterm'
               ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20'
               : 'bg-white text-slate-800 border-slate-200 hover:border-blue-300'
           }`}
         >
           <div className="flex items-center justify-between text-xs mb-2">
-            <span className={activeTab === 'weekly' ? 'text-blue-100 font-bold' : 'text-slate-500 font-semibold'}>
-              Weekly Reports
+            <span className={activeTab === 'midterm' ? 'text-blue-100 font-bold' : 'text-slate-500 font-semibold'}>
+              Mid-Term (0–300h)
             </span>
-            <span className={`w-2 h-2 rounded-full ${activeTab === 'weekly' ? 'bg-white' : 'bg-blue-500'}`} />
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-blue-100 text-blue-800">
+              1st Half
+            </span>
           </div>
-          <p className="text-2xl font-black">{metrics.weeklyCount}</p>
-          <p className={`text-[11px] mt-1 ${activeTab === 'weekly' ? 'text-blue-100' : 'text-slate-400'}`}>
-            Routine weekly progress
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-black">{metrics.midterm.all}</p>
+            <span className={`text-[11px] ${activeTab === 'midterm' ? 'text-blue-100' : 'text-slate-400'}`}>reports</span>
+          </div>
+          <p className={`text-[11px] mt-1 flex items-center gap-1.5 font-medium ${activeTab === 'midterm' ? 'text-blue-100' : 'text-slate-500'}`}>
+            <span>W: <strong>{metrics.midterm.weekly}</strong></span>
+            <span>•</span>
+            <span>M: <strong>{metrics.midterm.monthly}</strong></span>
+            <span>•</span>
+            <span>Eval: <strong>{metrics.midterm.evaluation}</strong></span>
           </p>
         </div>
 
-        {/* Monthly */}
+        {/* End-Term (301-600h) Breakdown */}
         <div
-          onClick={() => setActiveTab('monthly')}
+          onClick={() => {
+            setActiveTab('endterm');
+            setActiveSubFilter('all');
+          }}
           className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            activeTab === 'monthly'
+            activeTab === 'endterm'
               ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/20'
               : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300'
           }`}
         >
           <div className="flex items-center justify-between text-xs mb-2">
-            <span className={activeTab === 'monthly' ? 'text-emerald-100 font-bold' : 'text-slate-500 font-semibold'}>
-              Monthly Reports
+            <span className={activeTab === 'endterm' ? 'text-emerald-100 font-bold' : 'text-slate-500 font-semibold'}>
+              End-Term (301–600h)
             </span>
-            <span className={`w-2 h-2 rounded-full ${activeTab === 'monthly' ? 'bg-white' : 'bg-emerald-500'}`} />
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-800">
+              2nd Half
+            </span>
           </div>
-          <p className="text-2xl font-black">{metrics.monthlyCount}</p>
-          <p className={`text-[11px] mt-1 ${activeTab === 'monthly' ? 'text-emerald-100' : 'text-slate-400'}`}>
-            Monthly assessments
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-black">{metrics.endterm.all}</p>
+            <span className={`text-[11px] ${activeTab === 'endterm' ? 'text-emerald-100' : 'text-slate-400'}`}>reports</span>
+          </div>
+          <p className={`text-[11px] mt-1 flex items-center gap-1.5 font-medium ${activeTab === 'endterm' ? 'text-emerald-100' : 'text-slate-500'}`}>
+            <span>W: <strong>{metrics.endterm.weekly}</strong></span>
+            <span>•</span>
+            <span>M: <strong>{metrics.endterm.monthly}</strong></span>
+            <span>•</span>
+            <span>Eval: <strong>{metrics.endterm.evaluation}</strong></span>
           </p>
         </div>
 
-        {/* Mid-Term */}
-        <div
-          onClick={() => setActiveTab('midterm')}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            activeTab === 'midterm'
-              ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20'
-              : 'bg-white text-slate-800 border-slate-200 hover:border-purple-300'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs mb-2">
-            <span className={activeTab === 'midterm' ? 'text-purple-100 font-bold' : 'text-slate-500 font-semibold'}>
-              Mid-Term (300h)
-            </span>
-            <span className={`w-2 h-2 rounded-full ${activeTab === 'midterm' ? 'bg-white' : 'bg-purple-500'}`} />
-          </div>
-          <p className="text-2xl font-black">{metrics.midtermCount}</p>
-          <p className={`text-[11px] mt-1 ${activeTab === 'midterm' ? 'text-purple-100' : 'text-slate-400'}`}>
-            Midpoint evaluations
-          </p>
-        </div>
-
-        {/* End-Term */}
-        <div
-          onClick={() => setActiveTab('endterm')}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-            activeTab === 'endterm'
-              ? 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-500/20'
-              : 'bg-white text-slate-800 border-slate-200 hover:border-amber-300'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs mb-2">
-            <span className={activeTab === 'endterm' ? 'text-amber-100 font-bold' : 'text-slate-500 font-semibold'}>
-              End-Term (600h)
-            </span>
-            <span className={`w-2 h-2 rounded-full ${activeTab === 'endterm' ? 'bg-white' : 'bg-amber-500'}`} />
-          </div>
-          <p className="text-2xl font-black">{metrics.endtermCount}</p>
-          <p className={`text-[11px] mt-1 ${activeTab === 'endterm' ? 'text-amber-100' : 'text-slate-400'}`}>
-            Final completion reports
-          </p>
-        </div>
-
-        {/* Pending Review */}
+        {/* Action Needed */}
         <div
           onClick={() => {
             setActiveTab('all');
             setFilterStatus('submitted');
           }}
-          className={`p-4 rounded-2xl border col-span-2 lg:col-span-1 transition-all cursor-pointer ${
+          className={`p-4 rounded-2xl border transition-all cursor-pointer ${
             filterStatus === 'submitted'
               ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20'
               : 'bg-white text-slate-800 border-slate-200 hover:border-rose-300'
@@ -496,82 +589,239 @@ export function AdminMonitoringReport() {
           </div>
           <p className="text-2xl font-black">{metrics.pendingCount}</p>
           <p className={`text-[11px] mt-1 ${filterStatus === 'submitted' ? 'text-rose-100' : 'text-slate-400'}`}>
-            Pending your review
+            Pending your endorsement
           </p>
         </div>
       </div>
 
-      {/* PERIOD TABS */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab('all');
-            setFilterStatus('all');
-          }}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'all' && filterStatus === 'all'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          All Periods ({metrics.total})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('weekly')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'weekly'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Weekly ({metrics.weeklyCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('monthly')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'monthly'
-              ? 'bg-emerald-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Monthly ({metrics.monthlyCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('midterm')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'midterm'
-              ? 'bg-purple-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          Mid-Term ({metrics.midtermCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('endterm')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'endterm'
-              ? 'bg-amber-600 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          End-Term ({metrics.endtermCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('roster')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ml-auto flex items-center gap-1.5 ${
-            activeTab === 'roster'
-              ? 'bg-[#146B4D] text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Users size={14} /> Trainee Progress Matrix
-        </button>
+      {/* PERIOD TABS: PRIMARY TERM TABS & SECONDARY SUB-PILLS */}
+      <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
+        {/* Row 1: Primary Term Selector + Trainee Matrix Button */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('all');
+                setActiveSubFilter('all');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <span>All Reports</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                {metrics.total}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('midterm');
+                setActiveSubFilter('all');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'midterm'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+              }`}
+            >
+              <span>Mid-Term (0–300h)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeTab === 'midterm' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'}`}>
+                {metrics.midterm.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('endterm');
+                setActiveSubFilter('all');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'endterm'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+              }`}
+            >
+              <span>End-Term (301–600h)</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeTab === 'endterm' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'}`}>
+                {metrics.endterm.all}
+              </span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('roster')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'roster'
+                ? 'bg-[#146B4D] text-white shadow-xs'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+            }`}
+          >
+            <Users size={14} /> Trainee Progress Matrix
+          </button>
+        </div>
+
+        {/* Row 2: Secondary Sub-Pills (Weekly, Monthly, Evaluation) when not in Roster */}
+        {activeTab !== 'roster' && (
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+              {activeTab === 'midterm'
+                ? 'Mid-Term Sub-Reports:'
+                : activeTab === 'endterm'
+                ? 'End-Term Sub-Reports:'
+                : 'Filter Frequency:'}
+            </span>
+
+            {activeTab === 'midterm' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('all')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    activeSubFilter === 'all'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  All Mid-Term ({metrics.midterm.all})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('weekly')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'weekly'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Weekly Reports ({metrics.midterm.weekly})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('monthly')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'monthly'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Monthly Reports ({metrics.midterm.monthly})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('evaluation')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'evaluation'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>300h Mid-Term Evaluation ({metrics.midterm.evaluation})</span>
+                </button>
+              </>
+            ) : activeTab === 'endterm' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('all')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    activeSubFilter === 'all'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  All End-Term ({metrics.endterm.all})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('weekly')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'weekly'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Weekly Reports ({metrics.endterm.weekly})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('monthly')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'monthly'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Monthly Reports ({metrics.endterm.monthly})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('evaluation')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'evaluation'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>600h End-Term Evaluation ({metrics.endterm.evaluation})</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('all')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    activeSubFilter === 'all'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  All Submissions ({metrics.total})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('weekly')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'weekly'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Weekly ({metrics.totalWeekly})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('monthly')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'monthly'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Monthly ({metrics.totalMonthly})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubFilter('evaluation')}
+                  className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    activeSubFilter === 'evaluation'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <span>Evaluations ({metrics.totalEvaluation})</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ROSTER PROGRESS MATRIX OR REPORTS LIST */}
@@ -583,7 +833,7 @@ export function AdminMonitoringReport() {
                 Trainee Milestone Completion Matrix
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Overview of all student interns and their submission status across the 4 monitoring periods.
+                Overview of all student interns across Mid-Term (Weekly, Monthly, 300h) and End-Term (Weekly, Monthly, 600h).
               </p>
             </div>
             <div className="text-xs text-slate-500 font-medium">
@@ -597,10 +847,12 @@ export function AdminMonitoringReport() {
                 <tr>
                   <th className="py-3.5 px-4">Student Intern</th>
                   <th className="py-3.5 px-3">HTE Company</th>
-                  <th className="py-3.5 px-3 text-center">Weekly</th>
-                  <th className="py-3.5 px-3 text-center">Monthly</th>
-                  <th className="py-3.5 px-3 text-center">Mid-Term (300h)</th>
-                  <th className="py-3.5 px-3 text-center">End-Term (600h)</th>
+                  <th className="py-3.5 px-3 text-center bg-blue-50/50 text-blue-900">Mid: Weekly</th>
+                  <th className="py-3.5 px-3 text-center bg-blue-50/50 text-blue-900">Mid: Monthly</th>
+                  <th className="py-3.5 px-3 text-center bg-blue-50/50 text-blue-900">Mid: Eval (300h)</th>
+                  <th className="py-3.5 px-3 text-center bg-emerald-50/50 text-emerald-900">End: Weekly</th>
+                  <th className="py-3.5 px-3 text-center bg-emerald-50/50 text-emerald-900">End: Monthly</th>
+                  <th className="py-3.5 px-3 text-center bg-emerald-50/50 text-emerald-900">End: Eval (600h)</th>
                   <th className="py-3.5 px-4 text-right">Cumulative</th>
                 </tr>
               </thead>
@@ -609,10 +861,12 @@ export function AdminMonitoringReport() {
                   const traineeReports = monitoringReports.filter(
                     (r) => r.traineeId === trainee.id || r.studentId === trainee.employeeId
                   );
-                  const weeklyRep = traineeReports.find((r) => r.reportType === 'weekly');
-                  const monthlyRep = traineeReports.find((r) => r.reportType === 'monthly');
-                  const midtermRep = traineeReports.find((r) => r.reportType === 'midterm');
-                  const endtermRep = traineeReports.find((r) => r.reportType === 'endterm');
+                  const midWeekly = traineeReports.find((r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'weekly');
+                  const midMonthly = traineeReports.find((r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'monthly');
+                  const midEval = traineeReports.find((r) => getReportTerm(r) === 'midterm' && getReportFrequency(r) === 'evaluation');
+                  const endWeekly = traineeReports.find((r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'weekly');
+                  const endMonthly = traineeReports.find((r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'monthly');
+                  const endEval = traineeReports.find((r) => getReportTerm(r) === 'endterm' && getReportFrequency(r) === 'evaluation');
 
                   const rendered = getRenderedHoursForTrainee(trainee.id, trainee.employeeId);
                   const required = trainee.requiredHours || 600;
@@ -621,7 +875,7 @@ export function AdminMonitoringReport() {
                   const renderStatusPill = (rep?: MonitoringReport) => {
                     if (!rep) {
                       return (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
+                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
                           Missing
                         </span>
                       );
@@ -631,9 +885,9 @@ export function AdminMonitoringReport() {
                         <button
                           type="button"
                           onClick={() => setViewDetailsReport(rep)}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-full cursor-pointer"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full cursor-pointer"
                         >
-                          <CheckCircle2 size={12} className="text-emerald-600" /> Reviewed
+                          <CheckCircle2 size={11} className="text-emerald-600" /> Reviewed
                         </button>
                       );
                     }
@@ -641,17 +895,17 @@ export function AdminMonitoringReport() {
                       <button
                         type="button"
                         onClick={() => openReviewModal(rep)}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-full cursor-pointer animate-pulse"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full cursor-pointer"
                       >
-                        <Clock size={12} className="text-amber-600" /> Needs Review
+                        <Clock size={11} className="text-amber-600" /> Review
                       </button>
                     );
                   };
 
                   return (
                     <tr key={trainee.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
                           <UserAvatar
                             name={trainee.name}
                             avatarUrl={trainee.avatar}
@@ -659,29 +913,31 @@ export function AdminMonitoringReport() {
                           />
                           <div>
                             <p className="font-bold text-slate-900">{trainee.name}</p>
-                            <p className="text-[11px] text-slate-400 font-mono">
+                            <p className="text-[10px] text-slate-400 font-mono">
                               {trainee.employeeId || trainee.id} • {trainee.course || 'BSIT'}
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-3">
-                        <p className="font-semibold text-slate-700 truncate max-w-[180px]">
+                      <td className="py-3 px-3">
+                        <p className="font-semibold text-slate-700 truncate max-w-[160px]">
                           {trainee.companyName || 'Host Training Establishment'}
                         </p>
                         <p className="text-[10px] text-slate-400">
                           {trainee.supervisorName || 'Supervisor Assigned'}
                         </p>
                       </td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(weeklyRep)}</td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(monthlyRep)}</td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(midtermRep)}</td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(endtermRep)}</td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midWeekly)}</td>
+                      <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midMonthly)}</td>
+                      <td className="py-3 px-3 text-center bg-blue-50/20">{renderStatusPill(midEval)}</td>
+                      <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endWeekly)}</td>
+                      <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endMonthly)}</td>
+                      <td className="py-3 px-3 text-center bg-emerald-50/20">{renderStatusPill(endEval)}</td>
+                      <td className="py-3 px-4 text-right">
                         <p className="font-bold text-slate-900">
                           {Math.round(rendered)} / {required}h
                         </p>
-                        <div className="w-20 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
+                        <div className="w-16 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
                           <div
                             className="bg-emerald-600 h-1.5 rounded-full"
                             style={{ width: `${progressPct}%` }}
@@ -762,7 +1018,30 @@ export function AdminMonitoringReport() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredReports.map((report) => {
                 const conf = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
+                const rTerm = getReportTerm(report);
+                const rFreq = getReportFrequency(report);
                 const q = report.questionnaire || {};
+
+                const termBadgeClass =
+                  rTerm === 'midterm'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+
+                const freqBadgeClass =
+                  rFreq === 'weekly'
+                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                    : rFreq === 'monthly'
+                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200';
+
+                const freqLabel =
+                  rFreq === 'weekly'
+                    ? 'Weekly'
+                    : rFreq === 'monthly'
+                    ? 'Monthly'
+                    : rTerm === 'midterm'
+                    ? '300h Eval'
+                    : '600h Eval';
 
                 return (
                   <div
@@ -770,7 +1049,7 @@ export function AdminMonitoringReport() {
                     className="bg-white rounded-3xl border border-slate-200 hover:border-slate-300 hover:shadow-lg shadow-xs transition-all flex flex-col justify-between overflow-hidden group"
                   >
                     <div>
-                      {/* Card Header with Badges */}
+                      {/* Card Header with Dual Badges (Term & Frequency) */}
                       <div className="p-5 pb-3 border-b border-slate-100 flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
                           <UserAvatar
@@ -787,9 +1066,14 @@ export function AdminMonitoringReport() {
                           </div>
                         </div>
 
-                        <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${conf.badgeColor}`}>
-                          {conf.label}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${termBadgeClass}`}>
+                            {rTerm === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                          </span>
+                          <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${freqBadgeClass}`}>
+                            {freqLabel}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Card Body */}
@@ -1076,8 +1360,25 @@ export function AdminMonitoringReport() {
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${PERIOD_CONFIG[viewDetailsReport.reportType]?.badgeColor || 'bg-slate-900 text-white'}`}>
-                    {PERIOD_CONFIG[viewDetailsReport.reportType]?.label} Report
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border ${
+                    getReportTerm(viewDetailsReport) === 'midterm'
+                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  }`}>
+                    {getReportTerm(viewDetailsReport) === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                  </span>
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border ${
+                    getReportFrequency(viewDetailsReport) === 'weekly'
+                      ? 'bg-sky-100 text-sky-800 border-sky-200'
+                      : getReportFrequency(viewDetailsReport) === 'monthly'
+                      ? 'bg-purple-100 text-purple-800 border-purple-200'
+                      : 'bg-amber-100 text-amber-800 border-amber-200'
+                  }`}>
+                    {getReportFrequency(viewDetailsReport) === 'weekly'
+                      ? 'Weekly'
+                      : getReportFrequency(viewDetailsReport) === 'monthly'
+                      ? 'Monthly'
+                      : 'Evaluation'}
                   </span>
                   <h3 className="font-bold text-slate-900 text-sm">
                     {viewDetailsReport.reportNumber} — {viewDetailsReport.periodCovered}
@@ -1202,36 +1503,120 @@ export function AdminMonitoringReport() {
 
               <form onSubmit={handleCreateReport} className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
                 {/* Trainee Selection */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700">Select Student Intern *</label>
-                    <select
-                      required
-                      value={createTraineeId}
-                      onChange={(e) => handleSelectCreateTrainee(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
-                    >
-                      <option value="">-- Choose Student Intern --</option>
-                      {allTrainees.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t.employeeId || t.id}) — {t.companyName || 'HTE'}
-                        </option>
-                      ))}
-                    </select>
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700">Select Student Intern *</label>
+                  <select
+                    required
+                    value={createTraineeId}
+                    onChange={(e) => handleSelectCreateTrainee(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
+                  >
+                    <option value="">-- Choose Student Intern --</option>
+                    {allTrainees.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.employeeId || t.id}) — {t.companyName || 'HTE'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Term & Frequency Selection: Nest Weekly & Monthly inside MidTerm / EndTerm */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div>
+                    <label className="font-bold text-slate-800 uppercase text-[10px] tracking-wider block mb-1.5">
+                      Step 1: Practicum Term Milestone
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleTermChange('midterm')}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          createTerm === 'midterm'
+                            ? 'bg-blue-50/80 border-blue-500 text-blue-950 ring-2 ring-blue-500/20'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs">Mid-Term</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md font-mono bg-blue-100 text-blue-800">
+                            0–300h
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">1st Practicum Half (Weeks 1–8)</p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTermChange('endterm')}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          createTerm === 'endterm'
+                            ? 'bg-emerald-50/80 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs">End-Term</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md font-mono bg-emerald-100 text-emerald-800">
+                            301–600h
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">2nd Practicum Half (Weeks 9–16)</p>
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700">Monitoring Period Milestone *</label>
-                    <select
-                      value={createReportType}
-                      onChange={(e) => setCreateReportType(e.target.value as MonitoringPeriodType)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
-                    >
-                      <option value="weekly">Weekly Progress Report (40h typical)</option>
-                      <option value="monthly">Monthly Progress Assessment (160h typical)</option>
-                      <option value="midterm">Mid-Term Evaluation (300h milestone)</option>
-                      <option value="endterm">End-Term Completion Report (600h exit)</option>
-                    </select>
+                  <div>
+                    <label className="font-bold text-slate-800 uppercase text-[10px] tracking-wider block mb-1.5">
+                      Step 2: Report Frequency Inside {createTerm === 'midterm' ? 'Mid-Term' : 'End-Term'}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleFrequencyChange('weekly')}
+                        className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                          createFrequency === 'weekly'
+                            ? 'bg-sky-50 border-sky-500 text-sky-900 font-bold ring-2 ring-sky-500/20'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="text-xs">Weekly Report</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          {createTerm === 'midterm' ? 'Weeks 1–8' : 'Weeks 9–16'} (40h)
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleFrequencyChange('monthly')}
+                        className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                          createFrequency === 'monthly'
+                            ? 'bg-purple-50 border-purple-500 text-purple-900 font-bold ring-2 ring-purple-500/20'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="text-xs">Monthly Report</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          {createTerm === 'midterm' ? 'Months 1–2' : 'Months 3–4'} (160h)
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleFrequencyChange('evaluation')}
+                        className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                          createFrequency === 'evaluation'
+                            ? 'bg-amber-50 border-amber-500 text-amber-900 font-bold ring-2 ring-amber-500/20'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="text-xs">
+                          {createTerm === 'midterm' ? '300h Mid Eval' : '600h End Eval'}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          {createTerm === 'midterm' ? 'Midpoint Milestone' : 'Exit Completion'}
+                        </div>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
