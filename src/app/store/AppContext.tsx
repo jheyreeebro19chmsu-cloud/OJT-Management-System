@@ -658,24 +658,41 @@ function loadFromStorage<T>(key: string, defaultValue: T): T {
   }
 }
 
+function sanitizeDocRecordForStorage(docs: any): any {
+  if (!docs || typeof docs !== 'object') return {};
+  const sanitizedDocs: any = {};
+  for (const [docKey, docVal] of Object.entries(docs)) {
+    if (docVal && typeof docVal === 'object') {
+      const docObj = docVal as any;
+      const dUrl = typeof docObj.dataUrl === 'string' ? docObj.dataUrl : '';
+      const fUrl = typeof docObj.fileUrl === 'string' ? docObj.fileUrl : '';
+      // Strip multi-megabyte base64 data URLs from localStorage to prevent QuotaExceededError
+      const safeDataUrl = dUrl.startsWith('data:') && dUrl.length > 50000 ? '' : dUrl;
+      sanitizedDocs[docKey] = {
+        ...docObj,
+        dataUrl: safeDataUrl || fUrl,
+        fileUrl: fUrl || safeDataUrl,
+      };
+    } else {
+      sanitizedDocs[docKey] = docVal;
+    }
+  }
+  return sanitizedDocs;
+}
+
 function sanitizeValueForStorage(key: string, value: any): any {
   if (key === STORAGE_KEYS.EMPLOYEES && Array.isArray(value)) {
     return value.map((emp) => {
       if (!emp || typeof emp !== 'object') return emp;
       const copy = { ...emp };
-      // Preserve document dataUrls (URLs and compact representations)
       if (copy.submittedDocuments && typeof copy.submittedDocuments === 'object') {
-        const sanitizedDocs: any = {};
-        for (const [docKey, docVal] of Object.entries(copy.submittedDocuments)) {
-          if (docVal && typeof docVal === 'object') {
-            const docObj = docVal as any;
-            sanitizedDocs[docKey] = {
-              ...docObj,
-              dataUrl: docObj.dataUrl || docObj.fileUrl || '',
-            };
-          }
-        }
-        copy.submittedDocuments = sanitizedDocs;
+        copy.submittedDocuments = sanitizeDocRecordForStorage(copy.submittedDocuments);
+      }
+      if (copy.registrationLocation && typeof copy.registrationLocation === 'object' && copy.registrationLocation.documents) {
+        copy.registrationLocation = {
+          ...copy.registrationLocation,
+          documents: sanitizeDocRecordForStorage(copy.registrationLocation.documents),
+        };
       }
       // Omit excessive base64 photo strings (> 60KB) from localStorage cache
       if (typeof copy.photo === 'string' && copy.photo.startsWith('data:') && copy.photo.length > 60000) {
@@ -689,6 +706,15 @@ function sanitizeValueForStorage(key: string, value: any): any {
     if (typeof copy.photo === 'string' && copy.photo.startsWith('data:')) {
       copy.photo = '';
     }
+    if (copy.submittedDocuments && typeof copy.submittedDocuments === 'object') {
+      copy.submittedDocuments = sanitizeDocRecordForStorage(copy.submittedDocuments);
+    }
+    if (copy.registrationLocation && typeof copy.registrationLocation === 'object' && copy.registrationLocation.documents) {
+      copy.registrationLocation = {
+        ...copy.registrationLocation,
+        documents: sanitizeDocRecordForStorage(copy.registrationLocation.documents),
+      };
+    }
     return copy;
   }
   return value;
@@ -701,11 +727,19 @@ function cleanupStorageQuota(): void {
       localStorage.removeItem('ojt_passwords');
     }
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
-    if (raw && raw.length > 300000) {
+    if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const sanitized = sanitizeValueForStorage(STORAGE_KEYS.EMPLOYEES, parsed);
         localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(sanitized));
+      }
+    }
+    const rawUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    if (rawUser) {
+      const parsedUser = JSON.parse(rawUser);
+      if (parsedUser && typeof parsedUser === 'object') {
+        const sanitizedUser = sanitizeValueForStorage(STORAGE_KEYS.CURRENT_USER, parsedUser);
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(sanitizedUser));
       }
     }
   } catch {

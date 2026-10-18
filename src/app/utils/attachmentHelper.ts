@@ -157,12 +157,19 @@ export function resolveSafeDocumentViewUrl(url?: string): string {
   // If an API proxy URL was previously saved or passed, extract and unwrap the actual original storage URL
   if (trimmed.includes('/api/documents?action=view') || trimmed.includes('/api/documents')) {
     try {
-      const match = trimmed.match(/[?&]url=([^&]+)/);
-      if (match) {
-        const decoded = decodeURIComponent(match[1]);
+      const urlMatch = trimmed.match(/[?&]url=([^&]+)/);
+      if (urlMatch) {
+        const decoded = decodeURIComponent(urlMatch[1]);
         if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://'))) {
           return decoded;
         }
+      }
+      const pathMatch = trimmed.match(/[?&]path=([^&]+)/);
+      if (pathMatch) {
+        const decodedPath = decodeURIComponent(pathMatch[1]).replace(/^\/+/, '');
+        const bucketMatch = trimmed.match(/[?&]bucket=([^&]+)/);
+        const bucket = bucketMatch ? decodeURIComponent(bucketMatch[1]) : 'face-photos';
+        return `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/${bucket}/${decodedPath}`;
       }
     } catch {}
   }

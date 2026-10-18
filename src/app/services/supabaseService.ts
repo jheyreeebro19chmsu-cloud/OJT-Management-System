@@ -1177,10 +1177,19 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     time_out: record.timeOut || null,
     total_hours: record.totalHours ?? 0,
     status: record.status || 'present',
+    notes: record.notes || null,
     time_in_geofenced: Boolean(record.timeInGeofenced),
     time_out_geofenced: Boolean(record.timeOutGeofenced),
     time_in_face_verified: Boolean(record.timeInFaceVerified),
     time_out_face_verified: Boolean(record.timeOutFaceVerified),
+    time_in_lat: record.timeInLocation?.lat != null ? Number(record.timeInLocation.lat) : null,
+    time_in_lng: record.timeInLocation?.lng != null ? Number(record.timeInLocation.lng) : null,
+    time_out_lat: record.timeOutLocation?.lat != null ? Number(record.timeOutLocation.lat) : null,
+    time_out_lng: record.timeOutLocation?.lng != null ? Number(record.timeOutLocation.lng) : null,
+    approval_status: record.approvalStatus || 'pending',
+    approved_by: record.approvedBy || null,
+    approved_at: record.approvedAt || null,
+    approval_note: record.approvalNote || null,
   };
 
   if (record.timeInPhoto && record.timeInPhoto.startsWith('http')) {
@@ -1190,26 +1199,7 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     baseRecord.time_out_photo = record.timeOutPhoto;
   }
 
-  const extendedRecord: any = {
-    ...baseRecord,
-    time_in_lat: record.timeInLocation?.lat != null ? Number(record.timeInLocation.lat) : null,
-    time_in_lng: record.timeInLocation?.lng != null ? Number(record.timeInLocation.lng) : null,
-    time_out_lat: record.timeOutLocation?.lat != null ? Number(record.timeOutLocation.lat) : null,
-    time_out_lng: record.timeOutLocation?.lng != null ? Number(record.timeOutLocation.lng) : null,
-    notes: record.notes || null,
-    academic_year: record.academicYear || null,
-    approval_status: record.approvalStatus || 'pending',
-    approved_by: record.approvedBy || null,
-    approved_at: record.approvedAt || null,
-    approval_note: record.approvalNote || null,
-  };
-
-  let insertResult = await supabase.from('time_records').insert([extendedRecord]).select().single();
-
-  if (insertResult.error) {
-    console.warn('[Supabase] Extended time_record insert notice, retrying with core columns:', insertResult.error.message);
-    insertResult = await supabase.from('time_records').insert([baseRecord]).select().single();
-  }
+  let insertResult = await supabase.from('time_records').insert([baseRecord]).select().single();
 
   if (insertResult.error) {
     console.error('Error creating time record in Supabase:', insertResult.error);
