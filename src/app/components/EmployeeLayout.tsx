@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles, Settings } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles, Settings, ClipboardCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'OJT Documents', icon: FileCheck, end: false, isDocNav: true },
+  { to: '/app/monitoring-report', label: 'Monitoring Report', icon: ClipboardCheck, end: false },
   { to: '/app/evaluation', label: 'OJT Questionnaire', icon: Award, end: false, isEvalNav: true },
   { to: '/app/announcements', label: 'Announcements', icon: Bell, end: false, isAnnounceNav: true },
   { to: '/app/settings', label: 'Settings', icon: Settings, end: false },
@@ -511,7 +512,7 @@ export function EmployeeLayout() {
               {/* Tray Footer */}
               <div className="p-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
                 <span>Standard CHMSU OJT Hours</span>
-                <span className="font-semibold text-gray-700">{employee?.requiredHours || 486} Required Total</span>
+                <span className="font-semibold text-gray-700">{employee?.requiredHours || 600} Required Total</span>
               </div>
             </motion.aside>
           </>

@@ -38,7 +38,7 @@ export function computeTraineeOjtNotifications(
 
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const dateStr = now.toISOString().split('T')[0];
-  const requiredHours = Number(employee.requiredHours) || 486;
+  const requiredHours = Number(employee.requiredHours) || 600;
   const remainingHours = Math.max(0, requiredHours - totalHoursRendered);
   const progressPct = requiredHours > 0 ? Math.min(100, Math.round((totalHoursRendered / requiredHours) * 100)) : 0;
 

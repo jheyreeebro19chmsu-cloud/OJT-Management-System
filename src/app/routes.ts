@@ -65,6 +65,8 @@ const Register = lazyWithRetry(() => import('./pages/Register').then(m => ({ def
 const TimeRecord = lazyWithRetry(() => import('./pages/TimeRecord').then(m => ({ default: m.TimeRecord })), 'TimeRecord');
 const Documents = lazyWithRetry(() => import('./pages/Documents').then(m => ({ default: m.Documents })), 'Documents');
 const TraineeEvaluation = lazyWithRetry(() => import('./pages/TraineeEvaluation').then(m => ({ default: m.TraineeEvaluation })), 'TraineeEvaluation');
+const AdminMonitoringReport = lazyWithRetry(() => import('./pages/admin/AdminMonitoringReport').then(m => ({ default: m.AdminMonitoringReport })), 'AdminMonitoringReport');
+const MonitoringReport = lazyWithRetry(() => import('./pages/MonitoringReport').then(m => ({ default: m.MonitoringReport })), 'MonitoringReport');
 
 const routeLoaders: Record<string, () => Promise<any>> = {
   '/admin': () => import('./pages/admin/AdminDashboard'),
@@ -79,6 +81,8 @@ const routeLoaders: Record<string, () => Promise<any>> = {
   '/admin/announcements': () => import('./pages/admin/AdminAnnouncements'),
   '/admin/academic-years': () => import('./pages/admin/AcademicYearManagement'),
   '/admin/settings': () => import('./pages/admin/AdminSettings'),
+  '/admin/monitoring-report': () => import('./pages/admin/AdminMonitoringReport'),
+  '/app/monitoring-report': () => import('./pages/MonitoringReport'),
   '/admin/profile': () => import('./pages/AccountProfile'),
   '/hte': () => import('./pages/HTEDashboard'),
   '/hte/dashboard': () => import('./pages/HTEDashboard'),
@@ -107,6 +111,7 @@ export function preloadAllAdminRoutes() {
     '/admin/host-feedback',
     '/admin/announcements',
     '/admin/academic-years',
+    '/admin/monitoring-report',
     '/admin/settings',
     '/admin/profile',
   ];
@@ -253,6 +258,7 @@ export const router = createBrowserRouter([
       { path: 'hte-feedback', element: withSuspense(TraineeEvaluation) },
       { path: 'profile', element: withSuspense(Profile) },
       { path: 'settings', element: withSuspense(Profile) },
+      { path: 'monitoring-report', element: withSuspense(MonitoringReport) },
       { path: 'instructor-qr', element: withSuspense(InstructorQR) },
       { path: 'scan-qr', element: withSuspense(QRScanner) },
     ],
@@ -273,6 +279,7 @@ export const router = createBrowserRouter([
       { path: 'host-feedback', element: withSuspense(AdminHostFeedback) },
       { path: 'announcements', element: withSuspense(AdminAnnouncements) },
       { path: 'academic-years', element: withSuspense(AcademicYearManagement) },
+      { path: 'monitoring-report', element: withSuspense(AdminMonitoringReport) },
       { path: 'settings', element: withSuspense(AdminSettings) },
       { path: 'profile', element: withSuspense(() => React.createElement(AccountProfile, { role: 'admin' })) },
     ],

@@ -723,7 +723,7 @@ function HostFeedbackOfficialSheet({
       course: 'Bachelor of Science in Information Systems',
       startDate: '',
       endDate: '',
-      requiredHours: 486,
+      requiredHours: 600,
       faceRegistered: false,
       createdAt: new Date().toISOString(),
       active: true,

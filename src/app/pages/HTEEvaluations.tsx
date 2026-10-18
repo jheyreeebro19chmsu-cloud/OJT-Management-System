@@ -818,7 +818,7 @@ export function HTEEvaluations() {
 
                     <td className="px-4 py-3">
                       <span className="font-mono font-bold text-slate-800 text-xs">
-                        {stats.totalHours.toFixed(1)} / {emp.requiredHours || 486} hrs
+                        {stats.totalHours.toFixed(1)} / {emp.requiredHours || 600} hrs
                       </span>
                     </td>
 

@@ -26,10 +26,13 @@ import {
   TraineeDocumentItem,
   MonthlyDttrRecord,
   EvaluationQuestionnaire,
+  MonitoringReport,
+  TraineeSelfMonitoringReport,
 } from '../types';
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
 import { resolveHteLocation, isInvalidHteCompany, isTraineeRole } from '../utils/hteLocation';
+import { TRAINEE_REQUIRED_HOURS, normalizeTraineeRequiredHours } from '../data/ojtConstants';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -48,6 +51,8 @@ const STORAGE_KEYS = {
   HOST_SUPERVISORS: 'ojt_host_supervisors',
   PASSWORDS: 'ojt_passwords',
   MONTHLY_DTTR: 'ojt_monthly_dttr',
+  MONITORING_REPORTS: 'ojt_monitoring_reports',
+  TRAINEE_SELF_MONITORING_REPORTS: 'ojt_trainee_self_monitoring_reports',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -107,6 +112,121 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
 const DEFAULT_HOST_SUPERVISORS: HostSupervisor[] = [];
 
 const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [];
+
+const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
+  {
+    id: 'mr-demo-1',
+    reportNumber: 'CHMSU-MR-2026-001',
+    traineeId: '20231379',
+    traineeName: 'Juan Dela Cruz',
+    studentId: '20231379',
+    course: 'Bachelor of Science in Information Technology',
+    department: 'College of Computer Studies',
+    campus: 'Talisay (Main Campus)',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
+    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
+    supervisorName: 'Engr. Roberto M. Tan',
+    supervisorContact: '+63 917 555 4321',
+    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
+    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
+    visitDate: '2026-09-18',
+    visitTime: '10:30 AM',
+    visitType: 'on_site',
+    requiredHours: TRAINEE_REQUIRED_HOURS,
+    renderedHours: 240,
+    remainingHours: 360,
+    attendanceConsistency: 'Regular / Consistently Punctual',
+    ratings: {
+      workQuality: 5,
+      punctuality: 5,
+      professionalism: 5,
+      technicalCompetence: 4,
+      policyAdherence: 5,
+    },
+    tasksObserved: 'Assisting network operations team in structured cabling, LAN deployment, and database backup verification.',
+    highlights: 'Supervisor reported trainee is exceptionally dependable, proactive, and communicates clearly with department staff.',
+    issuesIdentified: 'None. Trainee is adapting swiftly to server configuration routines.',
+    recommendations: 'Allow trainee to participate in upcoming Active Directory and cybersecurity protocol audit.',
+    actionTaken: 'Endorsed trainee for specialized module on network security maintenance.',
+    overallStatus: 'commendable',
+    nextVisitDate: '2026-10-25',
+    instructorSignature: 'Prof. Ma. Cristina Ramos, MIT',
+    isAcknowledgedByTrainee: true,
+    traineeAcknowledgedAt: '2026-09-19T08:15:00Z',
+    traineeFeedback: 'Thank you Ma\'am for visiting our station! I am learning so much in enterprise networking.',
+    createdAt: '2026-09-18T11:45:00Z',
+  },
+  {
+    id: 'mr-demo-2',
+    reportNumber: 'CHMSU-MR-2026-002',
+    traineeId: 'emp-1',
+    traineeName: 'Maria Santos',
+    studentId: '20231380',
+    course: 'Bachelor of Science in Information Systems',
+    department: 'College of Computer Studies',
+    campus: 'Talisay (Main Campus)',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Negros CyberCenter Tech Solutions',
+    hteAddress: 'Lacson St., Bacolod City',
+    supervisorName: 'Ms. Clarisse Gomez',
+    supervisorContact: '+63 920 888 1234',
+    supervisorDesignation: 'Lead Business Analyst',
+    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
+    visitDate: '2026-09-22',
+    visitTime: '02:00 PM',
+    visitType: 'virtual',
+    requiredHours: TRAINEE_REQUIRED_HOURS,
+    renderedHours: 180,
+    remainingHours: 420,
+    attendanceConsistency: 'Punctual with occasional approved schedule shifts',
+    ratings: {
+      workQuality: 4,
+      punctuality: 4,
+      professionalism: 5,
+      technicalCompetence: 4,
+      policyAdherence: 5,
+    },
+    tasksObserved: 'Conducted virtual progress review via Zoom. Trainee presented user story documentation and wireframes for client ERP portal.',
+    highlights: 'High analytical rigor; documentation follows industry standard ISO specifications.',
+    issuesIdentified: 'Client workload occasionally shifts priorities; trainee needs to manage multi-tasking effectively.',
+    recommendations: 'Continue weekly sprint retrospective with mentor to balance backlog tasks.',
+    actionTaken: 'Discussed workload balance with mentor Ms. Gomez.',
+    overallStatus: 'satisfactory',
+    nextVisitDate: '2026-10-28',
+    instructorSignature: 'Prof. Ma. Cristina Ramos, MIT',
+    isAcknowledgedByTrainee: true,
+    traineeAcknowledgedAt: '2026-09-23T09:00:00Z',
+    traineeFeedback: 'Understood Ma\'am. Will pace backlog tasks during sprint planning.',
+    createdAt: '2026-09-22T15:00:00Z',
+  },
+];
+
+const DEFAULT_TRAINEE_SELF_REPORTS: TraineeSelfMonitoringReport[] = [
+  {
+    id: 'smr-demo-1',
+    traineeId: '20231379',
+    traineeName: 'Juan Dela Cruz',
+    studentId: '20231379',
+    course: 'Bachelor of Science in Information Technology',
+    academicYear: '2026-2027',
+    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
+    supervisorName: 'Engr. Roberto M. Tan',
+    periodCovered: 'Month 1 (Weeks 1 - 4)',
+    dateSubmitted: '2026-09-15',
+    hoursRenderedThisPeriod: 160,
+    totalCumulativeHours: 160,
+    keyAccomplishments: 'Configured 25 local workstations, terminated CAT6 cables for 3 departmental conference rooms, and logged hardware inventory assets.',
+    skillsApplied: 'IP Addressing, Subnetting, Hardware troubleshooting, Google Workspace Admin setup.',
+    challengesEncountered: 'Intermittent packet loss on Building B second floor switch.',
+    resolutionOrAction: 'Isolated faulty patch cable using cable tester and re-crimped RJ45 connectors with mentor supervision.',
+    selfRating: 5,
+    status: 'reviewed',
+    instructorRemarks: 'Excellent self-monitoring report Juan! Your technical problem solving is exemplary. Keep up the great work.',
+    reviewedByInstructorAt: '2026-09-17T14:30:00Z',
+    createdAt: '2026-09-15T16:00:00Z',
+  },
+];
 
 export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
   {
@@ -301,7 +421,24 @@ interface AppContextType {
   requiredDocuments: RequiredDocument[];
   addRequiredDocument: (
     employeeId: string,
-    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean; academicYear?: string }
+    data: {
+      title: string;
+      description?: string;
+      notes?: string;
+      dueDate?: string;
+      required?: boolean;
+      academicYear?: string;
+      fileUrl?: string;
+      dataUrl?: string;
+      fileName?: string;
+      fileSize?: number | string;
+      fileType?: string;
+      uploadedBy?: string;
+      instructorId?: string;
+      templateUrl?: string;
+      templateName?: string;
+      targetRequirementKey?: string;
+    }
   ) => RequiredDocument;
   updateRequiredDocument: (id: string, data: Partial<RequiredDocument>) => void;
   deleteRequiredDocument: (id: string) => void;
@@ -330,6 +467,20 @@ interface AppContextType {
   saveMonthlyDttr: (record: MonthlyDttrRecord) => void;
   getMonthlyDttr: (employeeId: string, year: number, month: number) => MonthlyDttrRecord | null;
   signMonthlyDttr: (employeeId: string, year: number, month: number, supervisorName: string, supervisorTitle?: string) => void;
+  // Official OJT Monitoring Reports
+  monitoringReports: MonitoringReport[];
+  addMonitoringReport: (data: Omit<MonitoringReport, 'id' | 'reportNumber' | 'createdAt'>) => Promise<MonitoringReport>;
+  updateMonitoringReport: (id: string, data: Partial<MonitoringReport>) => Promise<void>;
+  deleteMonitoringReport: (id: string) => Promise<void>;
+  getTraineeMonitoringReports: (traineeId: string) => MonitoringReport[];
+  acknowledgeMonitoringReport: (id: string, feedback?: string) => Promise<void>;
+  // Trainee Self-Monitoring Progress Reports
+  traineeSelfMonitoringReports: TraineeSelfMonitoringReport[];
+  addTraineeSelfMonitoringReport: (data: Omit<TraineeSelfMonitoringReport, 'id' | 'createdAt' | 'status'>) => Promise<TraineeSelfMonitoringReport>;
+  updateTraineeSelfMonitoringReport: (id: string, data: Partial<TraineeSelfMonitoringReport>) => Promise<void>;
+  reviewTraineeSelfMonitoringReport: (id: string, instructorRemarks: string, status?: 'reviewed' | 'acknowledged') => Promise<void>;
+  deleteTraineeSelfMonitoringReport: (id: string) => Promise<void>;
+  getTraineeSelfReports: (traineeId: string) => TraineeSelfMonitoringReport[];
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -968,16 +1119,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return nextUser;
     });
   }, []);
-  const [employees, setEmployees] = useState<Employee[]>(() => {
+  const [employees, setEmployeesState] = useState<Employee[]>(() => {
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
     const filtered = stored.filter(
       (e) => !e.name?.toLowerCase().includes('darius') && !e.email?.toLowerCase().includes('benales')
     );
-    if (filtered.length !== stored.length) {
-      saveToStorage(STORAGE_KEYS.EMPLOYEES, filtered);
+    const normalized = normalizeTraineeRequiredHours(filtered);
+    if (normalized !== stored) {
+      saveToStorage(STORAGE_KEYS.EMPLOYEES, normalized);
     }
-    return filtered;
+    return normalized;
   });
+  // All Trainee accounts are enforced to the standard 600 required OJT hours.
+  const setEmployees = useCallback((action: React.SetStateAction<Employee[]>) => {
+    setEmployeesState((prev) =>
+      normalizeTraineeRequiredHours(typeof action === 'function' ? (action as (p: Employee[]) => Employee[])(prev) : action)
+    );
+  }, []);
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(() => {
     const stored = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
     return sanitizeTimeRecords(stored);
@@ -1132,6 +1290,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [monthlyDttrs, setMonthlyDttrs] = useState<MonthlyDttrRecord[]>(() =>
     loadFromStorage<MonthlyDttrRecord[]>(STORAGE_KEYS.MONTHLY_DTTR, [])
   );
+
+  const [monitoringReports, setMonitoringReports] = useState<MonitoringReport[]>(() => {
+    const stored = loadFromStorage<MonitoringReport[]>(STORAGE_KEYS.MONITORING_REPORTS, []);
+    if (stored.length === 0) {
+      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, DEFAULT_MONITORING_REPORTS);
+      return DEFAULT_MONITORING_REPORTS;
+    }
+    return stored.map((r) =>
+      r.requiredHours === TRAINEE_REQUIRED_HOURS
+        ? r
+        : {
+            ...r,
+            requiredHours: TRAINEE_REQUIRED_HOURS,
+            remainingHours: Math.max(0, TRAINEE_REQUIRED_HOURS - (Number(r.renderedHours) || 0)),
+          }
+    );
+  });
+
+  const [traineeSelfMonitoringReports, setTraineeSelfMonitoringReports] = useState<TraineeSelfMonitoringReport[]>(() => {
+    const stored = loadFromStorage<TraineeSelfMonitoringReport[]>(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, []);
+    if (stored.length === 0) {
+      saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, DEFAULT_TRAINEE_SELF_REPORTS);
+      return DEFAULT_TRAINEE_SELF_REPORTS;
+    }
+    return stored;
+  });
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, monitoringReports);
+  }, [monitoringReports]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, traineeSelfMonitoringReports);
+  }, [traineeSelfMonitoringReports]);
 
   // Check if Supabase is configured and load initial data
   useEffect(() => {
@@ -2527,7 +2719,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       course: employeeData.course || 'N/A',
       startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
       endDate: employeeData.endDate || new Date().toISOString().split('T')[0],
-      requiredHours: employeeData.requiredHours ?? (isInstructor || isHTE ? 0 : 600),
+      requiredHours: isInstructor || isHTE ? (employeeData.requiredHours ?? 0) : TRAINEE_REQUIRED_HOURS,
     };
 
     const newEmp: Employee = {
@@ -4277,7 +4469,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addRequiredDocument = (
     employeeId: string,
-    data: { title: string; description?: string; notes?: string; dueDate?: string; required?: boolean; academicYear?: string }
+    data: {
+      title: string;
+      description?: string;
+      notes?: string;
+      dueDate?: string;
+      required?: boolean;
+      academicYear?: string;
+      fileUrl?: string;
+      dataUrl?: string;
+      fileName?: string;
+      fileSize?: number | string;
+      fileType?: string;
+      uploadedBy?: string;
+      instructorId?: string;
+      templateUrl?: string;
+      templateName?: string;
+      targetRequirementKey?: string;
+    }
   ): RequiredDocument => {
     const notes = (data.notes ?? data.description ?? '').trim();
     const newDoc: RequiredDocument = {
@@ -4290,6 +4499,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       required: data.required ?? true,
       academicYear: data.academicYear || settings.activeAcademicYear,
       createdAt: new Date().toISOString(),
+      fileUrl: data.fileUrl,
+      dataUrl: data.dataUrl,
+      fileName: data.fileName,
+      fileSize: data.fileSize,
+      fileType: data.fileType,
+      uploadedBy: data.uploadedBy,
+      instructorId: data.instructorId,
+      templateUrl: data.templateUrl || data.fileUrl || data.dataUrl,
+      templateName: data.templateName || data.fileName,
+      targetRequirementKey: data.targetRequirementKey,
     };
 
     setRequiredDocuments((prev) => [newDoc, ...prev]);
@@ -4909,6 +5128,114 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, [employees]);
 
+  // Official OJT Monitoring Reports handlers
+  const addMonitoringReport = useCallback(
+    async (data: Omit<MonitoringReport, 'id' | 'reportNumber' | 'createdAt'>): Promise<MonitoringReport> => {
+      const year = new Date().getFullYear();
+      const count = monitoringReports.length + 1;
+      const reportNumber = `CHMSU-MR-${year}-${String(count).padStart(3, '0')}`;
+      const newReport: MonitoringReport = {
+        ...data,
+        id: `mr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        reportNumber,
+        createdAt: new Date().toISOString(),
+      };
+      setMonitoringReports((prev) => [newReport, ...prev]);
+      return newReport;
+    },
+    [monitoringReports.length]
+  );
+
+  const updateMonitoringReport = useCallback(async (id: string, data: Partial<MonitoringReport>) => {
+    setMonitoringReports((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...data, updatedAt: new Date().toISOString() } : r))
+    );
+  }, []);
+
+  const deleteMonitoringReport = useCallback(async (id: string) => {
+    setMonitoringReports((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const getTraineeMonitoringReports = useCallback(
+    (traineeId: string) => {
+      return monitoringReports.filter(
+        (r) => r.traineeId === traineeId || r.studentId === traineeId
+      );
+    },
+    [monitoringReports]
+  );
+
+  const acknowledgeMonitoringReport = useCallback(async (id: string, feedback?: string) => {
+    setMonitoringReports((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              isAcknowledgedByTrainee: true,
+              traineeAcknowledgedAt: new Date().toISOString(),
+              traineeFeedback: feedback || r.traineeFeedback,
+              updatedAt: new Date().toISOString(),
+            }
+          : r
+      )
+    );
+  }, []);
+
+  // Trainee Self-Monitoring Reports handlers
+  const addTraineeSelfMonitoringReport = useCallback(
+    async (data: Omit<TraineeSelfMonitoringReport, 'id' | 'createdAt' | 'status'>): Promise<TraineeSelfMonitoringReport> => {
+      const newSelfReport: TraineeSelfMonitoringReport = {
+        ...data,
+        id: `smr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        status: 'submitted',
+        createdAt: new Date().toISOString(),
+      };
+      setTraineeSelfMonitoringReports((prev) => [newSelfReport, ...prev]);
+      return newSelfReport;
+    },
+    []
+  );
+
+  const updateTraineeSelfMonitoringReport = useCallback(
+    async (id: string, data: Partial<TraineeSelfMonitoringReport>) => {
+      setTraineeSelfMonitoringReports((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...data } : r))
+      );
+    },
+    []
+  );
+
+  const reviewTraineeSelfMonitoringReport = useCallback(
+    async (id: string, instructorRemarks: string, status: 'reviewed' | 'acknowledged' = 'reviewed') => {
+      setTraineeSelfMonitoringReports((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                instructorRemarks,
+                status,
+                reviewedByInstructorAt: new Date().toISOString(),
+              }
+            : r
+        )
+      );
+    },
+    []
+  );
+
+  const deleteTraineeSelfMonitoringReport = useCallback(async (id: string) => {
+    setTraineeSelfMonitoringReports((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const getTraineeSelfReports = useCallback(
+    (traineeId: string) => {
+      return traineeSelfMonitoringReports.filter(
+        (r) => r.traineeId === traineeId || r.studentId === traineeId
+      );
+    },
+    [traineeSelfMonitoringReports]
+  );
+
   // Accounts are global across academic years; records retain their own academic-year metadata.
   const filteredEmployees = employees;
   const filteredTimeRecords = timeRecords;
@@ -4996,6 +5323,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         saveMonthlyDttr,
         getMonthlyDttr,
         signMonthlyDttr,
+        // Monitoring Reports
+        monitoringReports,
+        addMonitoringReport,
+        updateMonitoringReport,
+        deleteMonitoringReport,
+        getTraineeMonitoringReports,
+        acknowledgeMonitoringReport,
+        traineeSelfMonitoringReports,
+        addTraineeSelfMonitoringReport,
+        updateTraineeSelfMonitoringReport,
+        reviewTraineeSelfMonitoringReport,
+        deleteTraineeSelfMonitoringReport,
+        getTraineeSelfReports,
       }}
     >
       {children}

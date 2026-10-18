@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor } from '../types';
 import { isWithinNegrosOccidental } from '../utils/geo';
+import { TRAINEE_REQUIRED_HOURS } from '../data/ojtConstants';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
 
@@ -393,7 +394,7 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     course: employee.course || 'Information Systems',
     start_date: employee.startDate || new Date().toISOString().split('T')[0],
     end_date: employee.endDate || new Date().toISOString().split('T')[0],
-    required_hours: employee.requiredHours ?? (isInst || isHte ? 0 : 486),
+    required_hours: isInst || isHte ? (employee.requiredHours ?? 0) : TRAINEE_REQUIRED_HOURS,
     photo: photoToStore,
     face_registered: Boolean(employee.faceRegistered),
     active: employee.active !== false,
@@ -2650,6 +2651,15 @@ export function transformSupabaseEmployee(data: any): Employee {
 
   const finalResidential = rawResidential || (compositeResidential ? compositeResidential : undefined);
 
+  const resolvedRole: 'admin' | 'hte' | 'employee' = data.role || (
+    data.position === 'OJT Instructor' || data.position === 'Administrator' || (data.position && String(data.position).toLowerCase().includes('instructor'))
+      ? 'admin'
+      : data.position === 'HTE Representative' || data.position === 'Training Supervisor' || (data.position && String(data.position).toLowerCase().includes('hte'))
+        ? 'hte'
+        : 'employee'
+  );
+  const isTraineeAccount = resolvedRole !== 'admin' && resolvedRole !== 'hte' && (resolvedRole as string) !== 'instructor';
+
   return {
     id: data.id,
     name: data.name,
@@ -2687,7 +2697,7 @@ export function transformSupabaseEmployee(data: any): Employee {
     course: data.course,
     startDate: data.start_date,
     endDate: data.end_date,
-    requiredHours: data.required_hours,
+    requiredHours: isTraineeAccount ? TRAINEE_REQUIRED_HOURS : Number(data.required_hours ?? 0),
     renderedHours: Number(data.rendered_hours ?? regLoc?.renderedHours ?? 0),
     photo: data.photo,
     faceRegistered: data.face_registered,

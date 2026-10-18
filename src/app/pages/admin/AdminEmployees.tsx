@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { isSecurityApiConfigured, registerFace } from '../../services/securityAp
 import { useApp } from '../../store/AppContext';
 import { Employee, TraineeDocuments } from '../../types';
 import { getPhotoUrl } from '../../services/config';
-import { saveDocumentPassStatus } from '../../services/supabaseService';
+import { saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
@@ -94,6 +94,57 @@ export function AdminEmployees() {
   const [docNotes, setDocNotes] = useState('');
   const [docDueDate, setDocDueDate] = useState('');
   const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [showBatchUploadModal, setShowBatchUploadModal] = useState(false);
+  const [batchDocFiles, setBatchDocFiles] = useState<
+    Array<{
+      id: string;
+      file: File;
+      title: string;
+      targetKey: string;
+      description: string;
+      notes: string;
+      dueDate: string;
+      size: number;
+    }>
+  >([]);
+  const [isUploadingBatch, setIsUploadingBatch] = useState(false);
+  const [addDocFile, setAddDocFile] = useState<File | null>(null);
+  const [addDocTargetKey, setAddDocTargetKey] = useState<string>('new');
+
+  const getStandardDocTemplate = (docKey: string, docTitle?: string) => {
+    // 1. From requiredDocuments
+    const match = requiredDocuments?.find(
+      (r) =>
+        r.targetRequirementKey === docKey ||
+        (docTitle && r.title.toLowerCase().trim() === docTitle.toLowerCase().trim())
+    );
+    if (match && (match.fileUrl || match.dataUrl)) {
+      return {
+        fileName: match.fileName || `${match.title}.pdf`,
+        fileUrl: match.fileUrl || match.dataUrl,
+        size: match.fileSize,
+        notes: match.notes,
+        id: match.id,
+      };
+    }
+    // 2. From localStorage
+    try {
+      const stored = localStorage.getItem(`ojt_template_${docKey}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.url || parsed.dataUrl || parsed.fileUrl) {
+          return {
+            fileName: parsed.name || parsed.fileName || `${docKey}_template.pdf`,
+            fileUrl: parsed.url || parsed.dataUrl || parsed.fileUrl,
+            size: parsed.size,
+            notes: parsed.notes,
+            id: `template-${docKey}`,
+          };
+        }
+      }
+    } catch {}
+    return null;
+  };
   const [activeCategoryTab, setActiveCategoryTab] = useState<'student' | 'instructor' | 'hte' | 'pending' | 'documents' | 'all'>('student');
   const [assigningHte, setAssigningHte] = useState(false);
   const [selectedHteId, setSelectedHteId] = useState('');
@@ -469,6 +520,17 @@ export function AdminEmployees() {
     return Array.from(map.values()).sort((a, b) => a.companyName.localeCompare(b.companyName));
   }, [hostSupervisors, employees]);
 
+  // Quick id -> HTE lookup (case-insensitive) used to resolve a trainee's HTE company name
+  const hteLookup = useMemo(() => {
+    const lookup: Record<string, (typeof allAvailableHtes)[number]> = {};
+    allAvailableHtes.forEach((h) => {
+      if (!h.id) return;
+      lookup[h.id] = h;
+      lookup[h.id.toLowerCase()] = h;
+    });
+    return lookup;
+  }, [allAvailableHtes]);
+
   const isTraineeDeployed = (emp: Employee) => {
     const rawComp = (emp.companyName || '').trim();
     if (!rawComp || isInvalidHteCompany(rawComp)) {
@@ -798,7 +860,7 @@ export function AdminEmployees() {
       course: editForm.course,
       startDate: editForm.startDate,
       endDate: editForm.endDate,
-      requiredHours: Number(editForm.requiredHours) || 600,
+      requiredHours: 600,
       academicYear: editForm.academicYear,
       residentialAddress: editForm.residentialAddress.trim(),
       address: editForm.residentialAddress.trim(),
@@ -858,7 +920,7 @@ export function AdminEmployees() {
     registerEmployee({
       ...form,
       academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
-      requiredHours: Number(form.requiredHours),
+      requiredHours: 600,
       faceRegistered: false,
       active: true,
       approvalStatus: 'approved',
@@ -1417,7 +1479,11 @@ export function AdminEmployees() {
                                   className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
                                 >
                                   <CheckCircle2 size={14} className="text-emerald-600" />
-                                  {isCurrentlyPassed ? 'Set Docs as Pending' : 'Approve All Documents'}
+                                  {(REQUIRED_TRAINEE_DOC_KEYS.every(
+                                    (k) => emp.submittedDocuments?.[k]?.dataUrl || emp.submittedDocuments?.[k]?.name
+                                  ) && emp.documentsPassed === true && emp.documentsStatus === 'passed')
+                                    ? 'Set Docs as Pending'
+                                    : 'Approve All Documents'}
                                 </button>
                               )}
 
@@ -2008,13 +2074,27 @@ export function AdminEmployees() {
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddDocModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer"
-                >
-                  <Plus size={14} /> Add Requirement
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowBatchUploadModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all cursor-pointer"
+                  >
+                    <Upload size={14} /> Upload Documents / Templates
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddDocFile(null);
+                      setAddDocTargetKey('new');
+                      setShowAddDocModal(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer"
+                  >
+                    <Plus size={14} /> Add Requirement
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2556,29 +2636,135 @@ export function AdminEmployees() {
 
                 {/* Standard 10 Mandatory Documents Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  {REQUIRED_TRAINEE_DOCUMENTS.map((doc) => (
-                    <div key={doc.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 flex flex-col justify-between hover:bg-white hover:shadow-xs transition-all">
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-black flex items-center justify-center">
-                              {doc.num}
+                  {REQUIRED_TRAINEE_DOCUMENTS.map((doc) => {
+                    const tpl = getStandardDocTemplate(doc.key, doc.title);
+                    return (
+                      <div key={doc.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/50 flex flex-col justify-between hover:bg-white hover:shadow-xs transition-all">
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-black flex items-center justify-center">
+                                {doc.num}
+                              </span>
+                              {doc.title}
                             </span>
-                            {doc.title}
-                          </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Mandatory
-                          </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Mandatory
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-blue-700">{doc.subtitle}</p>
+                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{doc.desc}</p>
+
+                          {/* Instructor Attached Template / Guide */}
+                          {tpl ? (
+                            <div className="mt-2.5 p-2.5 bg-violet-50/90 rounded-xl border border-violet-200/90 flex items-center justify-between gap-2 text-xs">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText size={15} className="text-violet-600 shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="font-bold text-violet-950 truncate text-[11px]" title={tpl.fileName}>
+                                    {tpl.fileName}
+                                  </p>
+                                  <span className="text-[10px] text-violet-600">Instructor Template Available</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewInstructorDoc({
+                                      studentName: 'Template Document',
+                                      studentId: 'Instructor File',
+                                      title: doc.title,
+                                      fileName: tpl.fileName,
+                                      fileUrl: tpl.fileUrl,
+                                      note: tpl.notes,
+                                    });
+                                  }}
+                                  className="p-1 rounded-md text-violet-700 hover:bg-violet-100 cursor-pointer"
+                                  title="Preview template"
+                                >
+                                  <Eye size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => downloadDocument(tpl.fileUrl, tpl.fileName)}
+                                  className="p-1 rounded-md text-violet-700 hover:bg-violet-100 cursor-pointer"
+                                  title="Download template"
+                                >
+                                  <Download size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Remove template from "${doc.title}"?`)) {
+                                      localStorage.removeItem(`ojt_template_${doc.key}`);
+                                      const match = requiredDocuments.find((r) => r.targetRequirementKey === doc.key);
+                                      if (match) deleteRequiredDocument(match.id);
+                                      toast.success(`Template removed from "${doc.title}".`);
+                                    }
+                                  }}
+                                  className="p-1 rounded-md text-red-500 hover:bg-red-50 cursor-pointer"
+                                  title="Remove template"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-2.5">
+                              <label
+                                htmlFor={`attach-std-${doc.key}`}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-200 cursor-pointer transition-colors"
+                              >
+                                <Upload size={12} /> + Attach Template / File
+                                <input
+                                  type="file"
+                                  id={`attach-std-${doc.key}`}
+                                  accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.png,.webp"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onload = async (ev) => {
+                                      const dataUrl = ev.target?.result as string;
+                                      let remoteUrl = '';
+                                      try {
+                                        const u = await uploadDocumentToStorage('instructor_templates', doc.key, file, file.name);
+                                        if (u && u.startsWith('http')) remoteUrl = u;
+                                      } catch {}
+                                      const finalUrl = remoteUrl || dataUrl;
+                                      localStorage.setItem(
+                                        `ojt_template_${doc.key}`,
+                                        JSON.stringify({ name: file.name, url: finalUrl, size: file.size, uploadedAt: new Date().toISOString() })
+                                      );
+                                      addRequiredDocument('all', {
+                                        title: doc.title,
+                                        targetRequirementKey: doc.key,
+                                        fileUrl: finalUrl,
+                                        dataUrl,
+                                        fileName: file.name,
+                                        fileSize: file.size,
+                                        uploadedBy: 'Instructor',
+                                        required: true,
+                                      });
+                                      toast.success(`Attached "${file.name}" to ${doc.title}! Trainees can now download it.`);
+                                    };
+                                    reader.readAsDataURL(file);
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs font-semibold text-blue-700">{doc.subtitle}</p>
-                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{doc.desc}</p>
+                        <div className="mt-3 pt-2.5 border-t border-gray-200/60 flex items-center justify-between text-[11px] text-gray-400">
+                          <span>Status: Institutional Standard</span>
+                          <span className="font-semibold text-emerald-600">Active Requirement</span>
+                        </div>
                       </div>
-                      <div className="mt-3 pt-2.5 border-t border-gray-200/60 flex items-center justify-between text-[11px] text-gray-400">
-                        <span>Status: Institutional Standard</span>
-                        <span className="font-semibold text-emerald-600">Active Requirement</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Custom Departmental Documents (if any) */}
@@ -2586,47 +2772,89 @@ export function AdminEmployees() {
                   <div className="space-y-3 pt-4 border-t border-gray-100">
                     <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
                       <FileText size={14} className="text-violet-600" />
-                      Additional Departmental Requirements ({requiredDocuments.length})
+                      Additional Departmental Requirements & Templates ({requiredDocuments.length})
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                      {requiredDocuments.map((doc, idx) => (
-                        <div key={doc.id} className="p-4 rounded-2xl border border-violet-200 bg-violet-50/30 flex flex-col justify-between">
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
-                                <span className="w-5 h-5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-black flex items-center justify-center">
-                                  {REQUIRED_TRAINEE_DOCUMENTS.length + idx + 1}
+                      {requiredDocuments.map((doc, idx) => {
+                        const hasTemplate = Boolean(doc.fileUrl || doc.dataUrl || doc.fileName);
+                        return (
+                          <div key={doc.id} className="p-4 rounded-2xl border border-violet-200 bg-violet-50/30 flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
+                                <span className="text-xs font-bold text-gray-900 flex items-center gap-2">
+                                  <span className="w-5 h-5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-black flex items-center justify-center">
+                                    {REQUIRED_TRAINEE_DOCUMENTS.length + idx + 1}
+                                  </span>
+                                  {doc.title}
                                 </span>
-                                {doc.title}
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200">
-                                  Custom Requirement
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (confirm(`Remove "${doc.title}" from required documents?`)) {
-                                      deleteRequiredDocument(doc.id);
-                                      toast.success(`"${doc.title}" removed.`);
-                                    }
-                                  }}
-                                  className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
-                                  title="Delete requirement"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-200">
+                                    {doc.targetRequirementKey ? 'Standard Template' : 'Custom Requirement'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`Remove "${doc.title}"?`)) {
+                                        deleteRequiredDocument(doc.id);
+                                        toast.success(`"${doc.title}" removed.`);
+                                      }
+                                    }}
+                                    className="p-1 text-red-500 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                                    title="Delete requirement"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
                               </div>
+                              {doc.description && <p className="text-xs text-gray-600 mt-1">{doc.description}</p>}
+                              {doc.notes && <p className="text-[11px] text-gray-500 mt-1 italic">Notes: {doc.notes}</p>}
+
+                              {/* Attached File/Template */}
+                              {hasTemplate && (
+                                <div className="mt-2.5 p-2 bg-white rounded-xl border border-violet-200/80 flex items-center justify-between gap-2 text-xs">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText size={15} className="text-violet-600 shrink-0" />
+                                    <span className="font-bold text-violet-950 truncate text-[11px]" title={doc.fileName || doc.title}>
+                                      {doc.fileName || `${doc.title}.pdf`}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPreviewInstructorDoc({
+                                          studentName: 'Template Document',
+                                          studentId: 'Instructor File',
+                                          title: doc.title,
+                                          fileName: doc.fileName,
+                                          fileUrl: doc.fileUrl || doc.dataUrl,
+                                          note: doc.notes,
+                                        });
+                                      }}
+                                      className="p-1 rounded text-violet-700 hover:bg-violet-100 cursor-pointer"
+                                      title="Preview template"
+                                    >
+                                      <Eye size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => downloadDocument((doc.fileUrl || doc.dataUrl)!, doc.fileName || doc.title)}
+                                      className="p-1 rounded text-violet-700 hover:bg-violet-100 cursor-pointer"
+                                      title="Download template"
+                                    >
+                                      <Download size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            {doc.description && <p className="text-xs text-gray-600 mt-1">{doc.description}</p>}
-                            {doc.notes && <p className="text-[11px] text-gray-500 mt-1 italic">Notes: {doc.notes}</p>}
+                            <div className="mt-3 pt-2.5 border-t border-violet-100 flex items-center justify-between text-[11px] text-gray-400">
+                              <span>Due: {doc.dueDate || 'Prior to Deployment'}</span>
+                              <span className="text-violet-700 font-semibold">A.Y. {doc.academicYear || settings.activeAcademicYear}</span>
+                            </div>
                           </div>
-                          <div className="mt-3 pt-2.5 border-t border-violet-100 flex items-center justify-between text-[11px] text-gray-400">
-                            <span>Due: {doc.dueDate || 'Prior to Deployment'}</span>
-                            <span className="text-violet-700 font-semibold">A.Y. {doc.academicYear || settings.activeAcademicYear}</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2645,6 +2873,360 @@ export function AdminEmployees() {
         )}
       </div>
 
+      {/* Batch Upload Documents / Templates Modal */}
+      <AnimatePresence>
+        {showBatchUploadModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+                    <Upload size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Upload Multiple Documents & Templates</h3>
+                    <p className="text-xs text-gray-500">Distribute official guidelines, blank forms, and contracts for trainees to pass.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isUploadingBatch) {
+                      setShowBatchUploadModal(false);
+                      setBatchDocFiles([]);
+                    }
+                  }}
+                  disabled={isUploadingBatch}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto py-4 space-y-4">
+                {/* Drag-and-drop / Multi-file Selector */}
+                <div className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/30 hover:bg-indigo-50/60 rounded-2xl p-6 text-center transition-all">
+                  <input
+                    type="file"
+                    id="batch-doc-input"
+                    multiple
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length === 0) return;
+
+                      const detectKey = (name: string): string => {
+                        const s = name.toLowerCase();
+                        if (s.includes('agreement') || s.includes('contract')) return 'internshipAgreement';
+                        if (s.includes('moa') || s.includes('memorandum')) return 'moa';
+                        if (s.includes('consent') || s.includes('parent') || s.includes('guardian')) return 'consent';
+                        if (s.includes('training') || s.includes('plan') || s.includes('internship_plan')) return 'trainingPlan';
+                        if (s.includes('pledge') || s.includes('conduct')) return 'pledgeOfConduct';
+                        if (s.includes('medical') || s.includes('health') || s.includes('clearance')) return 'medical';
+                        if (s.includes('application') || s.includes('apply')) return 'application';
+                        if (s.includes('resume') || s.includes('cv') || s.includes('curriculum')) return 'resume';
+                        if (s.includes('enrol') || s.includes('enroll') || s.includes('registration') || s.includes('cor')) return 'enrolmentForm';
+                        if (s.includes('endorse') || s.includes('acceptance')) return 'endorsement';
+                        return 'new';
+                      };
+
+                      const newItems = files.map((file) => {
+                        const targetKey = detectKey(file.name);
+                        const matchedStd = REQUIRED_TRAINEE_DOCUMENTS.find((d) => d.key === targetKey);
+                        const cleanTitle = matchedStd
+                          ? matchedStd.title
+                          : file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                        return {
+                          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                          file,
+                          title: cleanTitle,
+                          targetKey,
+                          description: matchedStd ? matchedStd.desc : 'Official requirement uploaded by OJT Instructor.',
+                          notes: 'Please review, fill out, and submit your completed document.',
+                          dueDate: 'Prior to Deployment',
+                          size: file.size,
+                        };
+                      });
+
+                      setBatchDocFiles((prev) => [...prev, ...newItems]);
+                      e.target.value = '';
+                    }}
+                  />
+                  <label htmlFor="batch-doc-input" className="cursor-pointer block">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 mx-auto flex items-center justify-center mb-2.5 shadow-xs">
+                      <Upload size={22} />
+                    </div>
+                    <p className="text-sm font-bold text-gray-800">
+                      Click to choose files or drag & drop multiple documents here
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload PDF, Word (DOC/DOCX), Excel, or image templates (e.g. MOA, Medical Clearance, Agreements)
+                    </p>
+                    <span className="inline-block mt-3 px-3 py-1 bg-white border border-indigo-200 text-indigo-700 rounded-lg text-xs font-semibold shadow-2xs">
+                      + Browse Documents (Select Multiple)
+                    </span>
+                  </label>
+                </div>
+
+                {/* Selected Files List */}
+                {batchDocFiles.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-700">
+                        {batchDocFiles.length} Document{batchDocFiles.length > 1 ? 's' : ''} Ready for Distribution
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setBatchDocFiles([])}
+                        className="text-[11px] text-red-500 hover:text-red-700 font-semibold cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+
+                    {batchDocFiles.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="p-3.5 bg-gray-50/80 rounded-2xl border border-gray-200/80 space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-gray-900 truncate" title={item.file.name}>
+                                {item.file.name}
+                              </p>
+                              <span className="text-[10px] text-gray-500 font-mono">
+                                {(item.file.size / 1024).toFixed(1)} KB • {item.file.type || 'Document'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setBatchDocFiles((prev) => prev.filter((x) => x.id !== item.id))}
+                            className="p-1 text-gray-400 hover:text-red-500 rounded-lg transition-colors cursor-pointer"
+                            title="Remove file"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-700 block mb-0.5">
+                              Document Title *
+                            </label>
+                            <input
+                              type="text"
+                              value={item.title}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBatchDocFiles((prev) =>
+                                  prev.map((x) => (x.id === item.id ? { ...x, title: val } : x))
+                                );
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-500 bg-white"
+                              placeholder="Title"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-700 block mb-0.5">
+                              Requirement Target
+                            </label>
+                            <select
+                              value={item.targetKey}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const std = REQUIRED_TRAINEE_DOCUMENTS.find((d) => d.key === val);
+                                setBatchDocFiles((prev) =>
+                                  prev.map((x) =>
+                                    x.id === item.id
+                                      ? {
+                                          ...x,
+                                          targetKey: val,
+                                          title: std ? std.title : x.title,
+                                          description: std ? std.desc : x.description,
+                                        }
+                                      : x
+                                  )
+                                );
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-500 bg-white"
+                            >
+                              <option value="new">✨ New Custom Requirement</option>
+                              <optgroup label="Attach to 10 Standard Requirements">
+                                {REQUIRED_TRAINEE_DOCUMENTS.map((req) => (
+                                  <option key={req.key} value={req.key}>
+                                    {req.num}. {req.title}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-700 block mb-0.5">
+                              Trainee Guidance / Instructions
+                            </label>
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBatchDocFiles((prev) =>
+                                  prev.map((x) => (x.id === item.id ? { ...x, description: val } : x))
+                                );
+                              }}
+                              placeholder="What should trainees do with this?"
+                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-500 bg-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-semibold text-gray-700 block mb-0.5">
+                              Due Date / Milestone
+                            </label>
+                            <input
+                              type="text"
+                              value={item.dueDate}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBatchDocFiles((prev) =>
+                                  prev.map((x) => (x.id === item.id ? { ...x, dueDate: val } : x))
+                                );
+                              }}
+                              placeholder="e.g. Prior to Deployment"
+                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-500 bg-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between pt-3 border-t border-gray-100 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBatchUploadModal(false);
+                    setBatchDocFiles([]);
+                  }}
+                  disabled={isUploadingBatch}
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={batchDocFiles.length === 0 || isUploadingBatch}
+                  onClick={async () => {
+                    if (batchDocFiles.length === 0) {
+                      toast.error('Please select at least one document to upload.');
+                      return;
+                    }
+
+                    setIsUploadingBatch(true);
+                    let uploadedCount = 0;
+
+                    for (const item of batchDocFiles) {
+                      try {
+                        const dataUrl = await new Promise<string>((resolve, reject) => {
+                          const reader = new FileReader();
+                          reader.onload = () => resolve(reader.result as string);
+                          reader.onerror = reject;
+                          reader.readAsDataURL(item.file);
+                        });
+
+                        let remoteUrl = '';
+                        try {
+                          const u = await uploadDocumentToStorage('instructor_templates', item.targetKey, item.file, item.file.name);
+                          if (u && u.startsWith('http')) remoteUrl = u;
+                        } catch {}
+
+                        const finalUrl = remoteUrl || dataUrl;
+
+                        addRequiredDocument('all', {
+                          title: item.title.trim(),
+                          description: item.description.trim(),
+                          notes: item.notes.trim(),
+                          dueDate: item.dueDate.trim() || 'Prior to Deployment',
+                          required: true,
+                          academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+                          targetRequirementKey: item.targetKey !== 'new' ? item.targetKey : undefined,
+                          fileName: item.file.name,
+                          fileSize: item.file.size,
+                          fileType: item.file.type,
+                          dataUrl,
+                          fileUrl: finalUrl,
+                          templateUrl: finalUrl,
+                          templateName: item.file.name,
+                          uploadedBy: currentUser?.name || 'Instructor',
+                        });
+
+                        if (item.targetKey !== 'new') {
+                          localStorage.setItem(
+                            `ojt_template_${item.targetKey}`,
+                            JSON.stringify({
+                              name: item.file.name,
+                              fileName: item.file.name,
+                              url: finalUrl,
+                              dataUrl,
+                              size: item.file.size,
+                              notes: item.notes,
+                              title: item.title,
+                              updatedAt: new Date().toISOString(),
+                            })
+                          );
+                        }
+
+                        uploadedCount++;
+                      } catch (err) {
+                        console.warn(`Failed to process ${item.file.name}:`, err);
+                      }
+                    }
+
+                    window.dispatchEvent(new Event('storage'));
+                    window.dispatchEvent(new CustomEvent('ojt_template_updated'));
+
+                    setIsUploadingBatch(false);
+                    setShowBatchUploadModal(false);
+                    setBatchDocFiles([]);
+                    toast.success(
+                      `Successfully uploaded & distributed ${uploadedCount} document${uploadedCount > 1 ? 's' : ''}! Trainees can now download and pass their submissions.`
+                    );
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isUploadingBatch ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Uploading & Distributing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} /> Upload & Distribute ({batchDocFiles.length}) Document{batchDocFiles.length > 1 ? 's' : ''}
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Add Custom Required Document Modal */}
       <AnimatePresence>
         {showAddDocModal && (
@@ -2653,23 +3235,51 @@ export function AdminEmployees() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-gray-100 space-y-4"
+              className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-gray-100 space-y-4 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div>
-                  <h3 className="text-base font-bold text-gray-900">Add New Required Document</h3>
-                  <p className="text-xs text-gray-500">Students will be prompted to upload this document in their portal.</p>
+                  <h3 className="text-base font-bold text-gray-900">Add Required Document / Template</h3>
+                  <p className="text-xs text-gray-500">Provide official templates and set requirements for trainees.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowAddDocModal(false)}
-                  className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                  className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
               <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">Requirement Type / Target</label>
+                  <select
+                    value={addDocTargetKey}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAddDocTargetKey(val);
+                      if (val !== 'new') {
+                        const std = REQUIRED_TRAINEE_DOCUMENTS.find((d) => d.key === val);
+                        if (std) {
+                          setDocTitle(std.title);
+                          setDocDescription(std.desc);
+                        }
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:outline-none bg-white"
+                  >
+                    <option value="new">✨ Create as New Custom Department Requirement</option>
+                    <optgroup label="Attach Template to Standard Mandatory Requirement">
+                      {REQUIRED_TRAINEE_DOCUMENTS.map((req) => (
+                        <option key={req.key} value={req.key}>
+                          {req.num}. {req.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
                 <div>
                   <label className="text-xs font-semibold text-gray-700 block mb-1">Document Title *</label>
                   <input
@@ -2679,6 +3289,57 @@ export function AdminEmployees() {
                     placeholder="e.g. Barangay Clearance, PhilHealth ID, Certificate of Good Moral"
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:outline-none"
                   />
+                </div>
+
+                {/* Optional Attached File / Template */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">
+                    Attach Official Document / Template File (Optional)
+                  </label>
+                  {addDocFile ? (
+                    <div className="p-3 bg-violet-50/80 rounded-xl border border-violet-200 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText size={16} className="text-violet-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-bold text-violet-950 truncate">{addDocFile.name}</p>
+                          <p className="text-[10px] text-violet-700">{(addDocFile.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAddDocFile(null)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                        title="Remove file"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="single-add-file"
+                      className="border border-dashed border-gray-300 hover:border-violet-400 bg-gray-50/50 hover:bg-violet-50/40 rounded-xl p-3.5 text-center cursor-pointer block transition-colors"
+                    >
+                      <input
+                        type="file"
+                        id="single-add-file"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            setAddDocFile(f);
+                            if (!docTitle) {
+                              setDocTitle(f.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
+                            }
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <Upload size={18} className="mx-auto text-violet-600 mb-1" />
+                      <p className="text-xs font-semibold text-gray-700">Click to attach guide / form template</p>
+                      <p className="text-[10px] text-gray-400">PDF, Word, Excel, or Image (Max 25MB)</p>
+                    </label>
+                  )}
                 </div>
 
                 <div>
@@ -2719,31 +3380,81 @@ export function AdminEmployees() {
                 <button
                   type="button"
                   onClick={() => setShowAddDocModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!docTitle.trim()) {
                       toast.error('Document title is required');
                       return;
                     }
+
+                    let fileDataUrl: string | undefined;
+                    let fileRemoteUrl: string | undefined;
+
+                    if (addDocFile) {
+                      fileDataUrl = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(addDocFile);
+                      });
+
+                      try {
+                        const u = await uploadDocumentToStorage('instructor_templates', addDocTargetKey, addDocFile, addDocFile.name);
+                        if (u && u.startsWith('http')) fileRemoteUrl = u;
+                      } catch {}
+                    }
+
+                    const workingUrl = fileRemoteUrl || fileDataUrl;
+
                     addRequiredDocument('all', {
                       title: docTitle.trim(),
                       description: docDescription.trim(),
                       notes: docNotes.trim(),
-                      dueDate: docDueDate.trim(),
+                      dueDate: docDueDate.trim() || 'Prior to Deployment',
                       required: true,
                       academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+                      targetRequirementKey: addDocTargetKey !== 'new' ? addDocTargetKey : undefined,
+                      fileName: addDocFile?.name,
+                      fileSize: addDocFile?.size,
+                      fileType: addDocFile?.type,
+                      dataUrl: fileDataUrl,
+                      fileUrl: workingUrl,
+                      templateUrl: workingUrl,
+                      templateName: addDocFile?.name,
+                      uploadedBy: currentUser?.name || 'Instructor',
                     });
+
+                    if (addDocTargetKey !== 'new' && (workingUrl || addDocFile)) {
+                      localStorage.setItem(
+                        `ojt_template_${addDocTargetKey}`,
+                        JSON.stringify({
+                          name: addDocFile?.name || `${docTitle}.pdf`,
+                          fileName: addDocFile?.name || `${docTitle}.pdf`,
+                          url: workingUrl,
+                          dataUrl: fileDataUrl,
+                          size: addDocFile?.size,
+                          notes: docNotes,
+                          title: docTitle,
+                          updatedAt: new Date().toISOString(),
+                        })
+                      );
+                      window.dispatchEvent(new Event('storage'));
+                      window.dispatchEvent(new CustomEvent('ojt_template_updated'));
+                    }
+
                     setDocTitle('');
                     setDocDescription('');
                     setDocNotes('');
                     setDocDueDate('');
+                    setAddDocFile(null);
+                    setAddDocTargetKey('new');
                     setShowAddDocModal(false);
-                    toast.success('New required document added! Trainees can now submit this credential.');
+                    toast.success('Document requirement saved! Trainees can now download and submit this credential.');
                   }}
                   className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer"
                 >
@@ -2769,7 +3480,7 @@ export function AdminEmployees() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              className={`bg-white rounded-3xl shadow-2xl w-full ${modalMode === 'review' || modalMode === 'view' ? 'max-w-3xl' : 'max-w-2xl'} max-h-[90vh] overflow-y-auto`}
             >
               <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur-sm z-20">
                 <div>
@@ -3427,53 +4138,105 @@ export function AdminEmployees() {
                                 })()}
                               </div>
 
-                              {/* The 10 OJT Documents Grid */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {/* The 10 OJT Documents List (Rectangular Attachment Format) */}
+                              <div className="space-y-2.5">
                                 {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                                   const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);
                                   const isPassed = doc ? doc.status === 'passed' : false;
-                                  const hasFile = !!doc?.dataUrl;
-                                  const IconComponent = docItem.icon;
+                                  const hasFile = Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name);
+                                  const isPendingDoc = hasFile && !isPassed;
+
                                   return (
                                     <div
                                       key={docItem.id}
-                                      className={`rounded-xl bg-white p-3 border transition-all ${
+                                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:px-4 sm:py-3 rounded-2xl border transition-all ${
                                         isPassed
-                                          ? 'border-green-200 shadow-sm shadow-green-50/50'
-                                          : 'border-amber-200 shadow-sm shadow-amber-50/50'
+                                          ? 'bg-emerald-50/40 border-emerald-200/90 hover:bg-emerald-50/60 shadow-2xs'
+                                          : isPendingDoc
+                                          ? 'bg-blue-50/40 border-blue-200/90 hover:bg-blue-50/60 shadow-2xs'
+                                          : 'bg-slate-50/70 border-slate-200 hover:bg-slate-50 shadow-2xs'
                                       }`}
                                     >
-                                      <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                          <div
-                                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                                              isPassed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                            }`}
-                                          >
-                                            {docItem.num}
-                                          </div>
-                                          <div className="min-w-0 flex-1">
-                                            <p className="text-xs font-bold text-gray-800 truncate" title={docItem.title}>{docItem.title}</p>
-                                            {doc?.name && (
-                                              <p className="text-[10px] text-blue-600 truncate max-w-[140px]" title={doc.name}>
-                                                📁 {doc.name}
-                                              </p>
-                                            )}
-                                          </div>
-                                        </div>
-                                        <span
-                                          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap ${
+                                      {/* Attachment Left: Icon & Details */}
+                                      <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                        <div
+                                          className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs border ${
                                             isPassed
-                                              ? 'bg-green-100 text-green-700 border-green-200'
-                                              : 'bg-amber-100 text-amber-700 border-amber-200'
+                                              ? 'bg-emerald-600 border-emerald-700 text-white'
+                                              : isPendingDoc
+                                              ? 'bg-blue-600 border-blue-700 text-white'
+                                              : 'bg-white border-slate-200 text-slate-500'
                                           }`}
                                         >
-                                          {isPassed ? '✓ PASSED' : 'PENDING'}
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-gray-500 leading-tight mb-2.5 line-clamp-2">{docItem.desc}</p>
+                                          {isPassed ? (
+                                            <FileCheck size={18} className="stroke-[2.5]" />
+                                          ) : (
+                                            <span className="font-extrabold text-xs">#{docItem.num}</span>
+                                          )}
+                                        </div>
 
-                                      <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100">
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs sm:text-sm font-bold text-gray-900 truncate" title={docItem.title}>
+                                              {docItem.num}. {docItem.title}
+                                            </span>
+                                            <span
+                                              className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                                                isPassed
+                                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                  : isPendingDoc
+                                                  ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                                  : 'bg-amber-100 text-amber-800 border-amber-200'
+                                              }`}
+                                            >
+                                              {isPassed ? '✓ PASSED' : isPendingDoc ? 'PENDING REVIEW' : 'PENDING'}
+                                            </span>
+                                          </div>
+
+                                          {doc?.name ? (
+                                            <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
+                                              <span
+                                                className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                                title={doc.name}
+                                              >
+                                                📎 {doc.name}
+                                              </span>
+                                              {doc.size ? (
+                                                <span className="text-[10px] text-slate-500 font-medium">
+                                                  {(Number(doc.size) / 1024).toFixed(0)} KB
+                                                </span>
+                                              ) : null}
+                                              {doc.source ? (
+                                                <span
+                                                  className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                                    doc.source === 'registration'
+                                                      ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                                      : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                                  }`}
+                                                >
+                                                  {doc.source === 'registration' ? 'Pre-Registration' : 'Portal'}
+                                                </span>
+                                              ) : null}
+                                              {doc.uploadedAt ? (
+                                                <span className="text-[10px] text-slate-400">
+                                                  • {new Date(doc.uploadedAt).toLocaleDateString()}
+                                                </span>
+                                              ) : null}
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                                              <span className="italic">No custom file uploaded</span>
+                                              <span className="hidden sm:inline text-slate-300">•</span>
+                                              <span className="hidden sm:inline truncate max-w-[320px] text-slate-500 not-italic">
+                                                {docItem.desc}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Attachment Right: Actions */}
+                                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                                         <button
                                           type="button"
                                           onClick={() =>
@@ -3489,24 +4252,25 @@ export function AdminEmployees() {
                                               date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
                                             })
                                           }
-                                          className="flex-1 py-1 px-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
+                                          className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                          title={hasFile ? 'Preview attached document' : 'View requirement'}
                                         >
-                                          <Eye size={11} /> {hasFile ? 'View' : 'View Doc'}
+                                          <Eye size={13} /> {hasFile ? 'Preview' : 'View Doc'}
                                         </button>
 
-                                        {hasFile && doc?.dataUrl && (
+                                        {hasFile && (doc?.dataUrl || doc?.fileUrl) && (
                                           <button
                                             type="button"
                                             onClick={() =>
                                               downloadDocument(
-                                                doc.dataUrl!,
+                                                (doc.dataUrl || doc.fileUrl)!,
                                                 doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}`
                                               )
                                             }
-                                            className="py-1 px-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold inline-flex items-center justify-center gap-1 transition-all"
-                                            title="Download student file"
+                                            className="py-1.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                            title="Download attached student document"
                                           >
-                                            <Download size={11} /> Download
+                                            <Download size={13} /> Download
                                           </button>
                                         )}
 
@@ -3529,6 +4293,7 @@ export function AdminEmployees() {
                                             };
                                             const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
                                             const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
+                                            const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
                                             const finalDocStatus = allPassed ? 'passed' : anyPassed ? 'partial' : 'pending';
                                             await updateEmployee(selectedEmp.id, {
                                               submittedDocuments: updatedDocs,
@@ -3555,13 +4320,13 @@ export function AdminEmployees() {
                                                 : `${docItem.title} marked as PENDING`
                                             );
                                           }}
-                                          className={`py-1 px-2.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                          className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs ${
                                             isPassed
                                               ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                              : 'bg-green-600 text-white border-green-600 hover:bg-green-700'
+                                              : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
                                           }`}
                                         >
-                                          {isPassed ? 'Revoke' : 'Approve'}
+                                          {isPassed ? 'Revoke' : '✓ Approve'}
                                         </button>
                                       </div>
                                     </div>
@@ -4044,10 +4809,11 @@ export function AdminEmployees() {
                         <label className="text-xs font-semibold text-gray-700 block mb-1">Required OJT Hours</label>
                         <input
                           type="number"
-                          value={editForm.requiredHours}
-                          onChange={(e) => updEdit('requiredHours', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:outline-none bg-gray-50/50"
-                          placeholder="600"
+                          value={600}
+                          readOnly
+                          disabled
+                          title="All trainees are required to render 600 OJT hours"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
                         />
                       </div>
 
@@ -4230,6 +4996,11 @@ export function AdminEmployees() {
                                   documentsPassed: willPass,
                                   documentsStatus: willPass ? 'passed' : 'pending',
                                 });
+                                saveDocumentPassStatus(selectedEmp.id, {
+                                  allPassed: willPass,
+                                  documentsStatus: willPass ? 'passed' : 'pending',
+                                  submittedDocuments: updatedDocs,
+                                }).catch(console.warn);
                                 setSelectedEmp({
                                   ...selectedEmp,
                                   submittedDocuments: updatedDocs,
@@ -4255,66 +5026,105 @@ export function AdminEmployees() {
                       );
                     })()}
 
-                    {/* The 10 OJT Documents Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* The 10 OJT Documents List (Rectangular Attachment Format) */}
+                    <div className="space-y-2.5">
                       {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                         const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);
                         const isPassed = doc ? doc.status === 'passed' : false;
-                        const hasFile = Boolean(doc?.dataUrl);
+                        const hasFile = Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name);
+                        const isPendingDoc = hasFile && !isPassed;
 
                         return (
                           <div
                             key={docItem.id}
-                            className={`rounded-2xl bg-white p-3.5 border transition-all ${
+                            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:px-4 sm:py-3 rounded-2xl border transition-all ${
                               isPassed
-                                ? 'border-emerald-200 bg-emerald-50/20 shadow-2xs'
-                                : 'border-amber-200 bg-amber-50/20 shadow-2xs'
+                                ? 'bg-emerald-50/40 border-emerald-200/90 hover:bg-emerald-50/60 shadow-2xs'
+                                : isPendingDoc
+                                ? 'bg-blue-50/40 border-blue-200/90 hover:bg-blue-50/60 shadow-2xs'
+                                : 'bg-slate-50/70 border-slate-200 hover:bg-slate-50 shadow-2xs'
                             }`}
                           >
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <div
-                                  className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
-                                    isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                  }`}
-                                >
-                                  {docItem.num}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold text-gray-900 truncate" title={docItem.title}>{docItem.title}</p>
-                                  {doc?.name ? (
-                                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                                      <p className="text-[10px] text-blue-600 truncate font-mono max-w-[150px]" title={doc.name}>
-                                        📁 {doc.name} {doc.size ? `(${(Number(doc.size) / 1024).toFixed(0)} KB)` : ''}
-                                      </p>
-                                      {doc.source && (
-                                        <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                                          doc.source === 'registration'
-                                            ? 'bg-purple-100 text-purple-700'
-                                            : 'bg-blue-100 text-blue-700'
-                                        }`}>
-                                          {doc.source === 'registration' ? 'Registration' : 'Portal'}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <p className="text-[10px] text-gray-400 italic">No custom file uploaded</p>
-                                  )}
-                                </div>
-                              </div>
-                              <span
-                                className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                            {/* Attachment Left: Icon & Details */}
+                            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                              <div
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs border ${
                                   isPassed
-                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                    : 'bg-amber-100 text-amber-800 border-amber-200'
+                                    ? 'bg-emerald-600 border-emerald-700 text-white'
+                                    : isPendingDoc
+                                    ? 'bg-blue-600 border-blue-700 text-white'
+                                    : 'bg-white border-slate-200 text-slate-500'
                                 }`}
                               >
-                                {isPassed ? '✓ PASSED' : 'PENDING'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-gray-500 leading-snug mb-3 line-clamp-2">{docItem.desc}</p>
+                                {isPassed ? (
+                                  <FileCheck size={18} className="stroke-[2.5]" />
+                                ) : (
+                                  <span className="font-extrabold text-xs">#{docItem.num}</span>
+                                )}
+                              </div>
 
-                            <div className="flex items-center gap-1.5 pt-2.5 border-t border-gray-100">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs sm:text-sm font-bold text-gray-900 truncate" title={docItem.title}>
+                                    {docItem.num}. {docItem.title}
+                                  </span>
+                                  <span
+                                    className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                                      isPassed
+                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                        : isPendingDoc
+                                        ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                                    }`}
+                                  >
+                                    {isPassed ? '✓ PASSED' : isPendingDoc ? 'PENDING REVIEW' : 'PENDING'}
+                                  </span>
+                                </div>
+
+                                {doc?.name ? (
+                                  <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
+                                    <span
+                                      className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                      title={doc.name}
+                                    >
+                                      📎 {doc.name}
+                                    </span>
+                                    {doc.size ? (
+                                      <span className="text-[10px] text-slate-500 font-medium">
+                                        {(Number(doc.size) / 1024).toFixed(0)} KB
+                                      </span>
+                                    ) : null}
+                                    {doc.source ? (
+                                      <span
+                                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                          doc.source === 'registration'
+                                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                            : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                        }`}
+                                      >
+                                        {doc.source === 'registration' ? 'Pre-Registration' : 'Portal'}
+                                      </span>
+                                    ) : null}
+                                    {doc.uploadedAt ? (
+                                      <span className="text-[10px] text-slate-400">
+                                        • {new Date(doc.uploadedAt).toLocaleDateString()}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                                    <span className="italic">No custom file uploaded</span>
+                                    <span className="hidden sm:inline text-slate-300">•</span>
+                                    <span className="hidden sm:inline truncate max-w-[320px] text-slate-500 not-italic">
+                                      {docItem.desc}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Attachment Right: Actions */}
+                            <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -4330,26 +5140,96 @@ export function AdminEmployees() {
                                     date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
                                   })
                                 }
-                                className="flex-1 py-1.5 px-2.5 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                title={hasFile ? 'Preview attached document' : 'View requirement'}
                               >
-                                <Eye size={12} /> {hasFile ? 'Preview' : 'View Doc'}
+                                <Eye size={13} /> {hasFile ? 'Preview' : 'View Doc'}
                               </button>
 
-                              {hasFile && doc?.dataUrl && (
+                              {hasFile && (doc?.dataUrl || doc?.fileUrl) && (
                                 <button
                                   type="button"
                                   onClick={() =>
                                     downloadDocument(
-                                      doc.dataUrl!,
+                                      (doc.dataUrl || doc.fileUrl)!,
                                       doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}`
                                     )
                                   }
-                                  className="py-1.5 px-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                  className="py-1.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                   title="Download attached student document"
                                 >
-                                  <Download size={12} /> Download
+                                  <Download size={13} /> Download
                                 </button>
                               )}
+
+                              <label
+                                htmlFor={`upload-behalf-${docItem.key}`}
+                                className="py-1.5 px-3 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                title="Upload file and pass on behalf of student"
+                              >
+                                <Upload size={13} /> {hasFile ? 'Replace & Pass' : 'Upload & Pass'}
+                                <input
+                                  type="file"
+                                  id={`upload-behalf-${docItem.key}`}
+                                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onload = async (ev) => {
+                                      const dataUrl = ev.target?.result as string;
+                                      let remoteUrl = '';
+                                      try {
+                                        const u = await uploadDocumentToStorage(selectedEmp.employeeId || selectedEmp.id, docItem.key, file, file.name);
+                                        if (u && u.startsWith('http')) remoteUrl = u;
+                                      } catch {}
+                                      const currentDocs = selectedEmp.submittedDocuments || {};
+                                      const newDocItem: TraineeDocumentItem = {
+                                        name: file.name,
+                                        size: file.size,
+                                        fileType: file.type || 'application/pdf',
+                                        dataUrl,
+                                        fileUrl: remoteUrl || dataUrl,
+                                        status: 'passed',
+                                        uploadedAt: new Date().toISOString(),
+                                        source: 'instructor_upload',
+                                        notes: 'Uploaded and verified by OJT Instructor.',
+                                      };
+                                      const updatedDocs: TraineeDocuments = {
+                                        ...currentDocs,
+                                        [docItem.key]: newDocItem,
+                                      };
+                                      const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                      const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
+                                      const finalDocStatus = allPassed ? 'passed' : 'partial';
+
+                                      await updateEmployee(selectedEmp.id, {
+                                        submittedDocuments: updatedDocs,
+                                        documentsPassed: allPassed,
+                                        documentsStatus: finalDocStatus,
+                                      });
+                                      saveDocumentPassStatus(selectedEmp.id, {
+                                        docKey: docItem.key,
+                                        status: 'passed',
+                                        allPassed,
+                                        documentsStatus: finalDocStatus,
+                                        submittedDocuments: updatedDocs,
+                                        documentItem: newDocItem,
+                                      }).catch(console.warn);
+                                      setSelectedEmp({
+                                        ...selectedEmp,
+                                        submittedDocuments: updatedDocs,
+                                        documentsPassed: allPassed,
+                                        documentsStatus: finalDocStatus,
+                                      });
+                                      toast.success(`"${file.name}" uploaded and PASSED for ${selectedEmp.name}!`);
+                                    };
+                                    reader.readAsDataURL(file);
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
 
                               <button
                                 type="button"
@@ -4371,17 +5251,26 @@ export function AdminEmployees() {
                                   const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
                                   const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
                                   const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
+                                  const finalDocStatus = allPassed ? 'passed' : anyPassed ? 'partial' : 'pending';
 
                                   await updateEmployee(selectedEmp.id, {
                                     submittedDocuments: updatedDocs,
                                     documentsPassed: allPassed,
-                                    documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                    documentsStatus: finalDocStatus,
                                   });
+                                  saveDocumentPassStatus(selectedEmp.id, {
+                                    docKey: docItem.key,
+                                    status: newDocStatus,
+                                    allPassed,
+                                    documentsStatus: finalDocStatus,
+                                    submittedDocuments: updatedDocs,
+                                    documentItem: updatedDocs[docItem.key],
+                                  }).catch(console.warn);
                                   setSelectedEmp({
                                     ...selectedEmp,
                                     submittedDocuments: updatedDocs,
                                     documentsPassed: allPassed,
-                                    documentsStatus: allPassed ? 'passed' : anyPassed ? 'partial' : 'pending',
+                                    documentsStatus: finalDocStatus,
                                   });
                                   toast.success(
                                     newDocStatus === 'passed'
@@ -4389,19 +5278,293 @@ export function AdminEmployees() {
                                       : `${docItem.title} marked as PENDING`
                                   );
                                 }}
-                                className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs ${
                                   isPassed
                                     ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                                    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
                                 }`}
                               >
-                                {isPassed ? 'Revoke' : 'Approve'}
+                                {isPassed ? 'Revoke' : '✓ Approve'}
                               </button>
                             </div>
                           </div>
                         );
                       })}
                     </div>
+
+                    {/* Custom Departmental Requirements Section */}
+                    {requiredDocuments.filter((r) => !r.targetRequirementKey).length > 0 && (
+                      <div className="pt-4 mt-2 border-t border-gray-100 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles size={13} className="text-violet-600" />
+                            Custom Department Requirements ({requiredDocuments.filter((r) => !r.targetRequirementKey).length})
+                          </h5>
+                          <span className="text-[10px] text-gray-500">Instructor Specific</span>
+                        </div>
+
+                        {requiredDocuments
+                          .filter((r) => !r.targetRequirementKey)
+                          .map((cReq, cIdx) => {
+                            const cDoc = (selectedEmp.submittedDocuments as any)?.[cReq.id];
+                            const isPassed = cDoc?.status === 'passed';
+                            const hasFile = Boolean(cDoc?.dataUrl || cDoc?.fileUrl || cDoc?.name);
+                            const hasInstructorTpl = Boolean(cReq.fileUrl || cReq.dataUrl || cReq.fileName);
+
+                            return (
+                              <div
+                                key={cReq.id}
+                                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:px-4 sm:py-3 rounded-2xl border transition-all ${
+                                  isPassed
+                                    ? 'bg-violet-50/40 border-violet-200/90 hover:bg-violet-50/60 shadow-2xs'
+                                    : hasFile
+                                    ? 'bg-blue-50/40 border-blue-200/90 hover:bg-blue-50/60 shadow-2xs'
+                                    : 'bg-slate-50/70 border-slate-200 hover:bg-slate-50 shadow-2xs'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                  <div
+                                    className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs border ${
+                                      isPassed
+                                        ? 'bg-violet-600 border-violet-700 text-white'
+                                        : hasFile
+                                        ? 'bg-blue-600 border-blue-700 text-white'
+                                        : 'bg-white border-slate-200 text-slate-500'
+                                    }`}
+                                  >
+                                    {isPassed ? (
+                                      <FileCheck size={18} className="stroke-[2.5]" />
+                                    ) : (
+                                      <span className="font-extrabold text-xs">C{cIdx + 1}</span>
+                                    )}
+                                  </div>
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs sm:text-sm font-bold text-gray-900 truncate" title={cReq.title}>
+                                        {cReq.title}
+                                      </span>
+                                      <span
+                                        className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                                          isPassed
+                                            ? 'bg-violet-100 text-violet-800 border-violet-200'
+                                            : hasFile
+                                            ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                            : 'bg-amber-100 text-amber-800 border-amber-200'
+                                        }`}
+                                      >
+                                        {isPassed ? '✓ PASSED' : hasFile ? 'SUBMITTED' : 'PENDING'}
+                                      </span>
+                                      {hasInstructorTpl && (
+                                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                          Template Provided
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {cDoc?.name ? (
+                                      <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
+                                        <span
+                                          className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-violet-700 bg-violet-100/70 border border-violet-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                          title={cDoc.name}
+                                        >
+                                          📎 {cDoc.name}
+                                        </span>
+                                        {cDoc.size ? (
+                                          <span className="text-[10px] text-slate-500 font-medium">
+                                            {(Number(cDoc.size) / 1024).toFixed(0)} KB
+                                          </span>
+                                        ) : null}
+                                        {cDoc.uploadedAt ? (
+                                          <span className="text-[10px] text-slate-400">
+                                            • {new Date(cDoc.uploadedAt).toLocaleDateString()}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                                        <span className="italic">No submission yet</span>
+                                        {cReq.description && (
+                                          <>
+                                            <span className="hidden sm:inline text-slate-300">•</span>
+                                            <span className="hidden sm:inline truncate max-w-[320px] text-slate-500 not-italic">
+                                              {cReq.description}
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                  {/* Preview Instructor Template if available */}
+                                  {hasInstructorTpl && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPreviewInstructorDoc({
+                                          studentName: 'Template Guideline',
+                                          studentId: 'Instructor File',
+                                          title: cReq.title,
+                                          fileName: cReq.fileName,
+                                          fileUrl: cReq.fileUrl || cReq.dataUrl,
+                                          note: cReq.notes,
+                                        })
+                                      }
+                                      className="py-1.5 px-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                      title="Preview Instructor Template"
+                                    >
+                                      <Eye size={12} /> Template
+                                    </button>
+                                  )}
+
+                                  {/* Preview Student Submission */}
+                                  {hasFile && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPreviewInstructorDoc({
+                                          studentName: selectedEmp.name,
+                                          studentId: selectedEmp.employeeId,
+                                          title: cReq.title,
+                                          fileName: cDoc?.name || `${cReq.title}.pdf`,
+                                          fileUrl: resolveSafeDocumentViewUrl(cDoc?.fileUrl || cDoc?.dataUrl) || undefined,
+                                          note: cDoc?.notes || `Trainee submission for ${cReq.title}`,
+                                        })
+                                      }
+                                      className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                      title="Preview Trainee Submission"
+                                    >
+                                      <Eye size={13} /> View
+                                    </button>
+                                  )}
+
+                                  {/* Download Student Submission */}
+                                  {hasFile && (cDoc?.dataUrl || cDoc?.fileUrl) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => downloadDocument((cDoc.dataUrl || cDoc.fileUrl)!, cDoc.name || cReq.title)}
+                                      className="py-1.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                      title="Download Trainee Submission"
+                                    >
+                                      <Download size={13} /> Download
+                                    </button>
+                                  )}
+
+                                  {/* Upload on behalf */}
+                                  <label
+                                    htmlFor={`upload-behalf-custom-${cReq.id}`}
+                                    className="py-1.5 px-3 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    title="Upload file and pass on behalf of student"
+                                  >
+                                    <Upload size={13} /> {hasFile ? 'Replace & Pass' : 'Upload & Pass'}
+                                    <input
+                                      type="file"
+                                      id={`upload-behalf-custom-${cReq.id}`}
+                                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = async (ev) => {
+                                          const dataUrl = ev.target?.result as string;
+                                          let remoteUrl = '';
+                                          try {
+                                            const u = await uploadDocumentToStorage(selectedEmp.employeeId || selectedEmp.id, cReq.id, file, file.name);
+                                            if (u && u.startsWith('http')) remoteUrl = u;
+                                          } catch {}
+                                          const currentDocs = selectedEmp.submittedDocuments || {};
+                                          const newDocItem: TraineeDocumentItem = {
+                                            name: file.name,
+                                            size: file.size,
+                                            fileType: file.type || 'application/pdf',
+                                            dataUrl,
+                                            fileUrl: remoteUrl || dataUrl,
+                                            status: 'passed',
+                                            uploadedAt: new Date().toISOString(),
+                                            source: 'instructor_upload',
+                                            notes: 'Uploaded and verified by OJT Instructor.',
+                                          };
+                                          const updatedDocs = {
+                                            ...currentDocs,
+                                            [cReq.id]: newDocItem,
+                                          };
+
+                                          await updateEmployee(selectedEmp.id, {
+                                            submittedDocuments: updatedDocs as any,
+                                          });
+                                          saveDocumentPassStatus(selectedEmp.id, {
+                                            docKey: cReq.id,
+                                            status: 'passed',
+                                            submittedDocuments: updatedDocs as any,
+                                            documentItem: newDocItem,
+                                          }).catch(console.warn);
+                                          setSelectedEmp({
+                                            ...selectedEmp,
+                                            submittedDocuments: updatedDocs as any,
+                                          });
+                                          toast.success(`"${file.name}" uploaded and PASSED for ${selectedEmp.name}!`);
+                                        };
+                                        reader.readAsDataURL(file);
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+
+                                  {/* Approve / Revoke */}
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const newDocStatus: 'passed' | 'pending' = isPassed ? 'pending' : 'passed';
+                                      const currentDocs = selectedEmp.submittedDocuments || {};
+                                      const updatedDocs = {
+                                        ...currentDocs,
+                                        [cReq.id]: {
+                                          ...((currentDocs as any)[cReq.id] || {
+                                            name: `${cReq.title}.pdf`,
+                                            fileType: 'application/pdf',
+                                            size: 0,
+                                            uploadedAt: new Date().toISOString(),
+                                          }),
+                                          status: newDocStatus,
+                                        },
+                                      };
+
+                                      await updateEmployee(selectedEmp.id, {
+                                        submittedDocuments: updatedDocs as any,
+                                      });
+                                      saveDocumentPassStatus(selectedEmp.id, {
+                                        docKey: cReq.id,
+                                        status: newDocStatus,
+                                        submittedDocuments: updatedDocs as any,
+                                        documentItem: (updatedDocs as any)[cReq.id],
+                                      }).catch(console.warn);
+                                      setSelectedEmp({
+                                        ...selectedEmp,
+                                        submittedDocuments: updatedDocs as any,
+                                      });
+                                      toast.success(
+                                        newDocStatus === 'passed'
+                                          ? `${cReq.title} marked as PASSED`
+                                          : `${cReq.title} marked as PENDING`
+                                      );
+                                    }}
+                                    className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs ${
+                                      isPassed
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                        : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                                    }`}
+                                  >
+                                    {isPassed ? 'Revoke' : '✓ Approve'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
 
                     {/* Bottom navigation */}
                     <div className="flex items-center justify-between pt-3 border-t border-gray-100">
@@ -4528,9 +5691,11 @@ export function AdminEmployees() {
                       <label className="text-xs font-semibold text-gray-600 block mb-1">Required OJT Hours</label>
                       <input
                         type="number"
-                        value={form.requiredHours}
-                        onChange={(e) => upd('requiredHours', e.target.value)}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        value={600}
+                        readOnly
+                        disabled
+                        title="All trainees are required to render 600 OJT hours"
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
                       />
                     </div>
                     <button

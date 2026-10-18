@@ -449,6 +449,9 @@ export function Register() {
       setRegistrationAddress('Helix Service Center, Santa Clara Avenue, Banago, Bacolod');
     }
     const resolvedRepName = fullName || [fName, lName].filter(Boolean).join(' ') || 'HTE Representative';
+    const defaultStreet = isChmsuOrPrinting
+      ? 'Domingo Lizares Street, Purok Manpower'
+      : 'Helix Service Center, Santa Clara Avenue';
 
     setForm((prev) => ({
       ...prev,
@@ -468,7 +471,7 @@ export function Register() {
       province: 'Negros Occidental',
       city: 'Talisay City',
       barangay: 'Zone 1',
-      street: resolvedStreet,
+      street: prev.street || defaultStreet,
       birthdate: prev.birthdate || '1990-01-01',
       age: prev.age || '36',
     }));

@@ -76,7 +76,7 @@ export function AdvancedAnalyticsDashboard({
   // -------------------------------------------------------------
   const traineeProgressList = useMemo(() => {
     return trainees.map((t) => {
-      const requiredHours = Number(t.requiredHours) || 486;
+      const requiredHours = Number(t.requiredHours) || 600;
       // All-time records for this specific trainee
       const studentRecords = allRecords.filter(
         (r) => r.employeeId === t.id || r.employeeId === t.employeeId
@@ -566,7 +566,7 @@ export function AdvancedAnalyticsDashboard({
             <span className="text-xs text-slate-500 font-medium">rendered average</span>
           </div>
           <p className="mt-2.5 text-xs text-slate-600">
-            Target: <strong className="text-slate-800">486 hours</strong> per student
+            Target: <strong className="text-slate-800">600 hours</strong> per student
           </p>
           <div className="mt-2 text-[11px] text-indigo-700 font-semibold flex items-center gap-1">
             <TrendingUp size={12} />
@@ -631,7 +631,7 @@ export function AdvancedAnalyticsDashboard({
             </span>
           </div>
           <span className="text-xs text-slate-500">
-            Curriculum Standard: <strong>486 Hours</strong> per Trainee
+            Curriculum Standard: <strong>600 Hours</strong> per Trainee
           </span>
         </div>
 
@@ -647,7 +647,7 @@ export function AdvancedAnalyticsDashboard({
                 <span className="text-[11px] text-slate-500">students</span>
               </div>
               <p className="text-[11px] font-bold text-slate-700 truncate">Completed (100%)</p>
-              <p className="text-[10px] text-emerald-600">486+ hours reached</p>
+              <p className="text-[10px] text-emerald-600">600+ hours reached</p>
             </div>
           </div>
 
@@ -865,7 +865,7 @@ export function AdvancedAnalyticsDashboard({
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>
-                Individual student progress toward the required <strong>486 hours</strong>
+                Individual student progress toward the required <strong>600 hours</strong>
               </span>
               <span className="font-semibold text-slate-700">
                 Showing top trainees by hours completed

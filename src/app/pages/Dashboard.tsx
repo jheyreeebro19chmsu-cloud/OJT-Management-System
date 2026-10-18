@@ -507,6 +507,7 @@ export function Dashboard() {
       };
 
       const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
+      const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
       const finalStatus = allPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
       updateEmployee(currentEmp.id, {
         submittedDocuments: updatedDocs,

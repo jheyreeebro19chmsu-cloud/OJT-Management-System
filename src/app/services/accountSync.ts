@@ -56,15 +56,23 @@ export async function linkTraineeToHte(traineeId: string, hteId: string) {
 // ─── Instructor: view + act on pending trainee requests ───────────────────
 
 export async function getPendingTraineeRequests(instructorId: string): Promise<Employee[]> {
-  const { data, error } = await supabase
-    .from('employees')
-    .select('*')
-    .or(`instructor_id.eq.${instructorId},instructor_id.is.null`)
-    .eq('application_status', 'pending')
-    .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*')
+      .or(`instructor_id.eq.${instructorId},instructor_id.is.null`)
+      .eq('application_status', 'pending')
+      .order('created_at', { ascending: false });
 
-  if (error) throw new Error(error.message);
-  return (data || []).map(transformSupabaseEmployee);
+    if (error) {
+      console.warn('Could not fetch pending trainee requests (Supabase service may be warming up):', error.message);
+      return [];
+    }
+    return (data || []).map(transformSupabaseEmployee);
+  } catch (err: any) {
+    console.warn('Error fetching pending trainee requests:', err?.message || err);
+    return [];
+  }
 }
 
 export async function approveTrainee(traineeId: string, instructorId?: string) {

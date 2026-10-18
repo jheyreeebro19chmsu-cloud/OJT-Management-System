@@ -52,6 +52,8 @@ interface SubmitDialogState {
   previewUrl: string;
   description: string;
   notes: string;
+  instructorDocName?: string;
+  markAsPassed?: boolean;
 }
 
 export function Documents() {
@@ -112,44 +114,93 @@ export function Documents() {
 
   const customRequiredDocs = employee?.id ? getEmployeeRequiredDocuments(employee.id) : [];
   const allDocRequirements = useMemo(() => {
-    const list = [...STANDARD_REQUIRED_DOCS];
+    // 1. Process standard 10 documents and enrich with any instructor-uploaded template
+    const list: any[] = STANDARD_REQUIRED_DOCS.map((std) => {
+      // Find matching instructor template from customRequiredDocs
+      const customMatch = customRequiredDocs.find((c) =>
+        c.targetRequirementKey === std.key ||
+        c.id === std.id ||
+        c.id === `req-${std.key}-${employee?.id}` ||
+        c.title.toLowerCase().trim() === std.title.toLowerCase().trim()
+      );
+
+      // Check localStorage for template cached by instructor
+      let cachedTemplateUrl = '';
+      let cachedTemplateName = '';
+      let cachedTemplateSize: number | string = 0;
+      let cachedTemplateNotes = '';
+      try {
+        const storedStr = localStorage.getItem(`ojt_template_${std.key}`);
+        if (storedStr) {
+          const stored = JSON.parse(storedStr);
+          cachedTemplateUrl = stored.url || stored.fileUrl || stored.dataUrl || '';
+          cachedTemplateName = stored.name || stored.fileName || '';
+          cachedTemplateSize = stored.size || 0;
+          cachedTemplateNotes = stored.notes || '';
+        }
+      } catch {}
+
+      const fileUrl = customMatch?.fileUrl || customMatch?.dataUrl || customMatch?.templateUrl || cachedTemplateUrl;
+      const fileName = customMatch?.fileName || customMatch?.templateName || cachedTemplateName;
+      const fileSize = customMatch?.fileSize || cachedTemplateSize;
+      const notes = customMatch?.notes || customMatch?.description || cachedTemplateNotes;
+
+      return {
+        ...std,
+        custom: false,
+        instructorDoc: fileUrl
+          ? {
+              fileName: fileName || `${std.title}_Template.pdf`,
+              fileUrl,
+              dataUrl: customMatch?.dataUrl,
+              fileSize,
+              notes,
+              uploadedAt: customMatch?.createdAt,
+            }
+          : undefined,
+      };
+    });
+
+    // 2. Add custom requirements added by the instructor
     for (const custom of customRequiredDocs) {
       const isAlreadyCovered = list.some((d) => {
-        const dTitle = d.title.toLowerCase();
-        const cTitle = custom.title.toLowerCase();
         return (
-          dTitle === cTitle ||
           d.key === custom.id ||
           d.id === custom.id ||
-          custom.id.includes(d.key) ||
-          (cTitle.includes('medical') && dTitle.includes('medical')) ||
-          (cTitle.includes('resume') && dTitle.includes('resume')) ||
-          (cTitle.includes('consent') && dTitle.includes('consent')) ||
-          (cTitle.includes('memorandum') && dTitle.includes('memorandum')) ||
-          (cTitle.includes('pledge') && dTitle.includes('pledge')) ||
-          (cTitle.includes('enrolment') && dTitle.includes('enrolment')) ||
-          (cTitle.includes('internship') && dTitle.includes('internship')) ||
-          (cTitle.includes('training') && dTitle.includes('training')) ||
-          (cTitle.includes('application') && dTitle.includes('application')) ||
-          (cTitle.includes('endorsement') && dTitle.includes('endorsement'))
+          custom.targetRequirementKey === d.key ||
+          d.title.toLowerCase().trim() === custom.title.toLowerCase().trim()
         );
       });
+
       if (!isAlreadyCovered) {
         list.push({
           key: custom.id as any,
           id: custom.id,
           num: String(list.length + 1),
           title: custom.title,
-          subtitle: custom.notes || 'Institutional Required Document',
+          subtitle: custom.notes || 'Instructor Required Document',
           desc: custom.description || 'Departmental required credential for OJT compliance.',
           icon: FileText,
-          color: 'from-blue-600 to-indigo-700',
-          badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+          color: 'from-violet-600 to-indigo-700',
+          badgeColor: 'bg-violet-100 text-violet-800 border-violet-200',
+          custom: true,
+          instructorDoc:
+            custom.fileUrl || custom.dataUrl || custom.templateUrl
+              ? {
+                  fileName: custom.fileName || custom.templateName || `${custom.title}.pdf`,
+                  fileUrl: (custom.fileUrl || custom.dataUrl || custom.templateUrl)!,
+                  dataUrl: custom.dataUrl,
+                  fileSize: custom.fileSize,
+                  notes: custom.notes,
+                  uploadedAt: custom.createdAt,
+                }
+              : undefined,
         });
       }
     }
+
     return list;
-  }, [customRequiredDocs]);
+  }, [customRequiredDocs, employee?.id]);
 
   const totalRequired = allDocRequirements.length;
   const uploadedCount = allDocRequirements.filter((k) => {
@@ -251,7 +302,7 @@ export function Documents() {
   ];
   const ALLOWED_EXT = /\.(pdf|jpg|jpeg|jfif|png|webp|heic|heif|bmp|doc|docx|docs)$/i;
 
-  const onSelectFile = (docKey: string, title: string, file: File | null) => {
+  const onSelectFile = (docKey: string, title: string, file: File | null, instructorDocName?: string) => {
     if (!file) return;
 
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
@@ -278,14 +329,22 @@ export function Documents() {
         title,
         file,
         previewUrl: e.target?.result as string,
-        description: submittedDocs[docKey]?.description || '',
+        description: submittedDocs[docKey]?.description || (instructorDocName ? `Submitted compliance for ${title} based on instructor requirement.` : ''),
         notes: submittedDocs[docKey]?.notes || '',
+        instructorDocName,
+        markAsPassed: true,
       });
     };
     reader.readAsDataURL(file);
   };
 
-  const handleFileUpload = (docKey: string, file: File | null, customDescription?: string, customNotes?: string) => {
+  const handleFileUpload = (
+    docKey: string,
+    file: File | null,
+    customDescription?: string,
+    customNotes?: string,
+    markAsPassed: boolean = true
+  ) => {
     if (!file) return;
 
     if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
@@ -335,6 +394,7 @@ export function Documents() {
         console.warn('Document storage upload notice:', uploadErr);
       }
 
+      const passStatus: 'passed' | 'pending' = markAsPassed ? 'passed' : 'pending';
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
@@ -342,7 +402,7 @@ export function Documents() {
         fileUrl: remoteUrl || dataUrl, // Public URL when available for instructor/coordinator review
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        status: 'pending',
+        status: passStatus,
         description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
         notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
       };
@@ -358,8 +418,10 @@ export function Documents() {
         const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
         return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
       }).length;
-      const allDocsPassed = newUploadedCount === totalRequired && allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
-      const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
+      const allDocsPassed =
+        newUploadedCount === totalRequired &&
+        allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
+      const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount > 0 ? (allDocsPassed ? 'passed' : 'partial') : 'pending';
 
       setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
 
@@ -375,7 +437,7 @@ export function Documents() {
         // Direct persistent database save for document pass / upload status
         saveDocumentPassStatus(targetEmpId, {
           docKey,
-          status: 'pending',
+          status: passStatus,
           allPassed: allDocsPassed,
           documentsStatus: finalDocStatus,
           submittedDocuments: updatedDocs,
@@ -386,7 +448,11 @@ export function Documents() {
       setUploadingKey(null);
       setSubmitDialog(null);
       const meta = allDocRequirements.find((d) => d.key === docKey);
-      toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
+      toast.success(
+        markAsPassed
+          ? `${meta?.title || 'Document'} passed & recorded according to requirement!`
+          : `${meta?.title || 'Document'} submitted! Pending coordinator review.`
+      );
     };
 
     reader.onerror = () => {
@@ -739,6 +805,76 @@ export function Documents() {
 
                 <p className="text-xs text-slate-600 leading-relaxed mb-3">{item.desc}</p>
 
+                {/* Instructor-Provided Template Document Card */}
+                {(item as any).instructorDoc && (
+                  <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-r from-violet-50/95 via-indigo-50/70 to-purple-50/85 border border-violet-200/90 shadow-2xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                          <FileText size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-violet-200 text-violet-900 border border-violet-300 tracking-wide">
+                              Instructor's Document
+                            </span>
+                            {(item as any).instructorDoc.fileSize ? (
+                              <span className="text-[10px] text-violet-700 font-mono font-medium">
+                                • {formatFileSize((item as any).instructorDoc.fileSize)}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-xs font-bold text-violet-950 truncate mt-0.5" title={(item as any).instructorDoc.fileName}>
+                            {(item as any).instructorDoc.fileName}
+                          </p>
+                          {(item as any).instructorDoc.notes && (
+                            <p className="text-[11px] text-violet-800 italic mt-0.5 line-clamp-2">
+                              Note from Instructor: {(item as any).instructorDoc.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const docInfo = (item as any).instructorDoc;
+                            const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
+                            setPreviewDoc({
+                              key: item.key,
+                              title: `Instructor Document: ${item.title}`,
+                              subtitle: docInfo.fileName,
+                              fileName: docInfo.fileName || `${item.key}_template.pdf`,
+                              dataUrl: url,
+                              fileSize: docInfo.fileSize,
+                              status: 'passed',
+                              description: item.desc,
+                              notes: docInfo.notes,
+                            });
+                          }}
+                          className="py-1.5 px-3 rounded-xl bg-white text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                          title="Preview instructor document"
+                        >
+                          <Eye size={13} /> View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const docInfo = (item as any).instructorDoc;
+                            const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
+                            downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
+                          }}
+                          className="py-1.5 px-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs shadow-violet-200 transition-all cursor-pointer"
+                          title="Download instructor document"
+                        >
+                          <Download size={13} /> Download
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Accepted format pills */}
                 <div className="flex flex-wrap items-center gap-1.5 mb-4">
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
@@ -875,7 +1011,7 @@ export function Documents() {
                       accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null;
-                        onSelectFile(item.key, item.title, file);
+                        onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
                         e.target.value = '';
                       }}
                       className="hidden"
@@ -888,18 +1024,24 @@ export function Documents() {
                     className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${
                       isUploading
                         ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                        : (item as any).instructorDoc
+                        ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white shadow-md shadow-indigo-200'
                         : 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow-blue-200 hover:shadow-lg'
                     }`}
                   >
                     <Upload size={14} className={isUploading ? 'animate-spin' : ''} />
-                    {isUploading ? 'Uploading File...' : 'Upload & Submit Document'}
+                    {isUploading
+                      ? 'Uploading File...'
+                      : (item as any).instructorDoc
+                      ? `Upload & Pass According to Instructor's Doc`
+                      : 'Upload & Pass Document'}
                     <input
                       type="file"
                       id={`upload-doc-${item.key}`}
                       accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null;
-                        onSelectFile(item.key, item.title, file);
+                        onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
                         e.target.value = '';
                       }}
                       className="hidden"
@@ -951,6 +1093,20 @@ export function Documents() {
                 </span>
               </div>
 
+              {submitDialog.instructorDocName && (
+                <div className="p-3 bg-violet-50/90 rounded-2xl border border-violet-200 flex items-center justify-between text-xs text-violet-950">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
+                    <span className="truncate">
+                      Complying with: <strong>{submitDialog.instructorDocName}</strong>
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-violet-200 text-violet-900 border border-violet-300 shrink-0">
+                    Instructor Template
+                  </span>
+                </div>
+              )}
+
               {/* Description Input */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
@@ -997,18 +1153,19 @@ export function Documents() {
                       submitDialog.docKey,
                       submitDialog.file,
                       submitDialog.description,
-                      submitDialog.notes
+                      submitDialog.notes,
+                      true
                     );
                   }}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all cursor-pointer"
                 >
                   {uploadingKey === submitDialog.docKey ? (
                     <>
-                      <RefreshCw size={14} className="animate-spin" /> Uploading...
+                      <RefreshCw size={14} className="animate-spin" /> Uploading & Passing...
                     </>
                   ) : (
                     <>
-                      <Check size={14} /> Submit Document
+                      <Check size={14} /> Pass & Submit Document
                     </>
                   )}
                 </button>

@@ -93,7 +93,7 @@ export default function QRScanner() {
             employeeId: parsed.employeeId || 'OJT',
             course: parsed.course || 'OJT Intern',
             companyName: parsed.companyName || 'Host Training Establishment',
-            requiredHours: parsed.requiredHours || 300,
+            requiredHours: parsed.requiredHours || 600,
           },
         });
         setLoading(false);
@@ -508,7 +508,7 @@ export default function QRScanner() {
                     </div>
                     <div>
                       <span className="text-slate-400 font-medium">Required Hours:</span>
-                      <p className="font-bold text-blue-600">{result.trainee?.requiredHours || 300} hrs</p>
+                      <p className="font-bold text-blue-600">{result.trainee?.requiredHours || 600} hrs</p>
                     </div>
                   </div>
                 </div>

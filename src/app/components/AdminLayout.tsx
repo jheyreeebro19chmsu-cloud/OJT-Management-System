@@ -15,6 +15,7 @@ import {
   Calendar,
   User,
   FileCheck,
+  ClipboardCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -34,6 +35,7 @@ const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/employees', label: 'OJT/Records', icon: Users, end: false },
   { to: '/admin/documents', label: 'Documents', icon: FileCheck, end: false },
+  { to: '/admin/monitoring-report', label: 'Monitoring Report', icon: ClipboardCheck, end: false },
   { to: '/admin/geofence', label: 'Geofence Zones', icon: MapPin, end: false },
   { to: '/admin/evaluations', label: 'Evaluations', icon: Star, end: false },
   { to: '/admin/host-feedback', label: 'Host Feedback', icon: MessageSquare, end: false },

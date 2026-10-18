@@ -419,6 +419,16 @@ export interface RequiredDocument {
   required: boolean;
   academicYear?: string;
   createdAt: string;
+  fileUrl?: string;
+  dataUrl?: string;
+  fileName?: string;
+  fileSize?: number | string;
+  fileType?: string;
+  uploadedBy?: string;
+  instructorId?: string;
+  templateUrl?: string;
+  templateName?: string;
+  targetRequirementKey?: string;
 }
 
 export interface RequiredDocumentSubmission {
@@ -435,3 +445,87 @@ export interface RequiredDocumentSubmission {
 }
 
 export type RequirementStatus = 'missing' | 'incomplete' | 'complete';
+
+export type MonitoringVisitType =
+  | 'on_site'
+  | 'virtual'
+  | 'phone'
+  | 'midterm'
+  | 'final'
+  | 'spot_check';
+
+export type MonitoringOverallStatus =
+  | 'commendable'
+  | 'satisfactory'
+  | 'needs_guidance'
+  | 'critical';
+
+export interface MonitoringReport {
+  id: string;
+  reportNumber: string;
+  traineeId: string;
+  traineeName: string;
+  studentId?: string;
+  course?: string;
+  department?: string;
+  campus?: string;
+  academicYear?: string;
+  hteCompanyName: string;
+  hteAddress?: string;
+  supervisorName?: string;
+  supervisorContact?: string;
+  supervisorDesignation?: string;
+  instructorId?: string;
+  instructorName: string;
+  visitDate: string;
+  visitTime?: string;
+  visitType: MonitoringVisitType;
+  requiredHours?: number;
+  renderedHours?: number;
+  remainingHours?: number;
+  attendanceConsistency?: string;
+  ratings: {
+    workQuality: number;
+    punctuality: number;
+    professionalism: number;
+    technicalCompetence: number;
+    policyAdherence: number;
+  };
+  tasksObserved: string;
+  highlights?: string;
+  issuesIdentified?: string;
+  recommendations: string;
+  actionTaken?: string;
+  overallStatus: MonitoringOverallStatus;
+  nextVisitDate?: string;
+  instructorSignature?: string;
+  isAcknowledgedByTrainee?: boolean;
+  traineeAcknowledgedAt?: string;
+  traineeFeedback?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TraineeSelfMonitoringReport {
+  id: string;
+  traineeId: string;
+  traineeName: string;
+  studentId?: string;
+  course?: string;
+  academicYear?: string;
+  hteCompanyName: string;
+  supervisorName?: string;
+  periodCovered: string;
+  dateSubmitted: string;
+  hoursRenderedThisPeriod: number;
+  totalCumulativeHours?: number;
+  keyAccomplishments: string;
+  skillsApplied: string;
+  challengesEncountered?: string;
+  resolutionOrAction?: string;
+  selfRating?: number;
+  status: 'submitted' | 'reviewed' | 'acknowledged';
+  instructorRemarks?: string;
+  reviewedByInstructorAt?: string;
+  createdAt: string;
+}

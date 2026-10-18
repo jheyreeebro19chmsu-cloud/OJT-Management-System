@@ -395,7 +395,7 @@ export function AdminReports() {
         const directHours = Number(emp.renderedHours) || Number((emp.registrationLocation as any)?.renderedHours) || 0;
         const allTotalHours = Math.max(calculatedHours, directHours);
         const monthTotalHours = Math.max(monthRecs.reduce((s, r) => s + (Number(r.totalHours) || 0), 0), (monthRecs.length > 0 ? 0 : Math.round(directHours * 0.35)));
-        const requiredHours = Number(emp.requiredHours) || 486;
+        const requiredHours = Number(emp.requiredHours) || 600;
         const progress = Math.min(100, Math.max(0, (allTotalHours / requiredHours) * 100));
         const remainingHours = Math.max(0, requiredHours - allTotalHours);
 
@@ -2228,7 +2228,7 @@ export function AdminReports() {
                           </div>
                           <div>
                             <span className="text-slate-400 font-semibold block">Required OJT Hours:</span>
-                            <span className="font-bold text-slate-800">{trainee?.requiredHours || 486} Hours</span>
+                            <span className="font-bold text-slate-800">{trainee?.requiredHours || 600} Hours</span>
                           </div>
                           <div>
                             <span className="text-slate-400 font-semibold block">School & Course:</span>
