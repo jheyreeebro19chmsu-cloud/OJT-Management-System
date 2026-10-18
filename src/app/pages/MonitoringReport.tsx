@@ -43,6 +43,7 @@ import {
   EmployabilityStatus,
 } from '../types';
 import { MonitoringReportPrintView } from '../components/MonitoringReportPrintView';
+import { buildDefaultReportsForTrainee } from '../utils/monitoringReportGenerator';
 
 export function getReportTerm(report: IMonitoringReport): MonitoringTermType {
   if (report.term) return report.term;
@@ -300,22 +301,8 @@ export function MonitoringReport() {
     );
     if (directMatches.length > 0) return directMatches;
 
-    // Fallback for demo or newly created trainees without reports yet:
-    // map default demo templates to current trainee's profile so they immediately see Mid-Term (Weekly, Monthly) and End-Term (Weekly, Monthly)
-    return monitoringReports
-      .filter((r) => r.traineeId === '2089636c-7a7f-4943-ac23-23fd70afd4fd' || r.studentId === '20231331' || r.traineeId === '20231379' || r.studentId === '20231379')
-      .map((r) => ({
-        ...r,
-        traineeId: empId,
-        studentId: empCode || empId,
-        traineeName: currentEmp.name || r.traineeName,
-        course: currentEmp.course || r.course,
-        department: currentEmp.department || r.department,
-        campus: currentEmp.campus || r.campus,
-        hteCompanyName: currentEmp.companyName || r.hteCompanyName,
-        hteAddress: currentEmp.address || currentEmp.residentialAddress || r.hteAddress,
-        supervisorName: currentEmp.supervisorName || r.supervisorName,
-      }));
+    // Fallback for any trainee account to guarantee Mid-Term & End-Term monitoring reports
+    return buildDefaultReportsForTrainee(currentEmp);
   }, [monitoringReports, currentEmp]);
 
   // Summary counts per term and nested frequency

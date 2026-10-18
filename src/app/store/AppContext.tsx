@@ -33,6 +33,7 @@ import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '
 import { getCampusLocation } from '../utils/campusLocations';
 import { resolveHteLocation, isInvalidHteCompany, isTraineeRole } from '../utils/hteLocation';
 import { TRAINEE_REQUIRED_HOURS, normalizeTraineeRequiredHours } from '../data/ojtConstants';
+import { buildDefaultReportsForTrainee } from '../utils/monitoringReportGenerator';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -2172,6 +2173,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, traineeSelfMonitoringReports);
   }, [traineeSelfMonitoringReports]);
+
+  // Ensure ALL Trainee accounts in the institution have full Monitoring Reports (Mid-Term & End-Term)
+  useEffect(() => {
+    if (employees.length === 0) return;
+    const trainees = employees.filter((e) => isTraineeRole(e));
+    if (trainees.length === 0) return;
+
+    setMonitoringReports((prevReports) => {
+      const existingKeys = new Set<string>();
+      prevReports.forEach((r) => {
+        const term = r.term || (r.reportType === 'endterm' ? 'endterm' : 'midterm');
+        const freq =
+          r.frequency ||
+          (r.reportType === 'monthly'
+            ? 'monthly'
+            : r.reportType === 'midterm' || r.reportType === 'endterm'
+            ? 'evaluation'
+            : 'weekly');
+        if (r.traineeId) existingKeys.add(`${r.traineeId.toLowerCase()}_${term}_${freq}`);
+        if (r.studentId) existingKeys.add(`${r.studentId.toLowerCase()}_${term}_${freq}`);
+      });
+
+      const missingReports: MonitoringReport[] = [];
+      for (const trainee of trainees) {
+        const traineeDefaults = buildDefaultReportsForTrainee(trainee);
+        for (const rep of traineeDefaults) {
+          const key1 = `${(rep.traineeId || '').toLowerCase()}_${rep.term}_${rep.frequency}`;
+          const key2 = `${(rep.studentId || '').toLowerCase()}_${rep.term}_${rep.frequency}`;
+          if (!existingKeys.has(key1) && !existingKeys.has(key2)) {
+            missingReports.push(rep);
+            existingKeys.add(key1);
+            existingKeys.add(key2);
+          }
+        }
+      }
+
+      if (missingReports.length > 0) {
+        const updated = [...prevReports, ...missingReports];
+        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, updated);
+        return updated;
+      }
+      return prevReports;
+    });
+  }, [employees]);
 
   // Check if Supabase is configured and load initial data
   useEffect(() => {

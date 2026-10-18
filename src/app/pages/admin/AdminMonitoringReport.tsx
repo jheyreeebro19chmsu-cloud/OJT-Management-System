@@ -140,6 +140,7 @@ export function AdminMonitoringReport() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'submitted' | 'reviewed'>('all');
   const [filterCourse, setFilterCourse] = useState<string>('all');
+  const [filterTrainee, setFilterTrainee] = useState<string>('all');
 
   // Modal states
   const [reviewReport, setReviewReport] = useState<MonitoringReport | null>(null);
@@ -250,6 +251,10 @@ export function AdminMonitoringReport() {
       }
       if (filterStatus !== 'all' && r.status !== filterStatus) return false;
       if (filterCourse !== 'all' && r.course !== filterCourse) return false;
+      if (filterTrainee !== 'all') {
+        const matchesTrainee = r.traineeId === filterTrainee || r.studentId === filterTrainee;
+        if (!matchesTrainee) return false;
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -263,7 +268,7 @@ export function AdminMonitoringReport() {
 
       return true;
     });
-  }, [monitoringReports, activeTab, activeSubFilter, filterStatus, filterCourse, searchQuery]);
+  }, [monitoringReports, activeTab, activeSubFilter, filterStatus, filterCourse, filterTrainee, searchQuery]);
 
   // Handle opening Review Modal
   const openReviewModal = (report: MonitoringReport) => {
@@ -992,12 +997,26 @@ export function AdminMonitoringReport() {
                 value={filterCourse}
                 onChange={(e) => setFilterCourse(e.target.value)}
                 aria-label="Filter by degree course"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-hidden max-w-[200px]"
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-hidden max-w-[180px]"
               >
                 <option value="all">All Degree Courses</option>
                 {availableCourses.map((c) => (
                   <option key={c} value={c}>
                     {c}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterTrainee}
+                onChange={(e) => setFilterTrainee(e.target.value)}
+                aria-label="Filter by Trainee Account"
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:bg-white focus:outline-hidden max-w-[210px]"
+              >
+                <option value="all">All Trainee Accounts ({allTrainees.length})</option>
+                {allTrainees.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.employeeId || t.id.slice(0, 8)})
                   </option>
                 ))}
               </select>
