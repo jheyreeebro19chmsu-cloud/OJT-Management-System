@@ -167,6 +167,66 @@ export function resolveSafeDocumentViewUrl(url?: string): string {
   return trimmed;
 }
 
+/**
+ * Converts a base64 `data:` URL into an object (blob) URL.
+ * Browsers block top-level navigation to `data:` URLs and some refuse to render
+ * large `data:application/pdf` URLs inside iframes, so blob URLs are used instead.
+ * Returns the original URL unchanged for non-data URLs.
+ */
+export function dataUrlToBlobUrl(url: string): string {
+  if (!url || !url.startsWith('data:')) return url;
+  try {
+    const commaIdx = url.indexOf(',');
+    const meta = url.slice(5, commaIdx); // e.g. "application/pdf;base64"
+    const mime = meta.split(';')[0] || 'application/octet-stream';
+    const isBase64 = meta.includes(';base64');
+    const payload = url.slice(commaIdx + 1);
+    let bytes: Uint8Array;
+    if (isBase64) {
+      const binary = atob(payload);
+      bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(payload));
+    }
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch (err) {
+    console.warn('Failed to convert data URL to blob URL:', err);
+    return url;
+  }
+}
+
+/** Opens a document (image, PDF, etc.) in a new browser tab for full-size review. */
+export function openDocumentInNewTab(url: string): void {
+  if (!url) return;
+  const safeUrl = resolveSafeDocumentViewUrl(url);
+  if (!safeUrl) {
+    console.warn('Cannot open document from invalid storage error URL:', url);
+    return;
+  }
+  const viewUrl = safeUrl.startsWith('data:') ? dataUrlToBlobUrl(safeUrl) : safeUrl;
+  const win = window.open(viewUrl, '_blank');
+  if (win) {
+    try {
+      win.opener = null;
+    } catch {}
+  }
+  if (viewUrl.startsWith('blob:') && viewUrl !== safeUrl) {
+    // Keep the blob alive long enough for the new tab to load it
+    setTimeout(() => URL.revokeObjectURL(viewUrl), 60_000);
+  }
+  if (!win) {
+    // Popup blocked – fall back to a temporary anchor click
+    const a = document.createElement('a');
+    a.href = viewUrl;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+
 export async function downloadDocument(url: string, fileName?: string): Promise<void> {
   if (!url) return;
   const safeUrl = resolveSafeDocumentViewUrl(url);

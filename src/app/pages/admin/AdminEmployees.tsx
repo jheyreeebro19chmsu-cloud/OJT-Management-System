@@ -13,7 +13,7 @@ import { saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
-import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl } from '../../utils/attachmentHelper';
+import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl, dataUrlToBlobUrl, openDocumentInNewTab } from '../../utils/attachmentHelper';
 import { isWithinNegrosOccidental } from '../../utils/geo';
 import { getPaginationWindow } from '../../utils/pagination';
 import { resolveHteLocation, isInvalidHteCompany } from '../../utils/hteLocation';
@@ -83,6 +83,20 @@ export function AdminEmployees() {
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
   const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{ studentName: string; studentId: string; title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
+  // Blob URL used to render the previewed document (base64 PDFs often fail to render as data: URLs in iframes)
+  const [previewFrameUrl, setPreviewFrameUrl] = useState('');
+  useEffect(() => {
+    const url = previewInstructorDoc?.fileUrl || '';
+    if (!url.startsWith('data:')) {
+      setPreviewFrameUrl(url);
+      return;
+    }
+    const blobUrl = dataUrlToBlobUrl(url);
+    setPreviewFrameUrl(blobUrl);
+    return () => {
+      if (blobUrl !== url) URL.revokeObjectURL(blobUrl);
+    };
+  }, [previewInstructorDoc?.fileUrl]);
   const [form, setForm] = useState(BLANK_FORM);
   const [editForm, setEditForm] = useState(BLANK_FORM);
   const [editingAddress, setEditingAddress] = useState(false);
@@ -5740,6 +5754,16 @@ export function AdminEmployees() {
                 {previewInstructorDoc.fileUrl && (
                   <button
                     type="button"
+                    onClick={() => openDocumentInNewTab(previewInstructorDoc.fileUrl!)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-xl text-xs font-semibold hover:bg-violet-700 transition-all shadow-sm cursor-pointer"
+                    title="Open the full-size document in a new tab"
+                  >
+                    <Eye size={13} /> Review
+                  </button>
+                )}
+                {previewInstructorDoc.fileUrl && (
+                  <button
+                    type="button"
                     onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-all shadow-sm cursor-pointer"
                     title="Download document"
@@ -5801,13 +5825,34 @@ export function AdminEmployees() {
                     previewInstructorDoc.fileUrl.startsWith('data:application/x-zip-compressed') ||
                     previewInstructorDoc.fileName?.match(/\.(doc|docx|docs)$/i);
 
+                  const actionBar = (kind: string) => (
+                    <div className="flex flex-wrap items-center justify-center gap-2 print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => openDocumentInNewTab(previewInstructorDoc.fileUrl!)}
+                        className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                      >
+                        <Eye size={14} /> Review {kind}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                      >
+                        <Download size={14} /> Download {kind}
+                      </button>
+                    </div>
+                  );
+
                   if (isImg) {
                     return (
                       <div className="flex flex-col items-center justify-center gap-3">
                         <img
                           src={previewInstructorDoc.fileUrl}
                           alt="Document preview"
-                          className="max-h-[500px] object-contain rounded-xl shadow border border-gray-200"
+                          title="Click to review full size"
+                          onClick={() => openDocumentInNewTab(previewInstructorDoc.fileUrl!)}
+                          className="max-h-[500px] object-contain rounded-xl shadow border border-gray-200 cursor-zoom-in"
                           onError={(e) => {
                             (e.currentTarget as HTMLElement).style.display = 'none';
                             const el = document.getElementById('preview-img-err');
@@ -5816,15 +5861,9 @@ export function AdminEmployees() {
                         />
                         <div id="preview-img-err" style={{ display: 'none' }} className="flex-col items-center justify-center p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-center max-w-sm">
                           <p className="text-xs font-bold">Image preview unavailable in browser</p>
-                          <p className="text-[11px] text-amber-700 mt-0.5">Click Download Picture below to view the original file.</p>
+                          <p className="text-[11px] text-amber-700 mt-0.5">Use Review or Download below to view the original file.</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => downloadDocument(previewInstructorDoc.fileUrl!, previewInstructorDoc.fileName)}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-                        >
-                          <Download size={14} /> Download Picture
-                        </button>
+                        {actionBar('Picture')}
                       </div>
                     );
                   }
@@ -5867,12 +5906,20 @@ export function AdminEmployees() {
                     );
                   }
 
+                  const isPdf =
+                    cat === 'pdf' ||
+                    previewInstructorDoc.fileUrl.startsWith('data:application/pdf') ||
+                    /\.pdf($|\?)/i.test(previewInstructorDoc.fileUrl);
+
                   return (
-                    <iframe
-                      src={previewInstructorDoc.fileUrl}
-                      className="w-full h-[480px] rounded-xl border border-gray-200 bg-white"
-                      title="Document Preview"
-                    />
+                    <div className="w-full flex flex-col gap-3">
+                      <iframe
+                        src={previewFrameUrl || previewInstructorDoc.fileUrl}
+                        className="w-full h-[480px] rounded-xl border border-gray-200 bg-white"
+                        title="Document Preview"
+                      />
+                      {actionBar(isPdf ? 'PDF' : 'File')}
+                    </div>
                   );
                 })()
               ) : (
