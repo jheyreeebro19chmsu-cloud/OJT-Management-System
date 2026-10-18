@@ -728,7 +728,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       }
 
       // Client heuristics are strictly soft advisories: they do not block face scanning.
-      // Server-side DeepFace + enforce_detection performs the authoritative biometric verification.
+      // Server-side InsightFace (ArcFace 512-d) performs the authoritative biometric verification.
       result.faceObscured = false;
       result.ok = result.faceDetected && result.faceCentered && !result.tooDark && !result.tooBright;
     } else {

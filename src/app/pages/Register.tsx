@@ -3970,7 +3970,7 @@ export function Register() {
                 </div>
                 <div className="text-sm text-gray-500 mb-4 space-y-2">
                   <p>
-                    Register your face for biometric time recording. Live webcam capture is processed by DeepFace AI models for identity verification during clock-in and clock-out.
+                    Register your face for biometric time recording. Live webcam capture is processed by InsightFace AI models for identity verification during clock-in and clock-out.
                   </p>
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 font-semibold flex items-center gap-2">
                     <ShieldCheck size={16} className="text-blue-700 shrink-0" />
