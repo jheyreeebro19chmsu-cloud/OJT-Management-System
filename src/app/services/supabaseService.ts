@@ -740,13 +740,36 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
 
   // 1. Primary path: Service role endpoint /api/employees (bypasses RLS to guarantee persistence)
   try {
+    const sanitizedUpdates: any = { ...updates };
+    if (sanitizedUpdates.submittedDocuments) {
+      sanitizedUpdates.submittedDocuments = sanitizeDocumentsForDb(sanitizedUpdates.submittedDocuments);
+    }
+    if (sanitizedUpdates.submitted_documents) {
+      sanitizedUpdates.submitted_documents = sanitizeDocumentsForDb(sanitizedUpdates.submitted_documents);
+    }
+    if (sanitizedUpdates.documents) {
+      sanitizedUpdates.documents = sanitizeDocumentsForDb(sanitizedUpdates.documents);
+    }
+    if (sanitizedUpdates.registration_location?.documents) {
+      sanitizedUpdates.registration_location = {
+        ...sanitizedUpdates.registration_location,
+        documents: sanitizeDocumentsForDb(sanitizedUpdates.registration_location.documents),
+      };
+    }
+    if (sanitizedUpdates.registrationLocation?.documents) {
+      sanitizedUpdates.registrationLocation = {
+        ...sanitizedUpdates.registrationLocation,
+        documents: sanitizeDocumentsForDb(sanitizedUpdates.registrationLocation.documents),
+      };
+    }
+
     const res = await fetch('/api/employees', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id,
         updates: {
-          ...updates,
+          ...sanitizedUpdates,
           ...supabaseUpdates,
         },
       }),
@@ -754,6 +777,8 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     if (res.ok) {
       return true;
     }
+    const errText = await res.text().catch(() => '');
+    console.warn(`API endpoint /api/employees returned status ${res.status}:`, errText);
   } catch (apiErr) {
     console.warn('API endpoint /api/employees error, falling back to direct Supabase:', apiErr);
   }

@@ -28,6 +28,61 @@ const KNOWN_HTES = {
   },
 };
 
+function sanitizeDocuments(docs) {
+  if (!docs || typeof docs !== 'object') return {};
+  const clean = {};
+  for (const [key, val] of Object.entries(docs)) {
+    if (val && typeof val === 'object') {
+      const dataUrl = typeof val.dataUrl === 'string' ? val.dataUrl : '';
+      const fileUrl = typeof val.fileUrl === 'string' ? val.fileUrl : '';
+
+      const isBadUrl = (u) =>
+        !u ||
+        typeof u !== 'string' ||
+        u.includes('NoSuchKey') ||
+        u.includes('NoSuchBucket') ||
+        u.includes('Bucket not found') ||
+        u.includes('statusCode') ||
+        u.includes('documents/unassigned/moa_');
+
+      const validDataUrl = isBadUrl(dataUrl) ? '' : dataUrl;
+      const validFileUrl = isBadUrl(fileUrl) ? '' : fileUrl;
+
+      const httpUrl =
+        (validFileUrl.startsWith('http://') || validFileUrl.startsWith('https://') ? validFileUrl : '') ||
+        (validDataUrl.startsWith('http://') || validDataUrl.startsWith('https://') ? validDataUrl : '');
+
+      let resolvedUrl = httpUrl;
+      if (!resolvedUrl) {
+        if (validDataUrl.startsWith('data:') && validDataUrl.length < 50000) {
+          resolvedUrl = validDataUrl;
+        } else if (validFileUrl.startsWith('data:') && validFileUrl.length < 50000) {
+          resolvedUrl = validFileUrl;
+        }
+      }
+
+      clean[key] = {
+        name: val.name || 'document',
+        size: val.size,
+        fileType: val.fileType || 'application/pdf',
+        uploadedAt: val.uploadedAt || new Date().toISOString(),
+        status: val.status || 'pending',
+        dataUrl: resolvedUrl,
+        fileUrl: httpUrl || resolvedUrl,
+        description: val.description || '',
+        notes: val.notes || val.feedback || '',
+        feedback: val.feedback || '',
+        reviewedBy: val.reviewedBy || '',
+        reviewedAt: val.reviewedAt || '',
+        source: val.source || 'portal',
+      };
+    } else {
+      clean[key] = val;
+    }
+  }
+  return clean;
+}
+
 async function mapUpdatesToDbPayload(updates) {
   const dbPayload = {};
   if (updates.name !== undefined) dbPayload.name = updates.name;
@@ -36,7 +91,6 @@ async function mapUpdatesToDbPayload(updates) {
   }
   if (updates.email !== undefined) {
     dbPayload.email = String(updates.email).trim().toLowerCase();
-    dbPayload.email_lower = String(updates.email).trim().toLowerCase();
   }
   if (updates.department !== undefined) dbPayload.department = updates.department;
   if (updates.position !== undefined) dbPayload.position = updates.position;
@@ -117,10 +171,10 @@ async function mapUpdatesToDbPayload(updates) {
   if (updates.submittedDocuments !== undefined || updates.submitted_documents !== undefined || updates.documents !== undefined) {
     const rawDocs = updates.submittedDocuments || updates.submitted_documents || updates.documents;
     if (rawDocs && typeof rawDocs === 'object') {
-      locObj.documents = {
+      locObj.documents = sanitizeDocuments({
         ...(locObj.documents || {}),
         ...rawDocs,
-      };
+      });
     }
   }
 
@@ -134,9 +188,16 @@ async function mapUpdatesToDbPayload(updates) {
     updates.submitted_documents !== undefined;
 
   if (hasRegLocUpdates) {
+    const baseLoc = typeof updates.registration_location === 'object' && updates.registration_location !== null
+      ? updates.registration_location
+      : {};
     dbPayload.registration_location = {
-      ...(typeof updates.registration_location === 'object' ? updates.registration_location : {}),
+      ...baseLoc,
       ...locObj,
+      documents: sanitizeDocuments({
+        ...(baseLoc.documents || {}),
+        ...(locObj.documents || {}),
+      }),
     };
   }
 
@@ -336,10 +397,10 @@ export default async function handler(req, res) {
         dbPayload.registration_location = {
           ...curLoc,
           ...dbPayload.registration_location,
-          documents: {
+          documents: sanitizeDocuments({
             ...(curLoc.documents || {}),
             ...(dbPayload.registration_location.documents || {}),
-          },
+          }),
           documentsPassed: dbPayload.registration_location.documentsPassed !== undefined
             ? dbPayload.registration_location.documentsPassed
             : (curLoc.documentsPassed !== undefined ? curLoc.documentsPassed : false),
@@ -375,7 +436,11 @@ export default async function handler(req, res) {
           for (const [docKey, docVal] of docEntries) {
             if (docVal && typeof docVal === 'object') {
               const fileName = docVal.name || `${docKey}.pdf`;
-              const filePath = docVal.fileUrl || docVal.dataUrl || '';
+              const rawPath = docVal.fileUrl || docVal.dataUrl || '';
+              // Only insert valid HTTP storage URLs into the documents table file_path column
+              const filePath = (typeof rawPath === 'string' && (rawPath.startsWith('http://') || rawPath.startsWith('https://')))
+                ? rawPath
+                : '';
               if (filePath) {
                 await supabase.from('documents').delete().eq('employee_id', targetEmpUuid).eq('file_name', fileName);
                 await supabase.from('documents').insert({

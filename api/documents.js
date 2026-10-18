@@ -9,6 +9,61 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 const isUuid = (val) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
+function sanitizeDocuments(docs) {
+  if (!docs || typeof docs !== 'object') return {};
+  const clean = {};
+  for (const [key, val] of Object.entries(docs)) {
+    if (val && typeof val === 'object') {
+      const dataUrl = typeof val.dataUrl === 'string' ? val.dataUrl : '';
+      const fileUrl = typeof val.fileUrl === 'string' ? val.fileUrl : '';
+
+      const isBadUrl = (u) =>
+        !u ||
+        typeof u !== 'string' ||
+        u.includes('NoSuchKey') ||
+        u.includes('NoSuchBucket') ||
+        u.includes('Bucket not found') ||
+        u.includes('statusCode') ||
+        u.includes('documents/unassigned/moa_');
+
+      const validDataUrl = isBadUrl(dataUrl) ? '' : dataUrl;
+      const validFileUrl = isBadUrl(fileUrl) ? '' : fileUrl;
+
+      const httpUrl =
+        (validFileUrl.startsWith('http://') || validFileUrl.startsWith('https://') ? validFileUrl : '') ||
+        (validDataUrl.startsWith('http://') || validDataUrl.startsWith('https://') ? validDataUrl : '');
+
+      let resolvedUrl = httpUrl;
+      if (!resolvedUrl) {
+        if (validDataUrl.startsWith('data:') && validDataUrl.length < 50000) {
+          resolvedUrl = validDataUrl;
+        } else if (validFileUrl.startsWith('data:') && validFileUrl.length < 50000) {
+          resolvedUrl = validFileUrl;
+        }
+      }
+
+      clean[key] = {
+        name: val.name || 'document',
+        size: val.size,
+        fileType: val.fileType || 'application/pdf',
+        uploadedAt: val.uploadedAt || new Date().toISOString(),
+        status: val.status || 'pending',
+        dataUrl: resolvedUrl,
+        fileUrl: httpUrl || resolvedUrl,
+        description: val.description || '',
+        notes: val.notes || val.feedback || '',
+        feedback: val.feedback || '',
+        reviewedBy: val.reviewedBy || '',
+        reviewedAt: val.reviewedAt || '',
+        source: val.source || 'portal',
+      };
+    } else {
+      clean[key] = val;
+    }
+  }
+  return clean;
+}
+
 function sendJson(res, statusCode, data) {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json');
@@ -340,7 +395,7 @@ export default async function handler(req, res) {
 
       const updatedRegLoc = {
         ...curRegLoc,
-        documents: currentDocs,
+        documents: sanitizeDocuments(currentDocs),
         documentsPassed: allPassed,
         documentsStatus: finalStatus,
       };
@@ -368,7 +423,10 @@ export default async function handler(req, res) {
       }
 
       for (const { key, item } of syncItems) {
-        const filePath = item.fileUrl || item.dataUrl || '';
+        const rawPath = item.fileUrl || item.dataUrl || '';
+        const filePath = (typeof rawPath === 'string' && (rawPath.startsWith('http://') || rawPath.startsWith('https://')))
+          ? rawPath
+          : '';
         const fileName = item.name || `${key}.pdf`;
         if (filePath && emp.id) {
           try {
