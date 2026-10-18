@@ -199,19 +199,35 @@ export const authAPI = {
     }),
 
   // Announcements
-  postAnnouncement: (instructorId: number, formData: FormData) =>
-    api.post<{ success: boolean; message: string; announcement_id: number; image_url?: string }>('/announcement/post/', formData, {
+  postAnnouncement: (instructorId: number, formData: FormData) => {
+    if (!API_BASE) {
+      return Promise.resolve({
+        data: { success: true, message: 'Local/Supabase sync mode active', announcement_id: Date.now() },
+      } as any);
+    }
+    return api.post<{ success: boolean; message: string; announcement_id: number; image_url?: string }>('/announcement/post/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+    });
+  },
 
-  getAnnouncements: (instructorId: number) =>
-    api.get<{ announcements: any[] }>('/announcement/list/', { params: { instructor_id: instructorId } }),
+  getAnnouncements: (instructorId: number) => {
+    if (!API_BASE) {
+      return Promise.resolve({ data: { announcements: [] } } as any);
+    }
+    return api.get<{ announcements: any[] }>('/announcement/list/', { params: { instructor_id: instructorId } });
+  },
 
   // Announcement submissions (employee responses)
-  submitAnnouncementResponse: (announcementId: string, userId: number, formData: FormData) =>
-    api.post<{ success: boolean; submission_id: number; image_url?: string }>('/announcement/submit/', formData, {
+  submitAnnouncementResponse: (announcementId: string, userId: number, formData: FormData) => {
+    if (!API_BASE) {
+      return Promise.resolve({
+        data: { success: true, submission_id: Date.now() },
+      } as any);
+    }
+    return api.post<{ success: boolean; submission_id: number; image_url?: string }>('/announcement/submit/', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+    });
+  },
 
   // HTE Access
   requestHTEAccess: (hteId: number, applicationId: number) =>

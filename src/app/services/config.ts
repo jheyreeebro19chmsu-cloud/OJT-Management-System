@@ -7,24 +7,34 @@ export const getApiBase = (): string => {
   const envUrl = import.meta.env.VITE_DJANGO_API_URL;
   const securityKey = import.meta.env.VITE_SECURITY_API_KEY;
 
-  // 1. If VITE_DJANGO_API_URL is configured, valid, and not the dead Railway deployment
-  if (envUrl && envUrl.startsWith('http') && !envUrl.includes('railway.app')) {
+  // 1. If VITE_DJANGO_API_URL is configured, valid, and not a dead deployment
+  if (
+    envUrl &&
+    envUrl.startsWith('http') &&
+    !envUrl.includes('railway.app') &&
+    !envUrl.includes('onrender.com')
+  ) {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // 2. Fallback: If VITE_SECURITY_API_KEY was misconfigured with a backend URL (excluding Railway)
-  if (securityKey && securityKey.startsWith('http') && !securityKey.includes('railway.app')) {
-    return `${securityKey.replace(/\/+$/, '')}/api`;
-  }
-
-  // 3. If running on production or static host (including chmsuojtmis.site),
-  // return empty string so pure Supabase + on-device features activate without localhost hangs.
+  // 2. If running on production or custom domain host (including chmsuojtmis.site),
+  // return empty string so pure Supabase + on-device features activate cleanly without CORS errors.
   if (
     typeof window !== 'undefined' &&
     window.location &&
     (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
   ) {
     return '';
+  }
+
+  // 3. Fallback for local development if securityKey was set to local server
+  if (
+    securityKey &&
+    securityKey.startsWith('http') &&
+    !securityKey.includes('railway.app') &&
+    !securityKey.includes('onrender.com')
+  ) {
+    return `${securityKey.replace(/\/+$/, '')}/api`;
   }
 
   // 4. Default for local development
