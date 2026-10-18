@@ -30,6 +30,9 @@ import {
   Send,
   MessageSquare,
   ShieldCheck,
+  CheckSquare,
+  Square,
+  Lightbulb,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo } from 'react';
@@ -41,6 +44,7 @@ import {
   MonitoringPeriodType,
   MonitoringQuestionnaire,
   Employee,
+  EmployabilityStatus,
 } from '../../types';
 import { MonitoringReportPrintView } from '../../components/MonitoringReportPrintView';
 import { UserAvatar } from '../../components/UserAvatar';
@@ -79,33 +83,17 @@ const PERIOD_CONFIG: Record<
   },
 };
 
-const HOST_FEEDBACK_QUESTIONS = [
-  {
-    key: 'attendanceScore',
-    label: 'Work Environment & Workplace Safety',
-    description: 'Physical workplace conditions, safety measures, clean workstations, and accessibility.',
-  },
-  {
-    key: 'performanceScore',
-    label: 'Mentorship, Guidance & Supervision',
-    description: 'Availability of designated supervisor, constructive feedback, and coaching support.',
-  },
-  {
-    key: 'attitudeScore',
-    label: 'Learning Opportunities & Skill Acquisition',
-    description: 'Alignment with degree curriculum, exposure to real projects, and hands-on technical skills.',
-  },
-  {
-    key: 'communicationScore',
-    label: 'Workplace Culture & Professionalism',
-    description: 'Welcoming atmosphere, ethical standards, team collaboration, and diversity.',
-  },
-  {
-    key: 'teamworkScore',
-    label: 'Resources, Tools & Equipment Support',
-    description: 'Access to required hardware, software, office supplies, and relevant technical materials.',
-  },
-] as const;
+const CHMSU_QUESTIONS = [
+  { key: 'q1_dutiesBriefly' as const, num: 1, prompt: '1. Describe your duties briefly:' },
+  { key: 'q2_strongestPerformanceArea' as const, num: 2, prompt: '2. What do you consider your strongest area of performance?' },
+  { key: 'q3_areasImprovedMost' as const, num: 3, prompt: '3. In what areas do you feel you have improved the most?' },
+  { key: 'q4_areasNeedImprovement' as const, num: 4, prompt: '4. In what areas do you feel need the most improvement?' },
+  { key: 'q5_situationChallengedMost' as const, num: 5, prompt: '5. What situation challenged you the most?' },
+  { key: 'q6_howOvercameChallenge' as const, num: 6, prompt: '6. How did you overcome this challenge or situation?' },
+  { key: 'q7_whatLearnedFromExperience' as const, num: 7, prompt: '7. What did you learn from your overall training experience?' },
+  { key: 'q8_isQualifiedLinkage' as const, num: 8, prompt: '8. Is this training establishment well-qualified for student OJT placement?' },
+  { key: 'q9_ojtSuggestionsRecommendations' as const, num: 9, prompt: '9. Other comments, suggestions, and recommendations:' },
+];
 
 export function AdminMonitoringReport() {
   const {
@@ -142,21 +130,20 @@ export function AdminMonitoringReport() {
   const [createReportType, setCreateReportType] = useState<MonitoringPeriodType>('weekly');
   const [createPeriodCovered, setCreatePeriodCovered] = useState('');
   const [createHoursThisPeriod, setCreateHoursThisPeriod] = useState(40);
-  const [createTasks, setCreateTasks] = useState('');
-  const [createSkills, setCreateSkills] = useState('');
-  const [createChallenges, setCreateChallenges] = useState('');
-  const [createRatings, setCreateRatings] = useState({
-    attendanceScore: 5,
-    performanceScore: 5,
-    attitudeScore: 5,
-    communicationScore: 5,
-    teamworkScore: 5,
+  const [createEmployability, setCreateEmployability] = useState<EmployabilityStatus | string>('OJT Trainee');
+  const [createAllowance, setCreateAllowance] = useState('None / Stipend');
+  const [createTelephone, setCreateTelephone] = useState('N/A');
+  const [createQAnswers, setCreateQAnswers] = useState({
+    q1_dutiesBriefly: '',
+    q2_strongestPerformanceArea: '',
+    q3_areasImprovedMost: '',
+    q4_areasNeedImprovement: '',
+    q5_situationChallengedMost: '',
+    q6_howOvercameChallenge: '',
+    q7_whatLearnedFromExperience: '',
+    q8_isQualifiedLinkage: '',
+    q9_ojtSuggestionsRecommendations: '',
   });
-  const [createStrengths, setCreateStrengths] = useState('');
-  const [createImprovements, setCreateImprovements] = useState('');
-  const [createRecommendation, setCreateRecommendation] = useState<
-    'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended'
-  >('Highly Recommended');
   const [createInstructorRemarks, setCreateInstructorRemarks] = useState('');
 
   // Trainee student accounts only
@@ -220,18 +207,12 @@ export function AdminMonitoringReport() {
   // Filtered reports
   const filteredReports = useMemo(() => {
     return monitoringReports.filter((r) => {
-      // Period filter
       if (activeTab !== 'all' && activeTab !== 'roster') {
         if (r.reportType !== activeTab) return false;
       }
-
-      // Status filter
       if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-
-      // Course filter
       if (filterCourse !== 'all' && r.course !== filterCourse) return false;
 
-      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchName = (r.traineeName || '').toLowerCase().includes(q);
@@ -298,25 +279,28 @@ export function AdminMonitoringReport() {
       toast.error('Please select an active student intern.');
       return;
     }
-    if (!createTasks.trim()) {
-      toast.error('Please input tasks accomplished.');
+    if (!createQAnswers.q1_dutiesBriefly.trim()) {
+      toast.error('Please input Question 1: Describe duties briefly.');
       return;
     }
 
-    const totalRatings =
-      createRatings.attendanceScore +
-      createRatings.performanceScore +
-      createRatings.attitudeScore +
-      createRatings.communicationScore +
-      createRatings.teamworkScore;
-    const overallScore = Math.round((totalRatings / 25) * 100);
-
     const questionnaire: MonitoringQuestionnaire = {
-      ...createRatings,
-      overallScore,
-      strengths: createStrengths,
-      areasForImprovement: createImprovements,
-      recommendation: createRecommendation,
+      employabilityStatus: createEmployability,
+      allowanceSalary: createAllowance,
+      telephoneNo: createTelephone,
+      department: emp.department || 'COLLEGE OF COMPUTER STUDIES',
+      position: 'ON - THE - JOB TRAINEE',
+      otherDeptAssigned: 'None',
+      ...createQAnswers,
+      attendanceScore: 5,
+      performanceScore: 5,
+      attitudeScore: 5,
+      communicationScore: 5,
+      teamworkScore: 5,
+      overallScore: 100,
+      strengths: createQAnswers.q2_strongestPerformanceArea,
+      areasForImprovement: createQAnswers.q4_areasNeedImprovement,
+      recommendation: 'Highly Recommended',
     };
 
     const rendered = getRenderedHoursForTrainee(emp.id, emp.employeeId);
@@ -344,9 +328,9 @@ export function AdminMonitoringReport() {
         totalCumulativeHours: Math.round(rendered),
         requiredHours: required,
         remainingHours: Math.max(0, required - Math.round(rendered)),
-        tasksAccomplished: createTasks,
-        skillsApplied: createSkills,
-        challengesEncountered: createChallenges,
+        tasksAccomplished: createQAnswers.q1_dutiesBriefly,
+        skillsApplied: createQAnswers.q3_areasImprovedMost,
+        challengesEncountered: createQAnswers.q5_situationChallengedMost,
         questionnaire,
         status: createInstructorRemarks.trim() ? 'reviewed' : 'submitted',
         instructorRemarks: createInstructorRemarks,
@@ -355,13 +339,18 @@ export function AdminMonitoringReport() {
 
       toast.success(`${PERIOD_CONFIG[createReportType].label} Monitoring Report successfully logged!`);
       setShowCreateModal(false);
-      // Reset form
       setCreateTraineeId('');
-      setCreateTasks('');
-      setCreateSkills('');
-      setCreateChallenges('');
-      setCreateStrengths('');
-      setCreateImprovements('');
+      setCreateQAnswers({
+        q1_dutiesBriefly: '',
+        q2_strongestPerformanceArea: '',
+        q3_areasImprovedMost: '',
+        q4_areasNeedImprovement: '',
+        q5_situationChallengedMost: '',
+        q6_howOvercameChallenge: '',
+        q7_whatLearnedFromExperience: '',
+        q8_isQualifiedLinkage: '',
+        q9_ojtSuggestionsRecommendations: '',
+      });
       setCreateInstructorRemarks('');
     } catch {
       toast.error('Failed to create monitoring report.');
@@ -372,20 +361,20 @@ export function AdminMonitoringReport() {
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs relative overflow-hidden">
-        <div className="absolute -top-12 -right-12 w-48 h-48 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full blur-2xl opacity-60 pointer-events-none" />
+        <div className="absolute -top-12 -right-12 w-48 h-48 bg-gradient-to-br from-emerald-100 to-blue-100 rounded-full blur-2xl opacity-60 pointer-events-none" />
 
         <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-blue-800 text-xs font-semibold mb-2">
-            <ClipboardCheck size={14} className="text-blue-600" />
-            <span>OJT Monitoring & Milestone Assessment System</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-emerald-800 text-xs font-semibold mb-2">
+            <ClipboardCheck size={14} className="text-emerald-700" />
+            <span>CHMSU OJT Monitoring & Evaluation System</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Monitoring Reports
           </h1>
           <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-            Monitor, assess, and endorse student practicum reports across <strong>Weekly</strong>,{' '}
-            <strong>Monthly</strong>, <strong>Mid-Term</strong>, and <strong>End-Term</strong> milestones,
-            featuring complete Host Feedback questionnaires.
+            Review and endorse student intern milestone reports across <strong>Weekly</strong>,{' '}
+            <strong>Monthly</strong>, <strong>Mid-Term (300h)</strong>, and <strong>End-Term (600h)</strong>{' '}
+            periods with the official 9-question CHMSU practicum feedback form.
           </p>
         </div>
 
@@ -393,7 +382,7 @@ export function AdminMonitoringReport() {
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-2xl text-xs font-bold shadow-lg shadow-blue-700/20 transition-all cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#146B4D] to-[#152B4D] hover:opacity-95 text-white rounded-2xl text-xs font-bold shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
           >
             <Plus size={16} /> Log Monitoring Report
           </button>
@@ -576,7 +565,7 @@ export function AdminMonitoringReport() {
           onClick={() => setActiveTab('roster')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ml-auto flex items-center gap-1.5 ${
             activeTab === 'roster'
-              ? 'bg-indigo-600 text-white shadow-xs'
+              ? 'bg-[#146B4D] text-white shadow-xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -584,9 +573,8 @@ export function AdminMonitoringReport() {
         </button>
       </div>
 
-      {/* TAB CONTENT: ROSTER PROGRESS MATRIX OR REPORTS LIST */}
+      {/* ROSTER PROGRESS MATRIX OR REPORTS LIST */}
       {activeTab === 'roster' ? (
-        /* ROSTER MATRIX: SHOWS EVERY TRAINEE AND THEIR 4 PERIOD STATUSES */
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -629,7 +617,7 @@ export function AdminMonitoringReport() {
                   const required = trainee.requiredHours || 600;
                   const progressPct = Math.min(100, Math.round((rendered / required) * 100));
 
-                  const renderStatusPill = (rep?: MonitoringReport, typeLabel = '') => {
+                  const renderStatusPill = (rep?: MonitoringReport) => {
                     if (!rep) {
                       return (
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
@@ -684,17 +672,17 @@ export function AdminMonitoringReport() {
                           {trainee.supervisorName || 'Supervisor Assigned'}
                         </p>
                       </td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(weeklyRep, 'Weekly')}</td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(monthlyRep, 'Monthly')}</td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(midtermRep, 'Mid-Term')}</td>
-                      <td className="py-3.5 px-3 text-center">{renderStatusPill(endtermRep, 'End-Term')}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(weeklyRep)}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(monthlyRep)}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(midtermRep)}</td>
+                      <td className="py-3.5 px-3 text-center">{renderStatusPill(endtermRep)}</td>
                       <td className="py-3.5 px-4 text-right">
                         <p className="font-bold text-slate-900">
                           {Math.round(rendered)} / {required}h
                         </p>
                         <div className="w-20 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
                           <div
-                            className="bg-blue-600 h-1.5 rounded-full"
+                            className="bg-emerald-600 h-1.5 rounded-full"
                             style={{ width: `${progressPct}%` }}
                           />
                         </div>
@@ -707,7 +695,7 @@ export function AdminMonitoringReport() {
           </div>
         </div>
       ) : (
-        /* REPORTS LIST VIEW */
+        /* REPORTS LIST */
         <div className="space-y-4">
           {/* SEARCH & FILTERS BAR */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
@@ -718,7 +706,7 @@ export function AdminMonitoringReport() {
                 placeholder="Search trainee name, student ID, HTE company..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-blue-500 transition-all"
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-emerald-500 transition-all"
               />
               {searchQuery && (
                 <button
@@ -732,7 +720,6 @@ export function AdminMonitoringReport() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-              {/* Status filter */}
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as any)}
@@ -744,7 +731,6 @@ export function AdminMonitoringReport() {
                 <option value="reviewed">Reviewed & Endorsed</option>
               </select>
 
-              {/* Course filter */}
               <select
                 value={filterCourse}
                 onChange={(e) => setFilterCourse(e.target.value)}
@@ -775,17 +761,7 @@ export function AdminMonitoringReport() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredReports.map((report) => {
                 const conf = PERIOD_CONFIG[report.reportType] || PERIOD_CONFIG.weekly;
-                const q = report.questionnaire || {
-                  attendanceScore: 5,
-                  performanceScore: 5,
-                  attitudeScore: 5,
-                  communicationScore: 5,
-                  teamworkScore: 5,
-                  overallScore: 100,
-                  strengths: '',
-                  areasForImprovement: '',
-                  recommendation: 'Highly Recommended' as const,
-                };
+                const q = report.questionnaire || {};
 
                 return (
                   <div
@@ -801,7 +777,7 @@ export function AdminMonitoringReport() {
                             size="md"
                           />
                           <div>
-                            <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-700 transition-colors">
+                            <h3 className="font-bold text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">
                               {report.traineeName}
                             </h3>
                             <p className="text-[11px] text-slate-400 font-mono">
@@ -816,7 +792,7 @@ export function AdminMonitoringReport() {
                       </div>
 
                       {/* Card Body */}
-                      <div className="p-5 space-y-3.5 text-xs text-slate-600">
+                      <div className="p-5 space-y-3 text-xs text-slate-600">
                         {/* HTE Details */}
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5 text-slate-800 font-bold">
@@ -838,7 +814,7 @@ export function AdminMonitoringReport() {
                           </div>
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="text-slate-500">Hours Rendered:</span>
-                            <span className="font-bold text-blue-700">
+                            <span className="font-bold text-emerald-700">
                               +{report.hoursRenderedThisPeriod || 0}h (Total: {report.totalCumulativeHours || report.renderedHours || 0}h)
                             </span>
                           </div>
@@ -850,43 +826,14 @@ export function AdminMonitoringReport() {
                           </div>
                         </div>
 
-                        {/* Host Feedback Questionnaire Preview */}
-                        <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-200/60 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-amber-950 text-[11px] flex items-center gap-1">
-                              <Star size={13} className="text-amber-500 fill-amber-500" /> Host Feedback
-                            </span>
-                            <span className="font-black text-xs text-amber-900">
-                              {q.overallScore}% Rating
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-5 gap-1 text-center">
-                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
-                              <p className="text-[9px] text-slate-400">Safety</p>
-                              <p className="font-black text-slate-800 text-xs">{q.attendanceScore}★</p>
-                            </div>
-                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
-                              <p className="text-[9px] text-slate-400">Mentor</p>
-                              <p className="font-black text-slate-800 text-xs">{q.performanceScore}★</p>
-                            </div>
-                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
-                              <p className="text-[9px] text-slate-400">Skills</p>
-                              <p className="font-black text-slate-800 text-xs">{q.attitudeScore}★</p>
-                            </div>
-                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
-                              <p className="text-[9px] text-slate-400">Culture</p>
-                              <p className="font-black text-slate-800 text-xs">{q.communicationScore}★</p>
-                            </div>
-                            <div className="bg-white/80 p-1 rounded-lg border border-amber-100">
-                              <p className="text-[9px] text-slate-400">Tools</p>
-                              <p className="font-black text-slate-800 text-xs">{q.teamworkScore}★</p>
-                            </div>
-                          </div>
-                          {q.recommendation && (
-                            <p className="text-[10px] text-amber-900 font-medium">
-                              Recommendation: <strong className="font-bold">{q.recommendation}</strong>
-                            </p>
-                          )}
+                        {/* CHMSU Questionnaire Highlight */}
+                        <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 space-y-1.5">
+                          <span className="font-bold text-emerald-950 text-[11px] block">
+                            1. Duties Brief:
+                          </span>
+                          <p className="text-[11px] text-slate-700 line-clamp-2 italic">
+                            &ldquo;{q.q1_dutiesBriefly || report.tasksAccomplished || 'Standard technical assignments.'}&rdquo;
+                          </p>
                         </div>
 
                         {/* Status & Remarks */}
@@ -918,15 +865,15 @@ export function AdminMonitoringReport() {
                           type="button"
                           onClick={() => setViewDetailsReport(report)}
                           className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-                          title="View Full Details"
+                          title="View Full CHMSU Form"
                         >
                           <Eye size={15} />
                         </button>
                         <button
                           type="button"
                           onClick={() => setPrintReport(report)}
-                          className="p-2 rounded-xl text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
-                          title="Print / Save PDF"
+                          className="p-2 rounded-xl text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          title="Print / Save Official PDF"
                         >
                           <Printer size={15} />
                         </button>
@@ -946,7 +893,7 @@ export function AdminMonitoringReport() {
                         className={`inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           report.status === 'reviewed'
                             ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                            : 'bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white shadow-sm'
+                            : 'bg-gradient-to-r from-[#146B4D] to-[#152B4D] hover:opacity-95 text-white shadow-sm'
                         }`}
                       >
                         <Edit3 size={13} /> {report.status === 'reviewed' ? 'Edit Remarks' : 'Review & Endorse'}
@@ -968,18 +915,18 @@ export function AdminMonitoringReport() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[94vh] flex flex-col overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
                     <h3 className="font-black text-slate-900 text-base">
                       Review {PERIOD_CONFIG[reviewReport.reportType]?.label || 'Milestone'} Report
                     </h3>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Trainee: <strong>{reviewReport.traineeName}</strong> ({reviewReport.studentId || reviewReport.traineeId})
+                    Trainee: <strong>{reviewReport.traineeName}</strong> ({reviewReport.studentId || reviewReport.traineeId}) — {reviewReport.hteCompanyName}
                   </p>
                 </div>
                 <button
@@ -993,7 +940,7 @@ export function AdminMonitoringReport() {
 
               <div className="p-6 overflow-y-auto space-y-5 text-xs">
                 {/* Summary Box */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <span className="text-slate-400 font-semibold text-[10px] uppercase block">Host Establishment</span>
                     <span className="font-bold text-slate-800">{reviewReport.hteCompanyName}</span>
@@ -1003,88 +950,47 @@ export function AdminMonitoringReport() {
                     <span className="font-bold text-slate-800">{reviewReport.periodCovered}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Hours Rendered</span>
-                    <span className="font-bold text-blue-700">+{reviewReport.hoursRenderedThisPeriod || 0} Hours</span>
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Hours This Period</span>
+                    <span className="font-bold text-emerald-700">+{reviewReport.hoursRenderedThisPeriod || 0}h</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold text-[10px] uppercase block">Employability</span>
+                    <span className="font-bold text-slate-800">
+                      {reviewReport.questionnaire?.employabilityStatus || 'OJT Trainee'}
+                    </span>
                   </div>
                 </div>
 
-                {/* Trainee Tasks */}
-                <div className="space-y-1.5">
-                  <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px]">Tasks Accomplished</span>
-                  <p className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 leading-relaxed text-slate-800 whitespace-pre-line">
-                    {reviewReport.tasksAccomplished}
-                  </p>
+                {/* The 9 CHMSU Official Questions & Answers Table */}
+                <div className="space-y-2">
+                  <h4 className="font-black text-slate-900 uppercase tracking-wide text-xs flex items-center gap-1.5">
+                    <FileText size={14} className="text-emerald-700" />
+                    QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK)
+                  </h4>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100 text-xs">
+                    {CHMSU_QUESTIONS.map((qItem) => {
+                      const ans =
+                        reviewReport.questionnaire?.[qItem.key] ||
+                        (qItem.num === 1 ? reviewReport.tasksAccomplished : '') ||
+                        'No response recorded';
+
+                      return (
+                        <div key={qItem.key} className="p-3 bg-white grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <p className="font-bold text-slate-800 sm:col-span-1">{qItem.prompt}</p>
+                          <p className="text-slate-700 italic leading-relaxed sm:col-span-2 whitespace-pre-line">
+                            {ans}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-
-                {reviewReport.skillsApplied && (
-                  <div className="space-y-1.5">
-                    <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px]">Skills & Tools Applied</span>
-                    <p className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/60 leading-relaxed text-blue-950 whitespace-pre-line">
-                      {reviewReport.skillsApplied}
-                    </p>
-                  </div>
-                )}
-
-                {/* Complete Host Feedback Questionnaire Display */}
-                {reviewReport.questionnaire && (
-                  <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200/70 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-amber-950 uppercase tracking-wide text-[11px] flex items-center gap-1.5">
-                        <Star size={14} className="text-amber-500 fill-amber-500" /> Host Feedback Questionnaire Ratings
-                      </span>
-                      <span className="font-black text-amber-900 text-sm">
-                        Overall Score: {reviewReport.questionnaire.overallScore}%
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
-                        <span className="text-slate-600">1. Work Environment & Safety:</span>
-                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.attendanceScore} / 5 ★</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
-                        <span className="text-slate-600">2. Mentorship & Guidance:</span>
-                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.performanceScore} / 5 ★</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
-                        <span className="text-slate-600">3. Learning & Skill Growth:</span>
-                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.attitudeScore} / 5 ★</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between">
-                        <span className="text-slate-600">4. Workplace Culture:</span>
-                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.communicationScore} / 5 ★</span>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-amber-100 flex items-center justify-between sm:col-span-2">
-                        <span className="text-slate-600">5. Resources & Equipment:</span>
-                        <span className="font-bold text-slate-900">{reviewReport.questionnaire.teamworkScore} / 5 ★</span>
-                      </div>
-                    </div>
-
-                    {reviewReport.questionnaire.strengths && (
-                      <div>
-                        <span className="font-semibold text-amber-950 block mb-1">HTE Strengths Commended:</span>
-                        <p className="p-2.5 bg-white rounded-xl border border-amber-100 text-slate-800">
-                          {reviewReport.questionnaire.strengths}
-                        </p>
-                      </div>
-                    )}
-
-                    {reviewReport.questionnaire.areasForImprovement && (
-                      <div>
-                        <span className="font-semibold text-amber-950 block mb-1">Areas for Improvement / Suggestions:</span>
-                        <p className="p-2.5 bg-white rounded-xl border border-amber-100 text-slate-800">
-                          {reviewReport.questionnaire.areasForImprovement}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* Instructor Remarks Input */}
                 <div className="space-y-2 pt-2 border-t border-slate-200">
                   <div className="flex items-center justify-between">
                     <label className="font-bold text-slate-900 uppercase tracking-wide text-[11px] flex items-center gap-1.5">
-                      <MessageSquare size={14} className="text-blue-600" /> Instructor Remarks & Guidance
+                      <MessageSquare size={14} className="text-emerald-700" /> Instructor Remarks & Guidance
                     </label>
                     <span className="text-[10px] text-slate-400">Visible on student's portal & printout</span>
                   </div>
@@ -1131,7 +1037,7 @@ export function AdminMonitoringReport() {
                     value={reviewRemarksInput}
                     onChange={(e) => setReviewRemarksInput(e.target.value)}
                     placeholder="Enter official instructor feedback, commendations, or recommendations for this trainee..."
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-blue-500 transition-all leading-relaxed"
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:border-emerald-600 transition-all leading-relaxed"
                   />
                 </div>
               </div>
@@ -1147,7 +1053,7 @@ export function AdminMonitoringReport() {
                 <button
                   type="button"
                   onClick={handleSubmitReview}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-700/20 transition-all cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#146B4D] to-[#152B4D] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 transition-all cursor-pointer"
                 >
                   <CheckCircle2 size={15} /> Save & Endorse Report
                 </button>
@@ -1165,7 +1071,7 @@ export function AdminMonitoringReport() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <div className="flex items-center gap-2">
@@ -1173,7 +1079,7 @@ export function AdminMonitoringReport() {
                     {PERIOD_CONFIG[viewDetailsReport.reportType]?.label} Report
                   </span>
                   <h3 className="font-bold text-slate-900 text-sm">
-                    {viewDetailsReport.reportNumber}
+                    {viewDetailsReport.reportNumber} — {viewDetailsReport.periodCovered}
                   </h3>
                 </div>
                 <button
@@ -1186,7 +1092,7 @@ export function AdminMonitoringReport() {
               </div>
 
               <div className="p-6 overflow-y-auto space-y-4 text-xs">
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-2 gap-3">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <span className="text-slate-400 font-semibold text-[10px] uppercase block">Trainee</span>
                     <span className="font-bold text-slate-900">{viewDetailsReport.traineeName}</span>
@@ -1201,25 +1107,32 @@ export function AdminMonitoringReport() {
                   </div>
                   <div>
                     <span className="text-slate-400 font-semibold text-[10px] uppercase block">Hours Rendered</span>
-                    <span className="font-bold text-blue-700">+{viewDetailsReport.hoursRenderedThisPeriod || 0} Hours</span>
+                    <span className="font-bold text-emerald-700">+{viewDetailsReport.hoursRenderedThisPeriod || 0}h</span>
                   </div>
                 </div>
 
-                <div>
-                  <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px] block mb-1">Tasks Accomplished</span>
-                  <p className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-800 whitespace-pre-line leading-relaxed">
-                    {viewDetailsReport.tasksAccomplished}
-                  </p>
-                </div>
+                <div className="space-y-2">
+                  <h4 className="font-black text-slate-900 uppercase tracking-wide text-xs">
+                    Questionnaire (Student Practicum Feedback)
+                  </h4>
+                  <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                    {CHMSU_QUESTIONS.map((qItem) => {
+                      const ans =
+                        viewDetailsReport.questionnaire?.[qItem.key] ||
+                        (qItem.num === 1 ? viewDetailsReport.tasksAccomplished : '') ||
+                        'No response recorded';
 
-                {viewDetailsReport.skillsApplied && (
-                  <div>
-                    <span className="font-bold text-slate-900 uppercase tracking-wide text-[11px] block mb-1">Skills Applied</span>
-                    <p className="p-3 bg-blue-50/50 rounded-xl border border-blue-200 text-blue-950 whitespace-pre-line leading-relaxed">
-                      {viewDetailsReport.skillsApplied}
-                    </p>
+                      return (
+                        <div key={qItem.key} className="p-3 bg-white grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <p className="font-bold text-slate-800 sm:col-span-1">{qItem.prompt}</p>
+                          <p className="text-slate-700 italic leading-relaxed sm:col-span-2 whitespace-pre-line">
+                            {ans}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
+                </div>
 
                 {viewDetailsReport.instructorRemarks && (
                   <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-1">
@@ -1241,9 +1154,9 @@ export function AdminMonitoringReport() {
                     setViewDetailsReport(null);
                     setPrintReport(r);
                   }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Printer size={14} /> Print Report
+                  <Printer size={14} /> Print CHMSU Form
                 </button>
                 <button
                   type="button"
@@ -1266,7 +1179,7 @@ export function AdminMonitoringReport() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[94vh] flex flex-col overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <div>
@@ -1274,7 +1187,7 @@ export function AdminMonitoringReport() {
                     Log Official OJT Monitoring Report
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Select a student intern and enter assessment details for one of the 4 milestone periods.
+                    CHMSU College of Computer Studies • On-The-Job Training Evaluation Form
                   </p>
                 </div>
                 <button
@@ -1348,100 +1261,56 @@ export function AdminMonitoringReport() {
                   </div>
                 </div>
 
-                {/* Tasks Accomplished */}
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700">Key Tasks Accomplished & Observed *</label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={createTasks}
-                    onChange={(e) => setCreateTasks(e.target.value)}
-                    placeholder="Describe specific duties, technical projects, or workplace assignments completed..."
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
-                  />
+                {/* Employability & Assignment */}
+                <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/60 space-y-3">
+                  <h4 className="font-black text-slate-800 uppercase tracking-wider text-[11px]">
+                    EMPLOYABILITY:
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {(['OJT Trainee', 'Contractual', 'Regular', 'Probationary', 'Casual', 'Applicant'] as const).map(
+                      (status) => (
+                        <label
+                          key={status}
+                          onClick={() => setCreateEmployability(status)}
+                          className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-emerald-400 transition-colors"
+                        >
+                          {createEmployability === status ? (
+                            <CheckSquare size={14} className="text-[#146B4D]" />
+                          ) : (
+                            <Square size={14} className="text-slate-300" />
+                          )}
+                          <span className="font-semibold text-slate-700 text-xs">{status}</span>
+                        </label>
+                      )
+                    )}
+                  </div>
                 </div>
 
-                {/* Skills Applied */}
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-700">Skills & Competencies Applied</label>
-                  <input
-                    type="text"
-                    value={createSkills}
-                    onChange={(e) => setCreateSkills(e.target.value)}
-                    placeholder="e.g., Network cabling, Python API endpoints, UI design..."
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Host Feedback Questionnaire (5 Dimensions) */}
-                <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200/70 space-y-4">
-                  <div className="flex items-center gap-1.5">
-                    <Star size={16} className="text-amber-500 fill-amber-500" />
-                    <h4 className="font-bold text-amber-950 text-xs">
-                      Host Feedback Questionnaire (Rating 1 - 5 Stars)
-                    </h4>
-                  </div>
-
-                  <div className="space-y-3">
-                    {HOST_FEEDBACK_QUESTIONS.map((q) => (
-                      <div
-                        key={q.key}
-                        className="bg-white p-3 rounded-xl border border-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                      >
-                        <div>
-                          <p className="font-bold text-slate-900">{q.label}</p>
-                          <p className="text-[11px] text-slate-500">{q.description}</p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <button
-                              key={star}
-                              type="button"
-                              onClick={() =>
-                                setCreateRatings((prev) => ({
-                                  ...prev,
-                                  [q.key]: star,
-                                }))
-                              }
-                              className={`p-1 text-base transition-transform hover:scale-110 cursor-pointer ${
-                                star <= createRatings[q.key as keyof typeof createRatings]
-                                  ? 'text-amber-500'
-                                  : 'text-slate-300'
-                              }`}
-                            >
-                              ★
-                            </button>
-                          ))}
-                          <span className="font-bold text-slate-700 ml-1.5 text-xs">
-                            {createRatings[q.key as keyof typeof createRatings]} / 5
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Key Strengths of HTE</label>
-                      <input
-                        type="text"
-                        value={createStrengths}
-                        onChange={(e) => setCreateStrengths(e.target.value)}
-                        placeholder="Notable positive aspects observed..."
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                {/* 9 Questionnaire Questions */}
+                <div className="space-y-3">
+                  <h4 className="font-black text-slate-900 uppercase tracking-wide text-xs">
+                    QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK)
+                  </h4>
+                  {CHMSU_QUESTIONS.map((item) => (
+                    <div key={item.key} className="space-y-1">
+                      <label className="font-bold text-slate-700">
+                        {item.prompt} {item.num === 1 && <span className="text-rose-500">*</span>}
+                      </label>
+                      <textarea
+                        rows={2}
+                        required={item.num === 1}
+                        value={createQAnswers[item.key]}
+                        onChange={(e) =>
+                          setCreateQAnswers((prev) => ({
+                            ...prev,
+                            [item.key]: e.target.value,
+                          }))
+                        }
+                        placeholder="Enter response..."
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden"
                       />
                     </div>
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Areas for Improvement</label>
-                      <input
-                        type="text"
-                        value={createImprovements}
-                        onChange={(e) => setCreateImprovements(e.target.value)}
-                        placeholder="Suggestions for training enhancement..."
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
-                      />
-                    </div>
-                  </div>
+                  ))}
                 </div>
 
                 {/* Instructor Remarks */}
@@ -1466,7 +1335,7 @@ export function AdminMonitoringReport() {
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-700/20 cursor-pointer"
+                    className="px-6 py-2.5 bg-gradient-to-r from-[#146B4D] to-[#152B4D] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 cursor-pointer"
                   >
                     Submit & Save Report
                   </button>

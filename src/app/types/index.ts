@@ -463,15 +463,40 @@ export type MonitoringOverallStatus =
   | 'critical';
 
 export interface MonitoringQuestionnaire {
-  attendanceScore: number;     // 1-5 (Work Environment & Safety)
-  performanceScore: number;    // 1-5 (Mentorship & Supervision)
-  attitudeScore: number;       // 1-5 (Learning & Skill Acquisition)
-  communicationScore: number;  // 1-5 (Workplace Culture & Professionalism)
-  teamworkScore: number;       // 1-5 (Resources & Equipment Support)
-  overallScore: number;        // 0-100%
-  strengths: string;           // Key strengths observed in HTE
-  areasForImprovement: string; // Areas for improvement
-  recommendation: 'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended';
+  // Employability & Assignment from CHMSU Official Form
+  employabilityStatus?: EmployabilityStatus | string;
+  employedCompanyName?: string;
+  allowanceSalary?: string;
+  telephoneNo?: string;
+  department?: string;
+  position?: string;
+  otherDeptAssigned?: string;
+  trainingDateFrom?: string;
+  trainingDateTo?: string;
+  dateOfEvaluation?: string;
+  dateOfLastEvaluation?: string;
+
+  // 9 CHMSU Official Questionnaire (Student Practicum Feedback) Questions
+  q1_dutiesBriefly?: string;
+  q2_strongestPerformanceArea?: string;
+  q3_areasImprovedMost?: string;
+  q4_areasNeedImprovement?: string;
+  q5_situationChallengedMost?: string;
+  q6_howOvercameChallenge?: string;
+  q7_whatLearnedFromExperience?: string;
+  q8_isQualifiedLinkage?: string;
+  q9_ojtSuggestionsRecommendations?: string;
+
+  // Star ratings & scoring (compatible with 5 criteria)
+  attendanceScore?: number;     // 1-5 (Work Environment & Safety)
+  performanceScore?: number;    // 1-5 (Mentorship & Supervision)
+  attitudeScore?: number;       // 1-5 (Learning & Skill Acquisition)
+  communicationScore?: number;  // 1-5 (Workplace Culture & Professionalism)
+  teamworkScore?: number;       // 1-5 (Resources & Equipment Support)
+  overallScore?: number;        // 0-100%
+  strengths?: string;           // Key strengths observed in HTE
+  areasForImprovement?: string; // Areas for improvement
+  recommendation?: 'Highly Recommended' | 'Recommended' | 'For Improvement' | 'Not Recommended' | string;
 }
 
 export interface MonitoringReport {

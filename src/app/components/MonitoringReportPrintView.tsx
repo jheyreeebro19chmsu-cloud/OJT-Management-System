@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, X, Award, Building, User, Calendar, MapPin, Phone, ShieldCheck, CheckCircle2, Star } from 'lucide-react';
+import { Printer, X, CheckSquare, Square } from 'lucide-react';
 import { MonitoringReport } from '../types';
 
 interface MonitoringReportPrintViewProps {
@@ -12,89 +12,96 @@ export function MonitoringReportPrintView({ report, onClose }: MonitoringReportP
     window.print();
   };
 
-  const getPeriodLabel = (type: string) => {
+  const q = report.questionnaire || {};
+
+  const getPeriodTitle = (type: string) => {
     switch (type) {
       case 'weekly':
-        return {
-          title: 'WEEKLY OJT MONITORING REPORT & EVALUATION',
-          badge: 'Weekly Monitoring Period',
-          color: 'bg-blue-600 text-white',
-        };
+        return 'WEEKLY OJT MONITORING & EVALUATION REPORT';
       case 'monthly':
-        return {
-          title: 'MONTHLY OJT MONITORING REPORT & EVALUATION',
-          badge: 'Monthly Monitoring Assessment',
-          color: 'bg-emerald-600 text-white',
-        };
+        return 'MONTHLY OJT MONITORING & EVALUATION REPORT';
       case 'midterm':
-        return {
-          title: 'MID-TERM OJT MONITORING & PROGRESS EVALUATION (300H)',
-          badge: 'Mid-Term Evaluation Milestone',
-          color: 'bg-purple-600 text-white',
-        };
+        return 'MID-TERM OJT MONITORING & EVALUATION REPORT (300 HOURS)';
       case 'endterm':
-        return {
-          title: 'END-TERM FINAL OJT MONITORING & EXIT COMPLETION (600H)',
-          badge: 'End-Term Practicum Completion',
-          color: 'bg-amber-600 text-white',
-        };
+        return 'END-TERM OJT MONITORING & EVALUATION REPORT (600 HOURS)';
       default:
-        return {
-          title: 'OFFICIAL OJT MONITORING AND EVALUATION REPORT',
-          badge: 'Monitoring Report',
-          color: 'bg-slate-900 text-white',
-        };
+        return 'ON-THE-JOB TRAINING EVALUATION FORM / MONITORING REPORT';
     }
   };
 
-  const periodConfig = getPeriodLabel(report.reportType || 'weekly');
+  const periodTitle = getPeriodTitle(report.reportType || 'weekly');
 
-  // Compute or extract questionnaire criteria
-  const q = report.questionnaire || {
-    attendanceScore: report.ratings?.workQuality ?? 5,
-    performanceScore: report.ratings?.punctuality ?? 5,
-    attitudeScore: report.ratings?.professionalism ?? 5,
-    communicationScore: report.ratings?.technicalCompetence ?? 5,
-    teamworkScore: report.ratings?.policyAdherence ?? 5,
-    overallScore: 100,
-    strengths: report.highlights || '',
-    areasForImprovement: report.issuesIdentified || '',
-    recommendation: 'Highly Recommended' as const,
-  };
+  const employabilityStatus = q.employabilityStatus || 'OJT Trainee';
+  const allowanceSalary = q.allowanceSalary || 'None / Stipend';
+  const telephoneNo = q.telephoneNo || report.supervisorContact || 'N/A';
+  const departmentAssigned = q.department || report.department || 'COLLEGE OF COMPUTER STUDIES';
+  const positionAssigned = q.position || 'ON - THE - JOB TRAINEE';
+  const otherDept = q.otherDeptAssigned || 'None';
 
-  const avgScoreOutOf5 = (
-    (q.attendanceScore + q.performanceScore + q.attitudeScore + q.communicationScore + q.teamworkScore) /
-    5
-  ).toFixed(1);
-
-  const getScoreDescriptor = (score: number) => {
-    if (score >= 5) return 'Exceptional / Outstanding';
-    if (score >= 4) return 'Very Satisfactory / Exceeds Target';
-    if (score >= 3) return 'Satisfactory / Meets Standards';
-    if (score >= 2) return 'Fair / Needs Improvement';
-    return 'Poor / Action Required';
-  };
-
-  const requiredHours = report.requiredHours || 600;
-  const renderedHours = report.totalCumulativeHours ?? report.renderedHours ?? 0;
-  const remainingHours = report.remainingHours ?? Math.max(0, requiredHours - renderedHours);
+  const questionsList = [
+    {
+      num: 1,
+      prompt: '1. Describe your duties briefly:',
+      answer: q.q1_dutiesBriefly || report.tasksAccomplished || 'No response recorded',
+    },
+    {
+      num: 2,
+      prompt: '2. What do you consider your strongest area of performance?',
+      answer: q.q2_strongestPerformanceArea || q.strengths || 'No response recorded',
+    },
+    {
+      num: 3,
+      prompt: '3. In what areas do you feel you have improved the most?',
+      answer: q.q3_areasImprovedMost || report.skillsApplied || 'No response recorded',
+    },
+    {
+      num: 4,
+      prompt: '4. In what areas do you feel need the most improvement?',
+      answer: q.q4_areasNeedImprovement || q.areasForImprovement || 'No response recorded',
+    },
+    {
+      num: 5,
+      prompt: '5. What situation challenged you the most?',
+      answer: q.q5_situationChallengedMost || report.challengesEncountered || 'No response recorded',
+    },
+    {
+      num: 6,
+      prompt: '6. How did you overcome this challenge or situation?',
+      answer: q.q6_howOvercameChallenge || 'No response recorded',
+    },
+    {
+      num: 7,
+      prompt: '7. What did you learn from your overall training experience?',
+      answer: q.q7_whatLearnedFromExperience || 'No response recorded',
+    },
+    {
+      num: 8,
+      prompt: '8. Is this training establishment well-qualified for student OJT placement?',
+      answer: q.q8_isQualifiedLinkage || (q.recommendation ? `Yes, ${q.recommendation}` : 'No response recorded'),
+    },
+    {
+      num: 9,
+      prompt: '9. Other comments, suggestions, and recommendations:',
+      answer: q.q9_ojtSuggestionsRecommendations || 'No response recorded',
+    },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden">
-        {/* Top Modal Bar (Excluded from Print) */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-slate-50 no-print shrink-0">
+      <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden">
+        {/* Top Modal Navigation Bar (Hidden when printing) */}
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-slate-50 no-print shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h3 className="text-sm font-bold text-gray-800">
-              OJT Monitoring Report Preview — <span className="font-mono text-blue-900">{report.reportNumber}</span>
+            <h3 className="text-xs sm:text-sm font-bold text-gray-800">
+              CHMSU OJT Monitoring Report Preview — <span className="font-mono text-blue-900">{report.reportNumber}</span>
             </h3>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-[#152B4D] to-[#1E3A66] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-900/20 transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-[#146B4D] to-[#152B4D] hover:opacity-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-900/20 transition-all cursor-pointer"
             >
               <Printer size={14} /> Print / Save as PDF
             </button>
@@ -109,266 +116,301 @@ export function MonitoringReportPrintView({ report, onClose }: MonitoringReportP
           </div>
         </div>
 
-        {/* Printable Document Body */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-10 bg-white text-gray-900 print:p-0 print:overflow-visible">
-          {/* Institutional Document Header */}
-          <div className="border-b-2 border-slate-900 pb-5 text-center relative">
-            <div className="flex items-center justify-center gap-4 mb-2">
+        {/* Printable Document Container (Matches CHMSU Official Form) */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-white text-gray-900 print:p-0 print:overflow-visible font-sans text-xs">
+          {/* INSTITUTIONAL HEADER */}
+          <div className="text-center relative pb-3 border-b-2 border-[#146B4D]">
+            <div className="flex items-center justify-between px-2 sm:px-6 mb-1">
               <img
                 src="/chmsu-logo.png"
                 alt="CHMSU Logo"
-                className="w-16 h-16 object-contain"
+                className="w-14 h-14 object-contain"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                 }}
               />
-              <div className="text-center">
-                <p className="text-[11px] uppercase tracking-wider text-gray-600 font-semibold">Republic of the Philippines</p>
-                <h1 className="text-base sm:text-lg font-black text-[#152B4D] tracking-tight uppercase">
+              <div className="text-center flex-1 px-2">
+                <h1 className="text-sm sm:text-base font-black text-[#152B4D] tracking-wide uppercase">
                   Carlos Hilado Memorial State University
                 </h1>
-                <p className="text-xs text-gray-700 font-medium">
-                  {report.campus || 'Talisay (Main Campus)'} • Negros Occidental, Philippines
+                <p className="text-[10px] text-gray-600 font-medium tracking-tight">
+                  Alijis Campus • Binalbagan Campus • Fortune Towne Campus • Talisay (Main) Campus
                 </p>
-                <p className="text-xs font-bold text-[#146B4D]">
-                  OFFICE OF ON-THE-JOB TRAINING & STUDENT INTERNSHIP PROGRAM
+                <p className="text-[9px] text-[#146B4D] italic font-semibold">
+                  A leading GREEN institution of higher learning in the global community by 2030
                 </p>
+                <h2 className="text-xs font-black text-[#152B4D] uppercase mt-1">
+                  College of Computer Studies
+                </h2>
+                <h3 className="text-xs sm:text-sm font-black text-[#146B4D] tracking-wider uppercase mt-0.5">
+                  {periodTitle}
+                </h3>
               </div>
-            </div>
-
-            <div className={`mt-3 inline-block px-5 py-1.5 rounded-md text-xs font-extrabold uppercase tracking-widest ${periodConfig.color}`}>
-              {periodConfig.title}
-            </div>
-
-            <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500 px-2">
-              <span>Report Ref: <strong className="text-gray-900 font-mono">{report.reportNumber}</strong></span>
-              <span>Milestone: <strong className="text-gray-900 uppercase">{report.reportType}</strong></span>
-              <span>A.Y. <strong className="text-gray-900">{report.academicYear || '2026-2027'}</strong></span>
-              <span>Date: <strong className="text-gray-900">{report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}</strong></span>
-            </div>
-          </div>
-
-          {/* Section 1: Trainee & HTE Profile */}
-          <div className="mt-6 border border-gray-300 rounded-xl overflow-hidden">
-            <div className="bg-slate-100 px-4 py-2 border-b border-gray-300 font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center justify-between">
-              <span>I. Trainee & Host Training Establishment Information</span>
-              <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border ${
-                report.status === 'reviewed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300'
-              }`}>
-                Status: {report.status || 'Submitted'}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 text-xs divide-y md:divide-y-0 md:divide-x divide-gray-200">
-              <div className="p-3.5 space-y-1.5">
-                <p><strong className="text-gray-600">Student Intern:</strong> <span className="font-bold text-gray-900">{report.traineeName}</span></p>
-                <p><strong className="text-gray-600">Student ID:</strong> <span className="font-mono font-bold text-blue-900">{report.studentId || report.traineeId}</span></p>
-                <p><strong className="text-gray-600">Degree Program:</strong> <span className="font-semibold text-gray-800">{report.course || 'BS Information Technology'}</span></p>
-                <p><strong className="text-gray-600">Department:</strong> <span>{report.department || 'College of Computer Studies'}</span></p>
-                <div className="pt-2 border-t border-gray-150 flex items-center justify-between text-[11px]">
-                  <span>Required: <strong>{requiredHours}h</strong></span>
-                  <span>Rendered: <strong className="text-emerald-700">{renderedHours}h</strong></span>
-                  <span>This Period: <strong className="text-blue-700">+{report.hoursRenderedThisPeriod || 0}h</strong></span>
-                  <span>Balance: <strong className="text-amber-700">{remainingHours}h</strong></span>
-                </div>
-              </div>
-
-              <div className="p-3.5 space-y-1.5">
-                <p><strong className="text-gray-600">Host Establishment (HTE):</strong> <span className="font-bold text-gray-900">{report.hteCompanyName}</span></p>
-                <p><strong className="text-gray-600">Company Station / Address:</strong> <span>{report.hteAddress || 'Official Assigned Station'}</span></p>
-                <p><strong className="text-gray-600">HTE Supervisor / Mentor:</strong> <span className="font-semibold">{report.supervisorName || 'Engr. Roberto M. Tan'}</span></p>
-                <p><strong className="text-gray-600">Supervisor Designation:</strong> <span>{report.supervisorDesignation || 'OJT Mentor / Supervisor'}</span></p>
-                <p><strong className="text-gray-600">Contact Number:</strong> <span>{report.supervisorContact || 'N/A'}</span></p>
+              <div className="w-12 h-12 rounded-full border-2 border-[#146B4D] flex items-center justify-center text-[8px] font-black text-[#146B4D] text-center uppercase leading-tight p-1 shrink-0">
+                GREEN CHMSU CCS
               </div>
             </div>
           </div>
 
-          {/* Section 2: Period & Scope */}
-          <div className="mt-4 border border-gray-300 rounded-xl overflow-hidden">
-            <div className="bg-slate-100 px-4 py-2 border-b border-gray-300 font-bold text-xs uppercase tracking-wider text-slate-800">
-              II. Period Details & Time Allocation
-            </div>
-            <div className="p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase block font-semibold">Period Covered</span>
-                <span className="font-bold text-gray-900">{report.periodCovered || 'Training Period'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase block font-semibold">Report Type</span>
-                <span className="font-bold text-blue-900 uppercase">{report.reportType}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase block font-semibold">Hours This Period</span>
-                <span className="font-bold text-emerald-800">{report.hoursRenderedThisPeriod || 0} Hours</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-500 uppercase block font-semibold">Date Submitted</span>
-                <span className="font-semibold text-gray-800">{report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Tasks Accomplished & Competencies */}
-          <div className="mt-4 border border-gray-300 rounded-xl overflow-hidden text-xs">
-            <div className="bg-slate-100 px-4 py-2 border-b border-gray-300 font-bold uppercase tracking-wider text-slate-800">
-              III. Training Accomplishments & Applied Competencies
-            </div>
-            <div className="p-4 space-y-3">
-              <div>
-                <strong className="text-gray-700 block mb-1">Key Duties & Tasks Accomplished:</strong>
-                <p className="bg-gray-50 p-2.5 rounded-lg border border-gray-200 text-gray-800 leading-relaxed whitespace-pre-line">
-                  {report.tasksAccomplished || report.tasksObserved || 'Standard workplace tasks and departmental operations completed.'}
-                </p>
+          {/* SECTION 1: TRAINEE & COMPANY DETAILS BOX */}
+          <div className="mt-4 border border-gray-300 rounded-xl p-3 sm:p-4 bg-white">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Name of Trainee:</span>
+                <span className="font-black text-gray-900 uppercase border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                  {report.traineeName}
+                </span>
               </div>
 
-              {report.skillsApplied && (
-                <div>
-                  <strong className="text-blue-900 block mb-1">Technical Skills & Competencies Applied:</strong>
-                  <p className="bg-blue-50/50 p-2.5 rounded-lg border border-blue-200 text-blue-950 leading-relaxed whitespace-pre-line">
-                    {report.skillsApplied}
-                  </p>
-                </div>
-              )}
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Training Company:</span>
+                <span className="font-bold text-gray-900 border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                  {report.hteCompanyName}
+                </span>
+              </div>
 
-              {report.challengesEncountered && (
-                <div>
-                  <strong className="text-amber-800 block mb-1">Challenges Encountered & Solutions:</strong>
-                  <p className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-200 text-amber-950 leading-relaxed whitespace-pre-line">
-                    {report.challengesEncountered}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Company Address:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5 truncate">
+                  {report.hteAddress || 'College of Computer Studies / Bacolod City'}
+                </span>
+              </div>
 
-          {/* Section 4: Host Feedback Questionnaire Matrix */}
-          <div className="mt-4 border border-gray-300 rounded-xl overflow-hidden">
-            <div className="bg-slate-100 px-4 py-2 border-b border-gray-300 font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center justify-between">
-              <span>IV. Host Feedback & Training Environment Evaluation Matrix</span>
-              <span className="text-xs font-black text-indigo-900">
-                Composite Score: {avgScoreOutOf5} / 5.0 ({q.overallScore}%)
-              </span>
-            </div>
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-gray-200 text-gray-600 text-left">
-                  <th className="py-2 px-3 font-semibold">Evaluation Criteria / Focus Dimension</th>
-                  <th className="py-2 px-3 text-center w-28 font-semibold">Rating (1-5)</th>
-                  <th className="py-2 px-3 font-semibold">Descriptor Assessment</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                <tr>
-                  <td className="py-2.5 px-3 font-medium">1. Work Environment & Workplace Safety Protocols</td>
-                  <td className="py-2.5 px-3 text-center font-bold text-indigo-900">{q.attendanceScore} / 5 ★</td>
-                  <td className="py-2.5 px-3 text-gray-600">{getScoreDescriptor(q.attendanceScore)}</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 px-3 font-medium">2. Mentorship, Supervision & Technical Guidance</td>
-                  <td className="py-2.5 px-3 text-center font-bold text-indigo-900">{q.performanceScore} / 5 ★</td>
-                  <td className="py-2.5 px-3 text-gray-600">{getScoreDescriptor(q.performanceScore)}</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 px-3 font-medium">3. Learning Opportunities & Practical Skill Acquisition</td>
-                  <td className="py-2.5 px-3 text-center font-bold text-indigo-900">{q.attitudeScore} / 5 ★</td>
-                  <td className="py-2.5 px-3 text-gray-600">{getScoreDescriptor(q.attitudeScore)}</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 px-3 font-medium">4. Workplace Culture, Ethics & Team Professionalism</td>
-                  <td className="py-2.5 px-3 text-center font-bold text-indigo-900">{q.communicationScore} / 5 ★</td>
-                  <td className="py-2.5 px-3 text-gray-600">{getScoreDescriptor(q.communicationScore)}</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 px-3 font-medium">5. Resources, Facilities & Equipment Support Provided</td>
-                  <td className="py-2.5 px-3 text-center font-bold text-indigo-900">{q.teamworkScore} / 5 ★</td>
-                  <td className="py-2.5 px-3 text-gray-600">{getScoreDescriptor(q.teamworkScore)}</td>
-                </tr>
-              </tbody>
-            </table>
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Inclusive Dates:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5 text-[11px]">
+                  From: <strong>{q.trainingDateFrom || report.periodCovered || 'Start of OJT'}</strong> to: <strong>{q.trainingDateTo || 'End of OJT'}</strong>
+                </span>
+              </div>
 
-            {/* Qualitative Feedback */}
-            <div className="p-4 bg-slate-50 border-t border-gray-200 text-xs space-y-3">
-              {q.strengths && (
-                <div>
-                  <strong className="text-emerald-900 block mb-1">Key Strengths of Host Training Establishment (HTE):</strong>
-                  <p className="bg-white p-2.5 rounded-lg border border-gray-200 text-gray-800 leading-relaxed whitespace-pre-line">
-                    {q.strengths}
-                  </p>
-                </div>
-              )}
-              {q.areasForImprovement && (
-                <div>
-                  <strong className="text-amber-900 block mb-1">Identified Areas for Improvement / Suggestions:</strong>
-                  <p className="bg-white p-2.5 rounded-lg border border-gray-200 text-gray-800 leading-relaxed whitespace-pre-line">
-                    {q.areasForImprovement}
-                  </p>
-                </div>
-              )}
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-gray-600 font-medium">Recommendation for Future Student Interns:</span>
-                <span className="font-bold text-emerald-800 px-3 py-1 bg-emerald-100 rounded-lg border border-emerald-300">
-                  {q.recommendation || 'Highly Recommended'}
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Contact Person:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                  {report.supervisorName || 'Jhey Ree C Ebro'}
+                </span>
+              </div>
+
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Date of Evaluation:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5 font-mono">
+                  {report.dateSubmitted || new Date(report.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Student ID / Course:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                  {report.studentId || report.traineeId} — {report.course || 'BS Information Systems'}
+                </span>
+              </div>
+
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 w-36 shrink-0">Date of Last Eval:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                  {q.dateOfLastEvaluation || 'N/A'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Section 5: Instructor Review & Remarks */}
-          <div className="mt-4 border border-gray-300 rounded-xl overflow-hidden text-xs">
-            <div className="bg-slate-100 px-4 py-2 border-b border-gray-300 font-bold uppercase tracking-wider text-slate-800">
-              V. OJT Instructor Review, Endorsement & Guidance
+          {/* SECTION 2: EMPLOYABILITY BOX */}
+          <div className="mt-3 border border-gray-300 rounded-xl p-3 sm:p-4 bg-white">
+            <h4 className="font-black text-gray-800 text-[11px] uppercase tracking-wider mb-2">
+              EMPLOYABILITY:
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 cursor-default">
+                    {employabilityStatus === 'OJT Trainee' ? (
+                      <CheckSquare size={14} className="text-[#146B4D]" />
+                    ) : (
+                      <Square size={14} className="text-gray-400" />
+                    )}
+                    <span>OJT Trainee</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 cursor-default">
+                    {employabilityStatus === 'Contractual' ? (
+                      <CheckSquare size={14} className="text-[#146B4D]" />
+                    ) : (
+                      <Square size={14} className="text-gray-400" />
+                    )}
+                    <span>Contractual</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 cursor-default">
+                    {employabilityStatus === 'Regular' ? (
+                      <CheckSquare size={14} className="text-[#146B4D]" />
+                    ) : (
+                      <Square size={14} className="text-gray-400" />
+                    )}
+                    <span>Regular</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 cursor-default">
+                    {employabilityStatus === 'Probationary' ? (
+                      <CheckSquare size={14} className="text-[#146B4D]" />
+                    ) : (
+                      <Square size={14} className="text-gray-400" />
+                    )}
+                    <span>Probationary</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 cursor-default">
+                    {employabilityStatus === 'Casual' ? (
+                      <CheckSquare size={14} className="text-[#146B4D]" />
+                    ) : (
+                      <Square size={14} className="text-gray-400" />
+                    )}
+                    <span>Casual</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-800 cursor-default">
+                    {employabilityStatus === 'Applicant' ? (
+                      <CheckSquare size={14} className="text-[#146B4D]" />
+                    ) : (
+                      <Square size={14} className="text-gray-400" />
+                    )}
+                    <span>Applicant</span>
+                  </label>
+                </div>
+                <div className="flex items-baseline pt-1">
+                  <span className="text-[11px] text-gray-600 mr-2">If employed, company name:</span>
+                  <span className="border-b border-dotted border-gray-400 flex-1 text-gray-800 pb-0.5">
+                    {q.employedCompanyName || '—'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2 sm:pl-4 sm:border-l border-gray-200">
+                <div className="flex items-baseline">
+                  <span className="font-bold text-gray-700 w-28 shrink-0">Allowance/Salary:</span>
+                  <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                    Php {allowanceSalary}
+                  </span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="font-bold text-gray-700 w-28 shrink-0">Telephone No:</span>
+                  <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5">
+                    {telephoneNo}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="p-4">
-              <strong className="text-indigo-900 block mb-1">Instructor Assessment & Remarks:</strong>
-              <p className="bg-indigo-50/50 p-3 rounded-lg border border-indigo-200 text-indigo-950 leading-relaxed whitespace-pre-line">
-                {report.instructorRemarks || 'Milestone report received and validated. Trainee is demonstrating consistent progress toward OJT objectives.'}
+          </div>
+
+          {/* SECTION 3: ASSIGNMENT BOX */}
+          <div className="mt-3 border border-gray-300 rounded-xl p-3 sm:p-4 bg-white">
+            <h4 className="font-black text-gray-800 text-[11px] uppercase tracking-wider mb-2">
+              ASSIGNMENT
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 mr-2 shrink-0">DEPARTMENT:</span>
+                <span className="font-bold text-gray-900 border-b border-dotted border-gray-400 flex-1 pb-0.5 truncate uppercase">
+                  {departmentAssigned}
+                </span>
+              </div>
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 mr-2 shrink-0">POSITION:</span>
+                <span className="font-bold text-gray-900 border-b border-dotted border-gray-400 flex-1 pb-0.5 truncate uppercase">
+                  {positionAssigned}
+                </span>
+              </div>
+              <div className="flex items-baseline">
+                <span className="font-bold text-gray-700 mr-2 shrink-0">OTHER DEPT:</span>
+                <span className="text-gray-800 border-b border-dotted border-gray-400 flex-1 pb-0.5 truncate">
+                  {otherDept}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK) TABLE */}
+          <div className="mt-4 border border-gray-300 rounded-xl overflow-hidden bg-white">
+            <div className="bg-[#146B4D] text-white px-4 py-2 font-black text-xs uppercase tracking-wider flex items-center justify-between">
+              <span>| QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK)</span>
+              <span className="text-[10px] font-normal tracking-normal text-emerald-100">
+                Milestone: <strong className="uppercase">{report.reportType}</strong> ({report.hoursRenderedThisPeriod || 0}h)
+              </span>
+            </div>
+
+            <table className="w-full text-xs border-collapse">
+              <tbody className="divide-y divide-gray-200">
+                {questionsList.map((item) => (
+                  <tr key={item.num} className="hover:bg-slate-50/50">
+                    <td className="w-2/5 p-3 sm:p-3.5 font-bold text-gray-800 align-top border-r border-gray-200 bg-slate-50/30">
+                      {item.prompt}
+                    </td>
+                    <td className="w-3/5 p-3 sm:p-3.5 text-gray-800 align-top leading-relaxed whitespace-pre-line italic">
+                      {item.answer}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* SECTION 5: INSTRUCTOR ENDORSEMENT & REMARKS */}
+          {report.instructorRemarks && (
+            <div className="mt-3 border border-emerald-300 bg-emerald-50/60 rounded-xl p-3 text-xs">
+              <strong className="text-emerald-950 font-bold uppercase block mb-1">
+                Official OJT Instructor Evaluation & Remarks:
+              </strong>
+              <p className="text-emerald-900 leading-relaxed italic">
+                &ldquo;{report.instructorRemarks}&rdquo;
               </p>
               {report.reviewedByInstructorAt && (
-                <p className="text-[10px] text-gray-500 mt-2">
+                <p className="text-[10px] text-emerald-700 mt-1">
                   Reviewed on: {new Date(report.reviewedByInstructorAt).toLocaleString()}
                 </p>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Section 6: Signatures & Certification */}
-          <div className="mt-8 pt-4 border-t-2 border-gray-200">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center text-xs">
+          {/* SECTION 6: SIGNATURES BLOCK */}
+          <div className="mt-8 pt-4 border-t-2 border-gray-300">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 text-center text-xs">
               <div>
-                <div className="h-14 flex items-end justify-center pb-1 font-serif italic text-blue-900">
-                  {report.instructorName || 'Prof. Ma. Cristina Ramos, MIT'}
-                </div>
-                <div className="border-t border-gray-800 pt-1.5">
-                  <p className="font-bold text-gray-900 uppercase">{report.instructorName || 'Prof. Ma. Cristina Ramos, MIT'}</p>
-                  <p className="text-[11px] text-gray-500">OJT Coordinator / Instructor</p>
-                  <p className="text-[10px] text-gray-400">Date: {report.dateSubmitted || new Date().toLocaleDateString()}</p>
-                </div>
-              </div>
-
-              <div>
-                <div className="h-14 flex items-end justify-center pb-1 font-serif italic text-gray-800">
-                  {report.supervisorName || 'Engr. Roberto M. Tan'}
-                </div>
-                <div className="border-t border-gray-800 pt-1.5">
-                  <p className="font-bold text-gray-900 uppercase">{report.supervisorName || 'Engr. Roberto M. Tan'}</p>
-                  <p className="text-[11px] text-gray-500">HTE Mentor / Industry Supervisor</p>
-                  <p className="text-[10px] text-gray-400">Host Training Establishment</p>
-                </div>
-              </div>
-
-              <div>
-                <div className="h-14 flex items-end justify-center pb-1 font-serif italic text-emerald-800">
+                <div className="h-10 flex items-end justify-center pb-1 font-serif italic text-gray-900 font-bold text-sm">
                   {report.traineeName}
                 </div>
-                <div className="border-t border-gray-800 pt-1.5">
-                  <p className="font-bold text-gray-900 uppercase">{report.traineeName}</p>
-                  <p className="text-[11px] text-gray-500">Student Intern / Trainee</p>
-                  <p className="text-[10px] text-gray-400">Date Submitted: {report.dateSubmitted || new Date().toLocaleDateString()}</p>
+                <div className="border-t border-gray-900 pt-1">
+                  <p className="font-black text-gray-900 uppercase">{report.traineeName}</p>
+                  <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider">
+                    OJT TRAINEE'S SIGNATURE OVER PRINTED NAME
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    Date: {report.dateSubmitted || new Date().toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <div className="h-10 flex items-end justify-center pb-1 font-serif italic text-gray-900 font-bold text-sm">
+                  {report.supervisorName || 'JHEY REE C EBRO'}
+                </div>
+                <div className="border-t border-gray-900 pt-1">
+                  <p className="font-black text-gray-900 uppercase">
+                    {report.supervisorName || 'JHEY REE C EBRO'}
+                  </p>
+                  <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider">
+                    IMMEDIATE SUPERVISOR / HTE REPRESENTATIVE
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    Date: {report.dateSubmitted || new Date().toLocaleDateString()}
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-6 text-center text-[10px] text-gray-400 border-t border-gray-150 pt-2">
-              Carlos Hilado Memorial State University • Certified Official OJT Document • Valid Without Alteration
+            {/* INSTITUTIONAL FOOTER */}
+            <div className="mt-6 text-center text-[9px] text-gray-500 border-t border-gray-200 pt-3 space-y-0.5">
+              <p className="font-mono text-gray-600">
+                college.computerstudies@chmsu.edu.ph • (034) 434-8148 • chmsu.edu.ph
+              </p>
+              <p className="font-black text-[#146B4D] uppercase tracking-widest text-[10px]">
+                GREEN CHMSU EXCELSIOR!
+              </p>
+              <p className="text-[8px] text-gray-400 tracking-tight">
+                Excellence • Compassion • Environmentalism • Love of Country • Social Responsibility • Integrity • Openness • Resilience
+              </p>
             </div>
           </div>
         </div>
