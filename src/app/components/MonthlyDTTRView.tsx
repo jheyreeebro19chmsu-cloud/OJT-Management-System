@@ -206,6 +206,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     return Math.round(total * 100) / 100; // round to 2 decimal places e.g. 7.75, 8.5, 8
   };
 
+  const formatHoursDisplay = (hours: number): string => {
+    if (!hours || hours <= 0) return '0';
+    const rounded = Math.round(hours * 100) / 100;
+    return Number.isInteger(rounded)
+      ? String(rounded)
+      : rounded.toFixed(2).replace(/\.?0+$/, '');
+  };
+
   // Daily records map for the selected month
   const monthTimeRecordsMap = useMemo(() => {
     const map = new Map<number, TimeRecord>();
@@ -404,9 +412,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     return rows;
   }, [daysInMonth, monthTimeRecordsMap, savedDttr]);
 
-  // Automatic total hours for the month
+  // Automatic total hours for the month (accurate sum with 2 decimal precision)
   const totalMonthlyHours = useMemo(() => {
-    return dailyRows.reduce((sum, r) => sum + (Number(r.hours) || 0), 0);
+    const rawSum = dailyRows.reduce((sum, r) => sum + (Number(r.hours) || 0), 0);
+    return Math.round(rawSum * 100) / 100;
   }, [dailyRows]);
 
   // Number of active rendered days
@@ -722,7 +731,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       `"${(r.tasks || '').replace(/"/g, '""')}"`,
     ]);
 
-    dataRows.push(['TOTAL', '', '', '', '', totalMonthlyHours, '']);
+    dataRows.push(['TOTAL', '', '', '', '', formatHoursDisplay(totalMonthlyHours), '']);
     dataRows.push(['Trainee', `"${selectedEmployee.name}"`, '', '', '', '', '']);
     dataRows.push(['HTE Company', `"${companyName}"`, '', '', '', '', '']);
     dataRows.push(['Month', `"${monthName} ${selectedYear}"`, '', '', '', '', '']);
@@ -922,7 +931,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           </div>
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3">
             <span className="text-[10px] uppercase font-bold text-emerald-700">Automatic Monthly Hours</span>
-            <p className="text-lg font-black text-emerald-800">{totalMonthlyHours.toFixed(1)} hrs</p>
+            <p className="text-lg font-black text-emerald-800">{formatHoursDisplay(totalMonthlyHours)} hrs</p>
           </div>
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3">
             <span className="text-[10px] uppercase font-bold text-blue-700">HTE Partner</span>
@@ -1239,7 +1248,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                   TOTAL NO. OF HOURS:
                 </td>
                 <td className="border-r border-slate-900 px-2 py-1.5 print:py-0.5 text-center text-sm print:text-[8pt] font-black bg-white border-2 border-slate-900">
-                  {totalMonthlyHours.toFixed(0)}
+                  {formatHoursDisplay(totalMonthlyHours)}
                 </td>
                 <td className="px-3 py-1.5 print:py-0.5 text-[10px] print:text-[7pt] text-slate-600 font-normal italic">
                   Automatic summary of daily rendered OJT hours for {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
@@ -1477,7 +1486,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-medium">Rendered Hours:</span>
-                  <span className="font-black text-emerald-700">{totalMonthlyHours.toFixed(1)} hrs</span>
+                  <span className="font-black text-emerald-700">{formatHoursDisplay(totalMonthlyHours)} hrs</span>
                 </div>
               </div>
 
