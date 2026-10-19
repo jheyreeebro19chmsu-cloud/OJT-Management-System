@@ -104,6 +104,39 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     return getMonthlyDttr(selectedEmployee.id, selectedYear, selectedMonth);
   }, [getMonthlyDttr, selectedEmployee, selectedYear, selectedMonth]);
 
+  // Trainee self-ownership verification: ONLY the trainee intern themselves can edit their DTTR tasks.
+  // Instructors, Coordinators, Admins, and HTE Supervisors CANNOT edit trainee DTTR records.
+  const canEditTasks = useMemo(() => {
+    if (!currentUser || !selectedEmployee) return false;
+
+    // Check if current user is an instructor, admin, or host
+    const userRole = (currentUser.role || '').toLowerCase();
+    const userPos = (currentUser.position || '').toLowerCase();
+    const isInstructorOrAdmin =
+      userRole === 'admin' ||
+      userRole === 'instructor' ||
+      userRole === 'host' ||
+      userRole === 'hte' ||
+      userPos.includes('instructor') ||
+      userPos.includes('coordinator') ||
+      userPos.includes('supervisor') ||
+      userPos.includes('admin') ||
+      userPos.includes('faculty');
+
+    if (isInstructorOrAdmin) return false;
+
+    // If explicit viewerRole is admin or hte, editing is strictly prohibited
+    if (viewerRole === 'admin' || viewerRole === 'hte') return false;
+
+    // Must be the trainee themselves matching the selected employee
+    const isSelf =
+      (currentUser.id && (currentUser.id === selectedEmployee.id || currentUser.id.toLowerCase() === selectedEmployee.id.toLowerCase())) ||
+      (currentUser.employeeId && (currentUser.employeeId === selectedEmployee.employeeId || currentUser.employeeId.toLowerCase() === selectedEmployee.employeeId.toLowerCase())) ||
+      (currentUser.email && selectedEmployee.email && currentUser.email.toLowerCase() === selectedEmployee.email.toLowerCase());
+
+    return Boolean(isSelf);
+  }, [currentUser, selectedEmployee, viewerRole]);
+
   // Modal / Editing states
   const [isEditingTasks, setIsEditingTasks] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -290,14 +323,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
       // Official biometric/attendance record takes absolute precedence and cannot be overridden
       const hasAutoPunch = !!(autoAmIn || autoAmOut || autoPmIn || autoPmOut || autoHours > 0);
-      const isInstructorView = viewerRole === 'admin';
+      const isReadOnlyView = !canEditTasks;
 
       // For arrival/departures: trainee punches are the authoritative source of truth and cannot be overridden
-      const finalAmIn = autoAmIn || (!isInstructorView && custom?.amArrival ? custom.amArrival.trim() : '');
-      const finalAmOut = autoAmOut || (!isInstructorView && custom?.amDeparture ? custom.amDeparture.trim() : '');
-      const finalPmIn = autoPmIn || (!isInstructorView && custom?.pmArrival ? custom.pmArrival.trim() : '');
-      const finalPmOut = autoPmOut || (!isInstructorView && custom?.pmDeparture ? custom.pmDeparture.trim() : '');
-      const finalHours = autoHours > 0 ? autoHours : (!isInstructorView && typeof custom?.hours === 'number' ? custom.hours : 0);
+      const finalAmIn = autoAmIn || (!isReadOnlyView && custom?.amArrival ? custom.amArrival.trim() : '');
+      const finalAmOut = autoAmOut || (!isReadOnlyView && custom?.amDeparture ? custom.amDeparture.trim() : '');
+      const finalPmIn = autoPmIn || (!isReadOnlyView && custom?.pmArrival ? custom.pmArrival.trim() : '');
+      const finalPmOut = autoPmOut || (!isReadOnlyView && custom?.pmDeparture ? custom.pmDeparture.trim() : '');
+      const finalHours = autoHours > 0 ? autoHours : (!isReadOnlyView && typeof custom?.hours === 'number' ? custom.hours : 0);
       const finalTasks = (custom?.tasks !== undefined && custom.tasks !== null ? custom.tasks : autoTasks) || '';
 
       if (hasAutoPunch || (autoRec && (autoRec.timeIn || autoRec.timeOut || autoRec.amArrival || autoRec.pmDeparture))) {
@@ -388,8 +421,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       toast.error('No trainee intern selected.');
       return;
     }
-    if (viewerRole === 'admin') {
-      toast.error('Trainee records cannot be modified or overridden in an Instructor account.');
+    if (!canEditTasks) {
+      toast.error('Only the trainee intern can enter or edit their Daily Tasks.');
       return;
     }
 
@@ -467,8 +500,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       toast.error('No trainee intern selected.');
       return;
     }
-    if (viewerRole === 'admin') {
-      toast.error('Trainee records cannot be modified or overridden in an Instructor account.');
+    if (!canEditTasks) {
+      toast.error('Only the trainee intern can enter or edit their Daily Tasks.');
       return;
     }
 
@@ -536,7 +569,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
   // Start batch editing tasks modal (ONLY tasks are editable)
   const handleOpenEditTasks = () => {
-    if (viewerRole === 'admin') return;
+    if (!canEditTasks) return;
     const entries: Record<number, MonthlyDttrDayEntry> = {};
     dailyRows.forEach((r) => {
       const draft = taskEdits[r.day];
@@ -557,8 +590,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   // Save tasks from the batch modal (ONLY tasks are updated)
   const handleSaveTasks = () => {
     if (!selectedEmployee) return;
-    if (viewerRole === 'admin') {
-      toast.error('Trainee records cannot be modified or overridden in an Instructor account.');
+    if (!canEditTasks) {
+      toast.error('Only the trainee intern can enter or edit their Daily Tasks.');
       return;
     }
     setIsSaving(true);
@@ -705,7 +738,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            {viewerRole !== 'admin' && (
+            {canEditTasks ? (
               <>
                 <button
                   type="button"
@@ -736,9 +769,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                   <span>Batch Edit Tasks</span>
                 </button>
               </>
-            )}
-
-            {viewerRole === 'admin' && (
+            ) : (
               <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold">
                 <Lock size={13} className="text-slate-500" />
                 <span>Read-Only Official Record</span>
@@ -781,13 +812,13 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           </div>
         </div>
 
-        {/* Instructor Audit Mode Read-Only Banner */}
-        {viewerRole === 'admin' && (
+        {/* Read-Only Banner for Instructors / Viewers */}
+        {!canEditTasks && (
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-emerald-900 text-xs">
             <ShieldCheck size={16} className="text-emerald-600 shrink-0" />
             <div className="flex-1">
-              <span className="font-bold text-emerald-950">Instructor Audit Mode: </span>
-              <span>Official trainee biometric attendance logs and rendered hours are verified records and cannot be overridden or modified.</span>
+              <span className="font-bold text-emerald-950">Official Trainee Record (Protected &amp; Read-Only): </span>
+              <span>Only the trainee intern can submit or edit daily tasks. Instructor and supervisor accounts view verified logs in audit mode.</span>
             </div>
           </div>
         )}
@@ -1008,7 +1039,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>TASKS / ASSIGNMENTS PERFORMED</span>
-                    {viewerRole === 'admin' ? (
+                    {!canEditTasks ? (
                       <span className="print:hidden text-[9px] font-bold tracking-normal normal-case text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                         <Lock size={9} />
                         <span>Read-Only Trainee Record</span>
@@ -1098,8 +1129,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                           </div>
 
                           {/* Screen View */}
-                          {viewerRole === 'admin' ? (
-                            <div className="print:hidden py-1 px-1.5 text-xs text-slate-800 font-normal leading-relaxed break-words">
+                          {!canEditTasks ? (
+                            <div className="print:hidden py-1.5 px-2 text-xs text-slate-800 font-normal leading-relaxed break-words min-h-[28px] flex items-center">
                               {r.tasks ? (
                                 <span>{r.tasks}</span>
                               ) : (

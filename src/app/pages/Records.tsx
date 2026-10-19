@@ -246,8 +246,22 @@ export function Records() {
       {viewMode === 'monthly_dttr' ? (
         <MonthlyDTTRView
           defaultEmployeeId={currentEmp?.id}
-          viewerRole="employee"
-          readOnlyTrainee={true}
+          viewerRole={
+            currentEmp?.role === 'admin' ||
+            currentEmp?.role === 'instructor' ||
+            currentEmp?.position?.toLowerCase().includes('instructor') ||
+            currentEmp?.position?.toLowerCase().includes('coordinator') ||
+            currentEmp?.position?.toLowerCase().includes('admin')
+              ? 'admin'
+              : 'employee'
+          }
+          readOnlyTrainee={
+            !(
+              currentEmp?.role === 'admin' ||
+              currentEmp?.role === 'instructor' ||
+              currentEmp?.position?.toLowerCase().includes('instructor')
+            )
+          }
         />
       ) : (
         <>
