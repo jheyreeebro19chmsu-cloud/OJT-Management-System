@@ -704,10 +704,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     const monthName = MONTH_NAMES[selectedMonth - 1];
     const headers = [
       'Day',
-      'AM Arrival',
-      'AM Departure',
-      'PM Arrival',
-      'PM Departure',
+      'Time In AM',
+      'Time Out AM',
+      'Time In PM',
+      'Time Out PM',
       'No. of Hours',
       'Tasks / Assignments Performed',
     ];
@@ -1057,7 +1057,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                   colSpan={4}
                   className="border-r border-slate-900 py-1 print:py-0.5 text-[11px] print:text-[7.5pt] uppercase tracking-wider font-black"
                 >
-                  Official Hour of Arrival and Departure
+                  Official Hours: Time In and Time Out
                 </th>
                 <th
                   rowSpan={2}
@@ -1091,15 +1091,15 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 <th colSpan={2} className="border-r border-slate-900 py-0.5 print:py-0">
                   <div className="font-black text-slate-900 border-b border-slate-300 pb-0.5 print:pb-0">AM</div>
                   <div className="grid grid-cols-2 text-[9px] print:text-[6.5pt] pt-0.5 print:pt-0">
-                    <span className="border-r border-slate-300">ARRIVAL</span>
-                    <span>DEPARTURE</span>
+                    <span className="border-r border-slate-300">TIME IN</span>
+                    <span>TIME OUT</span>
                   </div>
                 </th>
                 <th colSpan={2} className="border-r border-slate-900 py-0.5 print:py-0">
                   <div className="font-black text-slate-900 border-b border-slate-300 pb-0.5 print:pb-0">PM</div>
                   <div className="grid grid-cols-2 text-[9px] print:text-[6.5pt] pt-0.5 print:pt-0">
-                    <span className="border-r border-slate-300">ARRIVAL</span>
-                    <span>DEPARTURE</span>
+                    <span className="border-r border-slate-300">TIME IN</span>
+                    <span>TIME OUT</span>
                   </div>
                 </th>
               </tr>

@@ -64,11 +64,11 @@ interface SlotMeta {
 const ATTENDANCE_SLOTS: SlotMeta[] = [
   {
     id: 'am_arrival',
-    label: 'AM Arrival',
+    label: 'Time In AM',
     shortLabel: 'AM In',
     period: 'AM',
     type: 'in',
-    title: 'A.M. Arrival (Morning Clock In)',
+    title: 'Time In A.M. (Morning Clock In)',
     subtitle: 'Morning Shift Start',
     field: 'amArrival',
     verifiedField: 'amArrivalFaceVerified',
@@ -76,23 +76,23 @@ const ATTENDANCE_SLOTS: SlotMeta[] = [
   },
   {
     id: 'am_departure',
-    label: 'AM Departure',
+    label: 'Time Out AM',
     shortLabel: 'AM Out',
     period: 'AM',
     type: 'out',
-    title: 'A.M. Departure (Lunch Break Out)',
-    subtitle: 'Lunch Break Departure',
+    title: 'Time Out A.M. (Lunch Break Out)',
+    subtitle: 'Lunch Break Out',
     field: 'amDeparture',
     verifiedField: 'amDepartureFaceVerified',
     geofenceField: 'amDepartureGeofenced',
   },
   {
     id: 'pm_arrival',
-    label: 'PM Arrival',
+    label: 'Time In PM',
     shortLabel: 'PM In',
     period: 'PM',
     type: 'in',
-    title: 'P.M. Arrival (Afternoon Clock In)',
+    title: 'Time In P.M. (Afternoon Clock In)',
     subtitle: 'Afternoon Shift Start',
     field: 'pmArrival',
     verifiedField: 'pmArrivalFaceVerified',
@@ -100,12 +100,12 @@ const ATTENDANCE_SLOTS: SlotMeta[] = [
   },
   {
     id: 'pm_departure',
-    label: 'PM Departure',
+    label: 'Time Out PM',
     shortLabel: 'PM Out',
     period: 'PM',
     type: 'out',
-    title: 'P.M. Departure (End of Shift Out)',
-    subtitle: 'End of Day Departure',
+    title: 'Time Out P.M. (End of Shift Out)',
+    subtitle: 'End of Day Out',
     field: 'pmDeparture',
     verifiedField: 'pmDepartureFaceVerified',
     geofenceField: 'pmDepartureGeofenced',
@@ -321,7 +321,7 @@ export function TimeRecord() {
     if (!geofencePassed) return;
 
     if (selectedSlot === 'am_departure' && !currentRecord?.amArrival && !currentRecord?.timeIn) {
-      toast.error('No AM Arrival recorded yet. It is recommended to record AM Arrival first.');
+      toast.error('No Time In AM recorded yet. It is recommended to record Time In AM first.');
     }
 
     if (!registeredPhotoSource && !registeredImageDataUrl) {
@@ -642,7 +642,7 @@ export function TimeRecord() {
                   ⏰ Nearing Daily Shift End (4:20 PM Window)
                 </p>
                 <p className="mt-0.5 text-amber-100/90 leading-relaxed text-[11px]">
-                  Today's standard OJT shift concludes at 5:00 PM ({17 * 60 - (currentTime.getHours() * 60 + currentTime.getMinutes())} mins remaining). Please remember to complete your Biometric PM Departure before leaving.
+                  Today's standard OJT shift concludes at 5:00 PM ({17 * 60 - (currentTime.getHours() * 60 + currentTime.getMinutes())} mins remaining). Please remember to complete your Biometric Time Out PM before leaving.
                 </p>
               </div>
             </div>
@@ -751,7 +751,7 @@ export function TimeRecord() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Arrival (In)</span>
+                        <span className="text-[10px] font-bold">Time In</span>
                         {currentRecord?.amArrival && (
                           <CheckCircle2
                             size={12}
@@ -783,7 +783,7 @@ export function TimeRecord() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Departure (Out)</span>
+                        <span className="text-[10px] font-bold">Time Out</span>
                         {currentRecord?.amDeparture && (
                           <CheckCircle2
                             size={12}
@@ -828,7 +828,7 @@ export function TimeRecord() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Arrival (In)</span>
+                        <span className="text-[10px] font-bold">Time In</span>
                         {currentRecord?.pmArrival && (
                           <CheckCircle2
                             size={12}
@@ -860,7 +860,7 @@ export function TimeRecord() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Departure (Out)</span>
+                        <span className="text-[10px] font-bold">Time Out</span>
                         {currentRecord?.pmDeparture && (
                           <CheckCircle2
                             size={12}
@@ -1101,8 +1101,8 @@ export function TimeRecord() {
         <div className="text-xs text-blue-700">
           <p className="font-semibold mb-1">Civil Service Form 48 DTTR Guidelines:</p>
           <ol className="space-y-0.5 list-decimal list-inside text-blue-600">
-            <li><strong>Morning Shift (A.M.):</strong> Arrival (Clock In) &bull; Departure (Lunch Break Out)</li>
-            <li><strong>Afternoon Shift (P.M.):</strong> Arrival (Clock In) &bull; Departure (Day End Out)</li>
+            <li><strong>Morning Shift (A.M.):</strong> Time In (Clock In) &bull; Time Out (Lunch Break Out)</li>
+            <li><strong>Afternoon Shift (P.M.):</strong> Time In (Clock In) &bull; Time Out (Day End Out)</li>
             <li>Each punch verifies both your workplace GPS coordinates and real-time facial recognition</li>
           </ol>
         </div>

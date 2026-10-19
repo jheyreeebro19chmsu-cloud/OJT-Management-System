@@ -2181,7 +2181,7 @@ export function Dashboard() {
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div className="bg-white/20 rounded-2xl p-2.5">
             <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>AM Arrival</span>
+              <span>Time In AM</span>
               <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
             </div>
             <p className="text-white font-bold text-sm">
@@ -2197,7 +2197,7 @@ export function Dashboard() {
 
           <div className="bg-white/20 rounded-2xl p-2.5">
             <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>AM Departure</span>
+              <span>Time Out AM</span>
               <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
             </div>
             <p className="text-white font-bold text-sm">
@@ -2213,11 +2213,11 @@ export function Dashboard() {
 
           <div className="bg-white/20 rounded-2xl p-2.5">
             <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>PM Arrival</span>
+              <span>Time In PM</span>
               <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
             </div>
             <p className="text-white font-bold text-sm">
-              {todayRecord?.pmArrival ? formatTime(todayRecord.pmArrival) : '— —'}
+              {todayRecord?.pmArrival ? formatTime(todayRecord.pmArrival) : '— —'}{' '}
             </p>
             {Boolean(todayRecord?.pmArrivalFaceVerified) && (
               <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
@@ -2229,7 +2229,7 @@ export function Dashboard() {
 
           <div className="bg-white/20 rounded-2xl p-2.5">
             <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>PM Departure</span>
+              <span>Time Out PM</span>
               <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
             </div>
             <p className="text-white font-bold text-sm">
@@ -2271,16 +2271,16 @@ export function Dashboard() {
           if (h < 12) {
             if (!todayRecord?.amArrival && !todayRecord?.timeIn) {
               nextPunch = {
-                label: isPastLateThreshold ? 'RECORD AM ARRIVAL (LATE)' : 'RECORD AM ARRIVAL',
-                title: isPastLateThreshold ? 'CLOCK IN NOW (LATE)' : 'CLOCK IN AM ARRIVAL',
+                label: isPastLateThreshold ? 'RECORD TIME IN AM (LATE)' : 'RECORD TIME IN AM',
+                title: isPastLateThreshold ? 'CLOCK IN NOW (LATE)' : 'CLOCK IN TIME IN AM',
                 sub: 'Morning Shift Start • 8:00 AM – 12:00 PM',
                 theme: isPastLateThreshold ? 'late' : 'in',
               };
             } else if (!todayRecord?.amDeparture) {
               nextPunch = {
-                label: 'RECORD AM DEPARTURE',
-                title: 'CLOCK OUT AM DEPARTURE',
-                sub: `Lunch Break Departure • Clocked In at ${formatTime(todayRecord?.amArrival || todayRecord?.timeIn || '')}`,
+                label: 'RECORD TIME OUT AM',
+                title: 'CLOCK OUT TIME OUT AM',
+                sub: `Lunch Break Out • Clocked In at ${formatTime(todayRecord?.amArrival || todayRecord?.timeIn || '')}`,
                 theme: 'out',
               };
             }
@@ -2289,15 +2289,15 @@ export function Dashboard() {
           if (!nextPunch) {
             if (!todayRecord?.pmArrival) {
               nextPunch = {
-                label: 'RECORD PM ARRIVAL',
-                title: 'CLOCK IN PM ARRIVAL',
+                label: 'RECORD TIME IN PM',
+                title: 'CLOCK IN TIME IN PM',
                 sub: 'Afternoon Shift Start • 1:00 PM – 5:00 PM',
                 theme: 'in',
               };
             } else if (!todayRecord?.pmDeparture) {
               nextPunch = {
-                label: 'RECORD PM DEPARTURE',
-                title: 'CLOCK OUT PM DEPARTURE',
+                label: 'RECORD TIME OUT PM',
+                title: 'CLOCK OUT TIME OUT PM',
                 sub: `End of Shift Out • PM Clocked In at ${formatTime(todayRecord?.pmArrival || '')}`,
                 theme: 'out',
               };
