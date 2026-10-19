@@ -91,6 +91,19 @@ export interface TimeRecord {
   date: string;
   timeIn?: string;
   timeOut?: string;
+  // Standard Civil Service Form 48 / CHMSU 4-punch daily slots
+  amArrival?: string;
+  amDeparture?: string;
+  pmArrival?: string;
+  pmDeparture?: string;
+  amArrivalFaceVerified?: boolean;
+  amDepartureFaceVerified?: boolean;
+  pmArrivalFaceVerified?: boolean;
+  pmDepartureFaceVerified?: boolean;
+  amArrivalGeofenced?: boolean;
+  amDepartureGeofenced?: boolean;
+  pmArrivalGeofenced?: boolean;
+  pmDepartureGeofenced?: boolean;
   timeInLocation?: { lat: number; lng: number };
   timeOutLocation?: { lat: number; lng: number };
   timeInGeofenced: boolean;

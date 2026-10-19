@@ -215,43 +215,73 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         autoHours = autoRec.totalHours || 0;
         autoTasks = autoRec.notes || '';
 
-        const parseH = (tStr?: string) => {
-          if (!tStr) return null;
-          const [h, m] = tStr.split(':').map(Number);
-          return { h, m, raw: tStr };
-        };
-
-        const tIn = parseH(autoRec.timeIn);
-        const tOut = parseH(autoRec.timeOut);
-
-        const format12 = (h: number, m: number) => {
+        const format12Str = (t?: string) => {
+          if (!t) return '';
+          if (t.includes('AM') || t.includes('PM')) return t;
+          const [h, m] = t.split(':').map(Number);
+          if (isNaN(h) || isNaN(m)) return t;
           const ampm = h >= 12 ? 'PM' : 'AM';
           const hh = h % 12 === 0 ? 12 : h % 12;
           const mm = String(m).padStart(2, '0');
           return `${hh}:${mm} ${ampm}`;
         };
 
-        if (tIn && tOut) {
-          if (tIn.h < 12 && tOut.h >= 12) {
-            // Full day spanning lunch break
-            autoAmIn = format12(tIn.h, tIn.m);
-            autoAmOut = '12:00 PM';
-            autoPmIn = '1:00 PM';
-            autoPmOut = format12(tOut.h, tOut.m);
-          } else if (tIn.h < 12 && tOut.h < 12) {
-            // Morning only
-            autoAmIn = format12(tIn.h, tIn.m);
-            autoAmOut = format12(tOut.h, tOut.m);
-          } else {
-            // Afternoon only
-            autoPmIn = format12(tIn.h, tIn.m);
-            autoPmOut = format12(tOut.h, tOut.m);
+        // If explicit 4-slot attendance was recorded, use it directly
+        if (autoRec.amArrival || autoRec.amDeparture || autoRec.pmArrival || autoRec.pmDeparture) {
+          autoAmIn = format12Str(autoRec.amArrival);
+          autoAmOut = format12Str(autoRec.amDeparture);
+          autoPmIn = format12Str(autoRec.pmArrival);
+          autoPmOut = format12Str(autoRec.pmDeparture);
+          if (!autoHours || autoHours === 0) {
+            autoHours = computeHoursFromTimes({
+              day,
+              amArrival: autoAmIn,
+              amDeparture: autoAmOut,
+              pmArrival: autoPmIn,
+              pmDeparture: autoPmOut,
+              hours: 0,
+            });
           }
-        } else if (tIn) {
-          if (tIn.h < 12) {
-            autoAmIn = format12(tIn.h, tIn.m);
-          } else {
-            autoPmIn = format12(tIn.h, tIn.m);
+        } else {
+          // Legacy 2-slot auto-split
+          const parseH = (tStr?: string) => {
+            if (!tStr) return null;
+            const [h, m] = tStr.split(':').map(Number);
+            return { h, m, raw: tStr };
+          };
+
+          const tIn = parseH(autoRec.timeIn);
+          const tOut = parseH(autoRec.timeOut);
+
+          const format12 = (h: number, m: number) => {
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const hh = h % 12 === 0 ? 12 : h % 12;
+            const mm = String(m).padStart(2, '0');
+            return `${hh}:${mm} ${ampm}`;
+          };
+
+          if (tIn && tOut) {
+            if (tIn.h < 12 && tOut.h >= 12) {
+              // Full day spanning lunch break
+              autoAmIn = format12(tIn.h, tIn.m);
+              autoAmOut = '12:00 PM';
+              autoPmIn = '1:00 PM';
+              autoPmOut = format12(tOut.h, tOut.m);
+            } else if (tIn.h < 12 && tOut.h < 12) {
+              // Morning only
+              autoAmIn = format12(tIn.h, tIn.m);
+              autoAmOut = format12(tOut.h, tOut.m);
+            } else {
+              // Afternoon only
+              autoPmIn = format12(tIn.h, tIn.m);
+              autoPmOut = format12(tOut.h, tOut.m);
+            }
+          } else if (tIn) {
+            if (tIn.h < 12) {
+              autoAmIn = format12(tIn.h, tIn.m);
+            } else {
+              autoPmIn = format12(tIn.h, tIn.m);
+            }
           }
         }
       }
@@ -267,7 +297,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           tasks: custom.tasks !== undefined ? custom.tasks : autoTasks,
           source: 'custom',
         });
-      } else if (autoRec && (autoRec.timeIn || autoRec.timeOut)) {
+      } else if (autoRec && (autoRec.timeIn || autoRec.timeOut || autoRec.amArrival || autoRec.pmDeparture)) {
         rows.push({
           day,
           amArrival: autoAmIn,

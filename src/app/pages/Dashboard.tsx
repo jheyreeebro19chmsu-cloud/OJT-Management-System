@@ -2177,39 +2177,79 @@ export function Dashboard() {
           <div className="text-white/70 text-xs mt-1">{dateStr}</div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="bg-white/20 rounded-2xl p-3">
-            <p className="text-white/70 text-xs">Time In</p>
+        {/* 4-Slot Daily Attendance Cards (Civil Service Form 48 / DTTR Standard) */}
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="bg-white/20 rounded-2xl p-2.5">
+            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+              <span>AM Arrival</span>
+              <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
+            </div>
             <p className="text-white font-bold text-sm">
-              {todayRecord?.timeIn ? formatTime(todayRecord.timeIn) : '— —'}
+              {todayRecord?.amArrival ? formatTime(todayRecord.amArrival) : (todayRecord?.timeIn && (!todayRecord.amArrival && !todayRecord.pmArrival) ? formatTime(todayRecord.timeIn) : '— —')}
             </p>
-            {todayRecord?.timeInFaceVerified && (
-              <div className="flex items-center gap-1 mt-1">
-                <Camera size={10} className="text-green-300" />
-                <span className="text-green-300 text-xs">Verified</span>
+            {Boolean(todayRecord?.amArrivalFaceVerified || (todayRecord?.timeInFaceVerified && !todayRecord?.amArrival)) && (
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                <Camera size={9} />
+                <span>Verified</span>
               </div>
             )}
           </div>
-          <div className="bg-white/20 rounded-2xl p-3">
-            <p className="text-white/70 text-xs">Time Out</p>
+
+          <div className="bg-white/20 rounded-2xl p-2.5">
+            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+              <span>AM Departure</span>
+              <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
+            </div>
             <p className="text-white font-bold text-sm">
-              {todayRecord?.timeOut ? formatTime(todayRecord.timeOut) : '— —'}
+              {todayRecord?.amDeparture ? formatTime(todayRecord.amDeparture) : '— —'}
             </p>
-            {todayRecord?.timeOutFaceVerified && (
-              <div className="flex items-center gap-1 mt-1">
-                <Camera size={10} className="text-green-300" />
-                <span className="text-green-300 text-xs">Verified</span>
+            {Boolean(todayRecord?.amDepartureFaceVerified) && (
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                <Camera size={9} />
+                <span>Verified</span>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white/20 rounded-2xl p-2.5">
+            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+              <span>PM Arrival</span>
+              <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
+            </div>
+            <p className="text-white font-bold text-sm">
+              {todayRecord?.pmArrival ? formatTime(todayRecord.pmArrival) : '— —'}
+            </p>
+            {Boolean(todayRecord?.pmArrivalFaceVerified) && (
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                <Camera size={9} />
+                <span>Verified</span>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white/20 rounded-2xl p-2.5">
+            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+              <span>PM Departure</span>
+              <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
+            </div>
+            <p className="text-white font-bold text-sm">
+              {todayRecord?.pmDeparture ? formatTime(todayRecord.pmDeparture) : (todayRecord?.timeOut && (!todayRecord.amDeparture && !todayRecord.pmDeparture) ? formatTime(todayRecord.timeOut) : '— —')}
+            </p>
+            {Boolean(todayRecord?.pmDepartureFaceVerified || (todayRecord?.timeOutFaceVerified && !todayRecord?.pmDeparture)) && (
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                <Camera size={9} />
+                <span>Verified</span>
               </div>
             )}
           </div>
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-white/80 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-          <span>🕒 Clock In: <strong>Open All Times</strong> (Late after {formattedCutoffTime || '8:15 AM'})</span>
+          <span>🕒 Official Hours: <strong>8:00 AM – 12:00 PM</strong> • <strong>1:00 PM – 5:00 PM</strong></span>
           <span>🔄 Resets daily at 6:00 AM</span>
         </div>
 
-        {todayRecord?.timeIn && todayRecord?.timeOut && todayRecord.totalHours && (
+        {todayRecord?.totalHours !== undefined && todayRecord.totalHours > 0 && (
           <div className="mt-3 bg-white/20 rounded-2xl p-3 text-center">
             <p className="text-white/70 text-xs">Total Hours Today</p>
             <p className="text-white font-bold text-xl">{todayRecord.totalHours.toFixed(2)} hrs</p>
@@ -2217,123 +2257,137 @@ export function Dashboard() {
         )}
       </motion.div>
 
-      {/* Primary Call-To-Action (CTA): Pronounced Clock In / Clock Out Hero Button */}
+      {/* Primary Call-To-Action (CTA): Dynamic Shift Punch Hero Button */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        {!todayRecord?.timeIn ? (
-          /* Active Standout State: Clock In Now (Hero Primary CTA) - Always Open at all times */
-          <Link
-            to="/app/time-record"
-            className={`group relative block overflow-hidden rounded-3xl p-5 sm:p-6 text-white shadow-xl ring-4 active:scale-[0.99] transition-all duration-200 ${
-              isPastLateThreshold
-                ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 shadow-amber-500/25 ring-amber-500/20'
-                : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-500/25 ring-blue-500/20'
-            }`}
-          >
-            <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-              <div className="flex items-center gap-4">
-                <div className="relative flex items-center justify-center w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl shrink-0 shadow-inner">
-                  <span className={`absolute animate-ping inline-flex h-10 w-10 rounded-full opacity-75 ${isPastLateThreshold ? 'bg-amber-300' : 'bg-emerald-400'}`}></span>
-                  <Clock size={28} className="text-white relative z-10" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    {isPastLateThreshold ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400/25 text-amber-100 border border-amber-300/40">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse"></span>
-                        Clock-In Open • Late Attendance (Past {formattedCutoffTime})
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Shift Open • On-Time Grace until {formattedCutoffTime}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase mt-1">
-                    {isPastLateThreshold ? 'CLOCK IN NOW (LATE)' : 'CLOCK IN NOW'}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-white/90 flex items-center gap-1.5 mt-0.5">
-                    <Camera size={14} className="text-white/80" />
-                    {isPastLateThreshold
-                      ? `Clock-in is open all times. Attendance will be recorded as Late (passed ${lateGraceMinutes} min threshold).`
-                      : 'Biometric Face Recognition + Geofenced Verification'}
-                  </p>
-                </div>
-              </div>
+        {(() => {
+          const h = currentTime.getHours();
+          let nextPunch: {
+            label: string;
+            title: string;
+            sub: string;
+            theme: 'late' | 'in' | 'out';
+          } | null = null;
 
-              <div className={`px-5 py-2.5 rounded-2xl font-black text-sm tracking-wide shadow-md group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0 ${
-                isPastLateThreshold
-                  ? 'bg-white text-orange-800 group-hover:bg-amber-50'
-                  : 'bg-white text-blue-700 group-hover:bg-blue-50'
-              }`}>
-                <span>{isPastLateThreshold ? 'RECORD TIME IN (LATE)' : 'RECORD TIME IN'}</span>
-                <ChevronRight size={18} />
-              </div>
-            </div>
-          </Link>
-        ) : !todayRecord?.timeOut ? (
-          /* Active Clock Out State */
-          <Link
-            to="/app/time-record"
-            className="group relative block overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-xl shadow-amber-500/25 ring-4 ring-amber-500/20 active:scale-[0.99] transition-all duration-200"
-          >
-            <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-              <div className="flex items-center gap-4">
-                <div className="relative flex items-center justify-center w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl shrink-0 shadow-inner">
-                  <Clock size={28} className="text-white relative z-10" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 text-white border border-white/30">
-                      Clocked In at {formatTime(todayRecord.timeIn)}
-                    </span>
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase mt-1">
-                    CLOCK OUT NOW
-                  </h3>
-                  <p className="text-xs sm:text-sm text-amber-100 flex items-center gap-1.5 mt-0.5">
-                    <Camera size={14} className="text-amber-200" />
-                    Complete today's attendance session and record hours
-                  </p>
-                </div>
-              </div>
+          if (h < 12) {
+            if (!todayRecord?.amArrival && !todayRecord?.timeIn) {
+              nextPunch = {
+                label: isPastLateThreshold ? 'RECORD AM ARRIVAL (LATE)' : 'RECORD AM ARRIVAL',
+                title: isPastLateThreshold ? 'CLOCK IN NOW (LATE)' : 'CLOCK IN AM ARRIVAL',
+                sub: 'Morning Shift Start • 8:00 AM – 12:00 PM',
+                theme: isPastLateThreshold ? 'late' : 'in',
+              };
+            } else if (!todayRecord?.amDeparture) {
+              nextPunch = {
+                label: 'RECORD AM DEPARTURE',
+                title: 'CLOCK OUT AM DEPARTURE',
+                sub: `Lunch Break Departure • Clocked In at ${formatTime(todayRecord?.amArrival || todayRecord?.timeIn || '')}`,
+                theme: 'out',
+              };
+            }
+          }
 
-              <div className="px-5 py-2.5 rounded-2xl bg-white text-orange-700 font-black text-sm tracking-wide shadow-md group-hover:bg-amber-50 group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0">
-                <span>RECORD TIME OUT</span>
-                <ChevronRight size={18} />
-              </div>
-            </div>
-          </Link>
-        ) : (
-          /* Completed Attendance State */
-          <Link
-            to="/app/records"
-            className="group relative block overflow-hidden rounded-3xl p-5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-lg shadow-emerald-500/20 transition-all"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-white shrink-0">
-                  <CheckCircle2 size={26} />
+          if (!nextPunch) {
+            if (!todayRecord?.pmArrival) {
+              nextPunch = {
+                label: 'RECORD PM ARRIVAL',
+                title: 'CLOCK IN PM ARRIVAL',
+                sub: 'Afternoon Shift Start • 1:00 PM – 5:00 PM',
+                theme: 'in',
+              };
+            } else if (!todayRecord?.pmDeparture) {
+              nextPunch = {
+                label: 'RECORD PM DEPARTURE',
+                title: 'CLOCK OUT PM DEPARTURE',
+                sub: `End of Shift Out • PM Clocked In at ${formatTime(todayRecord?.pmArrival || '')}`,
+                theme: 'out',
+              };
+            }
+          }
+
+          if (nextPunch) {
+            const isLate = nextPunch.theme === 'late';
+            const isOut = nextPunch.theme === 'out';
+
+            return (
+              <Link
+                to="/app/time-record"
+                className={`group relative block overflow-hidden rounded-3xl p-5 sm:p-6 text-white shadow-xl ring-4 active:scale-[0.99] transition-all duration-200 ${
+                  isLate
+                    ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-800 shadow-amber-500/25 ring-amber-500/20'
+                    : isOut
+                    ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 shadow-amber-500/25 ring-amber-500/20'
+                    : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-500/25 ring-blue-500/20'
+                }`}
+              >
+                <div className="absolute -right-10 -bottom-10 w-44 h-44 bg-white/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                  <div className="flex items-center gap-4">
+                    <div className="relative flex items-center justify-center w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl shrink-0 shadow-inner">
+                      <span className={`absolute animate-ping inline-flex h-10 w-10 rounded-full opacity-75 ${isLate ? 'bg-amber-300' : isOut ? 'bg-orange-300' : 'bg-emerald-400'}`}></span>
+                      <Clock size={28} className="text-white relative z-10" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          isLate ? 'bg-amber-400/25 text-amber-100 border border-amber-300/40' : 'bg-white/20 text-white border border-white/30'
+                        }`}>
+                          {nextPunch.sub}
+                        </span>
+                      </div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase mt-1">
+                        {nextPunch.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-white/90 flex items-center gap-1.5 mt-0.5">
+                        <Camera size={14} className="text-white/80" />
+                        Biometric Facial Scan + GPS Geofence Verification
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className={`px-5 py-2.5 rounded-2xl font-black text-sm tracking-wide shadow-md group-hover:translate-x-1 transition-all flex items-center gap-2 self-start sm:self-center shrink-0 ${
+                    isLate
+                      ? 'bg-white text-orange-800 group-hover:bg-amber-50'
+                      : isOut
+                      ? 'bg-white text-orange-700 group-hover:bg-amber-50'
+                      : 'bg-white text-blue-700 group-hover:bg-blue-50'
+                  }`}>
+                    <span>{nextPunch.label}</span>
+                    <ChevronRight size={18} />
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-black text-white tracking-wide uppercase">
-                    TODAY'S ATTENDANCE COMPLETED
-                  </h3>
-                  <p className="text-xs text-emerald-100 mt-0.5">
-                    Time In: <strong>{formatTime(todayRecord.timeIn)}</strong> • Time Out: <strong>{formatTime(todayRecord.timeOut)}</strong>
-                    {todayRecord.totalHours ? ` (${todayRecord.totalHours.toFixed(1)} hrs rendered)` : ''}
-                  </p>
+              </Link>
+            );
+          }
+
+          // All 4 punches completed state
+          return (
+            <Link
+              to="/app/records"
+              className="group relative block overflow-hidden rounded-3xl p-5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-lg shadow-emerald-500/20 transition-all"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                    <CheckCircle2 size={26} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-white tracking-wide uppercase">
+                      TODAY'S SHIFTS COMPLETED (AM &amp; PM)
+                    </h3>
+                    <p className="text-xs text-emerald-100 mt-0.5">
+                      AM: {formatTime(todayRecord?.amArrival || '')} – {formatTime(todayRecord?.amDeparture || '')} &bull; PM: {formatTime(todayRecord?.pmArrival || '')} – {formatTime(todayRecord?.pmDeparture || '')}
+                      {todayRecord?.totalHours ? ` (${todayRecord.totalHours.toFixed(1)} hrs rendered)` : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 self-start sm:self-center shrink-0 transition-colors">
+                  <span>View My DTR</span>
+                  <ChevronRight size={16} />
                 </div>
               </div>
-              <div className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 self-start sm:self-center shrink-0 transition-colors">
-                <span>View My DTR</span>
-                <ChevronRight size={16} />
-              </div>
-            </div>
-          </Link>
-        )}
+            </Link>
+          );
+        })()}
       </motion.div>
 
       {/* Trainee Required Documents Compliance Summary Card (Concise, Non-Redundant) */}

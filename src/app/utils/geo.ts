@@ -225,10 +225,68 @@ export function getDTRSessionDate(date = new Date()): string {
 }
 
 export function formatTime(time: string): string {
-  const [hours, minutes] = time.split(':').map(Number);
+  if (!time) return '— —';
+  if (time.includes('AM') || time.includes('PM')) return time;
+  const parts = time.split(':');
+  if (parts.length < 2) return time;
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+  if (isNaN(hours) || isNaN(minutes)) return time;
   const period = hours >= 12 ? 'PM' : 'AM';
   const displayHours = hours % 12 || 12;
   return `${displayHours}:${String(minutes).padStart(2, '0')} ${period}`;
+}
+
+export function parseTimeToMinutes(t?: string): number | null {
+  if (!t) return null;
+  t = t.trim();
+  const match = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const ampm = (match[3] || '').toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+  return null;
+}
+
+export function calculate4SlotHours(
+  amIn?: string,
+  amOut?: string,
+  pmIn?: string,
+  pmOut?: string,
+  legacyIn?: string,
+  legacyOut?: string
+): number {
+  let minutes = 0;
+  const amInMin = parseTimeToMinutes(amIn);
+  const amOutMin = parseTimeToMinutes(amOut);
+  const pmInMin = parseTimeToMinutes(pmIn);
+  const pmOutMin = parseTimeToMinutes(pmOut);
+
+  if (amInMin !== null && amOutMin !== null && amOutMin > amInMin) {
+    minutes += (amOutMin - amInMin);
+  }
+  if (pmInMin !== null && pmOutMin !== null && pmOutMin > pmInMin) {
+    minutes += (pmOutMin - pmInMin);
+  }
+
+  // Cross-noon fallback: Trainee only punched morning in and afternoon out
+  if (amInMin !== null && pmOutMin !== null && amOutMin === null && pmInMin === null && pmOutMin > amInMin) {
+    let diff = pmOutMin - amInMin;
+    if (amInMin < 12 * 60 && pmOutMin >= 13 * 60) {
+      diff = Math.max(0, diff - 60); // Subtract 1 hr lunch
+    }
+    minutes += diff;
+  }
+
+  if (minutes === 0 && legacyIn && legacyOut) {
+    return calculateTotalHours(legacyIn, legacyOut);
+  }
+
+  return Math.round((minutes / 60) * 100) / 100;
 }
 
 export function calculateTotalHours(timeIn: string, timeOut: string): number {

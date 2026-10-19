@@ -1,4 +1,22 @@
-import { Clock, CheckCircle, MapPin, Camera, AlertCircle, AlertTriangle, XCircle, RefreshCw, Compass, Lock } from 'lucide-react';
+import {
+  Clock,
+  CheckCircle,
+  MapPin,
+  Camera,
+  AlertCircle,
+  AlertTriangle,
+  XCircle,
+  RefreshCw,
+  Compass,
+  Lock,
+  Sunrise,
+  Sunset,
+  Sun,
+  Utensils,
+  CheckCircle2,
+  ChevronRight,
+  Calendar,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -14,16 +32,99 @@ import {
 } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { uploadFacePhoto } from '../services/supabaseService';
-import { formatTime, calculateTotalHours, getAttendanceStatus, getCurrentLocation, getDTRSessionDate } from '../utils/geo';
+import {
+  formatTime,
+  calculateTotalHours,
+  calculate4SlotHours,
+  getAttendanceStatus,
+  getCurrentLocation,
+  getDTRSessionDate,
+} from '../utils/geo';
 import { authAPI } from '../services/authApi';
 import type { TimeRecord as TimeRecordType } from '../types';
 import { isInvalidHteCompany } from '../utils/hteLocation';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
+export type AttendanceSlot = 'am_arrival' | 'am_departure' | 'pm_arrival' | 'pm_departure';
+
+interface SlotMeta {
+  id: AttendanceSlot;
+  label: string;
+  shortLabel: string;
+  period: 'AM' | 'PM';
+  type: 'in' | 'out';
+  title: string;
+  subtitle: string;
+  field: 'amArrival' | 'amDeparture' | 'pmArrival' | 'pmDeparture';
+  verifiedField: 'amArrivalFaceVerified' | 'amDepartureFaceVerified' | 'pmArrivalFaceVerified' | 'pmDepartureFaceVerified';
+  geofenceField: 'amArrivalGeofenced' | 'amDepartureGeofenced' | 'pmArrivalGeofenced' | 'pmDepartureGeofenced';
+}
+
+const ATTENDANCE_SLOTS: SlotMeta[] = [
+  {
+    id: 'am_arrival',
+    label: 'AM Arrival',
+    shortLabel: 'AM In',
+    period: 'AM',
+    type: 'in',
+    title: 'A.M. Arrival (Morning Clock In)',
+    subtitle: 'Morning Shift Start',
+    field: 'amArrival',
+    verifiedField: 'amArrivalFaceVerified',
+    geofenceField: 'amArrivalGeofenced',
+  },
+  {
+    id: 'am_departure',
+    label: 'AM Departure',
+    shortLabel: 'AM Out',
+    period: 'AM',
+    type: 'out',
+    title: 'A.M. Departure (Lunch Break Out)',
+    subtitle: 'Lunch Break Departure',
+    field: 'amDeparture',
+    verifiedField: 'amDepartureFaceVerified',
+    geofenceField: 'amDepartureGeofenced',
+  },
+  {
+    id: 'pm_arrival',
+    label: 'PM Arrival',
+    shortLabel: 'PM In',
+    period: 'PM',
+    type: 'in',
+    title: 'P.M. Arrival (Afternoon Clock In)',
+    subtitle: 'Afternoon Shift Start',
+    field: 'pmArrival',
+    verifiedField: 'pmArrivalFaceVerified',
+    geofenceField: 'pmArrivalGeofenced',
+  },
+  {
+    id: 'pm_departure',
+    label: 'PM Departure',
+    shortLabel: 'PM Out',
+    period: 'PM',
+    type: 'out',
+    title: 'P.M. Departure (End of Shift Out)',
+    subtitle: 'End of Day Departure',
+    field: 'pmDeparture',
+    verifiedField: 'pmDepartureFaceVerified',
+    geofenceField: 'pmDepartureGeofenced',
+  },
+];
+
 export function TimeRecord() {
   const navigate = useNavigate();
-  const { currentUser, getCurrentEmployee, getTodayRecord, addTimeRecord, updateTimeRecord, updateEmployee, settings, timeRecords, employees } = useApp();
+  const {
+    currentUser,
+    getCurrentEmployee,
+    getTodayRecord,
+    addTimeRecord,
+    updateTimeRecord,
+    updateEmployee,
+    settings,
+    timeRecords,
+    employees,
+  } = useApp();
   const employee = getCurrentEmployee();
   const empLookupId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
   const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
@@ -32,15 +133,40 @@ export function TimeRecord() {
   const [geofenceCoords, setGeofenceCoords] = useState<{ lat: number; lng: number } | undefined>();
   const [geofenceStatus, setGeofenceStatus] = useState<GeoState>('checking');
   const [geofenceMessage, setGeofenceMessage] = useState<string>('');
-  const [action, setAction] = useState<'in' | 'out'>('in');
-  const [completedAction, setCompletedAction] = useState<'in' | 'out'>('in');
-  const [currentRecord, setCurrentRecord] = useState(todayRecord);
+
+  const [currentRecord, setCurrentRecord] = useState<TimeRecordType | null>(todayRecord);
   const [completedMessage, setCompletedMessage] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const userActionOverrideRef = useRef<boolean>(false);
+
+  // Auto-slot selector logic
+  const getRecommendedSlot = (rec: TimeRecordType | null, hour: number): AttendanceSlot => {
+    if (hour < 12) {
+      if (!rec?.amArrival) return 'am_arrival';
+      if (!rec?.amDeparture) return 'am_departure';
+      if (!rec?.pmArrival) return 'pm_arrival';
+      if (!rec?.pmDeparture) return 'pm_departure';
+      return 'am_departure';
+    } else {
+      if (!rec?.pmArrival) return 'pm_arrival';
+      if (!rec?.pmDeparture) return 'pm_departure';
+      if (!rec?.amArrival) return 'am_arrival';
+      if (!rec?.amDeparture) return 'am_departure';
+      return 'pm_departure';
+    }
+  };
+
+  const [selectedSlot, setSelectedSlot] = useState<AttendanceSlot>(() => {
+    return getRecommendedSlot(todayRecord, new Date().getHours());
+  });
+  const [completedSlot, setCompletedSlot] = useState<AttendanceSlot>(selectedSlot);
+
+  const currentSlotConfig = ATTENDANCE_SLOTS.find((s) => s.id === selectedSlot) || ATTENDANCE_SLOTS[0];
+  const action: 'in' | 'out' = currentSlotConfig.type;
+  const completedSlotConfig = ATTENDANCE_SLOTS.find((s) => s.id === completedSlot) || ATTENDANCE_SLOTS[0];
 
   // Comprehensive fallback resolution for registered face template
   const registeredPhotoSource =
@@ -57,7 +183,7 @@ export function TimeRecord() {
     return () => clearInterval(t);
   }, []);
 
-  // Proactive GPS permission check — surface denied state immediately before async GeofenceChecker fires
+  // Proactive GPS permission check
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
       navigator.permissions
@@ -72,17 +198,17 @@ export function TimeRecord() {
               setGeofenceStatus('denied');
               setGeofenceMessage('GPS location permission denied');
             } else if (status.state === 'granted') {
-              // Permission was re-granted — clear denied state
               setGeofenceStatus('checking');
             }
           };
         })
         .catch(() => {
-          // Permissions API not supported — rely on GeofenceChecker's own detection
+          // Permissions API fallback
         });
     }
   }, []);
 
+  // Keep currentRecord synced and auto-select next logical slot unless user clicked a specific one
   useEffect(() => {
     const lookupId = empLookupId || employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
     if (lookupId) {
@@ -90,29 +216,12 @@ export function TimeRecord() {
       if (rec) {
         setCurrentRecord(rec);
       }
-      // Guard: do not flip the action state while viewing the completed confirmation
-      if (pageState !== 'completed') {
+      if (pageState !== 'completed' && !userActionOverrideRef.current) {
         const effectiveRec = rec || currentRecord;
-        if (effectiveRec?.timeIn && !effectiveRec?.timeOut) {
-          if (!userActionOverrideRef.current) {
-            setAction('out');
-          }
-        } else {
-          // If not clocked in or already clocked out, Clock In is the only permissible action
-          setAction('in');
-          userActionOverrideRef.current = false;
-        }
+        setSelectedSlot(getRecommendedSlot(effectiveRec, new Date().getHours()));
       }
     }
   }, [employee, empLookupId, currentUser, timeRecords, pageState]);
-
-  // Strict guard: Guarantee action cannot remain 'out' if there is no prior clock-in today
-  useEffect(() => {
-    if (!currentRecord?.timeIn && action === 'out') {
-      setAction('in');
-      userActionOverrideRef.current = false;
-    }
-  }, [currentRecord?.timeIn, action]);
 
   useEffect(() => {
     let mounted = true;
@@ -132,20 +241,17 @@ export function TimeRecord() {
     };
   }, []);
 
-  // CORS-safe prefetch of registered face image into a local data URL
-  // Prevents biometric matching failures caused by cross-origin Supabase storage URLs
+  // CORS-safe prefetch of registered face image
   useEffect(() => {
     const photo = registeredPhotoSource;
     if (!photo) {
       setRegisteredImageDataUrl(undefined);
       return;
     }
-    // Already a data URL — use directly
     if (photo.startsWith('data:')) {
       setRegisteredImageDataUrl(photo);
       return;
     }
-    // Remote URL — fetch as blob and convert to data URL
     let cancelled = false;
     fetch(photo)
       .then((res) => {
@@ -161,7 +267,6 @@ export function TimeRecord() {
         reader.readAsDataURL(blob);
       })
       .catch(() => {
-        // Fallback: pass the raw URL and let faceClient handle CORS via its own fetch
         if (!cancelled) setRegisteredImageDataUrl(photo);
       });
     return () => {
@@ -195,7 +300,13 @@ export function TimeRecord() {
   const lateCutoffTotalMinutes = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM) + lateGraceMinutes;
   const now = new Date();
   const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
-  const isPastLateThreshold = isStudent && action === 'in' && !currentRecord?.timeIn && currentTotalMinutes > lateCutoffTotalMinutes;
+  const isPastLateThreshold =
+    isStudent &&
+    selectedSlot === 'am_arrival' &&
+    !currentRecord?.amArrival &&
+    !currentRecord?.timeIn &&
+    currentTotalMinutes > lateCutoffTotalMinutes;
+
   const cutoffHour = Math.floor(lateCutoffTotalMinutes / 60) % 24;
   const cutoffMin = lateCutoffTotalMinutes % 60;
   const formattedCutoffTime = formatTime(
@@ -208,11 +319,11 @@ export function TimeRecord() {
       return;
     }
     if (!geofencePassed) return;
-    if (action === 'out' && !currentRecord?.timeIn) {
-      toast.error('You must clock in first before you can clock out.');
-      setAction('in');
-      return;
+
+    if (selectedSlot === 'am_departure' && !currentRecord?.amArrival && !currentRecord?.timeIn) {
+      toast.error('No AM Arrival recorded yet. It is recommended to record AM Arrival first.');
     }
+
     if (!registeredPhotoSource && !registeredImageDataUrl) {
       toast.error(
         'No registered face biometrics found on your account. Please enroll your face photo in Profile or Registration before recording attendance.'
@@ -236,91 +347,120 @@ export function TimeRecord() {
       if (!currentEmp) return;
       const targetEmpId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '';
 
-      const currentAction = action;
-      if (currentAction === 'out' && !currentRecord?.timeIn) {
-        toast.error('Cannot record Clock Out: No prior Clock In found for today.');
-        setAction('in');
-        setPageState('check-geofence');
-        return;
-      }
-      setCompletedAction(currentAction);
+      const slot = selectedSlot;
+      setCompletedSlot(slot);
 
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
       const dateStr = getDTRSessionDate(now);
 
+      const baseRec = currentRecord;
+      const newAmArrival = slot === 'am_arrival' ? timeStr : baseRec?.amArrival;
+      const newAmDeparture = slot === 'am_departure' ? timeStr : baseRec?.amDeparture;
+      const newPmArrival = slot === 'pm_arrival' ? timeStr : baseRec?.pmArrival;
+      const newPmDeparture = slot === 'pm_departure' ? timeStr : baseRec?.pmDeparture;
+
+      // Legacy mirror for backward compatibility
+      const primaryTimeIn = newAmArrival || newPmArrival || baseRec?.timeIn || timeStr;
+      const primaryTimeOut = newPmDeparture || newAmDeparture || baseRec?.timeOut;
+
+      const totalHours = calculate4SlotHours(
+        newAmArrival,
+        newAmDeparture,
+        newPmArrival,
+        newPmDeparture,
+        primaryTimeIn,
+        primaryTimeOut
+      );
+
+      const status = getAttendanceStatus(primaryTimeIn, settings.workStartTime, settings.lateThresholdMinutes, geofencePassed);
+
+      let slotPayload: Partial<TimeRecordType> = {};
+      if (slot === 'am_arrival') {
+        slotPayload = {
+          amArrival: timeStr,
+          amArrivalFaceVerified: true,
+          amArrivalGeofenced: geofencePassed,
+          timeIn: primaryTimeIn,
+          timeInFaceVerified: true,
+          timeInGeofenced: geofencePassed,
+          timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
+          ...(imageData ? { timeInPhoto: imageData } : {}),
+        };
+      } else if (slot === 'am_departure') {
+        slotPayload = {
+          amDeparture: timeStr,
+          amDepartureFaceVerified: true,
+          amDepartureGeofenced: geofencePassed,
+          timeOut: timeStr,
+          timeOutFaceVerified: true,
+          timeOutGeofenced: geofencePassed,
+          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
+          ...(imageData ? { timeOutPhoto: imageData } : {}),
+        };
+      } else if (slot === 'pm_arrival') {
+        slotPayload = {
+          pmArrival: timeStr,
+          pmArrivalFaceVerified: true,
+          pmArrivalGeofenced: geofencePassed,
+          timeIn: primaryTimeIn,
+          ...(imageData && !baseRec?.timeInPhoto ? { timeInPhoto: imageData } : {}),
+        };
+      } else if (slot === 'pm_departure') {
+        slotPayload = {
+          pmDeparture: timeStr,
+          pmDepartureFaceVerified: true,
+          pmDepartureGeofenced: geofencePassed,
+          timeOut: timeStr,
+          timeOutFaceVerified: true,
+          timeOutGeofenced: geofencePassed,
+          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
+          ...(imageData ? { timeOutPhoto: imageData } : {}),
+        };
+      }
+
       let createdRecordId: string | null = null;
 
-      if (currentAction === 'in') {
-        const status = getAttendanceStatus(timeStr, settings.workStartTime, settings.lateThresholdMinutes, geofencePassed);
+      if (baseRec?.id) {
+        const updatedData: Partial<TimeRecordType> = {
+          ...slotPayload,
+          totalHours,
+          status: baseRec.status === 'present' && totalHours > 9 ? 'overtime' : (baseRec.status || status),
+        };
+        updateTimeRecord(baseRec.id, updatedData);
+        createdRecordId = baseRec.id;
+        setCurrentRecord({ ...baseRec, ...updatedData });
+      } else {
         const newRecord = addTimeRecord({
           employeeId: targetEmpId,
           date: dateStr,
-          timeIn: timeStr,
-          timeInGeofenced: geofencePassed,
-          timeOutGeofenced: false,
-          timeInFaceVerified: true,
-          timeOutFaceVerified: false,
+          ...slotPayload,
+          totalHours,
           status,
-          timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-          timeInPhoto: imageData,
+          timeInGeofenced: geofencePassed,
+          timeOutGeofenced: slot.includes('departure') ? geofencePassed : false,
+          timeInFaceVerified: true,
+          timeOutFaceVerified: slot.includes('departure'),
         });
         createdRecordId = newRecord.id;
         setCurrentRecord(newRecord);
-        setAction('out');
-        userActionOverrideRef.current = false;
-        setCompletedMessage(
-          `Time In recorded at ${formatTime(timeStr)}${status === 'late' ? ' (Late)' : status === 'offsite' ? ' (Offsite)' : ''}`
-        );
-      } else if (currentRecord) {
-        const totalHours = currentRecord.timeIn ? calculateTotalHours(currentRecord.timeIn, timeStr) : 0;
-        const updatedFields: Partial<TimeRecordType> = {
-          employeeId: targetEmpId,
-          date: currentRecord.date || dateStr,
-          timeOut: timeStr,
-          timeOutGeofenced: geofencePassed,
-          timeOutFaceVerified: true,
-          totalHours,
-          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-          timeOutPhoto: imageData,
-          status: currentRecord.status === 'present' ? (totalHours > 9 ? 'overtime' : 'present') : currentRecord.status,
-        };
-        updateTimeRecord(currentRecord.id, updatedFields);
-        createdRecordId = currentRecord.id;
-        setCurrentRecord({ ...currentRecord, ...updatedFields });
-        setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)} • Total: ${totalHours.toFixed(2)} hours`);
-      } else {
-        // Safe fallback: If user clocked out without a prior clock-in today, persist a record immediately
-        const fallbackRecord = addTimeRecord({
-          employeeId: targetEmpId,
-          date: dateStr,
-          timeIn: timeStr,
-          timeOut: timeStr,
-          totalHours: 0,
-          timeInGeofenced: geofencePassed,
-          timeOutGeofenced: geofencePassed,
-          timeInFaceVerified: true,
-          timeOutFaceVerified: true,
-          status: 'present',
-          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-          timeOutPhoto: imageData,
-        });
-        createdRecordId = fallbackRecord.id;
-        setCurrentRecord(fallbackRecord);
-        setCompletedMessage(`Time Out recorded at ${formatTime(timeStr)}`);
       }
 
+      const slotTitle = ATTENDANCE_SLOTS.find((s) => s.id === slot)?.title || 'Attendance';
+      setCompletedMessage(
+        `${slotTitle} recorded at ${formatTime(timeStr)}${totalHours > 0 ? ` • Total: ${totalHours.toFixed(2)} hrs rendered today` : ''}`
+      );
       setPageState('completed');
 
-      // Asynchronously upload photo and sync to backend in background (never delays timestamp saving)
+      // Asynchronously upload photo and sync to backend
       if (imageData) {
         uploadFacePhoto(
           targetEmpId,
           imageData,
-          currentAction === 'in' ? 'time_in' : 'time_out'
+          slot.includes('arrival') ? 'time_in' : 'time_out'
         ).then((uploadedUrl) => {
           if (uploadedUrl && createdRecordId) {
-            if (currentAction === 'in') {
+            if (slot.includes('arrival')) {
               updateTimeRecord(createdRecordId, { timeInPhoto: uploadedUrl });
             } else {
               updateTimeRecord(createdRecordId, { timeOutPhoto: uploadedUrl });
@@ -330,7 +470,6 @@ export function TimeRecord() {
           console.warn('Face photo background upload notice:', uploadErr);
         });
 
-        // Auto-enroll face biometrics into database if trainee was not enrolled before
         if (!currentEmp.photo || !currentEmp.faceRegistered) {
           updateEmployee(currentEmp.id, {
             photo: imageData,
@@ -354,7 +493,7 @@ export function TimeRecord() {
       const rec = getTodayRecord(lookupId);
       if (rec) {
         setCurrentRecord(rec);
-        setAction(rec?.timeIn && !rec?.timeOut ? 'out' : 'in');
+        setSelectedSlot(getRecommendedSlot(rec, new Date().getHours()));
       }
     }
   };
@@ -370,7 +509,13 @@ export function TimeRecord() {
     minute: '2-digit',
     second: '2-digit',
   });
-  const isCompleted = currentRecord?.timeIn && currentRecord?.timeOut;
+
+  const isAllCompleted = Boolean(
+    currentRecord?.amArrival &&
+    currentRecord?.amDeparture &&
+    currentRecord?.pmArrival &&
+    currentRecord?.pmDeparture
+  );
 
   return (
     <div className="space-y-4">
@@ -399,42 +544,94 @@ export function TimeRecord() {
           )}
         </div>
 
-        {/* Today's Status Row */}
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <div className="bg-white/15 rounded-2xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${currentRecord?.timeIn ? 'bg-green-400' : 'bg-gray-400'}`} />
-              <p className="text-blue-200 text-xs">Time In</p>
-              {currentRecord?.timeInFaceVerified && <Camera size={10} className="text-green-300 ml-auto" />}
-            </div>
-            <p className="text-white font-bold">{currentRecord?.timeIn ? formatTime(currentRecord.timeIn) : '— —'}</p>
-            {currentRecord?.timeInGeofenced && (
-              <p className="text-green-300 text-xs flex items-center gap-0.5 mt-0.5">
-                <MapPin size={8} /> Geofenced
-              </p>
-            )}
+        {/* Today's 4-Slot Status Row (Civil Service Form 48 / DTTR Standard) */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-200">
+              Today's Attendance Status (4 Punch Slots)
+            </span>
+            <span className="text-[10px] text-blue-300 bg-white/10 px-2 py-0.5 rounded-full font-semibold">
+              Civil Service Form 48
+            </span>
           </div>
-          <div className="bg-white/15 rounded-2xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${currentRecord?.timeOut ? 'bg-green-400' : 'bg-gray-400'}`} />
-              <p className="text-blue-200 text-xs">Time Out</p>
-              {currentRecord?.timeOutFaceVerified && <Camera size={10} className="text-green-300 ml-auto" />}
-            </div>
-            <p className="text-white font-bold">{currentRecord?.timeOut ? formatTime(currentRecord.timeOut) : '— —'}</p>
-            {currentRecord?.timeOutGeofenced && (
-              <p className="text-green-300 text-xs flex items-center gap-0.5 mt-0.5">
-                <MapPin size={8} /> Geofenced
-              </p>
-            )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {ATTENDANCE_SLOTS.map((slot) => {
+              const rawTime = (currentRecord as any)?.[slot.field] as string | undefined;
+              const isPunched = Boolean(rawTime);
+              const isVerified = Boolean((currentRecord as any)?.[slot.verifiedField]);
+              const isGeofenced = Boolean((currentRecord as any)?.[slot.geofenceField]);
+              const isCurrent = selectedSlot === slot.id;
+
+              return (
+                <button
+                  key={slot.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSlot(slot.id);
+                    userActionOverrideRef.current = true;
+                  }}
+                  className={`text-left rounded-2xl p-2.5 transition-all cursor-pointer relative border ${
+                    isCurrent
+                      ? 'bg-white text-slate-900 border-white shadow-md ring-2 ring-blue-300'
+                      : isPunched
+                      ? 'bg-white/20 text-white border-white/20 hover:bg-white/25'
+                      : 'bg-white/10 text-white/80 border-white/10 hover:bg-white/15'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span
+                      className={`text-[9.5px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        isCurrent
+                          ? 'bg-blue-100 text-blue-800'
+                          : isPunched
+                          ? 'bg-emerald-400/30 text-emerald-200'
+                          : 'bg-white/15 text-blue-200'
+                      }`}
+                    >
+                      {slot.period}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <div
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isPunched ? 'bg-green-400' : isCurrent ? 'bg-blue-400 animate-ping' : 'bg-gray-400'
+                        }`}
+                      />
+                      {isVerified && <Camera size={10} className={isCurrent ? 'text-green-600' : 'text-green-300'} />}
+                    </div>
+                  </div>
+
+                  <p className={`text-[11px] font-bold truncate ${isCurrent ? 'text-slate-800' : 'text-blue-100'}`}>
+                    {slot.label}
+                  </p>
+                  <p className={`font-black text-sm tracking-tight mt-0.5 ${isCurrent ? 'text-blue-700' : 'text-white'}`}>
+                    {rawTime ? formatTime(rawTime) : '— —'}
+                  </p>
+
+                  <div className="flex items-center gap-1 mt-1">
+                    {isPunched && isGeofenced && (
+                      <span className={`text-[9px] flex items-center gap-0.5 ${isCurrent ? 'text-green-700' : 'text-green-300'}`}>
+                        <MapPin size={8} /> GPS
+                      </span>
+                    )}
+                    {isPunched && (
+                      <span className={`text-[9px] font-semibold ml-auto ${isCurrent ? 'text-emerald-700' : 'text-emerald-300'}`}>
+                        Recorded
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-blue-100 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-          <span>🕒 Clock In: <strong>Open All Times</strong> (Late after {formattedCutoffTime || '8:15 AM'})</span>
+          <span>🕒 Official Hours: <strong>8:00 AM – 12:00 PM</strong> • <strong>1:00 PM – 5:00 PM</strong></span>
           <span>🔄 Daily Reset: <strong>6:00 AM</strong></span>
         </div>
 
-        {/* 4:20 PM / Shift End Proximity Alert Banner */}
+        {/* Shift End Alerts */}
         {Boolean(currentRecord?.timeIn && !currentRecord?.timeOut) &&
           currentTime.getHours() * 60 + currentTime.getMinutes() >= 16 * 60 &&
           currentTime.getHours() * 60 + currentTime.getMinutes() < 17 * 60 && (
@@ -445,31 +642,15 @@ export function TimeRecord() {
                   ⏰ Nearing Daily Shift End (4:20 PM Window)
                 </p>
                 <p className="mt-0.5 text-amber-100/90 leading-relaxed text-[11px]">
-                  Today's standard OJT shift concludes at 5:00 PM ({17 * 60 - (currentTime.getHours() * 60 + currentTime.getMinutes())} mins remaining). Please remember to complete your Biometric Time Out with GPS verification before departing.
+                  Today's standard OJT shift concludes at 5:00 PM ({17 * 60 - (currentTime.getHours() * 60 + currentTime.getMinutes())} mins remaining). Please remember to complete your Biometric PM Departure before leaving.
                 </p>
               </div>
             </div>
           )}
 
-        {/* Overtime / Past 5:00 PM Alert Banner */}
-        {Boolean(currentRecord?.timeIn && !currentRecord?.timeOut) &&
-          currentTime.getHours() * 60 + currentTime.getMinutes() >= 17 * 60 && (
-            <div className="mt-3 bg-red-500/25 border border-red-300/60 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-red-100">
-              <AlertTriangle size={16} className="text-red-300 shrink-0 mt-0.5 animate-bounce" />
-              <div>
-                <p className="font-bold text-white text-xs">
-                  🚨 Regular Shift Concluded — Clock Out Pending
-                </p>
-                <p className="mt-0.5 text-red-100/90 leading-relaxed text-[11px]">
-                  It is past 5:00 PM. Please submit your Time Out now to record and lock in today's rendered OJT hours.
-                </p>
-              </div>
-            </div>
-          )}
-
-        {currentRecord?.totalHours && (
+        {currentRecord?.totalHours !== undefined && currentRecord.totalHours > 0 && (
           <div className="mt-3 bg-white/15 rounded-2xl p-3 text-center">
-            <p className="text-blue-200 text-xs">Total Hours</p>
+            <p className="text-blue-200 text-xs">Total Hours Rendered Today</p>
             <p className="text-white font-bold text-xl">{currentRecord.totalHours.toFixed(2)} hrs</p>
           </div>
         )}
@@ -477,31 +658,7 @@ export function TimeRecord() {
 
       {/* Main Action Area */}
       <AnimatePresence mode="wait">
-        {isCompleted && pageState !== 'completed' ? (
-          <motion.div
-            key="already-done"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center"
-          >
-            <CheckCircle size={48} className="text-green-500 mx-auto mb-3" />
-            <h3 className="font-bold text-gray-800 mb-1">Attendance Completed</h3>
-            <p className="text-sm text-gray-500">You have already clocked in and out for today.</p>
-            <div
-              className={`inline-block mt-3 px-4 py-1.5 rounded-full text-sm font-medium ${
-                currentRecord?.status === 'present'
-                  ? 'bg-green-100 text-green-700'
-                  : currentRecord?.status === 'late'
-                    ? 'bg-orange-100 text-orange-700'
-                    : currentRecord?.status === 'overtime'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-gray-100 text-gray-700'
-              }`}
-            >
-              {currentRecord?.status?.charAt(0).toUpperCase() + (currentRecord?.status?.slice(1) || '')}
-            </div>
-          </motion.div>
-        ) : pageState === 'check-geofence' ? (
+        {pageState === 'check-geofence' ? (
           <motion.div
             key="geofence"
             initial={{ opacity: 0, y: 20 }}
@@ -514,12 +671,12 @@ export function TimeRecord() {
                 <MapPin size={18} className="text-blue-700" />
               </div>
               <div className="flex-1">
-                <h3 className="font-bold text-gray-800">Step 1: Location Verification</h3>
-                <p className="text-xs text-gray-500">Checking if you're within the geofence zone</p>
+                <h3 className="font-bold text-gray-800">Step 1: Shift &amp; Location Verification</h3>
+                <p className="text-xs text-gray-500">Select punch slot &amp; verify designated workplace geofence</p>
               </div>
             </div>
 
-            {/* Prominent GPS Permission Warning Banner */}
+            {/* GPS Warning Banner */}
             {geofenceStatus === 'denied' && (
               <div className="mb-4 bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
                 <AlertTriangle size={22} className="text-amber-600 shrink-0 mt-0.5" />
@@ -558,46 +715,170 @@ export function TimeRecord() {
               </div>
             )}
 
+            {/* Shift & Slot Switcher (AM & PM) */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-700">Choose Attendance Punch Slot:</span>
+                <span className="text-[11px] text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                  {currentSlotConfig.title}
+                </span>
+              </div>
 
-            {/* Attendance Action Mode Switcher */}
-            <div className="flex bg-slate-100 p-1 rounded-2xl mb-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setAction('in');
-                  userActionOverrideRef.current = true;
-                }}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-                  action === 'in'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Clock In
-              </button>
-              <button
-                type="button"
-                disabled={!currentRecord?.timeIn}
-                onClick={() => {
-                  if (!currentRecord?.timeIn) {
-                    toast.error('Clock Out is closed. You must clock in first before you can clock out.');
-                    return;
-                  }
-                  setAction('out');
-                  userActionOverrideRef.current = true;
-                }}
-                title={!currentRecord?.timeIn ? 'Clock Out closed — Clock In first' : 'Switch to Clock Out'}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                  !currentRecord?.timeIn
-                    ? 'opacity-40 cursor-not-allowed text-slate-400 bg-transparent'
-                    : action === 'out'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {!currentRecord?.timeIn && <Lock size={12} className="text-slate-400" />}
-                <span>Clock Out</span>
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Morning (AM) Shift Box */}
+                <div className="p-2.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between mb-1.5 px-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1">
+                      <Sunrise size={12} className="text-amber-500" />
+                      Morning Shift (A.M.)
+                    </span>
+                    <span className="text-[9.5px] text-slate-400">8:00 AM – 12:00 PM</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlot('am_arrival');
+                        userActionOverrideRef.current = true;
+                      }}
+                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                        selectedSlot === 'am_arrival'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                          : currentRecord?.amArrival
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold">Arrival (In)</span>
+                        {currentRecord?.amArrival && (
+                          <CheckCircle2
+                            size={12}
+                            className={selectedSlot === 'am_arrival' ? 'text-blue-200' : 'text-emerald-600'}
+                          />
+                        )}
+                      </div>
+                      <p
+                        className={`text-xs font-black ${
+                          selectedSlot === 'am_arrival' ? 'text-white' : 'text-slate-800'
+                        }`}
+                      >
+                        {currentRecord?.amArrival ? formatTime(currentRecord.amArrival) : 'Not Clocked'}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlot('am_departure');
+                        userActionOverrideRef.current = true;
+                      }}
+                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                        selectedSlot === 'am_departure'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                          : currentRecord?.amDeparture
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold">Departure (Out)</span>
+                        {currentRecord?.amDeparture && (
+                          <CheckCircle2
+                            size={12}
+                            className={selectedSlot === 'am_departure' ? 'text-blue-200' : 'text-emerald-600'}
+                          />
+                        )}
+                      </div>
+                      <p
+                        className={`text-xs font-black ${
+                          selectedSlot === 'am_departure' ? 'text-white' : 'text-slate-800'
+                        }`}
+                      >
+                        {currentRecord?.amDeparture ? formatTime(currentRecord.amDeparture) : 'Not Clocked'}
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Afternoon (PM) Shift Box */}
+                <div className="p-2.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between mb-1.5 px-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-1">
+                      <Sun size={12} className="text-orange-500" />
+                      Afternoon Shift (P.M.)
+                    </span>
+                    <span className="text-[9.5px] text-slate-400">1:00 PM – 5:00 PM</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlot('pm_arrival');
+                        userActionOverrideRef.current = true;
+                      }}
+                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                        selectedSlot === 'pm_arrival'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                          : currentRecord?.pmArrival
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold">Arrival (In)</span>
+                        {currentRecord?.pmArrival && (
+                          <CheckCircle2
+                            size={12}
+                            className={selectedSlot === 'pm_arrival' ? 'text-blue-200' : 'text-emerald-600'}
+                          />
+                        )}
+                      </div>
+                      <p
+                        className={`text-xs font-black ${
+                          selectedSlot === 'pm_arrival' ? 'text-white' : 'text-slate-800'
+                        }`}
+                      >
+                        {currentRecord?.pmArrival ? formatTime(currentRecord.pmArrival) : 'Not Clocked'}
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlot('pm_departure');
+                        userActionOverrideRef.current = true;
+                      }}
+                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                        selectedSlot === 'pm_departure'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                          : currentRecord?.pmDeparture
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold">Departure (Out)</span>
+                        {currentRecord?.pmDeparture && (
+                          <CheckCircle2
+                            size={12}
+                            className={selectedSlot === 'pm_departure' ? 'text-blue-200' : 'text-emerald-600'}
+                          />
+                        )}
+                      </div>
+                      <p
+                        className={`text-xs font-black ${
+                          selectedSlot === 'pm_departure' ? 'text-white' : 'text-slate-800'
+                        }`}
+                      >
+                        {currentRecord?.pmDeparture ? formatTime(currentRecord.pmDeparture) : 'Not Clocked'}
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {isPastLateThreshold && (
@@ -679,12 +960,12 @@ export function TimeRecord() {
               ) : geofencePassed ? (
                 <>
                   <Camera size={16} />
-                  <span>Proceed to Face Scan (Clock {action === 'in' ? 'In' : 'Out'})</span>
+                  <span>Proceed to Face Scan ({currentSlotConfig.label})</span>
                 </>
               ) : geofenceStatus === 'outside' ? (
                 <>
                   <MapPin size={16} />
-                  <span>Outside Work Premises — Cannot Clock In/Out</span>
+                  <span>Outside Work Premises — Cannot Punch Attendance</span>
                 </>
               ) : (
                 <>
@@ -707,7 +988,9 @@ export function TimeRecord() {
                 <Camera size={18} className="text-purple-700" />
               </div>
               <div>
-                <h3 className="font-bold text-gray-800">Step 2: Face Verification ({action === 'in' ? 'Clock In' : 'Clock Out'})</h3>
+                <h3 className="font-bold text-gray-800">
+                  Step 2: Face Verification ({currentSlotConfig.title})
+                </h3>
                 <p className="text-xs text-gray-500">Verifying identity via facial recognition</p>
               </div>
             </div>
@@ -724,11 +1007,11 @@ export function TimeRecord() {
                   AI Face Biometrics Active
                 </p>
                 <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Database Connected
+                  {currentSlotConfig.period} Shift Punch
                 </span>
               </div>
               <p className="text-emerald-800">
-                Cloud Database: <span className="font-semibold">Supabase Database & Storage (Active)</span>
+                Recording Slot: <span className="font-semibold">{currentSlotConfig.title}</span>
               </p>
               <p className="text-emerald-800">
                 Face Verification: <span className="font-semibold">Real-time Biometric AI Match</span>
@@ -766,7 +1049,9 @@ export function TimeRecord() {
             >
               <CheckCircle size={40} className="text-green-600" />
             </motion.div>
-            <h3 className="font-bold text-gray-800 text-lg mb-2">Clock {completedAction === 'in' ? 'In' : 'Out'} Successful!</h3>
+            <h3 className="font-bold text-gray-800 text-lg mb-2">
+              {completedSlotConfig.label} Successful!
+            </h3>
             <p className="text-sm text-gray-500 mb-4">{completedMessage}</p>
 
             <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
@@ -794,32 +1079,13 @@ export function TimeRecord() {
               Done (Return to Dashboard)
             </button>
 
-            {completedAction === 'in' && currentRecord?.timeIn && !currentRecord?.timeOut && (
-              <button
-                onClick={handleReset}
-                className="w-full mt-2.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-semibold text-xs transition-all flex items-center justify-center gap-2"
-              >
-                <RefreshCw size={13} />
-                Need to Clock Out? Click here
-              </button>
-            )}
-
-            {currentRecord?.timeIn && currentRecord?.timeOut && (
-              <button
-                onClick={() => {
-                  setCurrentRecord(null);
-                  setAction('in');
-                  setPageState('check-geofence');
-                  setGeofencePassed(false);
-                  setGeofenceCoords(undefined);
-                  setRetryCount((p) => p + 1);
-                }}
-                className="w-full mt-3 py-3 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
-              >
-                <RefreshCw size={14} />
-                Clock In Again (New Shift)
-              </button>
-            )}
+            <button
+              onClick={handleReset}
+              className="w-full mt-2.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-semibold text-xs transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={13} />
+              Need to Record Another Shift Punch? Click here
+            </button>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -833,11 +1099,11 @@ export function TimeRecord() {
       >
         <Clock size={16} className="text-blue-500 mt-0.5 shrink-0" />
         <div className="text-xs text-blue-700">
-          <p className="font-semibold mb-1">How it works:</p>
+          <p className="font-semibold mb-1">Civil Service Form 48 DTTR Guidelines:</p>
           <ol className="space-y-0.5 list-decimal list-inside text-blue-600">
-            <li>System checks your GPS location against geofence zones</li>
-            <li>Facial recognition verifies your identity</li>
-            <li>Time is automatically recorded with verification badges</li>
+            <li><strong>Morning Shift (A.M.):</strong> Arrival (Clock In) &bull; Departure (Lunch Break Out)</li>
+            <li><strong>Afternoon Shift (P.M.):</strong> Arrival (Clock In) &bull; Departure (Day End Out)</li>
+            <li>Each punch verifies both your workplace GPS coordinates and real-time facial recognition</li>
           </ol>
         </div>
       </motion.div>

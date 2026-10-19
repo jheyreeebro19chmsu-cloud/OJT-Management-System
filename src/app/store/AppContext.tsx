@@ -4538,10 +4538,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
 
     if (existing) {
-      // If an existing record exists, keep permanent timeIn and only update if empty or if fields provided
+      // If an existing record exists, keep permanent timeIn and merge punches across AM/PM shifts
       const updated: TimeRecord = {
         ...existing,
+        ...recordWithAY,
         timeIn: existing.timeIn || recordWithAY.timeIn,
+        timeOut: recordWithAY.timeOut || existing.timeOut,
+        amArrival: recordWithAY.amArrival || existing.amArrival,
+        amDeparture: recordWithAY.amDeparture || existing.amDeparture,
+        pmArrival: recordWithAY.pmArrival || existing.pmArrival,
+        pmDeparture: recordWithAY.pmDeparture || existing.pmDeparture,
+        amArrivalFaceVerified: recordWithAY.amArrivalFaceVerified ?? existing.amArrivalFaceVerified,
+        amDepartureFaceVerified: recordWithAY.amDepartureFaceVerified ?? existing.amDepartureFaceVerified,
+        pmArrivalFaceVerified: recordWithAY.pmArrivalFaceVerified ?? existing.pmArrivalFaceVerified,
+        pmDepartureFaceVerified: recordWithAY.pmDepartureFaceVerified ?? existing.pmDepartureFaceVerified,
+        amArrivalGeofenced: recordWithAY.amArrivalGeofenced ?? existing.amArrivalGeofenced,
+        amDepartureGeofenced: recordWithAY.amDepartureGeofenced ?? existing.amDepartureGeofenced,
+        pmArrivalGeofenced: recordWithAY.pmArrivalGeofenced ?? existing.pmArrivalGeofenced,
+        pmDepartureGeofenced: recordWithAY.pmDepartureGeofenced ?? existing.pmDepartureGeofenced,
         timeInFaceVerified: existing.timeInFaceVerified || recordWithAY.timeInFaceVerified,
         timeInGeofenced: existing.timeInGeofenced || recordWithAY.timeInGeofenced,
         timeInPhoto: existing.timeInPhoto || recordWithAY.timeInPhoto,
