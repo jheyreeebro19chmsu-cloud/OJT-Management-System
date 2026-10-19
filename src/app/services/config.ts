@@ -7,18 +7,18 @@ export const getApiBase = (): string => {
   const envUrl = import.meta.env.VITE_DJANGO_API_URL;
   const securityKey = import.meta.env.VITE_SECURITY_API_KEY;
 
-  // 1. If VITE_DJANGO_API_URL is configured, valid, and not a dead deployment
+  // 1. If VITE_DJANGO_API_URL is configured, valid, and not the old dead f35i deployment
   if (
     envUrl &&
     envUrl.startsWith('http') &&
     !envUrl.includes('railway.app') &&
-    !envUrl.includes('onrender.com')
+    !envUrl.includes('ojt-management-system-capstone-f35i')
   ) {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // 2. If running on production or custom domain host (including chmsuojtmis.site),
-  // return empty string so pure Supabase + on-device features activate cleanly without CORS errors.
+  // 2. If running on production and no valid live Django URL is provided,
+  // return empty string so pure Supabase + on-device features activate cleanly.
   if (
     typeof window !== 'undefined' &&
     window.location &&
@@ -32,7 +32,7 @@ export const getApiBase = (): string => {
     securityKey &&
     securityKey.startsWith('http') &&
     !securityKey.includes('railway.app') &&
-    !securityKey.includes('onrender.com')
+    !securityKey.includes('ojt-management-system-capstone-f35i')
   ) {
     return `${securityKey.replace(/\/+$/, '')}/api`;
   }
