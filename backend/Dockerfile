@@ -18,6 +18,9 @@ RUN python -m pip install --upgrade pip setuptools wheel
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
+# Pre-download buffalo_s model during build time (eliminates runtime memory spikes)
+RUN python -c "from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_s', allowed_modules=['detection', 'recognition'])" || true
+
 # Copy application code
 COPY . /app/
 

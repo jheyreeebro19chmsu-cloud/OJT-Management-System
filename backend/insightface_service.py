@@ -62,10 +62,14 @@ def get_face_analysis_app() -> Optional[Any]:
     with _app_lock:
         if _app_instance is None:
             try:
-                logger.info("Initializing InsightFace FaceAnalysis ('buffalo_s' on CPU)...")
-                app = FaceAnalysis(name='buffalo_s', providers=['CPUExecutionProvider'])
-                # ctx_id=-1 for CPU execution, det_size=(640, 640) for standard camera feed resolution
-                app.prepare(ctx_id=-1, det_size=(640, 640))
+                logger.info("Initializing InsightFace FaceAnalysis ('buffalo_s' lightweight on CPU)...")
+                app = FaceAnalysis(
+                    name='buffalo_s',
+                    allowed_modules=['detection', 'recognition'],
+                    providers=['CPUExecutionProvider']
+                )
+                # det_size=(320, 320) for optimal memory (<150MB) and fast CPU inference
+                app.prepare(ctx_id=-1, det_size=(320, 320))
                 _app_instance = app
                 logger.info("InsightFace FaceAnalysis ('buffalo_s') successfully prepared and cached.")
             except Exception as e:
