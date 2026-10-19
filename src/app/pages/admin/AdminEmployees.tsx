@@ -952,6 +952,10 @@ export function AdminEmployees() {
 
   const openEdit = (emp: Employee) => {
     if (!emp) return;
+    if (getEmployeeGroup(emp) === 'student') {
+      openView(emp);
+      return;
+    }
     setSelectedEmp(emp);
     setFaceEnrollOpen(false);
     setEditingAddress(false);
@@ -1516,16 +1520,6 @@ export function AdminEmployees() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            openEdit(emp);
-                          }}
-                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg cursor-pointer"
-                          title="Edit Trainee"
-                        >
-                          <Edit3 size={15} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
                             handleReject(emp);
                           }}
                           className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
@@ -1565,18 +1559,20 @@ export function AdminEmployees() {
                           </button>
                         )}
 
-                        {/* Edit Trainee/Account Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEdit(emp);
-                          }}
-                          className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-all cursor-pointer"
-                          title={isInstructorGroup ? "Edit Instructor Account" : "Edit Trainee Account"}
-                        >
-                          <Edit3 size={16} />
-                        </button>
+                        {/* Edit Trainee/Account Button (Instructors/HTEs only) */}
+                        {!isTraineeGroup && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEdit(emp);
+                            }}
+                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-all cursor-pointer"
+                            title={isInstructorGroup ? "Edit Instructor Account" : "Edit Account"}
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                        )}
 
                         {/* 3-Dots Dropdown Menu */}
                         <div className="relative">
@@ -1619,15 +1615,17 @@ export function AdminEmployees() {
                                 </button>
                               )}
 
-                              <button
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  openEdit(emp);
-                                }}
-                                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-colors cursor-pointer"
-                              >
-                                <Edit3 size={14} className="text-amber-600" /> Edit Account Details
-                              </button>
+                              {!isTraineeGroup && (
+                                <button
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    openEdit(emp);
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-colors cursor-pointer"
+                                >
+                                  <Edit3 size={14} className="text-amber-600" /> Edit Account Details
+                                </button>
+                              )}
 
                               {isTraineeGroup && (
                                 <button
@@ -1806,16 +1804,18 @@ export function AdminEmployees() {
                                   <FileCheck size={15} />
                                 </button>
                               )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEdit(emp);
-                                }}
-                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg cursor-pointer"
-                                title={isInstructorGroup ? "Edit Instructor" : "Edit Trainee"}
-                              >
-                                <Edit3 size={15} />
-                              </button>
+                              {!isTraineeGroup && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEdit(emp);
+                                  }}
+                                  className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg cursor-pointer"
+                                  title={isInstructorGroup ? "Edit Instructor" : "Edit Trainee"}
+                                >
+                                  <Edit3 size={15} />
+                                </button>
+                              )}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -3716,26 +3716,28 @@ export function AdminEmployees() {
                           <span className="hidden sm:inline">Review Docs</span>
                         </button>
                       )}
-                      {modalMode !== 'edit' ? (
-                        <button
-                          type="button"
-                          onClick={() => openEdit(selectedEmp)}
-                          className="px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                          title="Edit Account Details"
-                        >
-                          <Edit3 size={14} />
-                          <span className="hidden sm:inline">Edit</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => openView(selectedEmp)}
-                          className="px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                          title="View Profile Details"
-                        >
-                          <Eye size={14} />
-                          <span className="hidden sm:inline">View Profile</span>
-                        </button>
+                      {getEmployeeGroup(selectedEmp) !== 'student' && (
+                        modalMode !== 'edit' ? (
+                          <button
+                            type="button"
+                            onClick={() => openEdit(selectedEmp)}
+                            className="px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Edit Account Details"
+                          >
+                            <Edit3 size={14} />
+                            <span className="hidden sm:inline">Edit</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openView(selectedEmp)}
+                            className="px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="View Profile Details"
+                          >
+                            <Eye size={14} />
+                            <span className="hidden sm:inline">View Profile</span>
+                          </button>
+                        )
                       )}
                       <button
                         type="button"
@@ -3943,7 +3945,7 @@ export function AdminEmployees() {
 
                               {/* Quick Action Buttons */}
                               <div className="flex flex-wrap items-center gap-2 mt-3 pt-2.5 border-t border-blue-200/60">
-                                {isTrainee && (
+                                {isTrainee ? (
                                   <button
                                     type="button"
                                     onClick={() => openReview(selectedEmp)}
@@ -3951,14 +3953,15 @@ export function AdminEmployees() {
                                   >
                                     <FileCheck size={13} /> Review Documents
                                   </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEdit(selectedEmp)}
+                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                                  >
+                                    <Edit3 size={13} /> Edit Account Info
+                                  </button>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => openEdit(selectedEmp)}
-                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-                                >
-                                  <Edit3 size={13} /> Edit Account Info
-                                </button>
                               </div>
                             </div>
                           </div>
@@ -3966,117 +3969,17 @@ export function AdminEmployees() {
                           {/* Contact / Telephone Number */}
                           <div className="mt-3">
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Contact / Telephone Number</label>
-                            {!editingPhone ? (
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-sm text-gray-700 font-mono">
-                                  {resolveEmpPhone(selectedEmp) || '—'}
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    setPhoneValue(resolveEmpPhone(selectedEmp));
-                                    setEditingPhone(true);
-                                  }}
-                                  className="text-sm text-blue-600 hover:text-blue-800"
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-2">
-                                <input
-                                  value={phoneValue}
-                                  onChange={(e) => setPhoneValue(e.target.value)}
-                                  placeholder="+639123456789"
-                                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"
-                                />
-                                <button
-                                  onClick={async () => {
-                                    if (!selectedEmp) return;
-                                    await updateEmployee(selectedEmp.id, {
-                                      phone: phoneValue,
-                                      contactPhone: phoneValue,
-                                      telephone: phoneValue,
-                                    });
-                                    setSelectedEmp({
-                                      ...selectedEmp,
-                                      phone: phoneValue,
-                                      contactPhone: phoneValue,
-                                      telephone: phoneValue,
-                                    });
-                                    setEditingPhone(false);
-                                    toast.success('Contact number updated');
-                                  }}
-                                  className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setEditingPhone(false);
-                                    setPhoneValue(resolveEmpPhone(selectedEmp));
-                                  }}
-                                  className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            )}
+                            <div className="text-sm text-gray-700 font-mono">
+                              {resolveEmpPhone(selectedEmp) || '—'}
+                            </div>
                           </div>
 
                           {/* Residential Home Address */}
                           <div className="mt-3">
                             <label className="text-xs font-semibold text-gray-600 block mb-1">Residential Address (Home)</label>
-                            {!editingAddress ? (
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-sm text-gray-700">{resolveEmpHomeAddress(selectedEmp) || '—'}</div>
-                                <button
-                                  onClick={() => {
-                                    setAddressValue(resolveEmpHomeAddress(selectedEmp));
-                                    setEditingAddress(true);
-                                  }}
-                                  className="text-sm text-blue-600 hover:text-blue-800"
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-2">
-                                <input
-                                  value={addressValue}
-                                  onChange={(e) => setAddressValue(e.target.value)}
-                                  placeholder="House No., Street, Barangay, City, Province"
-                                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
-                                />
-                                <button
-                                  onClick={async () => {
-                                    if (!selectedEmp) return;
-                                    await updateEmployee(selectedEmp.id, {
-                                      residentialAddress: addressValue,
-                                      address: addressValue,
-                                    });
-                                    setSelectedEmp({
-                                      ...selectedEmp,
-                                      residentialAddress: addressValue,
-                                      address: addressValue,
-                                    });
-                                    setEditingAddress(false);
-                                    toast.success('Residential address updated');
-                                  }}
-                                  className="px-3 py-2 bg-blue-600 text-white rounded-xl text-sm"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setEditingAddress(false);
-                                    setAddressValue(resolveEmpHomeAddress(selectedEmp));
-                                  }}
-                                  className="px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-sm"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            )}
+                            <div className="text-sm text-gray-700">
+                              {resolveEmpHomeAddress(selectedEmp) || '—'}
+                            </div>
                           </div>
 
                           {/* Attendance Stats - Trainees ONLY */}
@@ -4743,7 +4646,7 @@ export function AdminEmployees() {
                           {/* Profile modal footer quick actions */}
                           <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-gray-100">
                             <div className="flex items-center gap-2">
-                              {isTrainee && (
+                              {isTrainee ? (
                                 <button
                                   type="button"
                                   onClick={() => openReview(selectedEmp)}
@@ -4751,14 +4654,15 @@ export function AdminEmployees() {
                                 >
                                   <FileCheck size={14} /> Review Documents
                                 </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(selectedEmp)}
+                                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <Edit3 size={14} /> Edit Account
+                                </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => openEdit(selectedEmp)}
-                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
-                              >
-                                <Edit3 size={14} /> Edit Account
-                              </button>
                             </div>
                             <button
                               type="button"
@@ -5128,13 +5032,6 @@ export function AdminEmployees() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(selectedEmp)}
-                          className="px-3 py-1.5 rounded-xl bg-white border border-violet-200 text-violet-800 hover:bg-violet-50 text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                        >
-                          <Edit3 size={13} /> Edit Account
-                        </button>
                         <button
                           type="button"
                           onClick={() => openView(selectedEmp)}
