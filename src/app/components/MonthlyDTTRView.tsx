@@ -14,6 +14,8 @@ import {
   PenTool,
   X,
   Send,
+  ShieldCheck,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
@@ -286,27 +288,39 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         }
       }
 
-      if (custom && (custom.amArrival || custom.pmDeparture || custom.pmArrival || custom.amDeparture || (typeof custom.hours === 'number' && custom.hours > 0) || custom.tasks)) {
+      // Official biometric/attendance record takes absolute precedence and cannot be overridden
+      const hasAutoPunch = !!(autoAmIn || autoAmOut || autoPmIn || autoPmOut || autoHours > 0);
+      const isInstructorView = viewerRole === 'admin';
+
+      // For arrival/departures: trainee punches are the authoritative source of truth and cannot be overridden
+      const finalAmIn = autoAmIn || (!isInstructorView && custom?.amArrival ? custom.amArrival.trim() : '');
+      const finalAmOut = autoAmOut || (!isInstructorView && custom?.amDeparture ? custom.amDeparture.trim() : '');
+      const finalPmIn = autoPmIn || (!isInstructorView && custom?.pmArrival ? custom.pmArrival.trim() : '');
+      const finalPmOut = autoPmOut || (!isInstructorView && custom?.pmDeparture ? custom.pmDeparture.trim() : '');
+      const finalHours = autoHours > 0 ? autoHours : (!isInstructorView && typeof custom?.hours === 'number' ? custom.hours : 0);
+      const finalTasks = (custom?.tasks !== undefined && custom.tasks !== null ? custom.tasks : autoTasks) || '';
+
+      if (hasAutoPunch || (autoRec && (autoRec.timeIn || autoRec.timeOut || autoRec.amArrival || autoRec.pmDeparture))) {
         rows.push({
           day,
-          amArrival: (custom.amArrival && custom.amArrival.trim()) || autoAmIn,
-          amDeparture: (custom.amDeparture && custom.amDeparture.trim()) || autoAmOut,
-          pmArrival: (custom.pmArrival && custom.pmArrival.trim()) || autoPmIn,
-          pmDeparture: (custom.pmDeparture && custom.pmDeparture.trim()) || autoPmOut,
-          hours: typeof custom.hours === 'number' ? custom.hours : autoHours,
-          tasks: custom.tasks !== undefined ? custom.tasks : autoTasks,
-          source: 'custom',
-        });
-      } else if (autoRec && (autoRec.timeIn || autoRec.timeOut || autoRec.amArrival || autoRec.pmDeparture)) {
-        rows.push({
-          day,
-          amArrival: autoAmIn,
-          amDeparture: autoAmOut,
-          pmArrival: autoPmIn,
-          pmDeparture: autoPmOut,
-          hours: autoHours,
-          tasks: autoTasks,
+          amArrival: finalAmIn,
+          amDeparture: finalAmOut,
+          pmArrival: finalPmIn,
+          pmDeparture: finalPmOut,
+          hours: finalHours,
+          tasks: finalTasks,
           source: 'auto',
+        });
+      } else if (custom && (custom.amArrival || custom.pmDeparture || custom.pmArrival || custom.amDeparture || (typeof custom.hours === 'number' && custom.hours > 0) || custom.tasks)) {
+        rows.push({
+          day,
+          amArrival: finalAmIn,
+          amDeparture: finalAmOut,
+          pmArrival: finalPmIn,
+          pmDeparture: finalPmOut,
+          hours: finalHours,
+          tasks: finalTasks,
+          source: 'custom',
         });
       } else {
         rows.push({
@@ -374,6 +388,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       toast.error('No trainee intern selected.');
       return;
     }
+    if (viewerRole === 'admin') {
+      toast.error('Trainee records cannot be modified or overridden in an Instructor account.');
+      return;
+    }
 
     const row = dailyRows.find((r) => r.day === day);
     const originalText = row?.tasks || '';
@@ -383,27 +401,11 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     setSendingDays((prev) => ({ ...prev, [day]: true }));
     try {
       const autoRec = monthTimeRecordsMap.get(day);
-      const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-      // 1. Sync task text to system time_records notes
+      // 1. Sync task text to system time_records notes if attendance record exists
       if (autoRec) {
         updateTimeRecord(autoRec.id, {
           notes: taskText,
-        });
-      } else if (taskText) {
-        addTimeRecord({
-          employeeId: selectedEmployee.id,
-          date: dateStr,
-          timeIn: '08:00',
-          timeOut: '17:00',
-          totalHours: 0,
-          status: 'present',
-          notes: taskText,
-          approvalStatus: 'approved',
-          timeInGeofenced: true,
-          timeOutGeofenced: true,
-          timeInFaceVerified: true,
-          timeOutFaceVerified: true,
         });
       }
 
@@ -465,6 +467,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       toast.error('No trainee intern selected.');
       return;
     }
+    if (viewerRole === 'admin') {
+      toast.error('Trainee records cannot be modified or overridden in an Instructor account.');
+      return;
+    }
 
     const modifiedDays = Object.keys(taskEdits)
       .map(Number)
@@ -487,25 +493,9 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       modifiedDays.forEach((day) => {
         const taskText = (taskEdits[day] || '').trim();
         const autoRec = monthTimeRecordsMap.get(day);
-        const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
         if (autoRec) {
           updateTimeRecord(autoRec.id, { notes: taskText });
-        } else if (taskText) {
-          addTimeRecord({
-            employeeId: selectedEmployee.id,
-            date: dateStr,
-            timeIn: '08:00',
-            timeOut: '17:00',
-            totalHours: 0,
-            status: 'present',
-            notes: taskText,
-            approvalStatus: 'approved',
-            timeInGeofenced: true,
-            timeOutGeofenced: true,
-            timeInFaceVerified: true,
-            timeOutFaceVerified: true,
-          });
         }
 
         const existingEntry = existingCustom[day] || {};
@@ -546,6 +536,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
   // Start batch editing tasks modal (ONLY tasks are editable)
   const handleOpenEditTasks = () => {
+    if (viewerRole === 'admin') return;
     const entries: Record<number, MonthlyDttrDayEntry> = {};
     dailyRows.forEach((r) => {
       const draft = taskEdits[r.day];
@@ -566,6 +557,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   // Save tasks from the batch modal (ONLY tasks are updated)
   const handleSaveTasks = () => {
     if (!selectedEmployee) return;
+    if (viewerRole === 'admin') {
+      toast.error('Trainee records cannot be modified or overridden in an Instructor account.');
+      return;
+    }
     setIsSaving(true);
     try {
       const existingCustom: Record<number, MonthlyDttrDayEntry> = {
@@ -576,26 +571,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         const day = Number(dayStr);
         const taskText = (entry.tasks || '').trim();
         const autoRec = monthTimeRecordsMap.get(day);
-        const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
         if (autoRec) {
           updateTimeRecord(autoRec.id, {
             notes: taskText,
-          });
-        } else if (taskText) {
-          addTimeRecord({
-            employeeId: selectedEmployee.id,
-            date: dateStr,
-            timeIn: '08:00',
-            timeOut: '17:00',
-            totalHours: 0,
-            status: 'present',
-            notes: taskText,
-            approvalStatus: 'approved',
-            timeInGeofenced: true,
-            timeOutGeofenced: true,
-            timeInFaceVerified: true,
-            timeOutFaceVerified: true,
           });
         }
 
@@ -634,6 +613,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
   // Open Sign Modal
   const handleOpenSignModal = () => {
+    if (viewerRole !== 'hte') return;
     setSignerName(defaultSupervisorName);
     setSignerTitle(savedDttr?.hteSupervisorTitle || supervisorFromHost?.position || 'HTE Supervisor');
     setSignNotes(savedDttr?.hteSignatureNotes || '');
@@ -725,36 +705,47 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSendAllTasks}
-              disabled={isSavingAll || modifiedDayCount === 0}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
-                modifiedDayCount > 0
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 cursor-pointer'
-                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-              }`}
-              title={modifiedDayCount > 0 ? `Send ${modifiedDayCount} edited task(s)` : 'No edited tasks to send'}
-            >
-              {isSavingAll ? (
-                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <Send size={14} />
-              )}
-              <span>{modifiedDayCount > 0 ? `Send Tasks (${modifiedDayCount})` : 'Send Tasks'}</span>
-            </button>
+            {viewerRole !== 'admin' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSendAllTasks}
+                  disabled={isSavingAll || modifiedDayCount === 0}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                    modifiedDayCount > 0
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 cursor-pointer'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                  }`}
+                  title={modifiedDayCount > 0 ? `Send ${modifiedDayCount} edited task(s)` : 'No edited tasks to send'}
+                >
+                  {isSavingAll ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Send size={14} />
+                  )}
+                  <span>{modifiedDayCount > 0 ? `Send Tasks (${modifiedDayCount})` : 'Send Tasks'}</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={handleOpenEditTasks}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
-              title="Open batch modal to edit tasks"
-            >
-              <Edit3 size={14} />
-              <span>Batch Edit Tasks</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={handleOpenEditTasks}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
+                  title="Open batch modal to edit tasks"
+                >
+                  <Edit3 size={14} />
+                  <span>Batch Edit Tasks</span>
+                </button>
+              </>
+            )}
 
-            {(viewerRole === 'hte' || viewerRole === 'admin') && (
+            {viewerRole === 'admin' && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold">
+                <Lock size={13} className="text-slate-500" />
+                <span>Read-Only Official Record</span>
+              </div>
+            )}
+
+            {viewerRole === 'hte' && (
               <button
                 type="button"
                 onClick={handleOpenSignModal}
@@ -789,6 +780,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Instructor Audit Mode Read-Only Banner */}
+        {viewerRole === 'admin' && (
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-emerald-900 text-xs">
+            <ShieldCheck size={16} className="text-emerald-600 shrink-0" />
+            <div className="flex-1">
+              <span className="font-bold text-emerald-950">Instructor Audit Mode: </span>
+              <span>Official trainee biometric attendance logs and rendered hours are verified records and cannot be overridden or modified.</span>
+            </div>
+          </div>
+        )}
 
         {/* Dropdown Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
@@ -1006,10 +1008,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span>TASKS / ASSIGNMENTS PERFORMED</span>
-                    <span className="print:hidden text-[9px] font-bold tracking-normal normal-case text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                      <Edit3 size={9} />
-                      <span>Editable • Enter / Send</span>
-                    </span>
+                    {viewerRole === 'admin' ? (
+                      <span className="print:hidden text-[9px] font-bold tracking-normal normal-case text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <Lock size={9} />
+                        <span>Read-Only Trainee Record</span>
+                      </span>
+                    ) : (
+                      <span className="print:hidden text-[9px] font-bold tracking-normal normal-case text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <Edit3 size={9} />
+                        <span>Editable • Enter / Send</span>
+                      </span>
+                    )}
                   </div>
                 </th>
               </tr>
@@ -1088,60 +1097,70 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                             {taskValue || ''}
                           </div>
 
-                          {/* Screen View: Interactive Editable Task with Instant Send */}
-                          <div className="print:hidden flex items-center gap-1.5 w-full group">
-                            <input
-                              type="text"
-                              value={taskValue}
-                              onChange={(e) => handleTaskChange(r.day, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSendSingleTask(r.day);
-                                }
-                              }}
-                              placeholder={hasData ? "Enter task / assignment..." : "Enter task if any..."}
-                              className={`flex-1 min-w-0 px-2 py-1 text-xs rounded-lg border transition-all duration-150 focus:outline-none ${
-                                isModified
-                                  ? 'bg-blue-50/80 border-blue-400 text-slate-900 font-medium focus:ring-1 focus:ring-blue-500 shadow-xs'
-                                  : isJustSent
-                                  ? 'bg-emerald-50/70 border-emerald-400 text-slate-900 font-medium'
-                                  : 'bg-transparent border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800'
-                              }`}
-                            />
+                          {/* Screen View */}
+                          {viewerRole === 'admin' ? (
+                            <div className="print:hidden py-1 px-1.5 text-xs text-slate-800 font-normal leading-relaxed break-words">
+                              {r.tasks ? (
+                                <span>{r.tasks}</span>
+                              ) : (
+                                <span className="text-slate-300 italic text-[11px]">—</span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="print:hidden flex items-center gap-1.5 w-full group">
+                              <input
+                                type="text"
+                                value={taskValue}
+                                onChange={(e) => handleTaskChange(r.day, e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSendSingleTask(r.day);
+                                  }
+                                }}
+                                placeholder={hasData ? "Enter task / assignment..." : "Enter task if any..."}
+                                className={`flex-1 min-w-0 px-2 py-1 text-xs rounded-lg border transition-all duration-150 focus:outline-none ${
+                                  isModified
+                                    ? 'bg-blue-50/80 border-blue-400 text-slate-900 font-medium focus:ring-1 focus:ring-blue-500 shadow-xs'
+                                    : isJustSent
+                                    ? 'bg-emerald-50/70 border-emerald-400 text-slate-900 font-medium'
+                                    : 'bg-transparent border-transparent hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800'
+                                }`}
+                              />
 
-                            {/* Direct Row Send Button */}
-                            {isSending ? (
-                              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 rounded-md border border-blue-200">
-                                <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                                <span className="hidden sm:inline">Sending</span>
-                              </span>
-                            ) : isJustSent ? (
-                              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200">
-                                <CheckCircle2 size={11} className="text-emerald-600" />
-                                <span className="hidden sm:inline">Sent</span>
-                              </span>
-                            ) : isModified ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSendSingleTask(r.day)}
-                                title={`Send task for Day ${r.day} (or press Enter)`}
-                                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-md shadow-xs transition-colors cursor-pointer"
-                              >
-                                <Send size={11} />
-                                <span>Send</span>
-                              </button>
-                            ) : taskValue.trim() ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSendSingleTask(r.day)}
-                                title={`Resend task for Day ${r.day}`}
-                                className="shrink-0 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-70 group-hover:opacity-100 cursor-pointer"
-                              >
-                                <Send size={12} />
-                              </button>
-                            ) : null}
-                          </div>
+                              {/* Direct Row Send Button */}
+                              {isSending ? (
+                                <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-50 rounded-md border border-blue-200">
+                                  <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                  <span className="hidden sm:inline">Sending</span>
+                                </span>
+                              ) : isJustSent ? (
+                                <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200">
+                                  <CheckCircle2 size={11} className="text-emerald-600" />
+                                  <span className="hidden sm:inline">Sent</span>
+                                </span>
+                              ) : isModified ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendSingleTask(r.day)}
+                                  title={`Send task for Day ${r.day} (or press Enter)`}
+                                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-md shadow-xs transition-colors cursor-pointer"
+                                >
+                                  <Send size={11} />
+                                  <span>Send</span>
+                                </button>
+                              ) : taskValue.trim() ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendSingleTask(r.day)}
+                                  title={`Resend task for Day ${r.day}`}
+                                  className="shrink-0 p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-70 group-hover:opacity-100 cursor-pointer"
+                                >
+                                  <Send size={12} />
+                                </button>
+                              ) : null}
+                            </div>
+                          )}
                         </td>
                       );
                     })()}

@@ -4522,7 +4522,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
-    if (currentUser) {
+    const isTargetingCurrentUser = !!(currentUser && (
+      (currentUser.id && (empIdentifier === currentUser.id || empIdentifier.toLowerCase() === currentUser.id.toLowerCase())) ||
+      (currentUser.employeeId && (empIdentifier === currentUser.employeeId || empIdentifier.toLowerCase() === currentUser.employeeId.toLowerCase())) ||
+      (currentUser.email && empIdentifier && currentUser.email.toLowerCase() === empIdentifier.toLowerCase())
+    ));
+    if (isTargetingCurrentUser && currentUser) {
       if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
       if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
@@ -4536,6 +4541,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase());
       }
     );
+
+    // Guard: Prevent Instructor / Admin from overriding trainee records
+    const isInstructor = !!(currentUser && (currentUser.role === 'admin' || (currentUser.position && currentUser.position.toLowerCase().includes('instructor'))));
+    if (isInstructor && !isTargetingCurrentUser && existing) {
+      console.warn('[AppContext] Prevented override of existing trainee time record from Instructor account:', existing.id);
+      return existing;
+    }
 
     if (existing) {
       // If an existing record exists, keep permanent timeIn and merge punches across AM/PM shifts
@@ -4598,6 +4610,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateTimeRecord = (id: string, data: Partial<TimeRecord>) => {
     // Look up existing record to enrich employeeId and date if missing in partial updates
     const existing = timeRecords.find((r) => r.id === id);
+
+    // Safety guard: If an Instructor is logged in, do not allow overriding biometric punch times or hours of a trainee
+    const isInstructor = !!(currentUser && (currentUser.role === 'admin' || (currentUser.position && currentUser.position.toLowerCase().includes('instructor'))));
+    if (isInstructor && existing) {
+      const isTargetingSelf = (currentUser.id && (existing.employeeId === currentUser.id || existing.employeeId.toLowerCase() === currentUser.id.toLowerCase())) ||
+        (currentUser.employeeId && (existing.employeeId === currentUser.employeeId || existing.employeeId.toLowerCase() === currentUser.employeeId.toLowerCase())) ||
+        (currentUser.email && existing.employeeId && currentUser.email.toLowerCase() === existing.employeeId.toLowerCase());
+      if (!isTargetingSelf) {
+        const forbiddenKeys = ['amArrival', 'amDeparture', 'pmArrival', 'pmDeparture', 'timeIn', 'timeOut', 'totalHours', 'hours', 'date', 'employeeId'];
+        const hasForbidden = forbiddenKeys.some((k) => k in data);
+        if (hasForbidden) {
+          console.warn('[AppContext] Trainee time record punch hours/times cannot be overridden in Instructor account:', id);
+          const safeData: Partial<TimeRecord> = { ...data };
+          forbiddenKeys.forEach((k) => delete (safeData as any)[k]);
+          data = safeData;
+        }
+      }
+    }
+
     const enrichedData = {
       ...(existing ? { employeeId: existing.employeeId, date: existing.date } : {}),
       ...data,
@@ -4697,7 +4728,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
-    if (currentUser) {
+    const isTargetingCurrentUser = !!(currentUser && (
+      (currentUser.id && (cleanEmpId === currentUser.id || cleanEmpId.toLowerCase() === currentUser.id.toLowerCase())) ||
+      (currentUser.employeeId && (cleanEmpId === currentUser.employeeId || cleanEmpId.toLowerCase() === currentUser.employeeId.toLowerCase())) ||
+      (currentUser.email && cleanEmpId && currentUser.email.toLowerCase() === cleanEmpId.toLowerCase())
+    ));
+    if (isTargetingCurrentUser && currentUser) {
       if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
       if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
@@ -4740,7 +4776,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
-    if (currentUser) {
+    const isTargetingUserInRecords = !!(currentUser && (
+      (currentUser.id && (cleanEmpId === currentUser.id || cleanEmpId.toLowerCase() === currentUser.id.toLowerCase())) ||
+      (currentUser.employeeId && (cleanEmpId === currentUser.employeeId || cleanEmpId.toLowerCase() === currentUser.employeeId.toLowerCase())) ||
+      (currentUser.email && cleanEmpId && currentUser.email.toLowerCase() === cleanEmpId.toLowerCase())
+    ));
+    if (isTargetingUserInRecords && currentUser) {
       if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
       if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
