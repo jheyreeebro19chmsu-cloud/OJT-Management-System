@@ -279,7 +279,7 @@ export function FaceCapture({
       const boxW = boxRight - boxLeft;
       const boxH = boxBottom - boxTop;
 
-      // 2. Animated Scanning Laser Beam across face zone
+      // 2. Animated Scanning Laser Beam across face zone (soft holographic opacity)
       ctx.save();
       const scanRange = boxH;
       scanLineRef.current = (scanLineRef.current + (2.5 * dpr)) % scanRange;
@@ -289,14 +289,14 @@ export function FaceCapture({
       const laserColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : '#00e5ff';
       const laserGrad = ctx.createLinearGradient(0, currentScanY - laserThickness, 0, currentScanY + laserThickness);
       laserGrad.addColorStop(0, 'transparent');
-      laserGrad.addColorStop(0.5, laserColor + '66');
+      laserGrad.addColorStop(0.5, laserColor + '30'); // soft, low opacity
       laserGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = laserGrad;
       ctx.fillRect(boxLeft, currentScanY - laserThickness, boxW, laserThickness * 2);
 
       // Thin bright laser beam line
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.2 * dpr;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.40)';
+      ctx.lineWidth = 1.0 * dpr;
       ctx.beginPath();
       ctx.moveTo(boxLeft + (8 * dpr), currentScanY);
       ctx.lineTo(boxRight - (8 * dpr), currentScanY);
@@ -307,9 +307,10 @@ export function FaceCapture({
       ctx.save();
       const cornerColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : '#38bdf8';
       ctx.strokeStyle = cornerColor;
-      ctx.lineWidth = 2.2 * dpr;
+      ctx.globalAlpha = isSuccess ? 0.90 : isFailed ? 0.90 : 0.55;
+      ctx.lineWidth = 2.0 * dpr;
       ctx.shadowColor = cornerColor;
-      ctx.shadowBlur = 6 * dpr;
+      ctx.shadowBlur = 4 * dpr;
       const cLen = 16 * dpr;
 
       // Top-Left ┌
@@ -341,10 +342,10 @@ export function FaceCapture({
       ctx.stroke();
       ctx.restore();
 
-      // 4. Subtle Triangulated 3D Facial Mesh Interconnects
+      // 4. Subtle Triangulated 3D Facial Mesh Interconnects (low opacity)
       ctx.save();
-      ctx.strokeStyle = isSuccess ? 'rgba(34, 197, 94, 0.35)' : isFailed ? 'rgba(239, 68, 68, 0.35)' : 'rgba(56, 189, 248, 0.30)';
-      ctx.lineWidth = 1 * dpr;
+      ctx.strokeStyle = isSuccess ? 'rgba(34, 197, 94, 0.40)' : isFailed ? 'rgba(239, 68, 68, 0.40)' : 'rgba(56, 189, 248, 0.18)';
+      ctx.lineWidth = 0.9 * dpr;
       const meshPairs: Array<[number, number]> = [
         // Eyebrows to nose bridge
         [21, 27], [22, 27], [20, 27], [23, 27],
@@ -367,15 +368,18 @@ export function FaceCapture({
       ctx.stroke();
       ctx.restore();
 
-      // Helpers to draw anatomical landmark groups
-      const drawPolyline = (indices: number[], color: string, width = 1.6, close = false) => {
+      // Helpers to draw anatomical landmark groups with low translucent opacity (soft holographic mesh)
+      const meshAlpha = isSuccess ? 0.90 : isFailed ? 0.90 : 0.38;
+
+      const drawPolyline = (indices: number[], color: string, width = 1.4, close = false) => {
         ctx.save();
         ctx.beginPath();
         const strokeColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : color;
         ctx.strokeStyle = strokeColor;
+        ctx.globalAlpha = meshAlpha;
         ctx.lineWidth = width * dpr;
         ctx.shadowColor = strokeColor;
-        ctx.shadowBlur = 5 * dpr;
+        ctx.shadowBlur = 3 * dpr;
         ctx.moveTo(pts[indices[0]].x, pts[indices[0]].y);
         for (let i = 1; i < indices.length; i++) {
           ctx.lineTo(pts[indices[i]].x, pts[indices[i]].y);
@@ -385,50 +389,51 @@ export function FaceCapture({
         ctx.restore();
       };
 
-      const drawNodes = (indices: number[], fillColor: string, strokeColor: string, radius = 2.4) => {
+      const drawNodes = (indices: number[], fillColor: string, strokeColor: string, radius = 2.0) => {
         ctx.save();
+        ctx.globalAlpha = isSuccess ? 0.92 : isFailed ? 0.92 : 0.42;
         for (const idx of indices) {
           const p = pts[idx];
           ctx.beginPath();
           ctx.arc(p.x, p.y, radius * dpr, 0, Math.PI * 2);
           ctx.fillStyle = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : fillColor;
           ctx.fill();
-          ctx.lineWidth = 1 * dpr;
+          ctx.lineWidth = 0.8 * dpr;
           ctx.strokeStyle = isSuccess ? '#15803d' : isFailed ? '#b91c1c' : strokeColor;
           ctx.stroke();
         }
         ctx.restore();
       };
 
-      // 5. Draw Groups matching user's reference photo:
+      // 5. Draw Groups matching user's reference photo (at low opacity):
       // A. Jawline (0..16) -> Royal Blue
       const jawIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-      drawPolyline(jawIndices, '#2563eb', 1.8);
-      drawNodes(jawIndices, '#3b82f6', '#1d4ed8', 2.5);
+      drawPolyline(jawIndices, '#2563eb', 1.5);
+      drawNodes(jawIndices, '#3b82f6', '#1d4ed8', 2.1);
 
       // B. Eyebrows (17..21 & 22..26) -> Cyan / Sky Blue
       const rBrowIndices = [17, 18, 19, 20, 21];
       const lBrowIndices = [22, 23, 24, 25, 26];
-      drawPolyline(rBrowIndices, '#0284c7', 1.8);
-      drawPolyline(lBrowIndices, '#0284c7', 1.8);
-      drawNodes(rBrowIndices, '#38bdf8', '#0369a1', 2.3);
-      drawNodes(lBrowIndices, '#38bdf8', '#0369a1', 2.3);
+      drawPolyline(rBrowIndices, '#0284c7', 1.5);
+      drawPolyline(lBrowIndices, '#0284c7', 1.5);
+      drawNodes(rBrowIndices, '#38bdf8', '#0369a1', 2.0);
+      drawNodes(lBrowIndices, '#38bdf8', '#0369a1', 2.0);
 
       // C. Nose Bridge & Nostril Base (27..35) -> Mint / Teal
       const noseBridgeIndices = [27, 28, 29, 30];
       const noseBaseIndices = [31, 32, 33, 34, 35];
-      drawPolyline(noseBridgeIndices, '#0d9488', 1.8);
-      drawPolyline(noseBaseIndices, '#0d9488', 1.8);
-      drawNodes(noseBridgeIndices, '#2dd4bf', '#0f766e', 2.3);
-      drawNodes(noseBaseIndices, '#2dd4bf', '#0f766e', 2.3);
+      drawPolyline(noseBridgeIndices, '#0d9488', 1.5);
+      drawPolyline(noseBaseIndices, '#0d9488', 1.5);
+      drawNodes(noseBridgeIndices, '#2dd4bf', '#0f766e', 2.0);
+      drawNodes(noseBaseIndices, '#2dd4bf', '#0f766e', 2.0);
 
       // D. Eyes (36..41 & 42..47) -> Amber / Yellow
       const rEyeIndices = [36, 37, 38, 39, 40, 41];
       const lEyeIndices = [42, 43, 44, 45, 46, 47];
-      drawPolyline(rEyeIndices, '#ca8a04', 1.8, true);
-      drawPolyline(lEyeIndices, '#ca8a04', 1.8, true);
-      drawNodes(rEyeIndices, '#facc15', '#a16207', 2.3);
-      drawNodes(lEyeIndices, '#facc15', '#a16207', 2.3);
+      drawPolyline(rEyeIndices, '#ca8a04', 1.5, true);
+      drawPolyline(lEyeIndices, '#ca8a04', 1.5, true);
+      drawNodes(rEyeIndices, '#facc15', '#a16207', 2.0);
+      drawNodes(lEyeIndices, '#facc15', '#a16207', 2.0);
 
       // Eye pupil center dots
       const rPupilX = (pts[37].x + pts[38].x + pts[40].x + pts[41].x) / 4;
@@ -436,20 +441,21 @@ export function FaceCapture({
       const lPupilX = (pts[43].x + pts[44].x + pts[46].x + pts[47].x) / 4;
       const lPupilY = (pts[43].y + pts[44].y + pts[46].y + pts[47].y) / 4;
       ctx.save();
+      ctx.globalAlpha = isSuccess ? 0.90 : 0.40;
       ctx.fillStyle = isSuccess ? '#22c55e' : '#fef08a';
       ctx.beginPath();
-      ctx.arc(rPupilX, rPupilY, 2 * dpr, 0, Math.PI * 2);
-      ctx.arc(lPupilX, lPupilY, 2 * dpr, 0, Math.PI * 2);
+      ctx.arc(rPupilX, rPupilY, 1.8 * dpr, 0, Math.PI * 2);
+      ctx.arc(lPupilX, lPupilY, 1.8 * dpr, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
 
       // E. Mouth - Outer & Inner Lips (48..67) -> Vivid Red / Coral
       const outerLipIndices = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59];
       const innerLipIndices = [60, 61, 62, 63, 64, 65, 66, 67];
-      drawPolyline(outerLipIndices, '#e11d48', 1.8, true);
-      drawPolyline(innerLipIndices, '#f43f5e', 1.4, true);
-      drawNodes(outerLipIndices, '#f43f5e', '#be123c', 2.4);
-      drawNodes(innerLipIndices, '#fb7185', '#e11d48', 1.9);
+      drawPolyline(outerLipIndices, '#e11d48', 1.5, true);
+      drawPolyline(innerLipIndices, '#f43f5e', 1.2, true);
+      drawNodes(outerLipIndices, '#f43f5e', '#be123c', 2.0);
+      drawNodes(innerLipIndices, '#fb7185', '#e11d48', 1.7);
 
       // 6. Success biometric illumination
       if (currentState === 'success') {
