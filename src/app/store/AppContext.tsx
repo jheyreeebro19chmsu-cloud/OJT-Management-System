@@ -5434,6 +5434,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       templateUrl?: string;
       templateName?: string;
       targetRequirementKey?: string;
+      maxFileSize?: number;
+      allowedFileTypes?: string[];
+      targetCourse?: string;
     }
   ): RequiredDocument => {
     const notes = (data.notes ?? data.description ?? '').trim();
@@ -5457,6 +5460,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       templateUrl: data.templateUrl || data.fileUrl || data.dataUrl,
       templateName: data.templateName || data.fileName,
       targetRequirementKey: data.targetRequirementKey,
+      maxFileSize: data.maxFileSize,
+      allowedFileTypes: data.allowedFileTypes,
+      targetCourse: data.targetCourse,
     };
 
     setRequiredDocuments((prev) => [newDoc, ...prev]);
@@ -5474,9 +5480,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getEmployeeRequiredDocuments = (employeeId: string): RequiredDocument[] => {
     // 1. Fetch any specific custom documents added by admin for this employee or all employees
+    const emp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId);
     const assignedDocs = requiredDocuments.filter(
       (doc) =>
-        (doc.employeeId === employeeId || doc.employeeId === 'all') &&
+        (doc.employeeId === employeeId ||
+          doc.employeeId === 'all' ||
+          (emp && doc.employeeId === emp.employeeId) ||
+          (emp?.course && doc.targetCourse && (doc.targetCourse === 'all' || doc.targetCourse === emp.course))) &&
         (!doc.academicYear || doc.academicYear === settings.activeAcademicYear)
     );
 
@@ -5526,7 +5536,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const submitRequiredDocument = (
     documentId: string,
     employeeId: string,
-    payload: { note?: string; notes?: string; fileName?: string; fileUrl?: string }
+    payload: {
+      note?: string;
+      notes?: string;
+      fileName?: string;
+      fileUrl?: string;
+      fileDataUrl?: string;
+      fileSize?: number | string;
+      fileType?: string;
+    }
   ): RequiredDocumentSubmission => {
     const notes = (payload.notes ?? payload.note ?? '').trim();
     const now = new Date().toISOString();
@@ -5539,6 +5557,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       notes,
       fileName: payload.fileName || '',
       fileUrl: payload.fileUrl || '',
+      fileDataUrl: payload.fileDataUrl || '',
+      fileSize: payload.fileSize,
+      fileType: payload.fileType,
       status: 'submitted',
     };
 
@@ -5551,6 +5572,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           notes,
           fileName: payload.fileName || '',
           fileUrl: payload.fileUrl || '',
+          fileDataUrl: payload.fileDataUrl || existing.fileDataUrl || '',
+          fileSize: payload.fileSize ?? existing.fileSize,
+          fileType: payload.fileType ?? existing.fileType,
           submittedAt: now,
           status: 'submitted',
         };
@@ -5573,21 +5597,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     else if (lowerDoc.includes('enrolment') || lowerDoc.includes('enrollment') || lowerDoc.includes('cor') || lowerDoc.includes('doc-9')) docKey = 'enrolmentForm';
     else if (lowerDoc.includes('endorsement') || lowerDoc.includes('doc-10')) docKey = 'endorsement';
 
-    if (docKey) {
-      const currentEmp = employees.find((e) => e.id === employeeId) || getCurrentEmployee();
-      if (currentEmp) {
-        updateEmployee(employeeId, {
-          submittedDocuments: {
-            ...(currentEmp.submittedDocuments || {}),
-            [docKey]: {
-              name: payload.fileName || 'Uploaded Document.pdf',
-              dataUrl: payload.fileUrl || '',
-              uploadedAt: now,
-              status: 'passed' as const,
-            },
-          } as TraineeDocuments,
-        });
-      }
+    const finalKey = (docKey || documentId) as keyof TraineeDocuments;
+    const currentEmp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId) || getCurrentEmployee();
+    if (currentEmp) {
+      updateEmployee(currentEmp.id, {
+        submittedDocuments: {
+          ...(currentEmp.submittedDocuments || {}),
+          [finalKey]: {
+            name: payload.fileName || 'Uploaded Document.pdf',
+            dataUrl: payload.fileDataUrl || payload.fileUrl || '',
+            fileUrl: payload.fileUrl || '',
+            size: payload.fileSize || 0,
+            fileType: payload.fileType || 'application/pdf',
+            uploadedAt: now,
+            status: 'passed' as const,
+          },
+        } as TraineeDocuments,
+      });
     }
 
     return saved;

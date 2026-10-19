@@ -60,7 +60,7 @@ interface SubmitDialogState {
 
 export function Documents() {
   const navigate = useNavigate();
-  const { currentUser, getCurrentEmployee, updateEmployee, getEmployeeRequiredDocuments } = useApp();
+  const { currentUser, getCurrentEmployee, updateEmployee, getEmployeeRequiredDocuments, submitRequiredDocument } = useApp();
   const employee = getCurrentEmployee();
 
   const [previewDoc, setPreviewDoc] = useState<PreviewModalState | null>(null);
@@ -153,6 +153,8 @@ export function Documents() {
       return {
         ...std,
         custom: false,
+        maxFileSize: customMatch?.maxFileSize,
+        allowedFileTypes: customMatch?.allowedFileTypes,
         instructorDoc: fileUrl
           ? {
               fileName: fileName || `${std.title}_Template.pdf`,
@@ -189,6 +191,10 @@ export function Documents() {
           color: 'from-violet-600 to-indigo-700',
           badgeColor: 'bg-violet-100 text-violet-800 border-violet-200',
           custom: true,
+          dueDate: custom.dueDate,
+          maxFileSize: custom.maxFileSize,
+          allowedFileTypes: custom.allowedFileTypes,
+          targetCourse: custom.targetCourse,
           instructorDoc:
             custom.fileUrl || custom.dataUrl || custom.templateUrl
               ? {
@@ -334,11 +340,29 @@ export function Documents() {
   const onSelectFile = (docKey: string, title: string, file: File | null, instructorDocName?: string) => {
     if (!file) return;
 
-    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-      toast.error(
-        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
-      );
-      return;
+    const targetReq = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
+    const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
+    const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
+
+    if (targetReq?.allowedFileTypes && targetReq.allowedFileTypes.length > 0) {
+      const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+      const isAllowed = targetReq.allowedFileTypes.some((t: string) => {
+        const norm = (t.startsWith('.') ? t : `.${t}`).toLowerCase();
+        return norm === ext || file.type.toLowerCase().includes(norm.replace('.', ''));
+      });
+      if (!isAllowed) {
+        toast.error(
+          `Unsupported format: "${file.name.split('.').pop()?.toUpperCase()}". The instructor requires this document to be: ${targetReq.allowedFileTypes.join(', ').toUpperCase()}`
+        );
+        return;
+      }
+    } else {
+      if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+        toast.error(
+          `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
+        );
+        return;
+      }
     }
 
     if (file.size < 200) {
@@ -346,8 +370,8 @@ export function Documents() {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please upload a file up to 10MB.');
+    if (file.size > maxBytes) {
+      toast.error(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the ${maxMB}MB limit for "${title}". Please upload a file up to ${maxMB}MB.`);
       return;
     }
 
@@ -398,11 +422,29 @@ export function Documents() {
   ) => {
     if (!file) return;
 
-    if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-      toast.error(
-        `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
-      );
-      return;
+    const targetReq = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
+    const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
+    const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
+
+    if (targetReq?.allowedFileTypes && targetReq.allowedFileTypes.length > 0) {
+      const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+      const isAllowed = targetReq.allowedFileTypes.some((t: string) => {
+        const norm = (t.startsWith('.') ? t : `.${t}`).toLowerCase();
+        return norm === ext || file.type.toLowerCase().includes(norm.replace('.', ''));
+      });
+      if (!isAllowed) {
+        toast.error(
+          `Unsupported format: "${file.name.split('.').pop()?.toUpperCase()}". The instructor requires this document to be: ${targetReq.allowedFileTypes.join(', ').toUpperCase()}`
+        );
+        return;
+      }
+    } else {
+      if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+        toast.error(
+          `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
+        );
+        return;
+      }
     }
 
     if (file.size < 200) {
@@ -410,9 +452,8 @@ export function Documents() {
       return;
     }
 
-    // Check size limit: max 10MB (supports 5–10MB picture and document files)
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size exceeds 10MB limit. Please upload a file up to 10MB.');
+    if (file.size > maxBytes) {
+      toast.error(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the ${maxMB}MB limit. Please upload a file up to ${maxMB}MB.`);
       return;
     }
 
@@ -494,6 +535,16 @@ export function Documents() {
           submittedDocuments: updatedDocs,
           documentItem: newDocItem,
         }).catch(console.warn);
+
+        submitRequiredDocument(meta?.id || docKey, targetEmpId, {
+          fileName: file.name,
+          fileUrl: remoteUrl || dataUrl,
+          fileDataUrl: dataUrl,
+          fileSize: file.size,
+          fileType: file.type,
+          note: (customNotes ?? '').trim(),
+          notes: (customDescription ?? '').trim(),
+        });
       }
 
       setUploadingKey(null);
@@ -914,7 +965,9 @@ export function Documents() {
                             </span>
                           )}
                           <span className="text-[10px] text-slate-400 font-medium">
-                            • PDF, DOCX, Pictures (Max 10MB)
+                            • {item.allowedFileTypes?.length
+                                ? item.allowedFileTypes.map((t: string) => t.replace('.', '').toUpperCase()).join(', ')
+                                : 'PDF, DOCX, Pictures'} (Max {item.maxFileSize ? Math.round(item.maxFileSize / (1024 * 1024)) : 10}MB)
                           </span>
                         </div>
                         <h3 className="text-sm font-bold text-slate-900 leading-snug">{item.title}</h3>
@@ -1078,7 +1131,9 @@ export function Documents() {
                                 {isUploading ? 'Uploading attachment...' : 'Attach document file (Click or drag & drop)'}
                               </p>
                               <p className="text-[10px] text-slate-400">
-                                Accepted: PDF, Word (DOC/DOCX), or Pictures up to 10MB
+                                Accepted: {item.allowedFileTypes?.length
+                                  ? item.allowedFileTypes.map((t: string) => t.replace('.', '').toUpperCase()).join(', ')
+                                  : 'PDF, Word (DOC/DOCX), or Pictures'} up to {item.maxFileSize ? Math.round(item.maxFileSize / (1024 * 1024)) : 10}MB
                               </p>
                             </div>
                           </div>
@@ -1088,7 +1143,11 @@ export function Documents() {
                           <input
                             type="file"
                             id={`attach-file-slot-${item.key}`}
-                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                            accept={
+                              item.allowedFileTypes?.length
+                                ? item.allowedFileTypes.map((t: string) => (t.startsWith('.') ? t : `.${t}`)).join(',')
+                                : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
+                            }
                             onChange={(e) => {
                               const file = e.target.files?.[0] || null;
                               onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);

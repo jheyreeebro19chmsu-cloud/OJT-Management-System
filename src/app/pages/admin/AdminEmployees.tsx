@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter, Upload } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter, Upload, FilePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -124,6 +124,176 @@ export function AdminEmployees() {
   const [isUploadingBatch, setIsUploadingBatch] = useState(false);
   const [addDocFile, setAddDocFile] = useState<File | null>(null);
   const [addDocTargetKey, setAddDocTargetKey] = useState<string>('new');
+  const [docAllowedTypes, setDocAllowedTypes] = useState<string[]>(['.pdf', '.docx', '.png', '.jpg']);
+  const [docMaxSizeMB, setDocMaxSizeMB] = useState<number>(10);
+  const [docTargetAudience, setDocTargetAudience] = useState<string>('all');
+  const [isSavingDoc, setIsSavingDoc] = useState(false);
+
+  const handleAddDocSubmit = async () => {
+    if (!docTitle.trim()) {
+      toast.error('Document title is required.');
+      return;
+    }
+
+    setIsSavingDoc(true);
+    try {
+      let fileUrl = '';
+      let dataUrl = '';
+      let fileName = '';
+      let fileSize: number | undefined = undefined;
+      let fileType: string | undefined = undefined;
+
+      if (addDocFile) {
+        fileName = addDocFile.name;
+        fileSize = addDocFile.size;
+        fileType = addDocFile.type || 'application/pdf';
+
+        const fileBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(addDocFile);
+        });
+        dataUrl = fileBase64;
+
+        try {
+          const u = await uploadDocumentToStorage('instructor_templates', addDocTargetKey === 'new' ? `custom_${Date.now()}` : addDocTargetKey, addDocFile, addDocFile.name);
+          if (u && u.startsWith('http')) fileUrl = u;
+        } catch (uploadErr) {
+          console.warn('Template cloud upload notice:', uploadErr);
+        }
+      }
+
+      const finalUrl = fileUrl || dataUrl;
+
+      if (addDocTargetKey && addDocTargetKey !== 'new' && finalUrl) {
+        localStorage.setItem(
+          `ojt_template_${addDocTargetKey}`,
+          JSON.stringify({
+            name: fileName,
+            url: finalUrl,
+            size: fileSize || 0,
+            notes: docNotes || docDescription,
+            uploadedAt: new Date().toISOString(),
+          })
+        );
+      }
+
+      const maxBytes = docMaxSizeMB * 1024 * 1024;
+      const targetEmp = docTargetAudience === 'all' ? 'all' : (docTargetAudience.startsWith('course:') ? 'all' : docTargetAudience);
+      const targetCourse = docTargetAudience.startsWith('course:') ? docTargetAudience.replace('course:', '') : undefined;
+
+      const created = addRequiredDocument(targetEmp, {
+        title: docTitle.trim(),
+        description: docDescription.trim(),
+        notes: docNotes.trim(),
+        dueDate: docDueDate,
+        required: true,
+        academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+        fileUrl: finalUrl,
+        dataUrl: dataUrl,
+        fileName: fileName,
+        fileSize: fileSize,
+        fileType: fileType,
+        uploadedBy: currentUser?.name || 'Instructor',
+        instructorId: currentUser?.id,
+        templateUrl: finalUrl,
+        templateName: fileName,
+        targetRequirementKey: addDocTargetKey !== 'new' ? addDocTargetKey : undefined,
+        maxFileSize: maxBytes,
+        allowedFileTypes: docAllowedTypes,
+        targetCourse: targetCourse,
+      });
+
+      toast.success(`"${created.title}" published! Trainees can now see and submit it.`);
+      setShowAddDocModal(false);
+      setDocTitle('');
+      setDocDescription('');
+      setDocNotes('');
+      setDocDueDate('');
+      setAddDocFile(null);
+      setAddDocTargetKey('new');
+      setDocAllowedTypes(['.pdf', '.docx', '.png', '.jpg']);
+      setDocMaxSizeMB(10);
+      setDocTargetAudience('all');
+    } catch (err: any) {
+      console.error('Failed to add document requirement:', err);
+      toast.error('Failed to create requirement: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setIsSavingDoc(false);
+    }
+  };
+
+  const handleBatchUploadSubmit = async () => {
+    if (batchDocFiles.length === 0) {
+      toast.error('Please add at least one template file.');
+      return;
+    }
+
+    setIsUploadingBatch(true);
+    try {
+      let count = 0;
+      for (const item of batchDocFiles) {
+        const fileBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(item.file);
+        });
+
+        let remoteUrl = '';
+        try {
+          const u = await uploadDocumentToStorage('instructor_templates', item.targetKey || `batch_${Date.now()}`, item.file, item.file.name);
+          if (u && u.startsWith('http')) remoteUrl = u;
+        } catch {}
+
+        const finalUrl = remoteUrl || fileBase64;
+
+        if (item.targetKey && item.targetKey !== 'new') {
+          localStorage.setItem(
+            `ojt_template_${item.targetKey}`,
+            JSON.stringify({
+              name: item.file.name,
+              url: finalUrl,
+              size: item.size,
+              notes: item.notes || item.description,
+              uploadedAt: new Date().toISOString(),
+            })
+          );
+        }
+
+        addRequiredDocument('all', {
+          title: item.title,
+          description: item.description,
+          notes: item.notes,
+          dueDate: item.dueDate,
+          required: true,
+          academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+          fileUrl: finalUrl,
+          dataUrl: fileBase64,
+          fileName: item.file.name,
+          fileSize: item.size,
+          fileType: item.file.type || 'application/pdf',
+          uploadedBy: currentUser?.name || 'Instructor',
+          templateUrl: finalUrl,
+          templateName: item.file.name,
+          targetRequirementKey: item.targetKey !== 'new' ? item.targetKey : undefined,
+          maxFileSize: 10 * 1024 * 1024,
+          allowedFileTypes: ['.pdf', '.docx', '.png', '.jpg'],
+        });
+        count++;
+      }
+
+      toast.success(`Successfully uploaded and published ${count} document requirements/templates!`);
+      setShowBatchUploadModal(false);
+      setBatchDocFiles([]);
+    } catch (err: any) {
+      console.error('Batch upload error:', err);
+      toast.error('Batch upload failed: ' + (err?.message || 'Error'));
+    } finally {
+      setIsUploadingBatch(false);
+    }
+  };
 
   const getStandardDocTemplate = (docKey: string, docTitle?: string) => {
     // 1. From requiredDocuments
@@ -2822,6 +2992,21 @@ export function AdminEmployees() {
                               </div>
                               {doc.description && <p className="text-xs text-gray-600 mt-1">{doc.description}</p>}
                               {doc.notes && <p className="text-[11px] text-gray-500 mt-1 italic">Notes: {doc.notes}</p>}
+
+                              {/* Allowed Formats & Max Size Badges */}
+                              <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-violet-200 text-violet-700">
+                                  📁 Formats: {doc.allowedFileTypes?.length ? doc.allowedFileTypes.map((x) => x.replace('.', '').toUpperCase()).join(', ') : 'PDF, DOCX, IMAGES'}
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-violet-200 text-violet-700">
+                                  ⚖️ Max {doc.maxFileSize ? Math.round(doc.maxFileSize / (1024 * 1024)) : 10} MB
+                                </span>
+                                {doc.targetCourse && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700">
+                                    🎓 {doc.targetCourse}
+                                  </span>
+                                )}
+                              </div>
 
                               {/* Attached File/Template */}
                               {hasTemplate && (
@@ -6182,6 +6367,461 @@ export function AdminEmployees() {
                       Deploy {deploySelectedStudentIds.length} Trainees to{' '}
                       {allAvailableHtes.find((h) => h.id === deployTargetHteId)?.companyName || 'HTE'}
                     </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Document Requirement / Template Modal */}
+      {showAddDocModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-gray-100 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-violet-50/70 via-indigo-50/50 to-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-violet-600 text-white flex items-center justify-center font-bold shadow-md shadow-violet-200">
+                  <FilePlus size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Add OJT Document Requirement</h3>
+                  <p className="text-xs text-gray-500">
+                    Publish required documents, set file size & type constraints, or attach templates for trainees
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddDocModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+              {/* Document Title */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Document Title <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Barangay Clearance, Medical Certificate, HTE Waiver..."
+                  value={docTitle}
+                  onChange={(e) => setDocTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                />
+                {/* Suggestions */}
+                <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                  <span className="text-[10px] text-gray-400 font-semibold">Quick Suggestions:</span>
+                  {[
+                    'Barangay Clearance',
+                    'Medical Health Certificate',
+                    'Parental Consent & Waiver',
+                    'HTE Non-Disclosure Agreement',
+                    'Weekly OJT Accomplishment Report',
+                  ].map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setDocTitle(sug)}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 transition-colors cursor-pointer"
+                    >
+                      + {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Requirement Type / Standard Mapping */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Target Category</label>
+                  <select
+                    value={addDocTargetKey}
+                    onChange={(e) => setAddDocTargetKey(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  >
+                    <option value="new">⭐ New Custom Requirement (Trainee Submits)</option>
+                    <optgroup label="Attach Template to Standard Requirement">
+                      {REQUIRED_TRAINEE_DOCUMENTS.map((req) => (
+                        <option key={req.key} value={req.key}>
+                          {req.num}. {req.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Target Trainees</label>
+                  <select
+                    value={docTargetAudience}
+                    onChange={(e) => setDocTargetAudience(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  >
+                    <option value="all">👥 All Trainees (Institutional)</option>
+                    {availableDocCourses.map((c) => (
+                      <option key={c} value={`course:${c}`}>
+                        🎓 {c} Students Only
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Allowed File Types Constraint */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Allowed File Types <span className="text-gray-400 font-normal">(Trainee can only submit these formats)</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { ext: '.pdf', label: 'PDF (.pdf)', icon: '📄' },
+                    { ext: '.docx', label: 'Word (.doc, .docx)', icon: '📝' },
+                    { ext: '.png', label: 'Images (.png, .jpg)', icon: '🖼️' },
+                    { ext: '.xlsx', label: 'Excel (.xls, .xlsx)', icon: '📊' },
+                  ].map((t) => {
+                    const isChecked = docAllowedTypes.includes(t.ext);
+                    return (
+                      <button
+                        key={t.ext}
+                        type="button"
+                        onClick={() => {
+                          if (isChecked) {
+                            if (docAllowedTypes.length > 1) {
+                              setDocAllowedTypes(docAllowedTypes.filter((x) => x !== t.ext));
+                            } else {
+                              toast.info('At least one file format must be allowed.');
+                            }
+                          } else {
+                            setDocAllowedTypes([...docAllowedTypes, t.ext]);
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-between transition-all cursor-pointer ${
+                          isChecked
+                            ? 'bg-violet-50 text-violet-800 border-violet-300 shadow-2xs'
+                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span>{t.icon}</span>
+                          <span>{t.label}</span>
+                        </span>
+                        {isChecked && <Check size={14} className="text-violet-600 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Max File Size Limit */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  Maximum File Size Limit <span className="text-gray-400 font-normal">(Enforced on upload)</span>
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[2, 5, 10, 20, 50].map((mb) => (
+                    <button
+                      key={mb}
+                      type="button"
+                      onClick={() => setDocMaxSizeMB(mb)}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        docMaxSizeMB === mb
+                          ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {mb} MB
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-gray-400 ml-2">
+                    Current limit: <strong className="text-gray-700">{docMaxSizeMB} MB</strong> per submission
+                  </span>
+                </div>
+              </div>
+
+              {/* Instructions / Description */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Description / Instructions</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Instructions for the student (e.g. Obtain signature from Barangay Captain)..."
+                    value={docDescription}
+                    onChange={(e) => setDocDescription(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Due Date (Optional)</label>
+                  <input
+                    type="date"
+                    value={docDueDate}
+                    onChange={(e) => setDocDueDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/20 mb-2"
+                  />
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Internal Notes (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Required prior to deployment"
+                    value={docNotes}
+                    onChange={(e) => setDocNotes(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  />
+                </div>
+              </div>
+
+              {/* Template / Starter Form Upload */}
+              <div className="pt-2 border-t border-gray-100">
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Attach Official Template / Guide <span className="text-gray-400 font-normal">(Optional — Trainees can download this form)</span>
+                </label>
+                {addDocFile ? (
+                  <div className="p-3 bg-violet-50 rounded-2xl border border-violet-200 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <FileText size={18} className="text-violet-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-bold text-violet-950 truncate text-xs">{addDocFile.name}</p>
+                        <p className="text-[10px] text-violet-600">{(addDocFile.size / 1024).toFixed(0)} KB • Ready to publish</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAddDocFile(null)}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                      title="Remove attached template"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="instructor-new-template-file"
+                    className="border-2 border-dashed border-gray-200 hover:border-violet-400 bg-gray-50/50 hover:bg-violet-50/30 p-4 rounded-2xl flex items-center justify-center gap-2.5 cursor-pointer transition-all"
+                  >
+                    <Upload size={16} className="text-violet-600" />
+                    <span className="text-xs font-semibold text-gray-600">
+                      Click to attach a template file (.pdf, .docx, image)
+                    </span>
+                    <input
+                      type="file"
+                      id="instructor-new-template-file"
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setAddDocFile(file);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setShowAddDocModal(false)}
+                className="px-4 py-2 border border-gray-200 hover:bg-gray-100 rounded-xl text-xs font-bold text-gray-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={!docTitle.trim() || isSavingDoc}
+                onClick={handleAddDocSubmit}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isSavingDoc ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Publishing Requirement...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>Publish Requirement for Trainees</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Upload Documents / Templates Modal */}
+      {showBatchUploadModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-gray-100 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-indigo-50/70 via-violet-50/50 to-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-200">
+                  <Upload size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Upload Documents & Templates</h3>
+                  <p className="text-xs text-gray-500">
+                    Upload template forms or starter files for multiple OJT requirements at once
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBatchUploadModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+              <label
+                htmlFor="batch-doc-upload-input"
+                className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/30 hover:bg-indigo-50/60 p-6 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all text-center"
+              >
+                <Upload size={24} className="text-indigo-600" />
+                <span className="font-bold text-gray-800 text-sm">Select files or drag & drop</span>
+                <span className="text-[11px] text-gray-500">Supported: PDF, Word (DOC/DOCX), Images (PNG/JPG)</span>
+                <input
+                  type="file"
+                  id="batch-doc-upload-input"
+                  multiple
+                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const mapped = files.map((f, i) => {
+                      const nameWithoutExt = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+                      const matchedStd = REQUIRED_TRAINEE_DOCUMENTS.find((r) =>
+                        nameWithoutExt.toLowerCase().includes(r.title.toLowerCase().slice(0, 5))
+                      );
+
+                      return {
+                        id: `batch-${Date.now()}-${i}`,
+                        file: f,
+                        title: matchedStd ? matchedStd.title : nameWithoutExt,
+                        targetKey: matchedStd ? matchedStd.key : 'new',
+                        description: `Instructor template for ${nameWithoutExt}`,
+                        notes: '',
+                        dueDate: '',
+                        size: f.size,
+                      };
+                    });
+                    setBatchDocFiles((prev) => [...prev, ...mapped]);
+                    e.target.value = '';
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              {batchDocFiles.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-gray-700 uppercase tracking-wider text-[11px]">
+                      Selected Files ({batchDocFiles.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setBatchDocFiles([])}
+                      className="text-red-500 hover:text-red-700 text-xs font-semibold cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-60 overflow-y-auto">
+                    {batchDocFiles.map((item, idx) => (
+                      <div key={item.id} className="p-3 bg-gray-50 rounded-2xl border border-gray-200 flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-gray-900 truncate text-xs" title={item.file.name}>
+                              {item.file.name}
+                            </span>
+                            <span className="text-[10px] text-gray-400">({(item.size / 1024).toFixed(0)} KB)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setBatchDocFiles(batchDocFiles.filter((b) => b.id !== item.id))}
+                            className="p-1 text-gray-400 hover:text-red-600 rounded cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            placeholder="Requirement Title"
+                            value={item.title}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBatchDocFiles(batchDocFiles.map((b) => (b.id === item.id ? { ...b, title: val } : b)));
+                            }}
+                            className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold"
+                          />
+                          <select
+                            value={item.targetKey}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBatchDocFiles(batchDocFiles.map((b) => (b.id === item.id ? { ...b, targetKey: val } : b)));
+                            }}
+                            className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold"
+                          >
+                            <option value="new">⭐ Create as New Requirement</option>
+                            <optgroup label="Attach to Standard Requirement">
+                              {REQUIRED_TRAINEE_DOCUMENTS.map((req) => (
+                                <option key={req.key} value={req.key}>
+                                  {req.num}. {req.title}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setShowBatchUploadModal(false)}
+                className="px-4 py-2 border border-gray-200 hover:bg-gray-100 rounded-xl text-xs font-bold text-gray-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={batchDocFiles.length === 0 || isUploadingBatch}
+                onClick={handleBatchUploadSubmit}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isUploadingBatch ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Uploading Templates...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>Upload & Publish All ({batchDocFiles.length})</span>
                   </>
                 )}
               </button>

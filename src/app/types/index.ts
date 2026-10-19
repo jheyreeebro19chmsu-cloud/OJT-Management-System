@@ -442,6 +442,9 @@ export interface RequiredDocument {
   templateUrl?: string;
   templateName?: string;
   targetRequirementKey?: string;
+  maxFileSize?: number;
+  allowedFileTypes?: string[];
+  targetCourse?: string;
 }
 
 export interface RequiredDocumentSubmission {
@@ -453,6 +456,9 @@ export interface RequiredDocumentSubmission {
   notes?: string;
   fileName?: string;
   fileUrl?: string;
+  fileDataUrl?: string;
+  fileSize?: number | string;
+  fileType?: string;
   status: 'pending' | 'submitted' | 'approved' | 'rejected';
   verificationStatus?: 'passed' | 'failed' | 'pending';
 }
