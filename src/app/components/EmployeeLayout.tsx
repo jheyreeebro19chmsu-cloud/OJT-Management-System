@@ -9,7 +9,7 @@ import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
-import { isQuestionnaireAnswered } from '../types';
+import { isQuestionnaireAnswered, countAnsweredQuestions } from '../types';
 
 
 const navItems = [
@@ -126,7 +126,8 @@ export function EmployeeLayout() {
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
   );
 
-  const isQuestionnaireDone = isQuestionnaireAnswered(traineeEvaluation?.questionnaire);
+  const answeredQuestionsCount = countAnsweredQuestions(traineeEvaluation?.questionnaire);
+  const isQuestionnaireComplete = answeredQuestionsCount >= 9;
 
   const activeAnnouncements = getActiveAnnouncements
     ? getActiveAnnouncements('employee')
@@ -227,12 +228,18 @@ export function EmployeeLayout() {
                   {(item as any).isEvalNav && (
                     <span
                       className={`ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                        isQuestionnaireDone
+                        isQuestionnaireComplete
                           ? 'bg-[#146B4D]/30 text-emerald-300 border border-[#146B4D]/50'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                          : answeredQuestionsCount > 0
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                          : 'bg-slate-700/50 text-slate-400 border border-slate-600/50'
                       }`}
                     >
-                      {isQuestionnaireDone ? 'Answered' : 'Pending'}
+                      {isQuestionnaireComplete
+                        ? 'Answered'
+                        : answeredQuestionsCount > 0
+                        ? `${answeredQuestionsCount}/9`
+                        : 'Pending'}
                     </span>
                   )}
                   {(item as any).isAnnounceNav && activeAnnouncementCount > 0 && (

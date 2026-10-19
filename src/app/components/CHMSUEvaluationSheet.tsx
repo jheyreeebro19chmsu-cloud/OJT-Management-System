@@ -51,6 +51,7 @@ export interface CHMSUEvaluationSheetProps {
   onClose?: () => void;
   onMarkDoneViewed?: () => void;
   onPassToHte?: () => void;
+  onEditToggle?: () => void;
 }
 
 const RATING_COMMENT_PRESETS: Record<string, string[]> = {
@@ -234,6 +235,7 @@ export function CHMSUEvaluationSheet({
   onClose,
   onMarkDoneViewed,
   onPassToHte,
+  onEditToggle,
 }: CHMSUEvaluationSheetProps) {
   const [activeTab, setActiveTab] = useState<'page1' | 'page2' | 'both'>(
     role === 'trainee' ? 'page2' : role === 'hte' ? 'page1' : (initialPageTab || 'page1')
@@ -1325,15 +1327,24 @@ export function CHMSUEvaluationSheet({
 
             {/* Official 9-Question Questionnaire Table */}
             <div className="space-y-1.5 print:space-y-0.5">
-              <div className="flex items-center justify-between no-print">
+              <div className="flex items-center justify-between no-print gap-2 flex-wrap">
                 <h3 className="font-black text-slate-900 uppercase tracking-wider text-xs sm:text-sm border-l-4 border-emerald-700 pl-2">
                   QUESTIONNAIRE (STUDENT PRACTICUM FEEDBACK)
                 </h3>
-                {!isQuestionnaireReadOnly && (
+                {!isQuestionnaireReadOnly ? (
                   <span className="text-xs text-slate-500 italic">
                     Click 'Suggestions' to insert helpful responses quickly
                   </span>
-                )}
+                ) : role === 'trainee' && onEditToggle ? (
+                  <button
+                    type="button"
+                    onClick={onEditToggle}
+                    className="text-xs font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <Sparkles size={13} className="text-emerald-600" />
+                    <span>Click here to Answer / Edit Responses</span>
+                  </button>
+                ) : null}
               </div>
 
               <div className="border-2 border-slate-900 rounded-xl overflow-hidden shadow-xs print:rounded-none">
@@ -1395,18 +1406,32 @@ export function CHMSUEvaluationSheet({
                             {/* Screen View */}
                             <div className="no-print">
                               {isQuestionnaireReadOnly ? (
-                                <div className="min-h-[30px] py-0.5 text-slate-800 whitespace-pre-wrap leading-relaxed italic text-xs">
+                                <div
+                                  onClick={() => {
+                                    if (role === 'trainee' && onEditToggle) {
+                                      onEditToggle();
+                                    }
+                                  }}
+                                  className={`min-h-[30px] py-1 px-1.5 rounded text-slate-800 whitespace-pre-wrap leading-relaxed text-xs ${
+                                    role === 'trainee' && onEditToggle
+                                      ? 'hover:bg-emerald-50/70 hover:ring-1 hover:ring-emerald-300 cursor-pointer transition-all'
+                                      : 'italic'
+                                  }`}
+                                  title={role === 'trainee' && onEditToggle ? 'Click to edit your answer' : undefined}
+                                >
                                   {currentAnswer || (
-                                    <span className="text-slate-400 not-italic">No response recorded</span>
+                                    <span className="text-amber-800 not-italic font-semibold inline-flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                      {role === 'trainee' ? '✏️ No response recorded — Click to answer' : 'No response recorded'}
+                                    </span>
                                   )}
                                 </div>
                               ) : (
                                 <textarea
-                                  rows={1}
+                                  rows={2}
                                   value={currentAnswer}
                                   onChange={(e) => updateQuestionnaireField(q.key, e.target.value)}
                                   placeholder={q.placeholder}
-                                  className="w-full p-1.5 border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-600 outline-none bg-slate-50/30 resize-y"
+                                  className="w-full p-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-600 outline-none bg-slate-50/30 resize-y min-h-[46px]"
                                 />
                               )}
                             </div>

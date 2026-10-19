@@ -270,6 +270,26 @@ export function isQuestionnaireAnswered(q?: EvaluationQuestionnaire | null): boo
   return questions.some((ans) => typeof ans === 'string' && ans.trim().length > 0);
 }
 
+export function countAnsweredQuestions(q?: EvaluationQuestionnaire | null): number {
+  if (!q) return 0;
+  const questions = [
+    q.q1_dutiesBriefly,
+    q.q2_strongestPerformanceArea,
+    q.q3_areasImprovedMost,
+    q.q4_areasNeedImprovement,
+    q.q5_situationChallengedMost,
+    q.q6_howOvercameChallenge,
+    q.q7_whatLearnedFromExperience,
+    q.q8_isQualifiedLinkage,
+    q.q9_ojtSuggestionsRecommendations,
+  ];
+  return questions.filter((ans) => typeof ans === 'string' && ans.trim().length > 0).length;
+}
+
+export function isQuestionnaireFullyAnswered(q?: EvaluationQuestionnaire | null): boolean {
+  return countAnsweredQuestions(q) >= 9;
+}
+
 export interface Evaluation {
   id: string;
   employeeId: string;
