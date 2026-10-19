@@ -458,103 +458,114 @@ export function Documents() {
     }
 
     setUploadingKey(docKey);
+    const meta = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
     const reader = new FileReader();
 
     reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string;
-      const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
-
-      // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
       try {
-        localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
-      } catch {}
+        const dataUrl = e.target?.result as string;
+        const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
 
-      // Attempt cloud storage upload for permanent URL
-      let remoteUrl = '';
-      try {
-        const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
-          remoteUrl = storedUrl;
-          try {
-            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
-          } catch {}
+        // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
+        try {
+          localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+          localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
+          localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
+          localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+        } catch {}
+
+        // Attempt cloud storage upload for permanent URL (with 5-second timeout race so it never hangs)
+        let remoteUrl = '';
+        try {
+          const storedUrl = await Promise.race([
+            uploadDocumentToStorage(empId, docKey, file, file.name),
+            new Promise<string>((_, reject) =>
+              setTimeout(() => reject(new Error('Storage upload timed out')), 5000)
+            ),
+          ]);
+          if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
+            remoteUrl = storedUrl;
+            try {
+              localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
+            } catch {}
+          }
+        } catch (uploadErr) {
+          console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
         }
-      } catch (uploadErr) {
-        console.warn('Document storage upload notice:', uploadErr);
-      }
 
-      const passStatus: 'passed' | 'pending' = markAsPassed ? 'passed' : 'pending';
-      const newDocItem: TraineeDocumentItem = {
-        name: file.name,
-        size: file.size,
-        dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
-        fileUrl: remoteUrl || dataUrl, // Public URL when available for instructor/coordinator review
-        fileType: file.type || 'application/octet-stream',
-        uploadedAt: new Date().toISOString(),
-        status: passStatus,
-        description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
-        notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
-      };
-
-      const updatedDocs: TraineeDocuments = {
-        ...submittedDocs,
-        [docKey]: newDocItem,
-      };
-
-      const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
-
-      const newUploadedCount = allDocRequirements.filter((k) => {
-        const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
-        return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
-      }).length;
-      const allDocsPassed =
-        newUploadedCount === totalRequired &&
-        allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
-      const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount > 0 ? (allDocsPassed ? 'passed' : 'partial') : 'pending';
-
-      setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
-
-      if (employee) {
-        updateEmployee(employee.id, {
-          submittedDocuments: updatedDocs,
-          documentsPassed: allDocsPassed,
-          documentsStatus: finalDocStatus,
-        });
-      }
-
-      if (targetEmpId) {
-        // Direct persistent database save for document pass / upload status
-        saveDocumentPassStatus(targetEmpId, {
-          docKey,
+        const passStatus: 'passed' | 'pending' = markAsPassed ? 'passed' : 'pending';
+        const newDocItem: TraineeDocumentItem = {
+          name: file.name,
+          size: file.size,
+          dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
+          fileUrl: remoteUrl || dataUrl, // Public URL when available for instructor/coordinator review
+          fileType: file.type || 'application/octet-stream',
+          uploadedAt: new Date().toISOString(),
           status: passStatus,
-          allPassed: allDocsPassed,
-          documentsStatus: finalDocStatus,
-          submittedDocuments: updatedDocs,
-          documentItem: newDocItem,
-        }).catch(console.warn);
+          description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
+          notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
+        };
 
-        submitRequiredDocument(meta?.id || docKey, targetEmpId, {
-          fileName: file.name,
-          fileUrl: remoteUrl || dataUrl,
-          fileDataUrl: dataUrl,
-          fileSize: file.size,
-          fileType: file.type,
-          note: (customNotes ?? '').trim(),
-          notes: (customDescription ?? '').trim(),
-        });
+        const updatedDocs: TraineeDocuments = {
+          ...submittedDocs,
+          [docKey]: newDocItem,
+        };
+
+        const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+
+        const newUploadedCount = allDocRequirements.filter((k) => {
+          const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
+          return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
+        }).length;
+        const allDocsPassed =
+          newUploadedCount === totalRequired &&
+          allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
+        const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount > 0 ? (allDocsPassed ? 'passed' : 'partial') : 'pending';
+
+        setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
+
+        if (employee) {
+          updateEmployee(employee.id, {
+            submittedDocuments: updatedDocs,
+            documentsPassed: allDocsPassed,
+            documentsStatus: finalDocStatus,
+          });
+        }
+
+        if (targetEmpId) {
+          // Direct persistent database save for document pass / upload status
+          saveDocumentPassStatus(targetEmpId, {
+            docKey,
+            status: passStatus,
+            allPassed: allDocsPassed,
+            documentsStatus: finalDocStatus,
+            submittedDocuments: updatedDocs,
+            documentItem: newDocItem,
+          }).catch(console.warn);
+
+          submitRequiredDocument(meta?.id || docKey, targetEmpId, {
+            fileName: file.name,
+            fileUrl: remoteUrl || dataUrl,
+            fileDataUrl: dataUrl,
+            fileSize: file.size,
+            fileType: file.type,
+            note: (customNotes ?? '').trim(),
+            notes: (customDescription ?? '').trim(),
+          });
+        }
+
+        toast.success(
+          markAsPassed
+            ? `${meta?.title || 'Document'} passed & recorded according to requirement!`
+            : `${meta?.title || 'Document'} submitted! Pending coordinator review.`
+        );
+      } catch (err) {
+        console.error('Document submission error:', err);
+        toast.error('Could not complete submission. Please try again.');
+      } finally {
+        setUploadingKey(null);
+        setSubmitDialog(null);
       }
-
-      setUploadingKey(null);
-      setSubmitDialog(null);
-      const meta = allDocRequirements.find((d) => d.key === docKey);
-      toast.success(
-        markAsPassed
-          ? `${meta?.title || 'Document'} passed & recorded according to requirement!`
-          : `${meta?.title || 'Document'} submitted! Pending coordinator review.`
-      );
     };
 
     reader.onerror = () => {
