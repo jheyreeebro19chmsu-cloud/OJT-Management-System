@@ -193,7 +193,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     if (pmIn !== null && pmOut !== null && pmOut > pmIn) {
       total += (pmOut - pmIn) / 60;
     }
-    return Math.round(total * 2) / 2; // round to nearest 0.5
+    // Fallback: If only arrival and departure are recorded across the day
+    if (total === 0) {
+      const start = amIn ?? pmIn;
+      const end = pmOut ?? amOut;
+      if (start !== null && end !== null && end > start) {
+        const rawHours = (end - start) / 60;
+        // Subtract 1-hour standard lunch break if duration spans 5 hours or more
+        total = rawHours >= 5 ? rawHours - 1 : rawHours;
+      }
+    }
+    return Math.round(total * 100) / 100; // round to 2 decimal places e.g. 7.75, 8.5, 8
   };
 
   // Daily records map for the selected month
@@ -318,19 +328,41 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
               autoPmIn = format12(tIn.h, tIn.m);
             }
           }
+
+          if (!autoHours || autoHours === 0) {
+            autoHours = computeHoursFromTimes({
+              day,
+              amArrival: autoAmIn,
+              amDeparture: autoAmOut,
+              pmArrival: autoPmIn,
+              pmDeparture: autoPmOut,
+              hours: 0,
+            });
+          }
         }
       }
 
       // Official biometric/attendance record takes absolute precedence and cannot be overridden
       const hasAutoPunch = !!(autoAmIn || autoAmOut || autoPmIn || autoPmOut || autoHours > 0);
-      const isReadOnlyView = !canEditTasks;
 
-      // For arrival/departures: trainee punches are the authoritative source of truth and cannot be overridden
-      const finalAmIn = autoAmIn || (!isReadOnlyView && custom?.amArrival ? custom.amArrival.trim() : '');
-      const finalAmOut = autoAmOut || (!isReadOnlyView && custom?.amDeparture ? custom.amDeparture.trim() : '');
-      const finalPmIn = autoPmIn || (!isReadOnlyView && custom?.pmArrival ? custom.pmArrival.trim() : '');
-      const finalPmOut = autoPmOut || (!isReadOnlyView && custom?.pmDeparture ? custom.pmDeparture.trim() : '');
-      const finalHours = autoHours > 0 ? autoHours : (!isReadOnlyView && typeof custom?.hours === 'number' ? custom.hours : 0);
+      // For arrival/departures: trainee punches are the authoritative source of truth
+      const finalAmIn = autoAmIn || custom?.amArrival?.trim() || '';
+      const finalAmOut = autoAmOut || custom?.amDeparture?.trim() || '';
+      const finalPmIn = autoPmIn || custom?.pmArrival?.trim() || '';
+      const finalPmOut = autoPmOut || custom?.pmDeparture?.trim() || '';
+
+      // Compute hours automatically if missing
+      let finalHours = autoHours > 0 ? autoHours : (typeof custom?.hours === 'number' && custom.hours > 0 ? custom.hours : 0);
+      if (finalHours <= 0 && (finalAmIn || finalPmOut || finalAmOut || finalPmIn)) {
+        finalHours = computeHoursFromTimes({
+          day,
+          amArrival: finalAmIn,
+          amDeparture: finalAmOut,
+          pmArrival: finalPmIn,
+          pmDeparture: finalPmOut,
+          hours: 0,
+        });
+      }
       const finalTasks = (custom?.tasks !== undefined && custom.tasks !== null ? custom.tasks : autoTasks) || '';
 
       if (hasAutoPunch || (autoRec && (autoRec.timeIn || autoRec.timeOut || autoRec.amArrival || autoRec.pmDeparture))) {

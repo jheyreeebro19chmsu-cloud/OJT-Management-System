@@ -1401,6 +1401,33 @@ function sanitizeValueForStorage(key: string, value: any): any {
     }
     return copy;
   }
+  if (key === STORAGE_KEYS.MONITORING_REPORTS && Array.isArray(value)) {
+    return value.map((rep) => {
+      if (!rep || typeof rep !== 'object') return rep;
+      const copy = { ...rep };
+      // Strip large photos or signatures (> 50KB) from localStorage cache to prevent QuotaExceededError
+      if (Array.isArray(copy.photos)) {
+        copy.photos = copy.photos.filter((p: string) => !p || !p.startsWith('data:') || p.length < 50000);
+      }
+      if (typeof copy.signature === 'string' && copy.signature.startsWith('data:') && copy.signature.length > 50000) {
+        copy.signature = '';
+      }
+      if (typeof copy.supervisorSignature === 'string' && copy.supervisorSignature.startsWith('data:') && copy.supervisorSignature.length > 50000) {
+        copy.supervisorSignature = '';
+      }
+      return copy;
+    });
+  }
+  if (key === STORAGE_KEYS.REQUIRED_DOCUMENTS && Array.isArray(value)) {
+    return value.map((doc) => {
+      if (!doc || typeof doc !== 'object') return doc;
+      const copy = { ...doc };
+      if (typeof copy.dataUrl === 'string' && copy.dataUrl.startsWith('data:') && copy.dataUrl.length > 50000) {
+        copy.dataUrl = '';
+      }
+      return copy;
+    });
+  }
   return value;
 }
 
