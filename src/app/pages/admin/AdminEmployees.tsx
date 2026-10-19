@@ -5258,74 +5258,7 @@ export function AdminEmployees() {
                                 </button>
                               )}
 
-                              <label
-                                htmlFor={`upload-behalf-${docItem.key}`}
-                                className="py-1.5 px-3 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                title="Upload file and pass on behalf of student"
-                              >
-                                <Upload size={13} /> {hasFile ? 'Replace & Pass' : 'Upload & Pass'}
-                                <input
-                                  type="file"
-                                  id={`upload-behalf-${docItem.key}`}
-                                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = async (ev) => {
-                                      const dataUrl = ev.target?.result as string;
-                                      let remoteUrl = '';
-                                      try {
-                                        const u = await uploadDocumentToStorage(selectedEmp.employeeId || selectedEmp.id, docItem.key, file, file.name);
-                                        if (u && u.startsWith('http')) remoteUrl = u;
-                                      } catch {}
-                                      const currentDocs = selectedEmp.submittedDocuments || {};
-                                      const newDocItem: TraineeDocumentItem = {
-                                        name: file.name,
-                                        size: file.size,
-                                        fileType: file.type || 'application/pdf',
-                                        dataUrl,
-                                        fileUrl: remoteUrl || dataUrl,
-                                        status: 'passed',
-                                        uploadedAt: new Date().toISOString(),
-                                        source: 'instructor_upload',
-                                        notes: 'Uploaded and verified by OJT Instructor.',
-                                      };
-                                      const updatedDocs: TraineeDocuments = {
-                                        ...currentDocs,
-                                        [docItem.key]: newDocItem,
-                                      };
-                                      const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
-                                      const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-                                      const finalDocStatus = allPassed ? 'passed' : 'partial';
 
-                                      await updateEmployee(selectedEmp.id, {
-                                        submittedDocuments: updatedDocs,
-                                        documentsPassed: allPassed,
-                                        documentsStatus: finalDocStatus,
-                                      });
-                                      saveDocumentPassStatus(selectedEmp.id, {
-                                        docKey: docItem.key,
-                                        status: 'passed',
-                                        allPassed,
-                                        documentsStatus: finalDocStatus,
-                                        submittedDocuments: updatedDocs,
-                                        documentItem: newDocItem,
-                                      }).catch(console.warn);
-                                      setSelectedEmp({
-                                        ...selectedEmp,
-                                        submittedDocuments: updatedDocs,
-                                        documentsPassed: allPassed,
-                                        documentsStatus: finalDocStatus,
-                                      });
-                                      toast.success(`"${file.name}" uploaded and PASSED for ${selectedEmp.name}!`);
-                                    };
-                                    reader.readAsDataURL(file);
-                                    e.target.value = '';
-                                  }}
-                                />
-                              </label>
 
                               <button
                                 type="button"
@@ -5548,66 +5481,7 @@ export function AdminEmployees() {
                                     </button>
                                   )}
 
-                                  {/* Upload on behalf */}
-                                  <label
-                                    htmlFor={`upload-behalf-custom-${cReq.id}`}
-                                    className="py-1.5 px-3 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                    title="Upload file and pass on behalf of student"
-                                  >
-                                    <Upload size={13} /> {hasFile ? 'Replace & Pass' : 'Upload & Pass'}
-                                    <input
-                                      type="file"
-                                      id={`upload-behalf-custom-${cReq.id}`}
-                                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                                      className="hidden"
-                                      onChange={async (e) => {
-                                        const file = e.target.files?.[0];
-                                        if (!file) return;
-                                        const reader = new FileReader();
-                                        reader.onload = async (ev) => {
-                                          const dataUrl = ev.target?.result as string;
-                                          let remoteUrl = '';
-                                          try {
-                                            const u = await uploadDocumentToStorage(selectedEmp.employeeId || selectedEmp.id, cReq.id, file, file.name);
-                                            if (u && u.startsWith('http')) remoteUrl = u;
-                                          } catch {}
-                                          const currentDocs = selectedEmp.submittedDocuments || {};
-                                          const newDocItem: TraineeDocumentItem = {
-                                            name: file.name,
-                                            size: file.size,
-                                            fileType: file.type || 'application/pdf',
-                                            dataUrl,
-                                            fileUrl: remoteUrl || dataUrl,
-                                            status: 'passed',
-                                            uploadedAt: new Date().toISOString(),
-                                            source: 'instructor_upload',
-                                            notes: 'Uploaded and verified by OJT Instructor.',
-                                          };
-                                          const updatedDocs = {
-                                            ...currentDocs,
-                                            [cReq.id]: newDocItem,
-                                          };
 
-                                          await updateEmployee(selectedEmp.id, {
-                                            submittedDocuments: updatedDocs as any,
-                                          });
-                                          saveDocumentPassStatus(selectedEmp.id, {
-                                            docKey: cReq.id,
-                                            status: 'passed',
-                                            submittedDocuments: updatedDocs as any,
-                                            documentItem: newDocItem,
-                                          }).catch(console.warn);
-                                          setSelectedEmp({
-                                            ...selectedEmp,
-                                            submittedDocuments: updatedDocs as any,
-                                          });
-                                          toast.success(`"${file.name}" uploaded and PASSED for ${selectedEmp.name}!`);
-                                        };
-                                        reader.readAsDataURL(file);
-                                        e.target.value = '';
-                                      }}
-                                    />
-                                  </label>
 
                                   {/* Approve / Revoke */}
                                   <button
