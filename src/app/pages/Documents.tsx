@@ -117,7 +117,8 @@ export function Documents() {
     return foundKey ? submittedDocs[foundKey] : undefined;
   };
 
-  const customRequiredDocs = employee?.id ? getEmployeeRequiredDocuments(employee.id) : [];
+  const targetEmpLookup = employee?.id || currentUser?.employeeId || currentUser?.id || 'all';
+  const customRequiredDocs = getEmployeeRequiredDocuments(targetEmpLookup);
   const allDocRequirements = useMemo(() => {
     // 1. Process standard 10 documents and enrich with any instructor-uploaded template
     const list: any[] = STANDARD_REQUIRED_DOCS.map((std) => {

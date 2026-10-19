@@ -2638,6 +2638,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseSubmissions,
         supabaseHostFeedback,
         supabaseHostSupervisors,
+        supabaseRequiredDocs,
       ] = await Promise.all([
         supabaseService.fetchEmployees(),
         supabaseService.fetchTimeRecords(),
@@ -2648,7 +2649,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchAnnouncementSubmissions(),
         supabaseService.fetchHostFeedback(),
         supabaseService.fetchHostSupervisors(),
+        supabaseService.fetchRequiredDocumentsFromStorage(),
       ]);
+
+      if (supabaseRequiredDocs && supabaseRequiredDocs.length > 0) {
+        setRequiredDocuments((prev) => {
+          const merged = [...supabaseRequiredDocs];
+          for (const p of prev) {
+            if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
+              merged.push(p);
+            }
+          }
+          saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
+          return merged;
+        });
+      }
 
       if (supabaseEmployees && supabaseEmployees.length > 0) {
         setEmployees((prev) => {
@@ -5492,16 +5507,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       targetCourse: data.targetCourse,
     };
 
-    setRequiredDocuments((prev) => [newDoc, ...prev]);
+    setRequiredDocuments((prev) => {
+      const updated = [newDoc, ...prev.filter((d) => d.id !== newDoc.id && d.title.toLowerCase().trim() !== newDoc.title.toLowerCase().trim())];
+      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, updated);
+      supabaseService.saveRequiredDocumentsToStorage(updated).catch(console.warn);
+      return updated;
+    });
     return newDoc;
   };
 
   const updateRequiredDocument = (id: string, data: Partial<RequiredDocument>) => {
-    setRequiredDocuments((prev) => prev.map((doc) => (doc.id === id ? { ...doc, ...data } : doc)));
+    setRequiredDocuments((prev) => {
+      const updated = prev.map((doc) => (doc.id === id ? { ...doc, ...data } : doc));
+      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, updated);
+      supabaseService.saveRequiredDocumentsToStorage(updated).catch(console.warn);
+      return updated;
+    });
   };
 
   const deleteRequiredDocument = (id: string) => {
-    setRequiredDocuments((prev) => prev.filter((doc) => doc.id !== id));
+    setRequiredDocuments((prev) => {
+      const updated = prev.filter((doc) => doc.id !== id);
+      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, updated);
+      supabaseService.saveRequiredDocumentsToStorage(updated).catch(console.warn);
+      return updated;
+    });
     setRequiredDocumentSubmissions((prev) => prev.filter((submission) => submission.documentId !== id));
   };
 
@@ -5512,9 +5542,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (doc) =>
         (doc.employeeId === employeeId ||
           doc.employeeId === 'all' ||
+          !doc.employeeId ||
           (emp && doc.employeeId === emp.employeeId) ||
           (emp?.course && doc.targetCourse && (doc.targetCourse === 'all' || doc.targetCourse === emp.course))) &&
-        (!doc.academicYear || doc.academicYear === settings.activeAcademicYear)
+        (!doc.academicYear || !settings.activeAcademicYear || doc.academicYear === settings.activeAcademicYear)
     );
 
     // 2. Standard mandatory institutional OJT checklist documents

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument } from '../types';
 import { isWithinNegrosOccidental } from '../utils/geo';
 import { TRAINEE_REQUIRED_HOURS } from '../data/ojtConstants';
 
@@ -3372,4 +3372,52 @@ export async function resetPasswordDirect(
   }
 
   return { success: false, message: 'Failed to update password. Please try again.' };
+}
+
+// ─── Departmental / Required Documents Cloud Sync ───────────────────────────
+
+export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocument[]> {
+  try {
+    const res = await fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/requirements_store.json?t=${Date.now()}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('fetchRequiredDocumentsFromStorage notice:', err);
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase.storage.from('face-photos').download('settings/requirements_store.json');
+      if (!error && data) {
+        const text = await data.text();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+  }
+
+  return [];
+}
+
+export async function saveRequiredDocumentsToStorage(docs: RequiredDocument[]): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const jsonStr = JSON.stringify(docs);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+
+    const { error } = await supabase.storage.from('face-photos').upload('settings/requirements_store.json', blob, {
+      contentType: 'application/json',
+      upsert: true,
+    });
+    if (!error) return true;
+  } catch (err) {
+    console.warn('saveRequiredDocumentsToStorage notice:', err);
+  }
+  return false;
 }
