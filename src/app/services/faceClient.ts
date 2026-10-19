@@ -357,6 +357,8 @@ export interface FaceQualityReport {
   sharpness: number;
   ear: number;
   eyesClosed: boolean;
+  landmarks?: Array<{ x: number; y: number }>;
+  faceBox?: { x: number; y: number; width: number; height: number };
 }
 
 /**
@@ -545,6 +547,9 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
             ).withFaceLandmarks();
             if (withLm?.landmarks) {
               landmarks = withLm.landmarks.positions || withLm.landmarks;
+              if (Array.isArray(landmarks)) {
+                result.landmarks = landmarks.map((pt: any) => ({ x: Number(pt.x), y: Number(pt.y) }));
+              }
             }
           } catch {
             // Landmark detection failure should not invalidate face detection
@@ -555,7 +560,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       }
     }
 
-    // Fallback: Skin-tone & facial presence analysis in central oval if models unavailable or missed
+    // Fallback: Skin-tone & facial presence analysis in central area if models unavailable or missed
     if (!result.faceDetected) {
       let ovalSkinPixels = 0;
       let ovalTotalPixels = 0;
@@ -591,6 +596,12 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     }
 
     if (result.faceDetected && faceBox) {
+      result.faceBox = {
+        x: Number(faceBox.x || faceBox._x || 0),
+        y: Number(faceBox.y || faceBox._y || 0),
+        width: Number(faceBox.width || faceBox._width || 0),
+        height: Number(faceBox.height || faceBox._height || 0),
+      };
       const box = faceBox;
 
       // Centering check: generous tolerance (within 38% of center) so human users pass naturally
@@ -602,7 +613,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       const offsetY = Math.abs(faceCy - targetCy) / h;
       if (offsetX > 0.38 || offsetY > 0.38) {
         result.faceCentered = false;
-        result.issues.push('Please center your face inside the oval guide.');
+        result.issues.push('Please align your face with the facial landmark mesh.');
       } else {
         result.faceCentered = true;
       }
@@ -736,7 +747,7 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
       result.faceCentered = false;
         result.faceObscured = false;
         result.ok = false;
-        result.issues.push('No face detected. Position head inside the oval guide.');
+        result.issues.push('No face detected. Align face with the biometric landmark mesh.');
       }
     } catch (err) {
       console.warn('inspectFaceQuality warning:', err);

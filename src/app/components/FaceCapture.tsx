@@ -47,6 +47,34 @@ export interface FaceCaptureProps {
   autoStart?: boolean;
 }
 
+// Normalized 68-point anatomical facial landmark template (proportional to standard face geometry)
+const NORMALIZED_68_LANDMARKS: Array<{ x: number; y: number }> = [
+  // Jaw Outline (0-16)
+  { x: -0.66, y: -0.28 }, { x: -0.64, y: -0.12 }, { x: -0.61, y: 0.05 }, { x: -0.56, y: 0.22 },
+  { x: -0.48, y: 0.38 },  { x: -0.36, y: 0.52 },  { x: -0.24, y: 0.65 }, { x: -0.12, y: 0.74 },
+  { x: 0.00,  y: 0.78 },  { x: 0.12,  y: 0.74 },  { x: 0.24,  y: 0.65 }, { x: 0.36,  y: 0.52 },
+  { x: 0.48,  y: 0.38 },  { x: 0.56,  y: 0.22 },  { x: 0.61,  y: 0.05 }, { x: 0.64,  y: -0.12 },
+  { x: 0.66,  y: -0.28 },
+  // Right Eyebrow (17-21)
+  { x: -0.52, y: -0.42 }, { x: -0.42, y: -0.48 }, { x: -0.30, y: -0.50 }, { x: -0.18, y: -0.46 }, { x: -0.09, y: -0.40 },
+  // Left Eyebrow (22-26)
+  { x: 0.09,  y: -0.40 }, { x: 0.18,  y: -0.46 }, { x: 0.30,  y: -0.50 }, { x: 0.42,  y: -0.48 }, { x: 0.52,  y: -0.42 },
+  // Nose Bridge (27-30)
+  { x: 0.00,  y: -0.32 }, { x: 0.00,  y: -0.18 }, { x: 0.00,  y: -0.05 }, { x: 0.00,  y: 0.08 },
+  // Nostrils / Base (31-35)
+  { x: -0.17, y: 0.12 },  { x: -0.08, y: 0.15 },  { x: 0.00,  y: 0.16 },  { x: 0.08,  y: 0.15 },  { x: 0.17,  y: 0.12 },
+  // Right Eye (36-41)
+  { x: -0.45, y: -0.26 }, { x: -0.36, y: -0.32 }, { x: -0.24, y: -0.32 }, { x: -0.17, y: -0.26 }, { x: -0.24, y: -0.22 }, { x: -0.36, y: -0.22 },
+  // Left Eye (42-47)
+  { x: 0.17,  y: -0.26 }, { x: 0.24,  y: -0.32 }, { x: 0.36,  y: -0.32 }, { x: 0.45,  y: -0.26 }, { x: 0.36,  y: -0.22 }, { x: 0.24,  y: -0.22 },
+  // Outer Lips (48-59)
+  { x: -0.26, y: 0.38 },  { x: -0.17, y: 0.32 },  { x: -0.08, y: 0.30 },  { x: 0.00,  y: 0.31 },  { x: 0.08,  y: 0.30 },  { x: 0.17,  y: 0.32 },
+  { x: 0.26,  y: 0.38 },  { x: 0.17,  y: 0.46 },  { x: 0.08,  y: 0.50 },  { x: 0.00,  y: 0.51 },  { x: -0.08, y: 0.50 },  { x: -0.17, y: 0.46 },
+  // Inner Lips (60-67)
+  { x: -0.21, y: 0.38 },  { x: -0.08, y: 0.35 },  { x: 0.00,  y: 0.35 },  { x: 0.08,  y: 0.35 },  { x: 0.21,  y: 0.38 },  { x: 0.08,  y: 0.42 },
+  { x: 0.00,  y: 0.43 },  { x: -0.08, y: 0.42 },
+];
+
 export function FaceCapture({
   mode,
   employeeName,
@@ -62,6 +90,11 @@ export function FaceCapture({
   const animFrameRef = useRef<number | null>(null);
   const scanLineRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Live 68-point landmark tracking refs
+  const liveLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
+  const smoothedLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
+  const lastLandmarkDetectionTimeRef = useRef<number>(0);
 
   const [state, setState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
@@ -146,7 +179,8 @@ export function FaceCapture({
   }, []);
 
   /**
-   * Draw the biometric oval framing guide, scanning beam, and alignment notches on the canvas overlay
+   * Draw the 68-point biometric facial landmark mesh, wireframe interconnects,
+   * scanning beam, and biometric HUD target framing on the canvas overlay
    */
   const drawOverlay = useCallback(() => {
     const canvas = canvasRef.current;
@@ -181,117 +215,247 @@ export function FaceCapture({
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Oval layout dimensions
-      const cx = canvas.width / 2;
-      const cy = canvas.height * 0.485;
+      const currentState = stateRef.current;
+      const currentMismatch = mismatchErrorRef.current;
+      const isSuccess = currentState === 'success';
+      const isFailed = currentState === 'failed' || Boolean(currentMismatch);
 
-      const maxRadiusY = canvas.height * 0.35;
-      const maxRadiusX = canvas.width * 0.40;
+      // Determine 68 landmark points (live face tracked or anatomical template)
+      let targetPts: Array<{ x: number; y: number }>;
+      const isLiveTracked = Boolean(
+        liveLandmarksRef.current &&
+        liveLandmarksRef.current.length >= 68 &&
+        Date.now() - lastLandmarkDetectionTimeRef.current < 650
+      );
 
-      let radiusY = canvas.height * 0.31;
-      let radiusX = radiusY / 1.30;
-
-      if (radiusY > maxRadiusY) radiusY = maxRadiusY;
-      if (radiusX > maxRadiusX) {
-        radiusX = maxRadiusX;
-        radiusY = Math.min(radiusX * 1.30, maxRadiusY);
+      if (isLiveTracked && liveLandmarksRef.current && video.videoWidth > 0) {
+        const scaleX = canvas.width / video.videoWidth;
+        const scaleY = canvas.height / video.videoHeight;
+        targetPts = liveLandmarksRef.current.map((p) => ({
+          x: p.x * scaleX,
+          y: p.y * scaleY,
+        }));
+      } else {
+        // Ideal anatomical biometric mesh template centered in scanner with soft breathing pulse
+        const cx = canvas.width / 2;
+        const cy = canvas.height * 0.48;
+        const breathe = Math.sin(Date.now() / 600) * 0.015;
+        const faceW = canvas.width * (0.35 + breathe);
+        const faceH = canvas.height * (0.35 + breathe);
+        targetPts = NORMALIZED_68_LANDMARKS.map((p) => ({
+          x: cx + p.x * faceW,
+          y: cy + p.y * faceH,
+        }));
       }
 
-      const currentState = stateRef.current;
-      const currentQuality = qualityReportRef.current;
-      const currentMismatch = mismatchErrorRef.current;
+      // Smooth points with lerp for fluid 60fps tracking
+      if (!smoothedLandmarksRef.current || smoothedLandmarksRef.current.length !== targetPts.length) {
+        smoothedLandmarksRef.current = targetPts.map((p) => ({ ...p }));
+      } else {
+        const smoothRate = isLiveTracked ? 0.38 : 0.20;
+        for (let i = 0; i < targetPts.length; i++) {
+          smoothedLandmarksRef.current[i].x += (targetPts[i].x - smoothedLandmarksRef.current[i].x) * smoothRate;
+          smoothedLandmarksRef.current[i].y += (targetPts[i].y - smoothedLandmarksRef.current[i].y) * smoothRate;
+        }
+      }
 
-      const lineColor =
-        currentState === 'success'
-          ? '#22c55e'
-          : currentState === 'failed' || currentMismatch
-            ? '#ef4444'
-            : currentQuality && !currentQuality.ok && (currentQuality.tooDark || currentQuality.tooBright)
-              ? '#f59e0b'
-              : '#00e5ff';
+      const pts = smoothedLandmarksRef.current;
+      if (!pts || pts.length < 68) return;
 
-      // 1. Dark Vignette Backdrop Outside Oval using evenodd cutout
+      // 1. Calculate Face Bounding Box & HUD Corners
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      const padX = 18 * dpr;
+      const padY = 22 * dpr;
+      const boxLeft = Math.max(8 * dpr, minX - padX);
+      const boxRight = Math.min(canvas.width - 8 * dpr, maxX + padX);
+      const boxTop = Math.max(12 * dpr, minY - padY);
+      const boxBottom = Math.min(canvas.height - 12 * dpr, maxY + padY);
+      const boxW = boxRight - boxLeft;
+      const boxH = boxBottom - boxTop;
+
+      // 2. Animated Scanning Laser Beam across face zone
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, canvas.width, canvas.height);
-      ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(10, 15, 29, 0.65)';
-      ctx.fill('evenodd');
-      ctx.restore();
-
-      // 2. Animated Scanning Laser Line within oval
-      ctx.save();
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
-      ctx.clip();
-
-      const scanRange = radiusY * 2;
+      const scanRange = boxH;
       scanLineRef.current = (scanLineRef.current + (2.5 * dpr)) % scanRange;
-      const currentScanY = cy - radiusY + scanLineRef.current;
+      const currentScanY = boxTop + scanLineRef.current;
 
-      const laserThickness = 16 * dpr;
+      const laserThickness = 14 * dpr;
+      const laserColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : '#00e5ff';
       const laserGrad = ctx.createLinearGradient(0, currentScanY - laserThickness, 0, currentScanY + laserThickness);
       laserGrad.addColorStop(0, 'transparent');
-      laserGrad.addColorStop(0.5, lineColor + 'aa');
+      laserGrad.addColorStop(0.5, laserColor + '66');
       laserGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = laserGrad;
-      ctx.fillRect(cx - radiusX, currentScanY - laserThickness, radiusX * 2, laserThickness * 2);
+      ctx.fillRect(boxLeft, currentScanY - laserThickness, boxW, laserThickness * 2);
 
-      // Laser thin center line
+      // Thin bright laser beam line
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5 * dpr;
+      ctx.lineWidth = 1.2 * dpr;
       ctx.beginPath();
-      ctx.moveTo(cx - radiusX + (6 * dpr), currentScanY);
-      ctx.lineTo(cx + radiusX - (6 * dpr), currentScanY);
+      ctx.moveTo(boxLeft + (8 * dpr), currentScanY);
+      ctx.lineTo(boxRight - (8 * dpr), currentScanY);
       ctx.stroke();
-
       ctx.restore();
 
-      // 3. Glowing Oval Contour Border & Alignment Notches
+      // 3. Biometric HUD Target Corner Brackets
       ctx.save();
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 2.5 * dpr;
-      ctx.shadowColor = lineColor;
-      ctx.shadowBlur = 8 * dpr;
+      const cornerColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : '#38bdf8';
+      ctx.strokeStyle = cornerColor;
+      ctx.lineWidth = 2.2 * dpr;
+      ctx.shadowColor = cornerColor;
+      ctx.shadowBlur = 6 * dpr;
+      const cLen = 16 * dpr;
 
-      // Draw Vertical Oval Outline
+      // Top-Left ┌
       ctx.beginPath();
-      ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
+      ctx.moveTo(boxLeft, boxTop + cLen);
+      ctx.lineTo(boxLeft, boxTop);
+      ctx.lineTo(boxLeft + cLen, boxTop);
       ctx.stroke();
 
-      // Chin alignment notch
+      // Top-Right ┐
       ctx.beginPath();
-      ctx.moveTo(cx - (18 * dpr), cy + radiusY);
-      ctx.lineTo(cx + (18 * dpr), cy + radiusY);
+      ctx.moveTo(boxRight - cLen, boxTop);
+      ctx.lineTo(boxRight, boxTop);
+      ctx.lineTo(boxRight, boxTop + cLen);
       ctx.stroke();
 
-      // Forehead alignment notch
+      // Bottom-Left └
       ctx.beginPath();
-      ctx.moveTo(cx - (18 * dpr), cy - radiusY);
-      ctx.lineTo(cx + (18 * dpr), cy - radiusY);
+      ctx.moveTo(boxLeft, boxBottom - cLen);
+      ctx.lineTo(boxLeft, boxBottom);
+      ctx.lineTo(boxLeft + cLen, boxBottom);
       ctx.stroke();
 
-      // Left cheek guide notch
+      // Bottom-Right ┘
       ctx.beginPath();
-      ctx.moveTo(cx - radiusX, cy - (14 * dpr));
-      ctx.lineTo(cx - radiusX, cy + (14 * dpr));
+      ctx.moveTo(boxRight - cLen, boxBottom);
+      ctx.lineTo(boxRight, boxBottom);
+      ctx.lineTo(boxRight, boxBottom - cLen);
       ctx.stroke();
-
-      // Right cheek guide notch
-      ctx.beginPath();
-      ctx.moveTo(cx + radiusX, cy - (14 * dpr));
-      ctx.lineTo(cx + radiusX, cy + (14 * dpr));
-      ctx.stroke();
-
       ctx.restore();
 
-      // 4. Success Glow
-      if (currentState === 'success') {
+      // 4. Subtle Triangulated 3D Facial Mesh Interconnects
+      ctx.save();
+      ctx.strokeStyle = isSuccess ? 'rgba(34, 197, 94, 0.35)' : isFailed ? 'rgba(239, 68, 68, 0.35)' : 'rgba(56, 189, 248, 0.30)';
+      ctx.lineWidth = 1 * dpr;
+      const meshPairs: Array<[number, number]> = [
+        // Eyebrows to nose bridge
+        [21, 27], [22, 27], [20, 27], [23, 27],
+        // Inner eye corners to nose bridge
+        [39, 27], [42, 27], [39, 28], [42, 28],
+        // Eyebrow outer to temples
+        [17, 0], [26, 16], [36, 0], [45, 16],
+        // Nose base to upper lip
+        [33, 51], [31, 48], [35, 54], [32, 50], [34, 52],
+        // Mouth corners to jawline
+        [48, 4], [54, 12], [48, 5], [54, 11],
+        // Chin to bottom lip
+        [8, 57], [7, 58], [9, 56],
+      ];
+      ctx.beginPath();
+      for (const [a, b] of meshPairs) {
+        ctx.moveTo(pts[a].x, pts[a].y);
+        ctx.lineTo(pts[b].x, pts[b].y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Helpers to draw anatomical landmark groups
+      const drawPolyline = (indices: number[], color: string, width = 1.6, close = false) => {
         ctx.save();
         ctx.beginPath();
-        ctx.ellipse(cx, cy, radiusX, radiusY, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.22)';
-        ctx.fill();
+        const strokeColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : color;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = width * dpr;
+        ctx.shadowColor = strokeColor;
+        ctx.shadowBlur = 5 * dpr;
+        ctx.moveTo(pts[indices[0]].x, pts[indices[0]].y);
+        for (let i = 1; i < indices.length; i++) {
+          ctx.lineTo(pts[indices[i]].x, pts[indices[i]].y);
+        }
+        if (close) ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const drawNodes = (indices: number[], fillColor: string, strokeColor: string, radius = 2.4) => {
+        ctx.save();
+        for (const idx of indices) {
+          const p = pts[idx];
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius * dpr, 0, Math.PI * 2);
+          ctx.fillStyle = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : fillColor;
+          ctx.fill();
+          ctx.lineWidth = 1 * dpr;
+          ctx.strokeStyle = isSuccess ? '#15803d' : isFailed ? '#b91c1c' : strokeColor;
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      // 5. Draw Groups matching user's reference photo:
+      // A. Jawline (0..16) -> Royal Blue
+      const jawIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+      drawPolyline(jawIndices, '#2563eb', 1.8);
+      drawNodes(jawIndices, '#3b82f6', '#1d4ed8', 2.5);
+
+      // B. Eyebrows (17..21 & 22..26) -> Cyan / Sky Blue
+      const rBrowIndices = [17, 18, 19, 20, 21];
+      const lBrowIndices = [22, 23, 24, 25, 26];
+      drawPolyline(rBrowIndices, '#0284c7', 1.8);
+      drawPolyline(lBrowIndices, '#0284c7', 1.8);
+      drawNodes(rBrowIndices, '#38bdf8', '#0369a1', 2.3);
+      drawNodes(lBrowIndices, '#38bdf8', '#0369a1', 2.3);
+
+      // C. Nose Bridge & Nostril Base (27..35) -> Mint / Teal
+      const noseBridgeIndices = [27, 28, 29, 30];
+      const noseBaseIndices = [31, 32, 33, 34, 35];
+      drawPolyline(noseBridgeIndices, '#0d9488', 1.8);
+      drawPolyline(noseBaseIndices, '#0d9488', 1.8);
+      drawNodes(noseBridgeIndices, '#2dd4bf', '#0f766e', 2.3);
+      drawNodes(noseBaseIndices, '#2dd4bf', '#0f766e', 2.3);
+
+      // D. Eyes (36..41 & 42..47) -> Amber / Yellow
+      const rEyeIndices = [36, 37, 38, 39, 40, 41];
+      const lEyeIndices = [42, 43, 44, 45, 46, 47];
+      drawPolyline(rEyeIndices, '#ca8a04', 1.8, true);
+      drawPolyline(lEyeIndices, '#ca8a04', 1.8, true);
+      drawNodes(rEyeIndices, '#facc15', '#a16207', 2.3);
+      drawNodes(lEyeIndices, '#facc15', '#a16207', 2.3);
+
+      // Eye pupil center dots
+      const rPupilX = (pts[37].x + pts[38].x + pts[40].x + pts[41].x) / 4;
+      const rPupilY = (pts[37].y + pts[38].y + pts[40].y + pts[41].y) / 4;
+      const lPupilX = (pts[43].x + pts[44].x + pts[46].x + pts[47].x) / 4;
+      const lPupilY = (pts[43].y + pts[44].y + pts[46].y + pts[47].y) / 4;
+      ctx.save();
+      ctx.fillStyle = isSuccess ? '#22c55e' : '#fef08a';
+      ctx.beginPath();
+      ctx.arc(rPupilX, rPupilY, 2 * dpr, 0, Math.PI * 2);
+      ctx.arc(lPupilX, lPupilY, 2 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // E. Mouth - Outer & Inner Lips (48..67) -> Vivid Red / Coral
+      const outerLipIndices = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59];
+      const innerLipIndices = [60, 61, 62, 63, 64, 65, 66, 67];
+      drawPolyline(outerLipIndices, '#e11d48', 1.8, true);
+      drawPolyline(innerLipIndices, '#f43f5e', 1.4, true);
+      drawNodes(outerLipIndices, '#f43f5e', '#be123c', 2.4);
+      drawNodes(innerLipIndices, '#fb7185', '#e11d48', 1.9);
+
+      // 6. Success biometric illumination
+      if (currentState === 'success') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.16)';
+        ctx.fillRect(boxLeft, boxTop, boxW, boxH);
         ctx.restore();
       }
 
@@ -302,6 +466,53 @@ export function FaceCapture({
       // silent catch for overlay
     }
   }, []);
+
+  // Background 68-point live face landmark detection on live video element
+  useEffect(() => {
+    if (state !== 'scanning' && state !== 'analyzing' && state !== 'verifying') {
+      liveLandmarksRef.current = null;
+      return;
+    }
+
+    let active = true;
+    let timer: any = null;
+
+    const track = async () => {
+      if (!active) return;
+      const video = videoRef.current;
+      if (video && video.videoWidth > 0 && !video.paused && !video.ended) {
+        try {
+          if (typeof window !== 'undefined' && (window as any).faceapi) {
+            const api = (window as any).faceapi;
+            if (api.nets?.tinyFaceDetector?.params && api.nets?.faceLandmark68Net?.params) {
+              const res = await api
+                .detectSingleFace(video, new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.12 }))
+                .withFaceLandmarks();
+              if (res?.landmarks?.positions && active) {
+                liveLandmarksRef.current = res.landmarks.positions.map((p: any) => ({
+                  x: Number(p.x),
+                  y: Number(p.y),
+                }));
+                lastLandmarkDetectionTimeRef.current = Date.now();
+              }
+            }
+          }
+        } catch {
+          // silent landmark track error
+        }
+      }
+      if (active) {
+        timer = setTimeout(track, 60);
+      }
+    };
+
+    track();
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [state]);
 
   /**
    * Capture a pristine JPEG snapshot from the live physical camera video,
@@ -451,8 +662,8 @@ export function FaceCapture({
     setState('scanning');
     setScanMessage(
       currentMode === 'register'
-        ? 'Position face inside the oval for biometric scan...'
-        : 'Align your face inside the oval for biometric verification...'
+        ? 'Align your face with the biometric landmark mesh...'
+        : 'Align your face with the biometric landmark mesh...'
     );
     setProgress(20);
 
@@ -500,7 +711,7 @@ export function FaceCapture({
                 return;
               } else {
                 setProgress(35);
-                setScanMessage('Position face inside the oval guide...');
+                setScanMessage('Align your face with the biometric landmark mesh...');
               }
             } else {
               // Fallback if inspection unavailable: register frame immediately
@@ -586,7 +797,7 @@ export function FaceCapture({
             }
           } else {
             setProgress(20);
-            setScanMessage('Position face inside the oval guide...');
+            setScanMessage('Align your face with the biometric landmark mesh...');
           }
         }
 
@@ -653,7 +864,7 @@ export function FaceCapture({
       if (!manualQuality.faceDetected) {
         const doubleCheck = await detectFaceInDataUrl(img).catch(() => false);
         if (!doubleCheck) {
-          setScanMessage('⚠️ No face detected. Please position your face inside the oval.');
+          setScanMessage('⚠️ No face detected. Please align your face with the biometric mesh.');
           return;
         }
       }
@@ -663,7 +874,7 @@ export function FaceCapture({
     if (modeRef.current === 'register') {
       const hasAnyFace = await detectFaceInDataUrl(img).catch(() => true);
       if (!hasAnyFace) {
-        setScanMessage('❌ No face detected. Please position your face inside the oval.');
+        setScanMessage('❌ No face detected. Please align your face with the biometric mesh.');
         return;
       }
 
@@ -864,7 +1075,7 @@ export function FaceCapture({
 
             {/* Center face guide banner */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
-              👤 Center Face inside the Oval
+              👤 Align Face with Biometric Mesh
             </div>
 
             {/* Obstruction warning banner within viewport (clean warning text, no intrusive indicator overlays) */}
