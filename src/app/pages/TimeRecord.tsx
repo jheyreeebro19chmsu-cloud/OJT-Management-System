@@ -124,6 +124,7 @@ export function TimeRecord() {
     settings,
     timeRecords,
     employees,
+    refreshData,
   } = useApp();
   const employee = getCurrentEmployee();
   const empLookupId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
@@ -142,19 +143,77 @@ export function TimeRecord() {
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const userActionOverrideRef = useRef<boolean>(false);
 
+  // Helper to reliably retrieve slot timestamps from currentRecord or fallback inference
+  const getSlotTime = (slotField: 'amArrival' | 'amDeparture' | 'pmArrival' | 'pmDeparture'): string | undefined => {
+    if ((currentRecord as any)?.[slotField]) {
+      return (currentRecord as any)[slotField];
+    }
+    // Fallback inference from timeIn / timeOut
+    if (slotField === 'amArrival') {
+      if (currentRecord?.timeIn) {
+        const t = currentRecord.timeIn;
+        const match = t.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          const h = parseInt(match[1], 10);
+          const isPm = /pm/i.test(t) || (h >= 12 && !/am/i.test(t));
+          if (!isPm) return t;
+        }
+      }
+    }
+    if (slotField === 'pmArrival') {
+      if (currentRecord?.timeIn) {
+        const t = currentRecord.timeIn;
+        const match = t.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          const h = parseInt(match[1], 10);
+          const isPm = /pm/i.test(t) || (h >= 12 && !/am/i.test(t));
+          if (isPm) return t;
+        }
+      }
+    }
+    if (slotField === 'amDeparture') {
+      if (currentRecord?.timeOut) {
+        const t = currentRecord.timeOut;
+        const match = t.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          if (/pm/i.test(t) && h !== 12) h += 12;
+          if (h < 13 && currentRecord.amArrival) return t;
+        }
+      }
+    }
+    if (slotField === 'pmDeparture') {
+      if (currentRecord?.timeOut) {
+        const t = currentRecord.timeOut;
+        const match = t.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          if (/pm/i.test(t) && h !== 12) h += 12;
+          if (h >= 12) return t;
+        }
+      }
+    }
+    return undefined;
+  };
+
   // Auto-slot selector logic
   const getRecommendedSlot = (rec: TimeRecordType | null, hour: number): AttendanceSlot => {
+    const hasAmIn = rec?.amArrival || (rec?.timeIn && !/pm/i.test(rec.timeIn) && parseInt(rec.timeIn, 10) < 12);
+    const hasAmOut = rec?.amDeparture || (rec?.timeOut && parseInt(rec.timeOut, 10) < 13 && rec.amArrival);
+    const hasPmIn = rec?.pmArrival || (rec?.timeIn && (/pm/i.test(rec.timeIn) || parseInt(rec.timeIn, 10) >= 12));
+    const hasPmOut = rec?.pmDeparture || (rec?.timeOut && (/pm/i.test(rec.timeOut) || parseInt(rec.timeOut, 10) >= 12));
+
     if (hour < 12) {
-      if (!rec?.amArrival) return 'am_arrival';
-      if (!rec?.amDeparture) return 'am_departure';
-      if (!rec?.pmArrival) return 'pm_arrival';
-      if (!rec?.pmDeparture) return 'pm_departure';
+      if (!hasAmIn) return 'am_arrival';
+      if (!hasAmOut) return 'am_departure';
+      if (!hasPmIn) return 'pm_arrival';
+      if (!hasPmOut) return 'pm_departure';
       return 'am_departure';
     } else {
-      if (!rec?.pmArrival) return 'pm_arrival';
-      if (!rec?.pmDeparture) return 'pm_departure';
-      if (!rec?.amArrival) return 'am_arrival';
-      if (!rec?.amDeparture) return 'am_departure';
+      if (!hasPmIn) return 'pm_arrival';
+      if (!hasPmOut) return 'pm_departure';
+      if (!hasAmIn) return 'am_arrival';
+      if (!hasAmOut) return 'am_departure';
       return 'pm_departure';
     }
   };
@@ -181,6 +240,11 @@ export function TimeRecord() {
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Pull today's punches from the cloud on open so recorded timestamps always appear
+  useEffect(() => {
+    refreshData?.({ force: true } as any)?.catch?.(() => {});
   }, []);
 
   // Proactive GPS permission check
@@ -345,7 +409,16 @@ export function TimeRecord() {
         position: 'OJT Trainee',
       } as any : null);
       if (!currentEmp) return;
-      const targetEmpId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '';
+      const canonicalTrainee = employees?.find(
+        (e) =>
+          (currentEmp?.id && e.id === currentEmp.id) ||
+          (currentEmp?.employeeId && e.employeeId === currentEmp.employeeId) ||
+          (currentUser?.employeeId && e.employeeId === currentUser.employeeId) ||
+          (e.email && currentEmp?.email && e.email.toLowerCase() === currentEmp.email.toLowerCase())
+      );
+      const targetEmpId = (canonicalTrainee?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalTrainee.id))
+        ? canonicalTrainee.id
+        : (currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '');
 
       const slot = selectedSlot;
       setCompletedSlot(slot);
@@ -424,6 +497,8 @@ export function TimeRecord() {
       if (baseRec?.id) {
         const updatedData: Partial<TimeRecordType> = {
           ...slotPayload,
+          employeeId: targetEmpId,
+          date: dateStr,
           totalHours,
           status: baseRec.status === 'present' && totalHours > 9 ? 'overtime' : (baseRec.status || status),
         };
@@ -445,6 +520,31 @@ export function TimeRecord() {
         createdRecordId = newRecord.id;
         setCurrentRecord(newRecord);
       }
+
+      // Fast local punch backup persistence
+      try {
+        const cachePunch = {
+          amArrival: newAmArrival,
+          amDeparture: newAmDeparture,
+          pmArrival: newPmArrival,
+          pmDeparture: newPmDeparture,
+          timeIn: primaryTimeIn,
+          timeOut: primaryTimeOut,
+          totalHours,
+          status: (baseRec?.status || status),
+          ...(slot === 'am_arrival' ? { amArrivalFaceVerified: true, amArrivalGeofenced: geofencePassed } : {}),
+          ...(slot === 'am_departure' ? { amDepartureFaceVerified: true, amDepartureGeofenced: geofencePassed } : {}),
+          ...(slot === 'pm_arrival' ? { pmArrivalFaceVerified: true, pmArrivalGeofenced: geofencePassed } : {}),
+          ...(slot === 'pm_departure' ? { pmDepartureFaceVerified: true, pmDepartureGeofenced: geofencePassed } : {}),
+        };
+        localStorage.setItem(`ojt_today_punch_${targetEmpId}_${dateStr}`, JSON.stringify(cachePunch));
+        if (currentEmp?.id && currentEmp.id !== targetEmpId) {
+          localStorage.setItem(`ojt_today_punch_${currentEmp.id}_${dateStr}`, JSON.stringify(cachePunch));
+        }
+        if (currentEmp?.employeeId && currentEmp.employeeId !== targetEmpId) {
+          localStorage.setItem(`ojt_today_punch_${currentEmp.employeeId}_${dateStr}`, JSON.stringify(cachePunch));
+        }
+      } catch {}
 
       const slotTitle = ATTENDANCE_SLOTS.find((s) => s.id === slot)?.title || 'Attendance';
       setCompletedMessage(
@@ -557,10 +657,10 @@ export function TimeRecord() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {ATTENDANCE_SLOTS.map((slot) => {
-              const rawTime = (currentRecord as any)?.[slot.field] as string | undefined;
+              const rawTime = getSlotTime(slot.field);
               const isPunched = Boolean(rawTime);
-              const isVerified = Boolean((currentRecord as any)?.[slot.verifiedField]);
-              const isGeofenced = Boolean((currentRecord as any)?.[slot.geofenceField]);
+              const isVerified = Boolean((currentRecord as any)?.[slot.verifiedField] || (rawTime && currentRecord?.timeInFaceVerified));
+              const isGeofenced = Boolean((currentRecord as any)?.[slot.geofenceField] || (rawTime && currentRecord?.timeInGeofenced));
               const isCurrent = selectedSlot === slot.id;
 
               return (
@@ -735,71 +835,77 @@ export function TimeRecord() {
                     <span className="text-[9.5px] text-slate-400">8:00 AM – 12:00 PM</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSlot('am_arrival');
-                        userActionOverrideRef.current = true;
-                      }}
-                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                        selectedSlot === 'am_arrival'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
-                          : currentRecord?.amArrival
-                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Time In</span>
-                        {currentRecord?.amArrival && (
-                          <CheckCircle2
-                            size={12}
-                            className={selectedSlot === 'am_arrival' ? 'text-blue-200' : 'text-emerald-600'}
-                          />
-                        )}
-                      </div>
-                      <p
-                        className={`text-xs font-black ${
-                          selectedSlot === 'am_arrival' ? 'text-white' : 'text-slate-800'
-                        }`}
-                      >
-                        {currentRecord?.amArrival ? formatTime(currentRecord.amArrival) : 'Not Clocked'}
-                      </p>
-                    </button>
+                  {(() => {
+                    const amInTime = getSlotTime('amArrival');
+                    const amOutTime = getSlotTime('amDeparture');
+                    return (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlot('am_arrival');
+                            userActionOverrideRef.current = true;
+                          }}
+                          className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                            selectedSlot === 'am_arrival'
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                              : amInTime
+                              ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] font-bold">Time In</span>
+                            {amInTime && (
+                              <CheckCircle2
+                                size={12}
+                                className={selectedSlot === 'am_arrival' ? 'text-blue-200' : 'text-emerald-600'}
+                              />
+                            )}
+                          </div>
+                          <p
+                            className={`text-xs font-black ${
+                              selectedSlot === 'am_arrival' ? 'text-white' : 'text-slate-800'
+                            }`}
+                          >
+                            {amInTime ? formatTime(amInTime) : 'Not Clocked'}
+                          </p>
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSlot('am_departure');
-                        userActionOverrideRef.current = true;
-                      }}
-                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                        selectedSlot === 'am_departure'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
-                          : currentRecord?.amDeparture
-                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Time Out</span>
-                        {currentRecord?.amDeparture && (
-                          <CheckCircle2
-                            size={12}
-                            className={selectedSlot === 'am_departure' ? 'text-blue-200' : 'text-emerald-600'}
-                          />
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlot('am_departure');
+                            userActionOverrideRef.current = true;
+                          }}
+                          className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                            selectedSlot === 'am_departure'
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                              : amOutTime
+                              ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] font-bold">Time Out</span>
+                            {amOutTime && (
+                              <CheckCircle2
+                                size={12}
+                                className={selectedSlot === 'am_departure' ? 'text-blue-200' : 'text-emerald-600'}
+                              />
+                            )}
+                          </div>
+                          <p
+                            className={`text-xs font-black ${
+                              selectedSlot === 'am_departure' ? 'text-white' : 'text-slate-800'
+                            }`}
+                          >
+                            {amOutTime ? formatTime(amOutTime) : 'Not Clocked'}
+                          </p>
+                        </button>
                       </div>
-                      <p
-                        className={`text-xs font-black ${
-                          selectedSlot === 'am_departure' ? 'text-white' : 'text-slate-800'
-                        }`}
-                      >
-                        {currentRecord?.amDeparture ? formatTime(currentRecord.amDeparture) : 'Not Clocked'}
-                      </p>
-                    </button>
-                  </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Afternoon (PM) Shift Box */}
@@ -812,71 +918,77 @@ export function TimeRecord() {
                     <span className="text-[9.5px] text-slate-400">1:00 PM – 5:00 PM</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSlot('pm_arrival');
-                        userActionOverrideRef.current = true;
-                      }}
-                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                        selectedSlot === 'pm_arrival'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
-                          : currentRecord?.pmArrival
-                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Time In</span>
-                        {currentRecord?.pmArrival && (
-                          <CheckCircle2
-                            size={12}
-                            className={selectedSlot === 'pm_arrival' ? 'text-blue-200' : 'text-emerald-600'}
-                          />
-                        )}
-                      </div>
-                      <p
-                        className={`text-xs font-black ${
-                          selectedSlot === 'pm_arrival' ? 'text-white' : 'text-slate-800'
-                        }`}
-                      >
-                        {currentRecord?.pmArrival ? formatTime(currentRecord.pmArrival) : 'Not Clocked'}
-                      </p>
-                    </button>
+                  {(() => {
+                    const pmInTime = getSlotTime('pmArrival');
+                    const pmOutTime = getSlotTime('pmDeparture');
+                    return (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlot('pm_arrival');
+                            userActionOverrideRef.current = true;
+                          }}
+                          className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                            selectedSlot === 'pm_arrival'
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                              : pmInTime
+                              ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] font-bold">Time In</span>
+                            {pmInTime && (
+                              <CheckCircle2
+                                size={12}
+                                className={selectedSlot === 'pm_arrival' ? 'text-blue-200' : 'text-emerald-600'}
+                              />
+                            )}
+                          </div>
+                          <p
+                            className={`text-xs font-black ${
+                              selectedSlot === 'pm_arrival' ? 'text-white' : 'text-slate-800'
+                            }`}
+                          >
+                            {pmInTime ? formatTime(pmInTime) : 'Not Clocked'}
+                          </p>
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSlot('pm_departure');
-                        userActionOverrideRef.current = true;
-                      }}
-                      className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                        selectedSlot === 'pm_departure'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
-                          : currentRecord?.pmDeparture
-                          ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] font-bold">Time Out</span>
-                        {currentRecord?.pmDeparture && (
-                          <CheckCircle2
-                            size={12}
-                            className={selectedSlot === 'pm_departure' ? 'text-blue-200' : 'text-emerald-600'}
-                          />
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlot('pm_departure');
+                            userActionOverrideRef.current = true;
+                          }}
+                          className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
+                            selectedSlot === 'pm_departure'
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
+                              : pmOutTime
+                              ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] font-bold">Time Out</span>
+                            {pmOutTime && (
+                              <CheckCircle2
+                                size={12}
+                                className={selectedSlot === 'pm_departure' ? 'text-blue-200' : 'text-emerald-600'}
+                              />
+                            )}
+                          </div>
+                          <p
+                            className={`text-xs font-black ${
+                              selectedSlot === 'pm_departure' ? 'text-white' : 'text-slate-800'
+                            }`}
+                          >
+                            {pmOutTime ? formatTime(pmOutTime) : 'Not Clocked'}
+                          </p>
+                        </button>
                       </div>
-                      <p
-                        className={`text-xs font-black ${
-                          selectedSlot === 'pm_departure' ? 'text-white' : 'text-slate-800'
-                        }`}
-                      >
-                        {currentRecord?.pmDeparture ? formatTime(currentRecord.pmDeparture) : 'Not Clocked'}
-                      </p>
-                    </button>
-                  </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

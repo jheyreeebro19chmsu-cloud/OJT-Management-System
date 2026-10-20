@@ -856,9 +856,9 @@ export async function saveDocumentPassStatus(
   employeeId: string,
   payload: {
     docKey?: string;
-    status?: 'passed' | 'pending';
+    status?: 'passed' | 'pending' | 'submitted' | 'rejected';
     allPassed?: boolean;
-    documentsStatus?: 'passed' | 'pending' | 'submitted' | 'partial';
+    documentsStatus?: 'passed' | 'pending' | 'submitted' | 'partial' | 'incomplete';
     submittedDocuments?: TraineeDocuments;
     documentItem?: TraineeDocumentItem;
   }
@@ -1107,16 +1107,25 @@ export async function deleteEmployee(id: string): Promise<boolean> {
 export async function fetchTimeRecords(): Promise<TimeRecord[]> {
   // 1. Primary path: Service role endpoint /api/time-records (bypasses RLS to eliminate PostgREST locks & 500 timeouts)
   if (typeof window !== 'undefined') {
+    let res: Response | null = null;
     try {
-      const res = await fetch('/api/time-records');
-      if (res.ok) {
+      res = await fetch('/api/time-records');
+    } catch {
+      // Retry once after 350ms to absorb transient ERR_NETWORK_CHANGED or socket resets
+      await new Promise((r) => setTimeout(r, 350));
+      try {
+        res = await fetch('/api/time-records');
+      } catch (retryErr) {
+        console.warn('fetchTimeRecords /api/time-records notice (using client fallback):', retryErr);
+      }
+    }
+    if (res && res.ok) {
+      try {
         const apiData = await res.json();
         if (Array.isArray(apiData) && apiData.length > 0) {
           return apiData.map(transformSupabaseTimeRecord);
         }
-      }
-    } catch (apiErr) {
-      console.warn('fetchTimeRecords /api/time-records notice:', apiErr);
+      } catch {}
     }
   }
 
@@ -1146,9 +1155,78 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
   }
 }
 
+export function encodeSlotNotes(existingNotes: string | null | undefined, record: Partial<TimeRecord>): string | null {
+  const existingSlots = extractSlotNotes(existingNotes);
+  const slots: Record<string, any> = { ...existingSlots };
+  if (record.amArrival) slots.amArrival = record.amArrival;
+  if (record.amDeparture) slots.amDeparture = record.amDeparture;
+  if (record.pmArrival) slots.pmArrival = record.pmArrival;
+  if (record.pmDeparture) slots.pmDeparture = record.pmDeparture;
+  if (record.amArrivalFaceVerified) slots.amArrivalFaceVerified = true;
+  if (record.amDepartureFaceVerified) slots.amDepartureFaceVerified = true;
+  if (record.pmArrivalFaceVerified) slots.pmArrivalFaceVerified = true;
+  if (record.pmDepartureFaceVerified) slots.pmDepartureFaceVerified = true;
+  if (record.amArrivalGeofenced) slots.amArrivalGeofenced = true;
+  if (record.amDepartureGeofenced) slots.amDepartureGeofenced = true;
+  if (record.pmArrivalGeofenced) slots.pmArrivalGeofenced = true;
+  if (record.pmDepartureGeofenced) slots.pmDepartureGeofenced = true;
+
+  if (Object.keys(slots).length === 0) return existingNotes || null;
+
+  const baseNote = (existingNotes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+  const slotTag = `[slots:${JSON.stringify(slots)}]`;
+  return baseNote ? `${baseNote} ${slotTag}` : slotTag;
+}
+
+export function extractSlotNotes(notes?: string | null): Record<string, any> {
+  if (!notes || typeof notes !== 'string') return {};
+  const match = notes.match(/\[slots:(.*?)\]/);
+  if (match) {
+    try {
+      return JSON.parse(match[1]);
+    } catch {}
+  }
+  return {};
+}
+
+function parseTimeToMinutes(t?: string | null): number | null {
+  if (!t) return null;
+  const match = t.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const ampm = (match[3] || '').toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+  return null;
+}
+
+export async function resolveEmployeeUuid(empIdOrCode?: string): Promise<string | null> {
+  if (!empIdOrCode) return null;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(empIdOrCode);
+  if (isUuid) return empIdOrCode;
+
+  try {
+    const { data: matched } = await supabase
+      .from('employees')
+      .select('id')
+      .or(`employee_id.eq.${empIdOrCode},email.eq.${empIdOrCode}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (matched?.id) return matched.id;
+  } catch (e) {
+    console.warn('resolveEmployeeUuid notice:', e);
+  }
+  return empIdOrCode;
+}
+
 export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<TimeRecord | null> {
   if (!isSupabaseConfigured()) return null;
 
+  const resolvedEmpId = (await resolveEmployeeUuid(record.employeeId)) || record.employeeId;
   const cleanDate = record.date ? String(record.date).split('T')[0] : new Date().toISOString().split('T')[0];
 
   // Idempotency guard: if a "Time In" request fires twice (retry, double-tap),
@@ -1157,7 +1235,7 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     const { data: existingOpen } = await supabase
       .from('time_records')
       .select('*')
-      .eq('employee_id', record.employeeId)
+      .eq('employee_id', resolvedEmpId)
       .eq('date', cleanDate)
       .is('time_out', null)
       .order('time_in', { ascending: false })
@@ -1170,27 +1248,31 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     }
   }
 
+  const effectiveTimeIn = record.timeIn || record.amArrival || record.pmArrival || null;
+  const effectiveTimeOut = record.timeOut || record.pmDeparture || record.amDeparture || null;
+
   const baseRecord: any = {
-    employee_id: record.employeeId,
+    employee_id: resolvedEmpId,
     date: cleanDate,
-    time_in: record.timeIn || null,
-    time_out: record.timeOut || null,
+    time_in: effectiveTimeIn,
+    time_out: effectiveTimeOut,
     total_hours: record.totalHours ?? 0,
     status: record.status || 'present',
-    notes: record.notes || null,
-    time_in_geofenced: Boolean(record.timeInGeofenced),
-    time_out_geofenced: Boolean(record.timeOutGeofenced),
-    time_in_face_verified: Boolean(record.timeInFaceVerified),
-    time_out_face_verified: Boolean(record.timeOutFaceVerified),
+    notes: encodeSlotNotes(record.notes, record),
+    time_in_geofenced: Boolean(record.timeInGeofenced || record.amArrivalGeofenced || record.pmArrivalGeofenced),
+    time_out_geofenced: Boolean(record.timeOutGeofenced || record.pmDepartureGeofenced || record.amDepartureGeofenced),
+    time_in_face_verified: Boolean(record.timeInFaceVerified || record.amArrivalFaceVerified || record.pmArrivalFaceVerified),
+    time_out_face_verified: Boolean(record.timeOutFaceVerified || record.pmDepartureFaceVerified || record.amDepartureFaceVerified),
     time_in_lat: record.timeInLocation?.lat != null ? Number(record.timeInLocation.lat) : null,
     time_in_lng: record.timeInLocation?.lng != null ? Number(record.timeInLocation.lng) : null,
     time_out_lat: record.timeOutLocation?.lat != null ? Number(record.timeOutLocation.lat) : null,
     time_out_lng: record.timeOutLocation?.lng != null ? Number(record.timeOutLocation.lng) : null,
-    approval_status: record.approvalStatus || 'pending',
-    approved_by: record.approvedBy || null,
-    approved_at: record.approvedAt || null,
-    approval_note: record.approvalNote || null,
   };
+
+  if (record.approvalStatus) baseRecord.approval_status = record.approvalStatus;
+  if (record.approvedBy) baseRecord.approved_by = record.approvedBy;
+  if (record.approvedAt) baseRecord.approved_at = record.approvedAt;
+  if (record.approvalNote) baseRecord.approval_note = record.approvalNote;
 
   if (record.timeInPhoto && record.timeInPhoto.startsWith('http')) {
     baseRecord.time_in_photo = record.timeInPhoto;
@@ -1201,12 +1283,56 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
 
   let insertResult = await supabase.from('time_records').insert([baseRecord]).select().single();
 
+  // Resilience: If insert failed due to approval columns missing from schema cache, retry without them
+  if (insertResult.error) {
+    const errText = String(insertResult.error.message || JSON.stringify(insertResult.error));
+    console.warn('[Supabase] Initial createTimeRecord notice, attempting fallback without approval columns:', errText);
+    const fallbackRecord = { ...baseRecord };
+    delete fallbackRecord.approval_note;
+    delete fallbackRecord.approval_status;
+    delete fallbackRecord.approved_by;
+    delete fallbackRecord.approved_at;
+    insertResult = await supabase.from('time_records').insert([fallbackRecord]).select().single();
+  }
+
+  // Second resilience fallback: Core columns only if extended metadata columns don't exist yet
+  if (insertResult.error) {
+    console.warn('[Supabase] Second createTimeRecord notice, attempting fallback with core columns:', insertResult.error.message || insertResult.error);
+    const coreRecord: any = {
+      employee_id: record.employeeId,
+      date: cleanDate,
+      time_in: effectiveTimeIn,
+      time_out: effectiveTimeOut,
+      total_hours: record.totalHours ?? 0,
+      status: record.status || 'present',
+      notes: baseRecord.notes || record.notes || null,
+    };
+    if (baseRecord.time_in_photo) coreRecord.time_in_photo = baseRecord.time_in_photo;
+    if (baseRecord.time_out_photo) coreRecord.time_out_photo = baseRecord.time_out_photo;
+    insertResult = await supabase.from('time_records').insert([coreRecord]).select().single();
+  }
+
   if (insertResult.error) {
     console.error('Error creating time record in Supabase:', insertResult.error);
     throw new Error(insertResult.error.message || JSON.stringify(insertResult.error));
   }
 
-  return transformSupabaseTimeRecord({ ...insertResult.data, academic_year: record.academicYear });
+  return transformSupabaseTimeRecord({
+    ...insertResult.data,
+    academic_year: record.academicYear,
+    am_arrival: record.amArrival,
+    am_departure: record.amDeparture,
+    pm_arrival: record.pmArrival,
+    pm_departure: record.pmDeparture,
+    am_arrival_face_verified: record.amArrivalFaceVerified,
+    am_departure_face_verified: record.amDepartureFaceVerified,
+    pm_arrival_face_verified: record.pmArrivalFaceVerified,
+    pm_departure_face_verified: record.pmDepartureFaceVerified,
+    am_arrival_geofenced: record.amArrivalGeofenced,
+    am_departure_geofenced: record.amDepartureGeofenced,
+    pm_arrival_geofenced: record.pmArrivalGeofenced,
+    pm_departure_geofenced: record.pmDepartureGeofenced,
+  });
 }
 
 export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>): Promise<boolean> {
@@ -1243,7 +1369,43 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   }
   if (updates.totalHours !== undefined) supabaseUpdates.total_hours = updates.totalHours;
   if (updates.status !== undefined) supabaseUpdates.status = updates.status;
-  if (updates.notes !== undefined) supabaseUpdates.notes = updates.notes;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  const hasSlotUpdate =
+    updates.amArrival !== undefined ||
+    updates.amDeparture !== undefined ||
+    updates.pmArrival !== undefined ||
+    updates.pmDeparture !== undefined;
+
+  if (updates.notes !== undefined || hasSlotUpdate) {
+    // Load the current DB notes so previously saved punch slots ([slots:{...}]) and tasks are never lost
+    let existingDbNotes: string | null = null;
+    try {
+      if (isUuid) {
+        const { data: cur } = await supabase.from('time_records').select('notes').eq('id', id).maybeSingle();
+        existingDbNotes = cur?.notes ?? null;
+      } else if (updates.employeeId) {
+        const empUuid = (await resolveEmployeeUuid(updates.employeeId)) || updates.employeeId;
+        const d = updates.date ? String(updates.date).split('T')[0] : new Date().toISOString().split('T')[0];
+        const { data: cur } = await supabase
+          .from('time_records')
+          .select('notes')
+          .eq('employee_id', empUuid)
+          .eq('date', d)
+          .limit(1)
+          .maybeSingle();
+        existingDbNotes = cur?.notes ?? null;
+      }
+    } catch {}
+
+    const stripSlots = (n?: string | null) => (n || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+    const existingSlots = extractSlotNotes(existingDbNotes);
+    const baseNote = updates.notes !== undefined ? stripSlots(updates.notes) : stripSlots(existingDbNotes);
+    const seed = Object.keys(existingSlots).length
+      ? `${baseNote} [slots:${JSON.stringify(existingSlots)}]`.trim()
+      : baseNote;
+    supabaseUpdates.notes = encodeSlotNotes(seed, updates) ?? (baseNote || null);
+  }
   if (updates.approvalStatus !== undefined) supabaseUpdates.approval_status = updates.approvalStatus;
   if (updates.approvedBy !== undefined) supabaseUpdates.approved_by = updates.approvedBy;
   if (updates.approvedAt !== undefined) supabaseUpdates.approved_at = updates.approvedAt;
@@ -1252,8 +1414,6 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
   if (Object.keys(supabaseUpdates).length === 0) {
     return true;
   }
-
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   if (isUuid) {
     let res = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
@@ -1274,11 +1434,12 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
 
   // Fallback: match by employee_id and date (critical for temporary local IDs like rec-...)
   if (updates.employeeId) {
+    const resolvedEmpId = (await resolveEmployeeUuid(updates.employeeId)) || updates.employeeId;
     const targetDate = updates.date ? String(updates.date).split('T')[0] : new Date().toISOString().split('T')[0];
     let res2 = await supabase
       .from('time_records')
       .update(supabaseUpdates)
-      .eq('employee_id', updates.employeeId)
+      .eq('employee_id', resolvedEmpId)
       .eq('date', targetDate)
       .select();
     if (res2.error) {
@@ -1290,14 +1451,45 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
       res2 = await supabase
         .from('time_records')
         .update(fallbackUpdates)
-        .eq('employee_id', updates.employeeId)
+        .eq('employee_id', resolvedEmpId)
         .eq('date', targetDate)
         .select();
     }
-    if (res2.error) {
-      console.error('Error updating time record by employee_id and date:', res2.error);
-    } else if (res2.data && res2.data.length > 0) {
+    if (res2.data && res2.data.length > 0) {
       return true;
+    }
+
+    // Upsert fallback: If record does not exist in Supabase yet, create it now!
+    try {
+      const effectiveTimeIn = updates.timeIn || updates.amArrival || updates.pmArrival || null;
+      const effectiveTimeOut = updates.timeOut || updates.pmDeparture || updates.amDeparture || null;
+      const insertRecord: any = {
+        employee_id: resolvedEmpId,
+        date: targetDate,
+        time_in: effectiveTimeIn,
+        time_out: effectiveTimeOut,
+        total_hours: updates.totalHours ?? 0,
+        status: updates.status || 'present',
+        notes: encodeSlotNotes(supabaseUpdates.notes || updates.notes, updates),
+        time_in_geofenced: Boolean(updates.timeInGeofenced || updates.amArrivalGeofenced || updates.pmArrivalGeofenced),
+        time_out_geofenced: Boolean(updates.timeOutGeofenced || updates.pmDepartureGeofenced || updates.amDepartureGeofenced),
+        time_in_face_verified: Boolean(updates.timeInFaceVerified || updates.amArrivalFaceVerified || updates.pmArrivalFaceVerified),
+        time_out_face_verified: Boolean(updates.timeOutFaceVerified || updates.pmDepartureFaceVerified || updates.amDepartureFaceVerified),
+      };
+      if (updates.timeInLocation) {
+        insertRecord.time_in_lat = updates.timeInLocation.lat;
+        insertRecord.time_in_lng = updates.timeInLocation.lng;
+      }
+      if (updates.timeOutLocation) {
+        insertRecord.time_out_lat = updates.timeOutLocation.lat;
+        insertRecord.time_out_lng = updates.timeOutLocation.lng;
+      }
+      const { data: createdRow, error: createErr } = await supabase.from('time_records').insert([insertRecord]).select();
+      if (!createErr && createdRow && createdRow.length > 0) {
+        return true;
+      }
+    } catch (upsertErr) {
+      console.warn('Upsert fallback notice in updateTimeRecord:', upsertErr);
     }
   }
 
@@ -2123,8 +2315,18 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
 
   // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS)
   try {
-    const res = await fetch('/api/announcements');
-    if (res.ok) {
+    let res: Response | null = null;
+    try {
+      res = await fetch('/api/announcements');
+    } catch {
+      await new Promise((r) => setTimeout(r, 350));
+      try {
+        res = await fetch('/api/announcements');
+      } catch (retryErr) {
+        console.warn('fetchAnnouncements /api/announcements note (using client fallback):', retryErr);
+      }
+    }
+    if (res && res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
         return data as Announcement[];
@@ -2863,12 +3065,55 @@ export function transformSupabaseEmployee(data: any): Employee {
 }
 
 export function transformSupabaseTimeRecord(data: any): TimeRecord {
+  const slotData = extractSlotNotes(data.notes);
+  const cleanNotes = (data.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim() || undefined;
+
+  let amArrival = slotData.amArrival || data.am_arrival || undefined;
+  let amDeparture = slotData.amDeparture || data.am_departure || undefined;
+  let pmArrival = slotData.pmArrival || data.pm_arrival || undefined;
+  let pmDeparture = slotData.pmDeparture || data.pm_departure || undefined;
+
+  // Dual Fallback: If slots are not explicitly specified in slotData or columns, infer from time_in / time_out
+  if (!amArrival && !pmArrival && data.time_in) {
+    const mins = parseTimeToMinutes(data.time_in);
+    if (mins !== null) {
+      if (mins < 12 * 60) {
+        amArrival = data.time_in;
+      } else {
+        pmArrival = data.time_in;
+      }
+    }
+  }
+
+  if (!amDeparture && !pmDeparture && data.time_out) {
+    const mins = parseTimeToMinutes(data.time_out);
+    if (mins !== null) {
+      if (mins < 13 * 60 && !amDeparture && amArrival) {
+        amDeparture = data.time_out;
+      } else {
+        pmDeparture = data.time_out;
+      }
+    }
+  }
+
   return {
     id: data.id,
     employeeId: data.employee_id,
     date: data.date ? String(data.date).split('T')[0] : data.date,
     timeIn: data.time_in,
     timeOut: data.time_out,
+    amArrival,
+    amDeparture,
+    pmArrival,
+    pmDeparture,
+    amArrivalFaceVerified: slotData.amArrivalFaceVerified ?? data.am_arrival_face_verified ?? (amArrival ? data.time_in_face_verified : undefined),
+    amDepartureFaceVerified: slotData.amDepartureFaceVerified ?? data.am_departure_face_verified ?? (amDeparture ? data.time_out_face_verified : undefined),
+    pmArrivalFaceVerified: slotData.pmArrivalFaceVerified ?? data.pm_arrival_face_verified ?? (pmArrival ? data.time_in_face_verified : undefined),
+    pmDepartureFaceVerified: slotData.pmDepartureFaceVerified ?? data.pm_departure_face_verified ?? (pmDeparture ? data.time_out_face_verified : undefined),
+    amArrivalGeofenced: slotData.amArrivalGeofenced ?? data.am_arrival_geofenced ?? (amArrival ? data.time_in_geofenced : undefined),
+    amDepartureGeofenced: slotData.amDepartureGeofenced ?? data.am_departure_geofenced ?? (amDeparture ? data.time_out_geofenced : undefined),
+    pmArrivalGeofenced: slotData.pmArrivalGeofenced ?? data.pm_arrival_geofenced ?? (pmArrival ? data.time_in_geofenced : undefined),
+    pmDepartureGeofenced: slotData.pmDepartureGeofenced ?? data.pm_departure_geofenced ?? (pmDeparture ? data.time_out_geofenced : undefined),
     timeInLocation: data.time_in_lat && data.time_in_lng ? { lat: data.time_in_lat, lng: data.time_in_lng } : undefined,
     timeOutLocation:
       data.time_out_lat && data.time_out_lng ? { lat: data.time_out_lat, lng: data.time_out_lng } : undefined,
@@ -2880,7 +3125,7 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
     timeOutPhoto: data.time_out_photo,
     totalHours: data.total_hours != null ? Math.round(Number(data.total_hours) * 100) / 100 : undefined,
     status: data.status,
-    notes: data.notes,
+    notes: cleanNotes,
     academicYear: data.academic_year,
     approvalStatus: (data.approval_status as any) || 'pending',
     approvedBy: data.approved_by || undefined,

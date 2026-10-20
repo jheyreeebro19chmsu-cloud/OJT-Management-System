@@ -21,6 +21,7 @@ import {
   File as FileGeneric,
   Paperclip,
   Search,
+  Send,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -285,9 +286,11 @@ export function Documents() {
       }
     }
 
-    // 2. Check dedicated base64 cache in localStorage
+    // 2. Check dedicated base64 cache in sessionStorage or localStorage
     try {
       const b64 =
+        sessionStorage.getItem(`ojt_doc_base64_${empId}_${docKey}`) ||
+        sessionStorage.getItem(`ojt_doc_base64_${docKey}`) ||
         localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}`) ||
         localStorage.getItem(`ojt_doc_base64_${docKey}`);
       if (b64 && (b64.startsWith('data:') || b64.startsWith('blob:'))) {
@@ -386,7 +389,7 @@ export function Documents() {
         description: submittedDocs[docKey]?.description || (instructorDocName ? `Submitted compliance for ${title} based on instructor requirement.` : ''),
         notes: submittedDocs[docKey]?.notes || '',
         instructorDocName,
-        markAsPassed: true,
+        markAsPassed: false,
       });
     };
     reader.readAsDataURL(file);
@@ -419,7 +422,7 @@ export function Documents() {
     file: File | null,
     customDescription?: string,
     customNotes?: string,
-    markAsPassed: boolean = true
+    markAsPassed: boolean = false
   ) => {
     if (!file) return;
 
@@ -467,21 +470,23 @@ export function Documents() {
         const dataUrl = e.target?.result as string;
         const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
 
-        // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
+        // Cache in sessionStorage for current session preview without hitting 5MB localStorage limit
         try {
-          localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-          localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-          localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
-          localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+          sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+          sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
+          sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
+          if (meta?.id) {
+            sessionStorage.setItem(`ojt_doc_data_${meta.id}`, dataUrl);
+          }
         } catch {}
 
-        // Attempt cloud storage upload for permanent URL (with 5-second timeout race so it never hangs)
+        // Attempt cloud storage upload for permanent URL (with 35-second timeout race so it never hangs)
         let remoteUrl = '';
         try {
           const storedUrl = await Promise.race([
             uploadDocumentToStorage(empId, docKey, file, file.name),
             new Promise<string>((_, reject) =>
-              setTimeout(() => reject(new Error('Storage upload timed out')), 5000)
+              setTimeout(() => reject(new Error('Storage upload timed out')), 35000)
             ),
           ]);
           if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
@@ -494,17 +499,18 @@ export function Documents() {
           console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
         }
 
-        const passStatus: 'passed' | 'pending' = markAsPassed ? 'passed' : 'pending';
+        const passStatus: 'passed' | 'submitted' = markAsPassed ? 'passed' : 'submitted';
         const newDocItem: TraineeDocumentItem = {
           name: file.name,
           size: file.size,
-          dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
-          fileUrl: remoteUrl || dataUrl, // Public URL when available for instructor/coordinator review
+          dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Keep dataUrl small in state/localStorage
+          fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Public or local URL
           fileType: file.type || 'application/octet-stream',
           uploadedAt: new Date().toISOString(),
           status: passStatus,
           description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
           notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
+          source: 'portal',
         };
 
         const updatedDocs: TraineeDocuments = {
@@ -521,7 +527,7 @@ export function Documents() {
         const allDocsPassed =
           newUploadedCount === totalRequired &&
           allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
-        const finalDocStatus = allDocsPassed ? 'passed' : newUploadedCount > 0 ? (allDocsPassed ? 'passed' : 'partial') : 'pending';
+        const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
 
         setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
 
@@ -553,12 +559,28 @@ export function Documents() {
             note: (customNotes ?? '').trim(),
             notes: (customDescription ?? '').trim(),
           });
+
+          // Dispatch real-time custom event so Instructor portal / tabs immediately reflect new submission
+          try {
+            window.dispatchEvent(
+              new CustomEvent('ojt_document_submitted', {
+                detail: {
+                  employeeId: targetEmpId,
+                  studentName: employee?.name || currentUser?.name || '',
+                  docKey,
+                  docTitle: meta?.title || docKey,
+                  documentItem: newDocItem,
+                  submittedAt: newDocItem.uploadedAt,
+                },
+              })
+            );
+          } catch {}
         }
 
         toast.success(
           markAsPassed
             ? `${meta?.title || 'Document'} passed & recorded according to requirement!`
-            : `${meta?.title || 'Document'} submitted! Pending coordinator review.`
+            : `✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`
         );
       } catch (err) {
         console.error('Document submission error:', err);
@@ -934,7 +956,7 @@ export function Documents() {
               const doc = getDocItem(item.key);
               const hasFile = Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
               const isPassed = doc?.status === 'passed' && hasFile;
-              const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
+              const isPending = (doc?.status === 'pending' || doc?.status === 'submitted' || !doc?.status) && hasFile && !isPassed;
               const isUploading = uploadingKey === item.key;
               const Icon = item.icon || FileText;
               const docCategory = doc ? getFileCategory(doc.name || doc.fileType || '') : 'other';
@@ -1185,15 +1207,15 @@ export function Documents() {
                       >
                         {isPassed ? (
                           <>
-                            <Check size={12} className="stroke-[3]" /> PASSED
+                            <Check size={12} className="stroke-[3]" /> APPROVED BY INSTRUCTOR
                           </>
                         ) : isPending ? (
                           <>
-                            <Clock size={11} /> PENDING REVIEW
+                            <Clock size={11} className="animate-pulse" /> SUBMITTED TO INSTRUCTOR
                           </>
                         ) : (
                           <>
-                            <AlertTriangle size={11} /> NOT ATTACHED
+                            <AlertTriangle size={11} /> PENDING SUBMISSION
                           </>
                         )}
                       </span>
@@ -1271,14 +1293,14 @@ export function Documents() {
                     <FileCheck size={20} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base">Submit OJT Document</h3>
-                    <p className="text-xs text-slate-500">{submitDialog.title}</p>
+                    <h3 className="font-bold text-slate-900 text-base">Submit Document to Instructor</h3>
+                    <p className="text-xs text-slate-500">Upload and submit "{submitDialog.title}" for your OJT Instructor's review and verification</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSubmitDialog(null)}
-                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -1325,12 +1347,12 @@ export function Documents() {
               {/* Notes Input */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>Notes / Remarks</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Optional coordinator note</span>
+                  <span>Notes for OJT Instructor</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Optional remarks or details for your instructor</span>
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Add any additional context, expiry date, notary status, or notes for the coordinator..."
+                  placeholder="Add any additional context, expiry date, notary status, or notes for your OJT Instructor..."
                   value={submitDialog.notes}
                   onChange={(e) => setSubmitDialog({ ...submitDialog, notes: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden resize-none"
@@ -1341,7 +1363,7 @@ export function Documents() {
                 <button
                   type="button"
                   onClick={() => setSubmitDialog(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1354,18 +1376,18 @@ export function Documents() {
                       submitDialog.file,
                       submitDialog.description,
                       submitDialog.notes,
-                      true
+                      false
                     );
                   }}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all cursor-pointer"
                 >
                   {uploadingKey === submitDialog.docKey ? (
                     <>
-                      <RefreshCw size={14} className="animate-spin" /> Uploading & Passing...
+                      <RefreshCw size={14} className="animate-spin" /> Submitting to Instructor...
                     </>
                   ) : (
                     <>
-                      <Check size={14} /> Pass & Submit Document
+                      <Send size={14} /> Submit to Instructor for Review
                     </>
                   )}
                 </button>
@@ -1606,7 +1628,7 @@ export function Documents() {
                     </p>
 
                     <label className="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 w-full">
-                      <Upload size={14} /> Attach File for Live Preview
+                      <Send size={14} /> Submit Document to Instructor
                       <input
                         type="file"
                         accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
@@ -1614,11 +1636,11 @@ export function Documents() {
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file && previewDoc.key) {
-                            handleFileUpload(previewDoc.key as any, file);
+                            handleFileUpload(previewDoc.key as any, file, undefined, undefined, false);
                             const reader = new FileReader();
                             reader.onload = (ev) => {
                               const newUrl = ev.target?.result as string;
-                              setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl } : null));
+                              setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl, status: 'submitted' } : null));
                             };
                             reader.readAsDataURL(file);
                           }

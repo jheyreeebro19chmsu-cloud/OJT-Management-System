@@ -419,6 +419,10 @@ export function Dashboard() {
     if ((docItem as any)?.fileUrl) return (docItem as any).fileUrl;
     const empId = currentEmp?.id || currentEmp?.employeeId || currentUser?.employeeId || '';
     try {
+      const b64 =
+        sessionStorage.getItem(`ojt_doc_base64_${empId}_${docKey}`) ||
+        sessionStorage.getItem(`ojt_doc_base64_${docKey}`);
+      if (b64) return b64;
       const cached =
         localStorage.getItem(`ojt_doc_${empId}_${docKey}`) ||
         localStorage.getItem(`ojt_doc_${docKey}`) ||
@@ -468,12 +472,11 @@ export function Dashboard() {
       const dataUrl = e.target?.result as string;
       const empId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || '';
 
-      // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
+      // Cache base64 in sessionStorage for preview without exhausting localStorage 5MB limit
       try {
-        localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+        sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+        sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
+        sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
       } catch {}
 
       // Attempt cloud storage upload for permanent URL
@@ -494,11 +497,12 @@ export function Dashboard() {
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
-        fileUrl: remoteUrl || dataUrl, // Public URL when available
+        dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
+        fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Public or local URL
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        status: 'pending',
+        status: 'submitted',
+        source: 'portal',
       };
 
       const updatedDocs: TraineeDocuments = {
@@ -506,9 +510,9 @@ export function Dashboard() {
         [docKey]: newDocItem,
       };
 
-      const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.name)).length;
+      const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.fileUrl || updatedDocs[k]?.name)).length;
       const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-      const finalStatus = allPassed ? 'passed' : newUploadedCount === totalRequired ? 'submitted' : 'partial';
+      const finalStatus = allPassed ? 'passed' : 'submitted';
       updateEmployee(currentEmp.id, {
         submittedDocuments: updatedDocs,
         documentsPassed: allPassed,
@@ -517,16 +521,30 @@ export function Dashboard() {
 
       saveDocumentPassStatus(currentEmp.id || currentEmp.employeeId, {
         docKey,
-        status: 'pending',
+        status: 'submitted',
         allPassed,
         documentsStatus: finalStatus,
         submittedDocuments: updatedDocs,
         documentItem: newDocItem,
       }).catch(console.warn);
 
+      try {
+        window.dispatchEvent(
+          new CustomEvent('ojt_document_submitted', {
+            detail: {
+              employeeId: currentEmp.id || currentEmp.employeeId,
+              studentName: currentEmp.name,
+              docKey,
+              docTitle: docKey,
+              documentItem: newDocItem,
+            },
+          })
+        );
+      } catch {}
+
       setDashboardUploadingKey(null);
       const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
-      toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
+      toast.success(`✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`);
     };
 
     reader.onerror = () => {

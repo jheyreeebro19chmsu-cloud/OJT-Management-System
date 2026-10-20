@@ -173,6 +173,23 @@ export function AdminLayout() {
     return true;
   }).length;
 
+  const pendingDocsCount = React.useMemo(() => {
+    return employees.filter((emp) => {
+      const isStudent = emp.role === 'employee' || emp.role === 'trainee' || (!emp.position?.toLowerCase().includes('instructor') && !emp.position?.toLowerCase().includes('hte') && emp.position !== 'Administrator');
+      if (!isStudent) return false;
+      const docs = emp.submittedDocuments || {};
+      const hasPending = [
+        'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
+        'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
+      ].some((k) => {
+        const d = (docs as any)[k] || (k === 'consent' ? (docs as any).parent_consent : undefined);
+        const hasF = Boolean(d?.dataUrl || d?.fileUrl || d?.name);
+        return hasF && (d?.status === 'submitted' || d?.status === 'pending' || !d?.status) && d?.status !== 'passed';
+      });
+      return hasPending || emp.documentsStatus === 'submitted';
+    }).length;
+  }, [employees]);
+
   return (
     <div className="flex h-screen bg-[#F7F7F3] text-[#1F2937] overflow-hidden font-sans">
       {/* Desktop Sidebar */}
@@ -219,6 +236,16 @@ export function AdminLayout() {
             >
               <Icon size={16} />
               <span className="flex-1">{label}</span>
+              {label === 'Documents' && pendingDocsCount > 0 && (
+                <span className="bg-amber-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm animate-pulse" title={`${pendingDocsCount} trainee document submissions pending instructor review`}>
+                  {pendingDocsCount}
+                </span>
+              )}
+              {label === 'OJT/Records' && pendingCount > 0 && (
+                <span className="bg-indigo-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm animate-pulse" title={`${pendingCount} pending trainee requests`}>
+                  {pendingCount}
+                </span>
+              )}
               {label === 'Announcements' && unreadAnn > 0 && (
                 <span className="bg-[#DC6B2F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
                   {unreadAnn}
@@ -314,6 +341,16 @@ export function AdminLayout() {
                   >
                     <Icon size={16} />
                     <span className="flex-1">{label}</span>
+                    {label === 'Documents' && pendingDocsCount > 0 && (
+                      <span className="bg-amber-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm animate-pulse">
+                        {pendingDocsCount}
+                      </span>
+                    )}
+                    {label === 'OJT/Records' && pendingCount > 0 && (
+                      <span className="bg-indigo-500 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm animate-pulse">
+                        {pendingCount}
+                      </span>
+                    )}
                     {label === 'Announcements' && unreadAnn > 0 && (
                       <span className="bg-[#DC6B2F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-sm">
                         {unreadAnn}

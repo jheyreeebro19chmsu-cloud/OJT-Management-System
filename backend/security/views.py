@@ -644,10 +644,30 @@ def verify_face(request: HttpRequest) -> JsonResponse:
     if employee_id:
         registration = FaceRegistration.objects.filter(employee_id=employee_id).first()
         if not registration or (not registration.image and not registration.image_data):
-            return JsonResponse(
-                {"success": False, "message": "No registered face found for this employee."},
-                status=404,
-            )
+            # Check if registered_file or registered_image is provided in the request
+            registered_b64 = data.get("registered_image") or data.get("image")
+            if not registered_file and not registered_b64:
+                return JsonResponse(
+                    {"success": False, "message": "No registered face found for this employee."},
+                    status=404,
+                )
+            # Auto-enroll this face in FaceRegistration so future calls have it cached
+            try:
+                reg, _ = FaceRegistration.objects.get_or_create(employee_id=employee_id)
+                if registered_file:
+                    reg.image_data = registered_file.read()
+                    registered_file.seek(0)
+                elif registered_b64:
+                    b64_str = str(registered_b64)
+                    if "," in b64_str:
+                        _, raw_b64 = b64_str.split(",", 1)
+                    else:
+                        raw_b64 = b64_str
+                    reg.image_data = base64.b64decode(raw_b64)
+                reg.save()
+                registration = reg
+            except Exception:
+                pass
 
         if registration.image_data:
             valid_bytes, decoded_or_err = _validate_image_bytes(registration.image_data)

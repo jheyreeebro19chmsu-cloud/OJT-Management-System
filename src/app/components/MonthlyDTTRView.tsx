@@ -50,11 +50,16 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     signMonthlyDttr,
     addTimeRecord,
     updateTimeRecord,
+    refreshData,
   } = useApp();
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1); // 1-12
+
+  useEffect(() => {
+    refreshData?.({ force: true }).catch(() => {});
+  }, [selectedEmployeeId, selectedYear, selectedMonth]);
 
   // Available trainees
   const traineeList = useMemo(() => {
@@ -220,17 +225,52 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     if (!selectedEmployee) return map;
 
     const monthStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
-    const empRecords = timeRecords.filter(
-      (r) =>
-        (r.employeeId === selectedEmployee.id || r.employeeId === selectedEmployee.employeeId) &&
-        r.date &&
-        r.date.startsWith(monthStr)
-    );
+    const validIds = new Set<string>();
+    if (selectedEmployee.id) {
+      validIds.add(selectedEmployee.id);
+      validIds.add(selectedEmployee.id.toLowerCase());
+    }
+    if (selectedEmployee.employeeId) {
+      validIds.add(selectedEmployee.employeeId);
+      validIds.add(selectedEmployee.employeeId.toLowerCase());
+    }
+    if (selectedEmployee.email) {
+      validIds.add(selectedEmployee.email.toLowerCase());
+    }
+
+    const empRecords = timeRecords.filter((r) => {
+      const rEmp = (r.employeeId || '').trim();
+      const isMatch = validIds.has(rEmp) || validIds.has(rEmp.toLowerCase());
+      if (!isMatch) return false;
+      const cleanDate = (r.date || '').split('T')[0].split(' ')[0].trim();
+      return cleanDate.startsWith(monthStr);
+    });
 
     empRecords.forEach((r) => {
-      const dayNum = parseInt(r.date.split('-')[2], 10);
+      const cleanDate = (r.date || '').split('T')[0].split(' ')[0].trim();
+      const dayNum = parseInt(cleanDate.split('-')[2], 10);
       if (!Number.isNaN(dayNum)) {
-        map.set(dayNum, r);
+        const cleanNotes = (r.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+        const existing = map.get(dayNum);
+        if (existing) {
+          map.set(dayNum, {
+            ...existing,
+            ...r,
+            amArrival: r.amArrival || existing.amArrival,
+            amDeparture: r.amDeparture || existing.amDeparture,
+            pmArrival: r.pmArrival || existing.pmArrival,
+            pmDeparture: r.pmDeparture || existing.pmDeparture,
+            timeIn: existing.timeIn || r.timeIn,
+            timeOut: r.timeOut || existing.timeOut,
+            totalHours: Math.max(existing.totalHours || 0, r.totalHours || 0),
+            notes: cleanNotes || existing.notes,
+          });
+        } else {
+          map.set(dayNum, {
+            ...r,
+            notes: cleanNotes,
+          });
+        }
       }
     });
 
@@ -266,7 +306,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
       if (autoRec) {
         autoHours = autoRec.totalHours || 0;
-        autoTasks = autoRec.notes || '';
+        autoTasks = (autoRec.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
 
         const format12Str = (t?: string) => {
           if (!t) return '';
@@ -476,9 +516,19 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     try {
       const autoRec = monthTimeRecordsMap.get(day);
 
-      // 1. Sync task text to system time_records notes if attendance record exists
+      // 1. Sync task text to system time_records notes if attendance record exists, or create a record for this day
+      const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       if (autoRec) {
         updateTimeRecord(autoRec.id, {
+          notes: taskText,
+          employeeId: selectedEmployee.id,
+          date: dateStr,
+        });
+      } else {
+        addTimeRecord({
+          employeeId: selectedEmployee.id,
+          date: dateStr,
+          status: 'present',
           notes: taskText,
         });
       }
@@ -567,9 +617,21 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       modifiedDays.forEach((day) => {
         const taskText = (taskEdits[day] || '').trim();
         const autoRec = monthTimeRecordsMap.get(day);
+        const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
         if (autoRec) {
-          updateTimeRecord(autoRec.id, { notes: taskText });
+          updateTimeRecord(autoRec.id, {
+            notes: taskText,
+            employeeId: selectedEmployee.id,
+            date: dateStr,
+          });
+        } else {
+          addTimeRecord({
+            employeeId: selectedEmployee.id,
+            date: dateStr,
+            status: 'present',
+            notes: taskText,
+          });
         }
 
         const existingEntry = existingCustom[day] || {};
@@ -645,9 +707,19 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         const day = Number(dayStr);
         const taskText = (entry.tasks || '').trim();
         const autoRec = monthTimeRecordsMap.get(day);
+        const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
         if (autoRec) {
           updateTimeRecord(autoRec.id, {
+            notes: taskText,
+            employeeId: selectedEmployee.id,
+            date: dateStr,
+          });
+        } else {
+          addTimeRecord({
+            employeeId: selectedEmployee.id,
+            date: dateStr,
+            status: 'present',
             notes: taskText,
           });
         }

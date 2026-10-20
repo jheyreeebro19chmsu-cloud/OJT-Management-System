@@ -324,12 +324,11 @@ export function Profile() {
       const dataUrl = e.target?.result as string;
       const empId = employee?.id || employee?.employeeId || '';
 
-      // Cache base64 locally permanently so user can view/download even offline or if storage is unreachable
+      // Cache base64 in sessionStorage for preview without exhausting localStorage 5MB limit
       try {
-        localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_${empId}_${docKey}`, dataUrl);
-        localStorage.setItem(`ojt_doc_${docKey}`, dataUrl);
+        sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+        sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
+        sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
       } catch {}
 
       // Attempt cloud storage upload for permanent URL
@@ -349,11 +348,11 @@ export function Profile() {
       const newDocItem: TraineeDocumentItem = {
         name: file.name,
         size: file.size,
-        dataUrl: dataUrl, // Preserve working base64 so preview/download never breaks
-        fileUrl: remoteUrl || dataUrl, // Public URL when available
+        dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
+        fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Public or local URL
         fileType: file.type || 'application/octet-stream',
         uploadedAt: new Date().toISOString(),
-        status: 'pending',
+        status: 'submitted',
         source: 'portal',
       };
       const updatedDocs: TraineeDocuments = {
@@ -367,15 +366,30 @@ export function Profile() {
       });
       saveDocumentPassStatus(employee.id || employee.employeeId, {
         docKey: docKey as string,
-        status: 'pending',
+        status: 'submitted',
         allPassed: false,
         documentsStatus: 'submitted',
         submittedDocuments: updatedDocs,
         documentItem: newDocItem,
       }).catch(console.warn);
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent('ojt_document_submitted', {
+            detail: {
+              employeeId: employee.id || employee.employeeId,
+              studentName: employee.name,
+              docKey,
+              docTitle: docKey,
+              documentItem: newDocItem,
+            },
+          })
+        );
+      } catch {}
+
       setDocUploadingKey(null);
       const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
-      toast.success(`${meta?.title || 'Document'} submitted! Pending coordinator review.`);
+      toast.success(`✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`);
     };
     reader.onerror = () => {
       setDocUploadingKey(null);

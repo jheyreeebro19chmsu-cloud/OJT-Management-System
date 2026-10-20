@@ -10,6 +10,11 @@ import {
   Upload,
   Check,
   RotateCcw,
+  Move,
+  ChevronUp,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
@@ -21,7 +26,7 @@ import {
   inspectFaceQuality,
   type FaceQualityReport,
 } from '../services/faceClient';
-import { isSecurityApiConfigured, verifyFace } from '../services/securityApi';
+import { isSecurityApiConfigured, verifyFace, registerFace } from '../services/securityApi';
 
 type ScanState =
   | 'idle'
@@ -104,6 +109,26 @@ export function FaceCapture({
   const [qualityReport, setQualityReport] = useState<FaceQualityReport | null>(null);
   const [mismatchError, setMismatchError] = useState<string | null>(null);
 
+  // Movable facial recognition grid state & refs
+  const [gridOffset, setGridOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const gridOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isDraggingRef = useRef<boolean>(false);
+  const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const initialOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [showMoveControls, setShowMoveControls] = useState<boolean>(false);
+
+  const nudgeGrid = useCallback((dx: number, dy: number) => {
+    const newX = Math.max(-130, Math.min(130, gridOffsetRef.current.x + dx));
+    const newY = Math.max(-150, Math.min(150, gridOffsetRef.current.y + dy));
+    gridOffsetRef.current = { x: newX, y: newY };
+    setGridOffset({ x: newX, y: newY });
+  }, []);
+
+  const resetGrid = useCallback(() => {
+    gridOffsetRef.current = { x: 0, y: 0 };
+    setGridOffset({ x: 0, y: 0 });
+  }, []);
 
   const stateRef = useRef<ScanState>(state);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
@@ -220,6 +245,11 @@ export function FaceCapture({
       const isSuccess = currentState === 'success';
       const isFailed = currentState === 'failed' || Boolean(currentMismatch);
 
+      // Calculate user's movable grid offset in canvas coordinates
+      // Note: canvas has CSS scaleX(-1) mirror effect, so screen +X corresponds to -X in internal canvas coordinates
+      const canvasOffsetX = displayW > 0 ? -(gridOffsetRef.current.x / displayW) * canvas.width : 0;
+      const canvasOffsetY = displayH > 0 ? (gridOffsetRef.current.y / displayH) * canvas.height : 0;
+
       // Determine 68 landmark points (live face tracked or anatomical template)
       let targetPts: Array<{ x: number; y: number }>;
       const isLiveTracked = Boolean(
@@ -236,9 +266,9 @@ export function FaceCapture({
           y: p.y * scaleY,
         }));
       } else {
-        // Ideal anatomical biometric mesh template centered in scanner with soft breathing pulse
-        const cx = canvas.width / 2;
-        const cy = canvas.height * 0.48;
+        // Ideal anatomical biometric mesh template centered in scanner with soft breathing pulse + user movable offset
+        const cx = canvas.width / 2 + canvasOffsetX;
+        const cy = canvas.height * 0.48 + canvasOffsetY;
         const breathe = Math.sin(Date.now() / 600) * 0.015;
         const faceW = canvas.width * (0.35 + breathe);
         const faceH = canvas.height * (0.35 + breathe);
@@ -248,11 +278,11 @@ export function FaceCapture({
         }));
       }
 
-      // Smooth points with lerp for fluid 60fps tracking
+      // Smooth points with lerp for fluid 60fps tracking (instant 1.0 when dragging for real-time responsiveness)
       if (!smoothedLandmarksRef.current || smoothedLandmarksRef.current.length !== targetPts.length) {
         smoothedLandmarksRef.current = targetPts.map((p) => ({ ...p }));
       } else {
-        const smoothRate = isLiveTracked ? 0.38 : 0.20;
+        const smoothRate = isDraggingRef.current ? 1.0 : isLiveTracked ? 0.38 : 0.20;
         for (let i = 0; i < targetPts.length; i++) {
           smoothedLandmarksRef.current[i].x += (targetPts[i].x - smoothedLandmarksRef.current[i].x) * smoothRate;
           smoothedLandmarksRef.current[i].y += (targetPts[i].y - smoothedLandmarksRef.current[i].y) * smoothRate;
@@ -278,6 +308,74 @@ export function FaceCapture({
       const boxBottom = Math.min(canvas.height - 12 * dpr, maxY + padY);
       const boxW = boxRight - boxLeft;
       const boxH = boxBottom - boxTop;
+
+      // 1.5. Draw Movable Biometric Matrix Grid (Rule of Thirds Matrix + Targeting Reticle)
+      ctx.save();
+      const gridColor = isSuccess
+        ? 'rgba(34, 197, 94, 0.25)'
+        : isFailed
+          ? 'rgba(239, 68, 68, 0.25)'
+          : isDraggingRef.current
+            ? 'rgba(0, 229, 255, 0.45)'
+            : 'rgba(56, 189, 248, 0.22)';
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = 1 * dpr;
+      ctx.setLineDash([3 * dpr, 4 * dpr]); // Dashed biometric matrix grid lines
+
+      // Horizontal matrix division lines
+      const h1 = boxTop + boxH * 0.333;
+      const h2 = boxTop + boxH * 0.666;
+      ctx.beginPath();
+      ctx.moveTo(boxLeft, h1); ctx.lineTo(boxRight, h1);
+      ctx.moveTo(boxLeft, h2); ctx.lineTo(boxRight, h2);
+
+      // Vertical matrix division lines
+      const v1 = boxLeft + boxW * 0.333;
+      const v2 = boxLeft + boxW * 0.666;
+      ctx.moveTo(v1, boxTop); ctx.lineTo(v1, boxBottom);
+      ctx.moveTo(v2, boxTop); ctx.lineTo(v2, boxBottom);
+      ctx.stroke();
+
+      // Center crosshair reticle (+)
+      const midX = (boxLeft + boxRight) / 2;
+      const midY = (boxTop + boxBottom) / 2;
+      const crossSize = 9 * dpr;
+      ctx.setLineDash([]);
+      ctx.strokeStyle = isSuccess
+        ? 'rgba(34, 197, 94, 0.70)'
+        : isFailed
+          ? 'rgba(239, 68, 68, 0.70)'
+          : isDraggingRef.current
+            ? 'rgba(0, 229, 255, 0.90)'
+            : 'rgba(0, 229, 255, 0.60)';
+      ctx.lineWidth = 1.2 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(midX - crossSize, midY); ctx.lineTo(midX + crossSize, midY);
+      ctx.moveTo(midX, midY - crossSize); ctx.lineTo(midX, midY + crossSize);
+      ctx.stroke();
+
+      // Center targeting circle
+      ctx.beginPath();
+      ctx.arc(midX, midY, 15 * dpr, 0, Math.PI * 2);
+      ctx.strokeStyle = isSuccess
+        ? 'rgba(34, 197, 94, 0.35)'
+        : isFailed
+          ? 'rgba(239, 68, 68, 0.35)'
+          : isDraggingRef.current
+            ? 'rgba(0, 229, 255, 0.60)'
+            : 'rgba(0, 229, 255, 0.30)';
+      ctx.stroke();
+
+      // Top drag grip dots (shows the grid is draggable)
+      const handleColor = isDraggingRef.current ? '#00e5ff' : 'rgba(255, 255, 255, 0.55)';
+      ctx.fillStyle = handleColor;
+      const handleY = Math.max(6 * dpr, boxTop - 6 * dpr);
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.arc(midX + i * (5 * dpr), handleY, 1.4 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
 
       // 2. Animated Scanning Laser Beam across face zone (soft holographic opacity)
       ctx.save();
@@ -929,9 +1027,28 @@ export function FaceCapture({
           captured_image: img,
         };
         if (empId) payload.employee_id = empId;
-        else if (enrolledImage) payload.registered_image = enrolledImage;
+        if (enrolledImage) payload.registered_image = enrolledImage;
 
-        const response = await verifyFace(payload);
+        let response: any;
+        try {
+          response = await verifyFace(payload);
+        } catch (initialErr: any) {
+          const errStr = String(initialErr?.message || initialErr || '');
+          // If the backend has not yet enrolled this employee, auto-register using the enrolled image if available
+          if ((errStr.includes('No registered face found') || errStr.includes('registered_image or employee_id is required')) && empId && enrolledImage) {
+            console.log('[FaceCapture] Auto-registering face on security backend for employee:', empId);
+            try {
+              await registerFace({ employee_id: empId, image: enrolledImage });
+              response = await verifyFace(payload);
+            } catch (autoErr) {
+              console.warn('[FaceCapture] Auto-registration or retry failed:', autoErr);
+              throw initialErr;
+            }
+          } else {
+            throw initialErr;
+          }
+        }
+
         if (!response.matched) {
           setState('failed');
           setMismatchError('Server facial recognition rejected verification.');
@@ -1055,7 +1172,49 @@ export function FaceCapture({
 
 
       {/* Camera / Live Viewport */}
-      <div className="relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800">
+      <div
+        className={`relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800 touch-none ${
+          isScanning ? (isDragging ? 'cursor-grabbing select-none' : 'cursor-grab select-none') : ''
+        }`}
+        onPointerDown={(e) => {
+          if (state !== 'scanning' && state !== 'analyzing' && state !== 'verifying') return;
+          if ((e.target as HTMLElement).closest('button, input, a')) return;
+          try {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          } catch {}
+          isDraggingRef.current = true;
+          setIsDragging(true);
+          dragStartPos.current = { x: e.clientX, y: e.clientY };
+          initialOffset.current = { ...gridOffsetRef.current };
+        }}
+        onPointerMove={(e) => {
+          if (!isDraggingRef.current) return;
+          const dx = e.clientX - dragStartPos.current.x;
+          const dy = e.clientY - dragStartPos.current.y;
+          const newX = Math.max(-130, Math.min(130, Math.round(initialOffset.current.x + dx)));
+          const newY = Math.max(-150, Math.min(150, Math.round(initialOffset.current.y + dy)));
+          gridOffsetRef.current = { x: newX, y: newY };
+          setGridOffset({ x: newX, y: newY });
+        }}
+        onPointerUp={(e) => {
+          if (isDraggingRef.current) {
+            isDraggingRef.current = false;
+            setIsDragging(false);
+            try {
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+            } catch {}
+          }
+        }}
+        onPointerCancel={(e) => {
+          if (isDraggingRef.current) {
+            isDraggingRef.current = false;
+            setIsDragging(false);
+            try {
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+            } catch {}
+          }
+        }}
+      >
         {state === 'preview' && capturedImage ? (
           <div className="relative w-full h-full">
             <img
@@ -1079,10 +1238,113 @@ export function FaceCapture({
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ transform: 'scaleX(-1)' }} />
 
-            {/* Center face guide banner */}
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-white text-[10px] font-bold text-center whitespace-nowrap shadow-sm z-20">
-              👤 Align Face with Biometric Mesh
+            {/* Movable Face Grid Guide & Control Bar */}
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-auto z-20">
+              <div
+                className={`px-3 py-1 rounded-full backdrop-blur-md text-[10px] font-bold flex items-center gap-1.5 shadow-sm transition-all ${
+                  isDragging
+                    ? 'bg-cyan-500/95 text-slate-950 shadow-cyan-500/40 scale-105'
+                    : (gridOffset.x !== 0 || gridOffset.y !== 0)
+                      ? 'bg-cyan-950/85 border border-cyan-500/60 text-cyan-300'
+                      : 'bg-black/65 border border-white/10 text-white'
+                }`}
+              >
+                <Move size={11} className={isDragging ? 'text-slate-950 animate-spin' : 'text-cyan-400'} />
+                <span>
+                  {isDragging
+                    ? 'Dragging Face Grid...'
+                    : (gridOffset.x !== 0 || gridOffset.y !== 0)
+                      ? `Grid: ${gridOffset.x > 0 ? '+' : ''}${gridOffset.x}, ${gridOffset.y > 0 ? '+' : ''}${gridOffset.y}`
+                      : 'Drag Face Grid to Move'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {(gridOffset.x !== 0 || gridOffset.y !== 0) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      resetGrid();
+                    }}
+                    className="px-2.5 py-1 rounded-full bg-slate-900/85 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 hover:text-white text-[10px] font-bold backdrop-blur-md flex items-center gap-1 shadow-md transition-all cursor-pointer"
+                    title="Reset grid to center"
+                  >
+                    <RotateCcw size={10} className="text-cyan-400" />
+                    <span>Center</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMoveControls((prev) => !prev);
+                  }}
+                  className={`px-2 py-1 rounded-full backdrop-blur-md border text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    showMoveControls
+                      ? 'bg-cyan-600 border-cyan-400 text-white shadow-md'
+                      : 'bg-black/60 border-white/10 text-slate-300 hover:text-white'
+                  }`}
+                  title="Toggle move controls"
+                >
+                  <Move size={11} />
+                  <span>D-Pad</span>
+                </button>
+              </div>
             </div>
+
+            {/* Floating Precision D-Pad Nudge Controls */}
+            {showMoveControls && isScanning && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute bottom-12 right-3 bg-slate-950/90 backdrop-blur-md p-2 rounded-2xl border border-cyan-500/50 shadow-2xl z-30 flex flex-col items-center gap-1 pointer-events-auto select-none"
+              >
+                <div className="text-[9px] font-extrabold text-cyan-400 tracking-wider mb-0.5">MOVE GRID</div>
+                <button
+                  type="button"
+                  onClick={() => nudgeGrid(0, -15)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-cyan-600 active:scale-95 text-white transition-all cursor-pointer shadow-sm"
+                  title="Nudge Up"
+                >
+                  <ChevronUp size={15} />
+                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => nudgeGrid(-15, 0)}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-cyan-600 active:scale-95 text-white transition-all cursor-pointer shadow-sm"
+                    title="Nudge Left"
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetGrid}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-cyan-400 text-[10px] font-bold transition-all cursor-pointer shadow-sm"
+                    title="Center Grid"
+                  >
+                    ●
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => nudgeGrid(15, 0)}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-cyan-600 active:scale-95 text-white transition-all cursor-pointer shadow-sm"
+                    title="Nudge Right"
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => nudgeGrid(0, 15)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-cyan-600 active:scale-95 text-white transition-all cursor-pointer shadow-sm"
+                  title="Nudge Down"
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </div>
+            )}
 
             {/* Obstruction warning banner within viewport (clean warning text, no intrusive indicator overlays) */}
             {qualityReport && (qualityReport.faceObscured || qualityReport.glassesDetected || qualityReport.capDetected || qualityReport.maskDetected || qualityReport.poorBackgroundLighting || qualityReport.tooDark) && (

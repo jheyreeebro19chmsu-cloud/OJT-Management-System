@@ -55,6 +55,7 @@ export interface TraineeDocumentItem {
   name: string;
   size?: string | number;
   dataUrl?: string;
+  fileUrl?: string;
   fileType?: string;
   uploadedAt: string;
   status: 'passed' | 'pending' | 'rejected' | 'submitted';

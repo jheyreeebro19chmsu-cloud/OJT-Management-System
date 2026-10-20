@@ -1061,7 +1061,7 @@ interface AppContextType {
   tokenExpiresAt: number | null;
   tokenSecondsRemaining: number;
   refreshToken: () => void;
-  refreshData: () => Promise<void>;
+  refreshData: (options?: { force?: boolean }) => Promise<void>;
   changeCurrentUserPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   registerEmployee: (data: RegisterEmployeeInput) => Promise<{ success: boolean; message?: string; employee?: Employee }>;
   updateEmployee: (id: string, data: Partial<Employee>) => Promise<boolean>;
@@ -1335,7 +1335,9 @@ function migrateInstructorPositionOnce(): void {
 
 function loadFromStorage<T>(key: string, defaultValue: T): T {
   try {
-    const stored = localStorage.getItem(key);
+    const stored =
+      (typeof window !== 'undefined' && window.localStorage?.getItem(key)) ||
+      (typeof window !== 'undefined' && window.sessionStorage?.getItem(key));
     return stored ? JSON.parse(stored) : defaultValue;
   } catch {
     return defaultValue;
@@ -1350,12 +1352,24 @@ function sanitizeDocRecordForStorage(docs: any): any {
       const docObj = docVal as any;
       const dUrl = typeof docObj.dataUrl === 'string' ? docObj.dataUrl : '';
       const fUrl = typeof docObj.fileUrl === 'string' ? docObj.fileUrl : '';
-      // Strip multi-megabyte base64 data URLs from localStorage to prevent QuotaExceededError
-      const safeDataUrl = dUrl.startsWith('data:') && dUrl.length > 50000 ? '' : dUrl;
+
+      // If large base64 data URL, cache in sessionStorage for current tab preview without exhausting localStorage
+      if (dUrl.startsWith('data:') && dUrl.length > 2000) {
+        try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem(`ojt_doc_data_${docKey}`, dUrl);
+          }
+        } catch {}
+      }
+
+      // Strip large base64 data URLs (> 2KB) entirely from persistent localStorage
+      const safeDataUrl = dUrl.startsWith('data:') && dUrl.length > 2000 ? '' : dUrl;
+      const safeFileUrl = fUrl.startsWith('data:') && fUrl.length > 2000 ? '' : fUrl;
+
       sanitizedDocs[docKey] = {
         ...docObj,
-        dataUrl: safeDataUrl || fUrl,
-        fileUrl: fUrl || safeDataUrl,
+        dataUrl: safeDataUrl,
+        fileUrl: safeFileUrl || (safeDataUrl.startsWith('http') ? safeDataUrl : (fUrl && !fUrl.startsWith('data:') ? fUrl : '')),
       };
     } else {
       sanitizedDocs[docKey] = docVal;
@@ -1378,8 +1392,8 @@ function sanitizeValueForStorage(key: string, value: any): any {
           documents: sanitizeDocRecordForStorage(copy.registrationLocation.documents),
         };
       }
-      // Omit excessive base64 photo strings (> 60KB) from localStorage cache
-      if (typeof copy.photo === 'string' && copy.photo.startsWith('data:') && copy.photo.length > 60000) {
+      // Omit excessive base64 photo strings (> 15KB) from localStorage cache
+      if (typeof copy.photo === 'string' && copy.photo.startsWith('data:') && copy.photo.length > 15000) {
         copy.photo = '';
       }
       return copy;
@@ -1387,7 +1401,7 @@ function sanitizeValueForStorage(key: string, value: any): any {
   }
   if (key === STORAGE_KEYS.CURRENT_USER && value && typeof value === 'object') {
     const copy = { ...value };
-    if (typeof copy.photo === 'string' && copy.photo.startsWith('data:')) {
+    if (typeof copy.photo === 'string' && copy.photo.startsWith('data:') && copy.photo.length > 15000) {
       copy.photo = '';
     }
     if (copy.submittedDocuments && typeof copy.submittedDocuments === 'object') {
@@ -1401,19 +1415,21 @@ function sanitizeValueForStorage(key: string, value: any): any {
     }
     return copy;
   }
-  if (key === STORAGE_KEYS.MONITORING_REPORTS && Array.isArray(value)) {
-    return value.map((rep) => {
-      if (!rep || typeof rep !== 'object') return rep;
-      const copy = { ...rep };
-      // Strip large photos or signatures (> 50KB) from localStorage cache to prevent QuotaExceededError
-      if (Array.isArray(copy.photos)) {
-        copy.photos = copy.photos.filter((p: string) => !p || !p.startsWith('data:') || p.length < 50000);
+  if (key === STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS && Array.isArray(value)) {
+    return value.map((sub) => {
+      if (!sub || typeof sub !== 'object') return sub;
+      const copy = { ...sub };
+      // Strip large base64 file data from localStorage cache (cache in sessionStorage instead)
+      if (typeof copy.fileDataUrl === 'string' && copy.fileDataUrl.startsWith('data:') && copy.fileDataUrl.length > 2000) {
+        try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem(`ojt_doc_data_${copy.id || copy.documentId}`, copy.fileDataUrl);
+          }
+        } catch {}
+        copy.fileDataUrl = '';
       }
-      if (typeof copy.signature === 'string' && copy.signature.startsWith('data:') && copy.signature.length > 50000) {
-        copy.signature = '';
-      }
-      if (typeof copy.supervisorSignature === 'string' && copy.supervisorSignature.startsWith('data:') && copy.supervisorSignature.length > 50000) {
-        copy.supervisorSignature = '';
+      if (typeof copy.fileUrl === 'string' && copy.fileUrl.startsWith('data:') && copy.fileUrl.length > 2000) {
+        copy.fileUrl = '';
       }
       return copy;
     });
@@ -1422,10 +1438,52 @@ function sanitizeValueForStorage(key: string, value: any): any {
     return value.map((doc) => {
       if (!doc || typeof doc !== 'object') return doc;
       const copy = { ...doc };
-      if (typeof copy.dataUrl === 'string' && copy.dataUrl.startsWith('data:') && copy.dataUrl.length > 50000) {
+      if (typeof copy.dataUrl === 'string' && copy.dataUrl.startsWith('data:') && copy.dataUrl.length > 2000) {
         copy.dataUrl = '';
       }
       return copy;
+    });
+  }
+  if (key === STORAGE_KEYS.TIME_RECORDS && Array.isArray(value)) {
+    return value.map((rec) => {
+      if (!rec || typeof rec !== 'object') return rec;
+      const copy = { ...rec };
+      // Strip raw webcam base64 images from localStorage cache
+      if (typeof copy.timeInPhoto === 'string' && copy.timeInPhoto.startsWith('data:') && copy.timeInPhoto.length > 2000) {
+        copy.timeInPhoto = undefined;
+      }
+      if (typeof copy.timeOutPhoto === 'string' && copy.timeOutPhoto.startsWith('data:') && copy.timeOutPhoto.length > 2000) {
+        copy.timeOutPhoto = undefined;
+      }
+      return copy;
+    });
+  }
+  if (key === STORAGE_KEYS.MONITORING_REPORTS && Array.isArray(value)) {
+    return value.map((rep) => {
+      if (!rep || typeof rep !== 'object') return rep;
+      const copy = { ...rep };
+      // Strip large photos or signatures (> 3KB) from localStorage cache to prevent QuotaExceededError
+      if (Array.isArray(copy.photos)) {
+        copy.photos = copy.photos
+          .map((p: string) => (typeof p === 'string' && p.startsWith('data:') ? '' : p))
+          .filter(Boolean);
+      }
+      if (typeof copy.signature === 'string' && copy.signature.startsWith('data:') && copy.signature.length > 3000) {
+        copy.signature = '';
+      }
+      if (typeof copy.supervisorSignature === 'string' && copy.supervisorSignature.startsWith('data:') && copy.supervisorSignature.length > 3000) {
+        copy.supervisorSignature = '';
+      }
+      if (typeof copy.instructorSignature === 'string' && copy.instructorSignature.startsWith('data:') && copy.instructorSignature.length > 3000) {
+        copy.instructorSignature = '';
+      }
+      return copy;
+    });
+  }
+  if (key === STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS && Array.isArray(value)) {
+    return value.map((rep) => {
+      if (!rep || typeof rep !== 'object') return rep;
+      return { ...rep };
     });
   }
   return value;
@@ -1437,22 +1495,54 @@ function cleanupStorageQuota(): void {
       localStorage.removeItem(STORAGE_KEYS.PASSWORDS);
       localStorage.removeItem('ojt_passwords');
     }
-    const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const sanitized = sanitizeValueForStorage(STORAGE_KEYS.EMPLOYEES, parsed);
-        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(sanitized));
+
+    // Purge bloated base64 document caches that exhaust browser 5MB localStorage limit
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (
+          k.startsWith('ojt_doc_base64_') ||
+          (k.startsWith('ojt_doc_') && !k.startsWith('ojt_doc_url_') && !k.startsWith('ojt_doc_passed_') && !k.startsWith('ojt_doc_count_'))
+        ) {
+          const val = localStorage.getItem(k);
+          if (val && (val.startsWith('data:') || val.length > 5000)) {
+            keysToRemove.push(k);
+          }
+        }
       }
+      keysToRemove.forEach((k) => {
+        try { localStorage.removeItem(k); } catch {}
+      });
     }
-    const rawUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (rawUser) {
-      const parsedUser = JSON.parse(rawUser);
-      if (parsedUser && typeof parsedUser === 'object') {
-        const sanitizedUser = sanitizeValueForStorage(STORAGE_KEYS.CURRENT_USER, parsedUser);
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(sanitizedUser));
+
+    const sanitizeKey = (k: string) => {
+      try {
+        const raw = localStorage.getItem(k);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const sanitized = sanitizeValueForStorage(k, parsed);
+        localStorage.setItem(k, JSON.stringify(sanitized));
+      } catch {
+        // If cannot even re-save after sanitizing, remove non-critical cache
+        if (
+          k === STORAGE_KEYS.TIME_RECORDS ||
+          k === STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS ||
+          k === STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS ||
+          k === STORAGE_KEYS.ANNOUNCEMENT_COMMENTS
+        ) {
+          try { localStorage.removeItem(k); } catch {}
+        }
       }
-    }
+    };
+
+    sanitizeKey(STORAGE_KEYS.EMPLOYEES);
+    sanitizeKey(STORAGE_KEYS.CURRENT_USER);
+    sanitizeKey(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS);
+    sanitizeKey(STORAGE_KEYS.TIME_RECORDS);
+    sanitizeKey(STORAGE_KEYS.REQUIRED_DOCUMENTS);
+    sanitizeKey(STORAGE_KEYS.MONITORING_REPORTS);
   } catch {
     // Ignore any error during startup cleanup
   }
@@ -1521,6 +1611,7 @@ function saveToStorage<T>(key: string, value: T): void {
   if (key === STORAGE_KEYS.PASSWORDS || key === 'ojt_passwords') {
     try {
       localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     } catch {}
     return;
   }
@@ -1528,26 +1619,34 @@ function saveToStorage<T>(key: string, value: T): void {
   if (value === null || value === undefined) {
     try {
       localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     } catch {}
     return;
   }
 
   try {
     const payload = sanitizeValueForStorage(key, value);
-    localStorage.setItem(key, JSON.stringify(payload));
-  } catch (err: any) {
-    console.warn(`[Storage] QuotaExceeded or error saving key "${key}". Evicting non-essential caches.`);
+    const serialized = JSON.stringify(payload);
     try {
-      localStorage.removeItem(STORAGE_KEYS.TIME_RECORDS);
-      localStorage.removeItem(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS);
-      localStorage.removeItem(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS);
-      localStorage.removeItem(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS);
-
-      const payload = sanitizeValueForStorage(key, value);
-      localStorage.setItem(key, JSON.stringify(payload));
+      localStorage.setItem(key, serialized);
+      try { sessionStorage.removeItem(key); } catch {}
+      return;
     } catch {
-      // Safe catch: never throw QuotaExceededError upwards to crash React
+      // QuotaExceededError: run cleanup and try again or use sessionStorage fallback
+      cleanupStorageQuota();
+      try {
+        localStorage.setItem(key, serialized);
+        try { sessionStorage.removeItem(key); } catch {}
+        return;
+      } catch {
+        // Fallback to sessionStorage so state is preserved without throwing errors or spamming console
+        try {
+          sessionStorage.setItem(key, serialized);
+        } catch {}
+      }
     }
+  } catch {
+    // Safe catch: never crash React
   }
 }
 
@@ -1627,6 +1726,19 @@ function mergeTimeRecords(
       const remoteMatch = remoteEmpDateMap.get(key);
 
       if (remoteMatch) {
+        if (!remoteMatch.amArrival && localR.amArrival) remoteMatch.amArrival = localR.amArrival;
+        if (!remoteMatch.amDeparture && localR.amDeparture) remoteMatch.amDeparture = localR.amDeparture;
+        if (!remoteMatch.pmArrival && localR.pmArrival) remoteMatch.pmArrival = localR.pmArrival;
+        if (!remoteMatch.pmDeparture && localR.pmDeparture) remoteMatch.pmDeparture = localR.pmDeparture;
+        if (remoteMatch.amArrivalFaceVerified === undefined && localR.amArrivalFaceVerified !== undefined) remoteMatch.amArrivalFaceVerified = localR.amArrivalFaceVerified;
+        if (remoteMatch.amDepartureFaceVerified === undefined && localR.amDepartureFaceVerified !== undefined) remoteMatch.amDepartureFaceVerified = localR.amDepartureFaceVerified;
+        if (remoteMatch.pmArrivalFaceVerified === undefined && localR.pmArrivalFaceVerified !== undefined) remoteMatch.pmArrivalFaceVerified = localR.pmArrivalFaceVerified;
+        if (remoteMatch.pmDepartureFaceVerified === undefined && localR.pmDepartureFaceVerified !== undefined) remoteMatch.pmDepartureFaceVerified = localR.pmDepartureFaceVerified;
+        if (remoteMatch.amArrivalGeofenced === undefined && localR.amArrivalGeofenced !== undefined) remoteMatch.amArrivalGeofenced = localR.amArrivalGeofenced;
+        if (remoteMatch.amDepartureGeofenced === undefined && localR.amDepartureGeofenced !== undefined) remoteMatch.amDepartureGeofenced = localR.amDepartureGeofenced;
+        if (remoteMatch.pmArrivalGeofenced === undefined && localR.pmArrivalGeofenced !== undefined) remoteMatch.pmArrivalGeofenced = localR.pmArrivalGeofenced;
+        if (remoteMatch.pmDepartureGeofenced === undefined && localR.pmDepartureGeofenced !== undefined) remoteMatch.pmDepartureGeofenced = localR.pmDepartureGeofenced;
+
         if (!remoteMatch.timeOut && localR.timeOut) {
           remoteMatch.timeOut = localR.timeOut;
           remoteMatch.timeOutPhoto = cleanRecordPhoto(localR.timeOutPhoto) || cleanRecordPhoto(remoteMatch.timeOutPhoto);
@@ -1786,9 +1898,17 @@ function mergeEmployees(
       };
     }
 
+    const mergedDocs = {
+      ...(local.submittedDocuments || {}),
+      ...(remote.submittedDocuments || {}),
+    };
+
     return {
       ...local,
       ...remote,
+      submittedDocuments: Object.keys(mergedDocs).length > 0 ? mergedDocs : undefined,
+      documentsPassed: remote.documentsPassed !== undefined ? remote.documentsPassed : local.documentsPassed,
+      documentsStatus: remote.documentsStatus || local.documentsStatus,
       hteId: remote.hteId || local.hteId,
       companyName: remote.companyName || local.companyName,
       supervisorName: remote.supervisorName || local.supervisorName,
@@ -4575,6 +4695,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
     }
 
+    // Ensure record has canonical UUID if known
+    if (emp?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(emp.id)) {
+      recordWithAY.employeeId = emp.id;
+    }
+
     const existing = timeRecords.find(
       (r) => {
         const rDate = (r.date || '').split('T')[0].split(' ')[0].trim();
@@ -4633,9 +4758,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .createTimeRecord(recordWithAY)
         .then((created) => {
           if (created) {
-            // Replace temporary local record with database UUID record
+            // Replace temporary local record with database UUID record while keeping all slot timestamps intact
             setTimeRecords((prev) => {
-              const updated = [created, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)];
+              const mergedCreated: TimeRecord = {
+                ...newRecord,
+                ...created,
+                amArrival: created.amArrival || newRecord.amArrival,
+                amDeparture: created.amDeparture || newRecord.amDeparture,
+                pmArrival: created.pmArrival || newRecord.pmArrival,
+                pmDeparture: created.pmDeparture || newRecord.pmDeparture,
+                amArrivalFaceVerified: created.amArrivalFaceVerified ?? newRecord.amArrivalFaceVerified,
+                amDepartureFaceVerified: created.amDepartureFaceVerified ?? newRecord.amDepartureFaceVerified,
+                pmArrivalFaceVerified: created.pmArrivalFaceVerified ?? newRecord.pmArrivalFaceVerified,
+                pmDepartureFaceVerified: created.pmDepartureFaceVerified ?? newRecord.pmDepartureFaceVerified,
+                amArrivalGeofenced: created.amArrivalGeofenced ?? newRecord.amArrivalGeofenced,
+                amDepartureGeofenced: created.amDepartureGeofenced ?? newRecord.amDepartureGeofenced,
+                pmArrivalGeofenced: created.pmArrivalGeofenced ?? newRecord.pmArrivalGeofenced,
+                pmDepartureGeofenced: created.pmDepartureGeofenced ?? newRecord.pmDepartureGeofenced,
+              };
+              const updated = [mergedCreated, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)];
               saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
               return updated;
             });
@@ -4671,9 +4812,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    const enrichedEmpId = data.employeeId || existing?.employeeId;
+    const matchedCanonicalEmp = employees.find(
+      (e) =>
+        e.id === enrichedEmpId ||
+        e.employeeId === enrichedEmpId ||
+        (e.email && enrichedEmpId && normalizeEmail(e.email) === normalizeEmail(enrichedEmpId))
+    );
+    const finalEmpId = (matchedCanonicalEmp?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(matchedCanonicalEmp.id))
+      ? matchedCanonicalEmp.id
+      : enrichedEmpId;
+
     const enrichedData = {
       ...(existing ? { employeeId: existing.employeeId, date: existing.date } : {}),
       ...data,
+      ...(finalEmpId ? { employeeId: finalEmpId } : {}),
     };
 
     setTimeRecords((prev) => {
@@ -4789,15 +4942,102 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false;
     });
 
-    if (todayRecords.length === 0) return null;
+    // Merge all records of today into a unified record so morning & afternoon punches are unified
+    let baseRecord: TimeRecord | null = null;
+    if (todayRecords.length > 0) {
+      baseRecord = {
+        ...todayRecords.sort((a, b) => {
+          const aComplete = a.timeIn && a.timeOut ? 2 : a.timeIn ? 1 : 0;
+          const bComplete = b.timeIn && b.timeOut ? 2 : b.timeIn ? 1 : 0;
+          if (bComplete !== aComplete) return bComplete - aComplete;
+          return (b.id || '').localeCompare(a.id || '');
+        })[0]
+      };
 
-    // Prefer record that has both timeIn and timeOut, or timeIn
-    return todayRecords.sort((a, b) => {
-      const aComplete = a.timeIn && a.timeOut ? 2 : a.timeIn ? 1 : 0;
-      const bComplete = b.timeIn && b.timeOut ? 2 : b.timeIn ? 1 : 0;
-      if (bComplete !== aComplete) return bComplete - aComplete;
-      return (b.id || '').localeCompare(a.id || '');
-    })[0];
+      for (const r of todayRecords) {
+        if (!baseRecord.amArrival && r.amArrival) baseRecord.amArrival = r.amArrival;
+        if (!baseRecord.amDeparture && r.amDeparture) baseRecord.amDeparture = r.amDeparture;
+        if (!baseRecord.pmArrival && r.pmArrival) baseRecord.pmArrival = r.pmArrival;
+        if (!baseRecord.pmDeparture && r.pmDeparture) baseRecord.pmDeparture = r.pmDeparture;
+        if (!baseRecord.timeIn && r.timeIn) baseRecord.timeIn = r.timeIn;
+        if (!baseRecord.timeOut && r.timeOut) baseRecord.timeOut = r.timeOut;
+        if (r.amArrivalFaceVerified) baseRecord.amArrivalFaceVerified = true;
+        if (r.amDepartureFaceVerified) baseRecord.amDepartureFaceVerified = true;
+        if (r.pmArrivalFaceVerified) baseRecord.pmArrivalFaceVerified = true;
+        if (r.pmDepartureFaceVerified) baseRecord.pmDepartureFaceVerified = true;
+        if (r.amArrivalGeofenced) baseRecord.amArrivalGeofenced = true;
+        if (r.amDepartureGeofenced) baseRecord.amDepartureGeofenced = true;
+        if (r.pmArrivalGeofenced) baseRecord.pmArrivalGeofenced = true;
+        if (r.pmDepartureGeofenced) baseRecord.pmDepartureGeofenced = true;
+      }
+    }
+
+    // Check localStorage fast punch cache for any immediate local punch
+    if (typeof window !== 'undefined') {
+      try {
+        const cacheKeys = [
+          `ojt_today_punch_${cleanEmpId}_${today}`,
+          emp?.employeeId ? `ojt_today_punch_${emp.employeeId}_${today}` : null,
+          emp?.id ? `ojt_today_punch_${emp.id}_${today}` : null,
+          currentUser?.employeeId ? `ojt_today_punch_${currentUser.employeeId}_${today}` : null,
+          currentUser?.id ? `ojt_today_punch_${currentUser.id}_${today}` : null,
+        ].filter(Boolean) as string[];
+
+        for (const key of cacheKeys) {
+          const cachedRaw = localStorage.getItem(key);
+          if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw);
+            if (!baseRecord) {
+              baseRecord = {
+                id: `local-${cleanEmpId}-${today}`,
+                employeeId: cleanEmpId,
+                date: today,
+                status: 'present',
+                ...cached,
+              };
+            } else {
+              if (!baseRecord.amArrival && cached.amArrival) baseRecord.amArrival = cached.amArrival;
+              if (!baseRecord.amDeparture && cached.amDeparture) baseRecord.amDeparture = cached.amDeparture;
+              if (!baseRecord.pmArrival && cached.pmArrival) baseRecord.pmArrival = cached.pmArrival;
+              if (!baseRecord.pmDeparture && cached.pmDeparture) baseRecord.pmDeparture = cached.pmDeparture;
+              if (!baseRecord.timeIn && cached.timeIn) baseRecord.timeIn = cached.timeIn;
+              if (!baseRecord.timeOut && cached.timeOut) baseRecord.timeOut = cached.timeOut;
+            }
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    // Auto-infer slots if record has timeIn or timeOut but slots are missing
+    if (baseRecord) {
+      if (!baseRecord.amArrival && !baseRecord.pmArrival && baseRecord.timeIn) {
+        const match = baseRecord.timeIn.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          const h = parseInt(match[1], 10);
+          const isPm = /pm/i.test(baseRecord.timeIn) || (h >= 12 && !/am/i.test(baseRecord.timeIn));
+          if (isPm) {
+            baseRecord.pmArrival = baseRecord.timeIn;
+          } else {
+            baseRecord.amArrival = baseRecord.timeIn;
+          }
+        }
+      }
+      if (!baseRecord.amDeparture && !baseRecord.pmDeparture && baseRecord.timeOut) {
+        const match = baseRecord.timeOut.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          if (/pm/i.test(baseRecord.timeOut) && h !== 12) h += 12;
+          if (h < 13 && !baseRecord.amDeparture && baseRecord.amArrival) {
+            baseRecord.amDeparture = baseRecord.timeOut;
+          } else {
+            baseRecord.pmDeparture = baseRecord.timeOut;
+          }
+        }
+      }
+    }
+
+    return baseRecord;
   };
 
   const getEmployeeRecords = (empIdentifier: string): TimeRecord[] => {
@@ -5658,19 +5898,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const finalKey = (docKey || documentId) as keyof TraineeDocuments;
     const currentEmp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId) || getCurrentEmployee();
     if (currentEmp) {
+      const prevDoc = currentEmp.submittedDocuments?.[finalKey];
+      const newStatus = prevDoc?.status === 'passed' ? 'passed' : 'submitted';
+      const updatedDocs = {
+        ...(currentEmp.submittedDocuments || {}),
+        [finalKey]: {
+          name: payload.fileName || 'Uploaded Document.pdf',
+          dataUrl: payload.fileDataUrl || payload.fileUrl || '',
+          fileUrl: payload.fileUrl || '',
+          size: payload.fileSize || 0,
+          fileType: payload.fileType || 'application/pdf',
+          uploadedAt: now,
+          status: newStatus as const,
+          description: payload.notes || payload.note || '',
+          notes: notes,
+          source: 'portal' as const,
+        },
+      } as TraineeDocuments;
+
       updateEmployee(currentEmp.id, {
-        submittedDocuments: {
-          ...(currentEmp.submittedDocuments || {}),
-          [finalKey]: {
-            name: payload.fileName || 'Uploaded Document.pdf',
-            dataUrl: payload.fileDataUrl || payload.fileUrl || '',
-            fileUrl: payload.fileUrl || '',
-            size: payload.fileSize || 0,
-            fileType: payload.fileType || 'application/pdf',
-            uploadedAt: now,
-            status: 'passed' as const,
-          },
-        } as TraineeDocuments,
+        submittedDocuments: updatedDocs,
+        documentsStatus: 'submitted',
       });
     }
 
@@ -5684,7 +5932,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (s.documentId === documentId || documentId.includes(s.documentId) || s.documentId.includes(documentId)) &&
         s.employeeId === employeeId
     );
-    if (existing) return existing;
+    if (existing) {
+      if (!existing.fileDataUrl && typeof window !== 'undefined') {
+        const cached = window.sessionStorage?.getItem(`ojt_doc_data_${existing.id || existing.documentId}`);
+        if (cached) {
+          return { ...existing, fileDataUrl: cached };
+        }
+      }
+      return existing;
+    }
 
     // 2. Trainee submittedDocuments fallback
     const emp =
@@ -5724,17 +5980,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedDocItem = (emp.submittedDocuments as any)[documentId];
       }
 
-      if (matchedDocItem && (matchedDocItem.dataUrl || matchedDocItem.name)) {
+      if (matchedDocItem && (matchedDocItem.fileUrl || matchedDocItem.dataUrl || matchedDocItem.name)) {
+        const sessionCached = typeof window !== 'undefined' ? window.sessionStorage?.getItem(`ojt_doc_data_${documentId}`) : '';
+        const isPassed = matchedDocItem.status === 'passed';
         return {
           id: `sub-auto-${documentId}`,
           documentId,
           employeeId,
           submittedAt: matchedDocItem.uploadedAt || new Date().toISOString(),
           fileName: matchedDocItem.name || 'Submitted Document.pdf',
-          fileUrl: matchedDocItem.dataUrl || '',
-          note: `Verified (${matchedDocItem.status || 'passed'})`,
-          status: 'approved',
-          verificationStatus: 'passed',
+          fileUrl: matchedDocItem.fileUrl || matchedDocItem.dataUrl || '',
+          fileDataUrl: matchedDocItem.dataUrl || sessionCached || '',
+          note: matchedDocItem.notes || matchedDocItem.note || (isPassed ? 'Verified (passed)' : 'Submitted for review'),
+          status: isPassed ? 'approved' : 'submitted',
+          verificationStatus: isPassed ? 'passed' : 'pending',
         };
       }
     }

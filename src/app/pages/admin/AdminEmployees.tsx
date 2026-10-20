@@ -357,6 +357,23 @@ export function AdminEmployees() {
     }
   }, [location.pathname, searchParams]);
 
+  useEffect(() => {
+    const handleDocSubmitted = (e: any) => {
+      const detail = e.detail;
+      if (detail?.studentName) {
+        toast.info(`📄 ${detail.studentName} submitted "${detail.docTitle}" for instructor review!`, {
+          duration: 6000,
+        });
+      }
+      refreshData();
+    };
+
+    window.addEventListener('ojt_document_submitted', handleDocSubmitted);
+    return () => {
+      window.removeEventListener('ojt_document_submitted', handleDocSubmitted);
+    };
+  }, [refreshData]);
+
   const currentEmp = getCurrentEmployee();
   const isLoggedInInstructor = useMemo(() => {
     let cachedRole = '';
@@ -413,9 +430,19 @@ export function AdminEmployees() {
 
     allTrainees.forEach((t) => {
       const docs = t.submittedDocuments || {};
-      const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(docs[k]?.dataUrl || docs[k]?.name)).length;
-      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
-      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+      const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+        const item = getTraineeDocItem(docs, k);
+        return Boolean(item?.dataUrl || item?.fileUrl || item?.name);
+      }).length;
+      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+        const item = getTraineeDocItem(docs, k);
+        return item?.status === 'passed';
+      }).length;
+      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
+        const item = getTraineeDocItem(docs, k);
+        const hasF = Boolean(item?.dataUrl || item?.fileUrl || item?.name);
+        return (item?.status === 'pending' || item?.status === 'submitted' || !item?.status) && hasF && item?.status !== 'passed';
+      });
 
       totalFilesUploaded += uploadedCount;
 
@@ -461,8 +488,15 @@ export function AdminEmployees() {
       }
 
       const docs = t.submittedDocuments || {};
-      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
-      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+      const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+        const item = getTraineeDocItem(docs, k);
+        return item?.status === 'passed';
+      }).length;
+      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
+        const item = getTraineeDocItem(docs, k);
+        const hasF = Boolean(item?.dataUrl || item?.fileUrl || item?.name);
+        return (item?.status === 'pending' || item?.status === 'submitted' || !item?.status) && hasF && item?.status !== 'passed';
+      });
       const isCompliant = passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (t.documentsPassed === true && t.documentsStatus === 'passed');
 
       if (docFilterStatus === 'compliant' && !isCompliant) return false;
@@ -470,8 +504,8 @@ export function AdminEmployees() {
       if (docFilterStatus === 'incomplete' && (isCompliant || hasPending)) return false;
 
       if (docFilterRequirement !== 'all') {
-        const targetDoc = docs[docFilterRequirement];
-        if (!targetDoc?.dataUrl && !targetDoc?.name) return false;
+        const targetDoc = getTraineeDocItem(docs, docFilterRequirement as any);
+        if (!targetDoc?.dataUrl && !targetDoc?.fileUrl && !targetDoc?.name) return false;
       }
 
       return true;
@@ -2497,9 +2531,19 @@ export function AdminEmployees() {
                       <tbody className="divide-y divide-gray-100 text-xs">
                         {paginatedDocTrainees.map((trainee) => {
                           const docs = trainee.submittedDocuments || {};
-                          const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => Boolean(docs[k]?.dataUrl || docs[k]?.name)).length;
-                          const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => docs[k]?.status === 'passed').length;
-                          const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => docs[k]?.status === 'pending' && Boolean(docs[k]?.dataUrl || docs[k]?.name));
+                          const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+                            const item = getTraineeDocItem(docs, k);
+                            return Boolean(item?.dataUrl || item?.fileUrl || item?.name);
+                          }).length;
+                          const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+                            const item = getTraineeDocItem(docs, k);
+                            return item?.status === 'passed';
+                          }).length;
+                          const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
+                            const item = getTraineeDocItem(docs, k);
+                            const hasF = Boolean(item?.dataUrl || item?.fileUrl || item?.name);
+                            return (item?.status === 'pending' || item?.status === 'submitted' || !item?.status) && hasF && item?.status !== 'passed';
+                          });
                           const isCompliant = passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (trainee.documentsPassed === true && trainee.documentsStatus === 'passed');
                           const photoUrl = getPhotoUrl(trainee.photo);
 
@@ -2610,9 +2654,9 @@ export function AdminEmployees() {
                               <td className="px-4 py-4">
                                 <div className="flex flex-wrap gap-1 max-w-[340px]">
                                   {REQUIRED_TRAINEE_DOCUMENTS.map((req) => {
-                                    const doc = docs[req.key];
+                                    const doc = getTraineeDocItem(docs, req.key);
                                     const isDocPassed = doc?.status === 'passed';
-                                    const hasFile = Boolean(doc?.dataUrl || doc?.name);
+                                    const hasFile = Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name);
                                     const isPendingDoc = hasFile && !isDocPassed;
 
                                     if (isDocPassed) {
@@ -2628,7 +2672,7 @@ export function AdminEmployees() {
                                               fileName: doc?.name || `${req.key}.pdf`,
                                               fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
                                               note: doc?.name
-                                                ? `Uploaded file: ${doc.name}${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}`
+                                                ? `Uploaded file: ${doc.name}${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}${doc.notes ? ` • Note: "${doc.notes}"` : ''}`
                                                 : `Verified requirement.`,
                                               date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Recorded',
                                             })
@@ -2655,7 +2699,7 @@ export function AdminEmployees() {
                                               fileName: doc?.name || `${req.key}.pdf`,
                                               fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
                                               note: doc?.name
-                                                ? `Attached: ${doc.name} (Awaiting Coordinator Review)${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}`
+                                                ? `Attached: ${doc.name} (Submitted by Trainee • Awaiting Instructor Review)${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}${doc.notes ? ` • Note: "${doc.notes}"` : ''}`
                                                 : undefined,
                                               date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Recent submission',
                                             })
@@ -5173,39 +5217,47 @@ export function AdminEmployees() {
                                         : 'bg-amber-100 text-amber-800 border-amber-200'
                                     }`}
                                   >
-                                    {isPassed ? '✓ PASSED' : isPendingDoc ? 'PENDING REVIEW' : 'PENDING'}
+                                    {isPassed ? '✓ PASSED' : isPendingDoc ? 'SUBMITTED • PENDING REVIEW' : 'PENDING'}
                                   </span>
                                 </div>
 
                                 {doc?.name ? (
-                                  <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
-                                    <span
-                                      className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
-                                      title={doc.name}
-                                    >
-                                      📎 {doc.name}
-                                    </span>
-                                    {doc.size ? (
-                                      <span className="text-[10px] text-slate-500 font-medium">
-                                        {(Number(doc.size) / 1024).toFixed(0)} KB
-                                      </span>
-                                    ) : null}
-                                    {doc.source ? (
+                                  <div className="flex flex-col gap-1 text-xs text-slate-600 mt-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <span
-                                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                                          doc.source === 'registration'
-                                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                                            : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                                        }`}
+                                        className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                        title={doc.name}
                                       >
-                                        {doc.source === 'registration' ? 'Pre-Registration' : 'Portal'}
+                                        📎 {doc.name}
                                       </span>
-                                    ) : null}
-                                    {doc.uploadedAt ? (
-                                      <span className="text-[10px] text-slate-400">
-                                        • {new Date(doc.uploadedAt).toLocaleDateString()}
-                                      </span>
-                                    ) : null}
+                                      {doc.size ? (
+                                        <span className="text-[10px] text-slate-500 font-medium">
+                                          {(Number(doc.size) / 1024).toFixed(0)} KB
+                                        </span>
+                                      ) : null}
+                                      {doc.source ? (
+                                        <span
+                                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                                            doc.source === 'registration'
+                                              ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                              : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                          }`}
+                                        >
+                                          {doc.source === 'registration' ? 'Pre-Registration' : 'Portal'}
+                                        </span>
+                                      ) : null}
+                                      {doc.uploadedAt ? (
+                                        <span className="text-[10px] text-slate-400">
+                                          • {new Date(doc.uploadedAt).toLocaleDateString()}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    {(doc.notes || doc.description) && (
+                                      <div className="mt-1 text-[11px] text-violet-800 bg-violet-50/80 border border-violet-100 rounded-lg px-2.5 py-1 flex items-start gap-1.5">
+                                        <span className="font-bold shrink-0">💬 Trainee Note:</span>
+                                        <span className="italic">{doc.notes || doc.description}</span>
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">

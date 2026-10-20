@@ -93,7 +93,7 @@ async function postJson<T>(path: string, payload: Record<string, unknown>, timeo
 
     const text = await res.text();
     if (!res.ok) {
-      if (res.status === 404 || res.status >= 500) {
+      if (res.status >= 500) {
         markSecurityBackendOffline();
       }
       throw new Error(text || `Request failed with status ${res.status}`);
