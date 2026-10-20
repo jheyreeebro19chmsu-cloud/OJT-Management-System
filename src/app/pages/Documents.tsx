@@ -61,7 +61,14 @@ interface SubmitDialogState {
 
 export function Documents() {
   const navigate = useNavigate();
-  const { currentUser, getCurrentEmployee, updateEmployee, getEmployeeRequiredDocuments, submitRequiredDocument } = useApp();
+  const {
+    currentUser,
+    getCurrentEmployee,
+    updateEmployee,
+    getEmployeeRequiredDocuments,
+    submitRequiredDocument,
+    refreshData,
+  } = useApp();
   const employee = getCurrentEmployee();
 
   const [previewDoc, setPreviewDoc] = useState<PreviewModalState | null>(null);
@@ -71,6 +78,26 @@ export function Documents() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'attached' | 'missing'>('all');
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  // Proactively fetch latest institutional & departmental requirements posted by instructor on mount
+  useEffect(() => {
+    refreshData?.({ force: true } as any)?.catch?.(() => {});
+  }, []);
+
+  // Listen for real-time document requirements updates from instructor
+  useEffect(() => {
+    const handleUpdate = () => {
+      refreshData?.({ force: true } as any)?.catch?.(() => {});
+    };
+    window.addEventListener('ojt_required_documents_updated', handleUpdate);
+    window.addEventListener('ojt_template_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ojt_required_documents_updated', handleUpdate);
+      window.removeEventListener('ojt_template_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
 
   // Sync documents from database on mount or user change to prevent disappearance on refresh
   useEffect(() => {
@@ -339,7 +366,61 @@ export function Documents() {
     'application/x-zip-compressed',
     'application/vnd.ms-word',
   ];
-  const ALLOWED_EXT = /\.(pdf|jpg|jpeg|jfif|png|webp|heic|heif|bmp|doc|docx|docs)$/i;
+  const ALLOWED_EXT = /\.(pdf|jpg|jpeg|jfif|png|webp|heic|heif|bmp|doc|docx|docs|odt|rtf|txt)$/i;
+
+  const isFileTypeAllowed = (file: File, allowedTypes?: string[]): { allowed: boolean; reason?: string } => {
+    const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+    const mime = (file.type || '').toLowerCase();
+
+    // Check if it's an image (JPG, JPEG, PNG, WEBP, JFIF, BMP, HEIC, HEIF, IMG, image/*)
+    const isImage =
+      mime.startsWith('image/') ||
+      /\.(jpg|jpeg|jfif|png|webp|bmp|heic|heif|img|gif)$/i.test(file.name);
+
+    // Check if it's a PDF
+    const isPdf =
+      mime === 'application/pdf' ||
+      /\.pdf$/i.test(file.name);
+
+    // Check if it's a Word document or document file (DOC, DOCX, DOCS, RTF, ODT, TXT)
+    const isDoc =
+      mime.includes('word') ||
+      mime.includes('officedocument') ||
+      mime === 'application/msword' ||
+      /\.(doc|docx|docs|dot|dotx|rtf|odt|txt)$/i.test(file.name);
+
+    // Baseline validation: must be an image, PDF, or Word/office document
+    if (!isImage && !isPdf && !isDoc && !ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
+      return {
+        allowed: false,
+        reason: `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`,
+      };
+    }
+
+    // If no specific restrictions were set by the instructor, allow any valid image, PDF, or Word doc
+    if (!allowedTypes || allowedTypes.length === 0) {
+      return { allowed: true };
+    }
+
+    // Normalize instructor allowed types (e.g. ['.pdf', '.docx', '.png', '.jpg'] -> ['pdf', 'docx', 'png', 'jpg'])
+    const normTypes = allowedTypes.map((t) => t.replace(/^\./, '').toLowerCase().trim());
+
+    const allowsAnyImage = normTypes.some((t) => ['jpg', 'jpeg', 'png', 'webp', 'image', 'images', 'img', 'picture', 'pictures', 'bmp', 'heic'].includes(t));
+    const allowsAnyPdf = normTypes.some((t) => t === 'pdf');
+    const allowsAnyDoc = normTypes.some((t) => ['doc', 'docx', 'docs', 'word'].includes(t));
+
+    if (isImage && allowsAnyImage) return { allowed: true };
+    if (isPdf && allowsAnyPdf) return { allowed: true };
+    if (isDoc && allowsAnyDoc) return { allowed: true };
+
+    const directMatch = normTypes.some((t) => ext === `.${t}` || mime.includes(t));
+    if (directMatch) return { allowed: true };
+
+    return {
+      allowed: false,
+      reason: `Unsupported format: "${file.name.split('.').pop()?.toUpperCase()}". The instructor requires this document to be: ${allowedTypes.join(', ').toUpperCase()}`,
+    };
+  };
 
   const onSelectFile = (docKey: string, title: string, file: File | null, instructorDocName?: string) => {
     if (!file) return;
@@ -348,25 +429,10 @@ export function Documents() {
     const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
     const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
 
-    if (targetReq?.allowedFileTypes && targetReq.allowedFileTypes.length > 0) {
-      const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
-      const isAllowed = targetReq.allowedFileTypes.some((t: string) => {
-        const norm = (t.startsWith('.') ? t : `.${t}`).toLowerCase();
-        return norm === ext || file.type.toLowerCase().includes(norm.replace('.', ''));
-      });
-      if (!isAllowed) {
-        toast.error(
-          `Unsupported format: "${file.name.split('.').pop()?.toUpperCase()}". The instructor requires this document to be: ${targetReq.allowedFileTypes.join(', ').toUpperCase()}`
-        );
-        return;
-      }
-    } else {
-      if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-        toast.error(
-          `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
-        );
-        return;
-      }
+    const check = isFileTypeAllowed(file, targetReq?.allowedFileTypes);
+    if (!check.allowed) {
+      toast.error(check.reason || 'Unsupported file format');
+      return;
     }
 
     if (file.size < 200) {
@@ -430,25 +496,10 @@ export function Documents() {
     const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
     const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
 
-    if (targetReq?.allowedFileTypes && targetReq.allowedFileTypes.length > 0) {
-      const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
-      const isAllowed = targetReq.allowedFileTypes.some((t: string) => {
-        const norm = (t.startsWith('.') ? t : `.${t}`).toLowerCase();
-        return norm === ext || file.type.toLowerCase().includes(norm.replace('.', ''));
-      });
-      if (!isAllowed) {
-        toast.error(
-          `Unsupported format: "${file.name.split('.').pop()?.toUpperCase()}". The instructor requires this document to be: ${targetReq.allowedFileTypes.join(', ').toUpperCase()}`
-        );
-        return;
-      }
-    } else {
-      if (!ALLOWED_MIME.includes(file.type) && !ALLOWED_EXT.test(file.name)) {
-        toast.error(
-          `Unsupported file type: "${file.name.split('.').pop()?.toUpperCase() || 'Unknown'}". Accepted formats: Pictures (JPG, PNG, WEBP), PDF, and Word documents (DOC, DOCX).`
-        );
-        return;
-      }
+    const check = isFileTypeAllowed(file, targetReq?.allowedFileTypes);
+    if (!check.allowed) {
+      toast.error(check.reason || 'Unsupported file format');
+      return;
     }
 
     if (file.size < 200) {
@@ -1179,8 +1230,8 @@ export function Documents() {
                             id={`attach-file-slot-${item.key}`}
                             accept={
                               item.allowedFileTypes?.length
-                                ? item.allowedFileTypes.map((t: string) => (t.startsWith('.') ? t : `.${t}`)).join(',')
-                                : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
+                                ? `${item.allowedFileTypes.map((t: string) => (t.startsWith('.') ? t : `.${t}`)).join(',')},image/*,.jpg,.jpeg,.png,.webp,.jfif,.img,.bmp,.heic,.pdf,.doc,.docx,.docs,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+                                : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,.img,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
                             }
                             onChange={(e) => {
                               const file = e.target.files?.[0] || null;

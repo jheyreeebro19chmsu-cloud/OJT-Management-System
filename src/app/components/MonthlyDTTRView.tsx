@@ -57,10 +57,6 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1); // 1-12
 
-  useEffect(() => {
-    refreshData?.({ force: true }).catch(() => {});
-  }, [selectedEmployeeId, selectedYear, selectedMonth]);
-
   // Available trainees
   const traineeList = useMemo(() => {
     return employees.filter(
@@ -73,6 +69,16 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     if (viewerRole === 'employee' && currentUser?.id) return currentUser.id;
     return traineeList[0]?.id || '';
   });
+
+  useEffect(() => {
+    if (defaultEmployeeId && defaultEmployeeId !== selectedEmployeeId) {
+      setSelectedEmployeeId(defaultEmployeeId);
+    }
+  }, [defaultEmployeeId, selectedEmployeeId]);
+
+  useEffect(() => {
+    refreshData?.({ force: true }).catch(() => {});
+  }, [selectedEmployeeId, selectedYear, selectedMonth]);
 
   const selectedEmployee = useMemo(() => {
     return (

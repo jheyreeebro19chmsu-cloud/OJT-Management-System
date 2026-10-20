@@ -117,6 +117,24 @@ export default async function handler(req, res) {
     // GET: Query documents & document pass status OR generate signed upload URL
     if (req.method === 'GET') {
       const action = query.action;
+
+      // Action: Retrieve institutional and departmental required documents
+      if (action === 'get-requirements') {
+        try {
+          const { data, error } = await supabase.storage.from('face-photos').download('settings/requirements_store.json');
+          if (!error && data) {
+            const text = await data.text();
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+              return sendJson(res, 200, parsed);
+            }
+          }
+        } catch (err) {
+          console.warn('API get-requirements notice:', err);
+        }
+        return sendJson(res, 200, []);
+      }
+
       if (action === 'get-upload-url') {
         const storagePath = query.path;
         if (!storagePath) {
@@ -298,6 +316,25 @@ export default async function handler(req, res) {
     // POST / PUT: Save document upload, update document pass status
     if (req.method === 'POST' || req.method === 'PUT') {
       const body = await parseBody(req);
+
+      // Support server-side save of institutional/departmental requirements
+      if (body.action === 'save-requirements') {
+        try {
+          const docs = body.docs || [];
+          const jsonStr = JSON.stringify(docs);
+          const buffer = Buffer.from(jsonStr, 'utf8');
+          const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/requirements_store.json', buffer, {
+            contentType: 'application/json',
+            upsert: true,
+          });
+          if (upErr) {
+            return sendJson(res, 500, { error: upErr.message });
+          }
+          return sendJson(res, 200, { success: true, count: docs.length });
+        } catch (err) {
+          return sendJson(res, 500, { error: err.message || 'Failed to save requirements' });
+        }
+      }
 
       // Support server-side direct storage upload via service role
       if (body.action === 'upload') {

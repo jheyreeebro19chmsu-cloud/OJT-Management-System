@@ -5751,6 +5751,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const updated = [newDoc, ...prev.filter((d) => d.id !== newDoc.id && d.title.toLowerCase().trim() !== newDoc.title.toLowerCase().trim())];
       saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, updated);
       supabaseService.saveRequiredDocumentsToStorage(updated).catch(console.warn);
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_required_documents_updated'));
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
       return updated;
     });
     return newDoc;
@@ -5761,6 +5765,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const updated = prev.map((doc) => (doc.id === id ? { ...doc, ...data } : doc));
       saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, updated);
       supabaseService.saveRequiredDocumentsToStorage(updated).catch(console.warn);
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_required_documents_updated'));
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
       return updated;
     });
   };
@@ -5770,6 +5778,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const updated = prev.filter((doc) => doc.id !== id);
       saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, updated);
       supabaseService.saveRequiredDocumentsToStorage(updated).catch(console.warn);
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_required_documents_updated'));
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
       return updated;
     });
     setRequiredDocumentSubmissions((prev) => prev.filter((submission) => submission.documentId !== id));
@@ -5778,15 +5790,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getEmployeeRequiredDocuments = (employeeId: string): RequiredDocument[] => {
     // 1. Fetch any specific custom documents added by admin for this employee or all employees
     const emp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId);
-    const assignedDocs = requiredDocuments.filter(
-      (doc) =>
-        (doc.employeeId === employeeId ||
-          doc.employeeId === 'all' ||
-          !doc.employeeId ||
-          (emp && doc.employeeId === emp.employeeId) ||
-          (emp?.course && doc.targetCourse && (doc.targetCourse === 'all' || doc.targetCourse === emp.course))) &&
-        (!doc.academicYear || !settings.activeAcademicYear || doc.academicYear === settings.activeAcademicYear)
-    );
+    const normalizeAY = (ay?: string | null) => (ay || '').replace(/^A\.?Y\.?\s*/i, '').trim().toLowerCase();
+    const activeAY = normalizeAY(settings.activeAcademicYear);
+
+    const assignedDocs = requiredDocuments.filter((doc) => {
+      // Recipient matching: 'all', matching employeeId, or matching target course
+      const matchesTarget =
+        !doc.employeeId ||
+        doc.employeeId === 'all' ||
+        doc.employeeId === employeeId ||
+        (emp && doc.employeeId === emp.employeeId) ||
+        (emp?.course && doc.targetCourse && (doc.targetCourse === 'all' || doc.targetCourse === emp.course));
+
+      if (!matchesTarget) return false;
+
+      // Academic year matching: loose / normalized comparison
+      const docAY = normalizeAY(doc.academicYear);
+      if (!docAY || docAY === 'all' || !activeAY) return true;
+      if (docAY === activeAY) return true;
+      if (emp?.academicYear && normalizeAY(emp.academicYear) === docAY) return true;
+      return false;
+    });
 
     // 2. Standard mandatory institutional OJT checklist documents
     const standardDocs: RequiredDocument[] = DEFAULT_OJT_REQUIRED_DOCUMENTS.map((d, index) => ({

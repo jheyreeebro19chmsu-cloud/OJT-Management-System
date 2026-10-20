@@ -2197,69 +2197,96 @@ export function Dashboard() {
 
         {/* 4-Slot Daily Attendance Cards (Civil Service Form 48 / DTTR Standard) */}
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div className="bg-white/20 rounded-2xl p-2.5">
-            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>Time In AM</span>
-              <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
-            </div>
-            <p className="text-white font-bold text-sm">
-              {todayRecord?.amArrival ? formatTime(todayRecord.amArrival) : (todayRecord?.timeIn && (!todayRecord.amArrival && !todayRecord.pmArrival) ? formatTime(todayRecord.timeIn) : '— —')}
-            </p>
-            {Boolean(todayRecord?.amArrivalFaceVerified || (todayRecord?.timeInFaceVerified && !todayRecord?.amArrival)) && (
-              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
-                <Camera size={9} />
-                <span>Verified</span>
-              </div>
-            )}
-          </div>
+          {(() => {
+            const hasAmIn = Boolean(
+              todayRecord?.amArrival ||
+              (todayRecord?.timeIn && !/pm/i.test(todayRecord.timeIn) && parseInt(todayRecord.timeIn, 10) < 12) ||
+              (todayRecord?.timeIn && !todayRecord?.pmArrival)
+            );
 
-          <div className="bg-white/20 rounded-2xl p-2.5">
-            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>Time Out AM</span>
-              <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
-            </div>
-            <p className="text-white font-bold text-sm">
-              {todayRecord?.amDeparture ? formatTime(todayRecord.amDeparture) : '— —'}
-            </p>
-            {Boolean(todayRecord?.amDepartureFaceVerified) && (
-              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
-                <Camera size={9} />
-                <span>Verified</span>
-              </div>
-            )}
-          </div>
+            return (
+              <>
+                <div className="bg-white/20 rounded-2xl p-2.5">
+                  <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+                    <span>Time In AM</span>
+                    <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
+                  </div>
+                  <p className="text-white font-bold text-sm">
+                    {todayRecord?.amArrival ? formatTime(todayRecord.amArrival) : (todayRecord?.timeIn && (!todayRecord.amArrival && !todayRecord.pmArrival) ? formatTime(todayRecord.timeIn) : '— —')}
+                  </p>
+                  {Boolean(todayRecord?.amArrivalFaceVerified || (todayRecord?.timeInFaceVerified && !todayRecord?.amArrival)) && (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                      <Camera size={9} />
+                      <span>Verified</span>
+                    </div>
+                  )}
+                </div>
 
-          <div className="bg-white/20 rounded-2xl p-2.5">
-            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>Time In PM</span>
-              <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
-            </div>
-            <p className="text-white font-bold text-sm">
-              {todayRecord?.pmArrival ? formatTime(todayRecord.pmArrival) : '— —'}{' '}
-            </p>
-            {Boolean(todayRecord?.pmArrivalFaceVerified) && (
-              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
-                <Camera size={9} />
-                <span>Verified</span>
-              </div>
-            )}
-          </div>
+                <div className="bg-white/20 rounded-2xl p-2.5">
+                  <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+                    <span>Time Out AM</span>
+                    <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
+                  </div>
+                  <p className="text-white font-bold text-sm">
+                    {todayRecord?.amDeparture ? formatTime(todayRecord.amDeparture) : '— —'}
+                  </p>
+                  {Boolean(todayRecord?.amDepartureFaceVerified) ? (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                      <Camera size={9} />
+                      <span>Verified</span>
+                    </div>
+                  ) : !hasAmIn ? (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-200/90 font-medium">
+                      <Lock size={9} />
+                      <span>Req. AM In</span>
+                    </div>
+                  ) : null}
+                </div>
 
-          <div className="bg-white/20 rounded-2xl p-2.5">
-            <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
-              <span>Time Out PM</span>
-              <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
-            </div>
-            <p className="text-white font-bold text-sm">
-              {todayRecord?.pmDeparture ? formatTime(todayRecord.pmDeparture) : (todayRecord?.timeOut && (!todayRecord.amDeparture && !todayRecord.pmDeparture) ? formatTime(todayRecord.timeOut) : '— —')}
-            </p>
-            {Boolean(todayRecord?.pmDepartureFaceVerified || (todayRecord?.timeOutFaceVerified && !todayRecord?.pmDeparture)) && (
-              <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
-                <Camera size={9} />
-                <span>Verified</span>
-              </div>
-            )}
-          </div>
+                <div className="bg-white/20 rounded-2xl p-2.5">
+                  <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+                    <span>Time In PM</span>
+                    <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
+                  </div>
+                  <p className="text-white font-bold text-sm">
+                    {todayRecord?.pmArrival ? formatTime(todayRecord.pmArrival) : '— —'}{' '}
+                  </p>
+                  {Boolean(todayRecord?.pmArrivalFaceVerified) ? (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                      <Camera size={9} />
+                      <span>Verified</span>
+                    </div>
+                  ) : !hasAmIn ? (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-200/90 font-medium">
+                      <Lock size={9} />
+                      <span>Req. AM In</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="bg-white/20 rounded-2xl p-2.5">
+                  <div className="flex items-center justify-between text-[10px] text-white/70 font-semibold mb-0.5">
+                    <span>Time Out PM</span>
+                    <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
+                  </div>
+                  <p className="text-white font-bold text-sm">
+                    {todayRecord?.pmDeparture ? formatTime(todayRecord.pmDeparture) : (todayRecord?.timeOut && (!todayRecord.amDeparture && !todayRecord.pmDeparture) ? formatTime(todayRecord.timeOut) : '— —')}
+                  </p>
+                  {Boolean(todayRecord?.pmDepartureFaceVerified || (todayRecord?.timeOutFaceVerified && !todayRecord?.pmDeparture)) ? (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
+                      <Camera size={9} />
+                      <span>Verified</span>
+                    </div>
+                  ) : !hasAmIn ? (
+                    <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-200/90 font-medium">
+                      <Lock size={9} />
+                      <span>Req. AM In</span>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         <div className="mt-3 flex items-center justify-between text-[11px] text-white/80 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
@@ -2279,6 +2306,15 @@ export function Dashboard() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         {(() => {
           const h = currentTime.getHours();
+          const hasAmIn = Boolean(
+            todayRecord?.amArrival ||
+            (todayRecord?.timeIn && !/pm/i.test(todayRecord.timeIn) && parseInt(todayRecord.timeIn, 10) < 12) ||
+            (todayRecord?.timeIn && !todayRecord?.pmArrival)
+          );
+          const hasAmOut = Boolean(todayRecord?.amDeparture);
+          const hasPmIn = Boolean(todayRecord?.pmArrival);
+          const hasPmOut = Boolean(todayRecord?.pmDeparture);
+
           let nextPunch: {
             label: string;
             title: string;
@@ -2286,15 +2322,18 @@ export function Dashboard() {
             theme: 'late' | 'in' | 'out';
           } | null = null;
 
-          if (h < 12) {
-            if (!todayRecord?.amArrival && !todayRecord?.timeIn) {
-              nextPunch = {
-                label: isPastLateThreshold ? 'RECORD TIME IN AM (LATE)' : 'RECORD TIME IN AM',
-                title: isPastLateThreshold ? 'CLOCK IN NOW (LATE)' : 'CLOCK IN TIME IN AM',
-                sub: 'Morning Shift Start • 8:00 AM – 12:00 PM',
-                theme: isPastLateThreshold ? 'late' : 'in',
-              };
-            } else if (!todayRecord?.amDeparture) {
+          // STRICT RULE: Trainee CANNOT proceed if they have not timed in for AM Time In
+          if (!hasAmIn) {
+            nextPunch = {
+              label: isPastLateThreshold || h >= 12 ? 'RECORD TIME IN AM (REQUIRED)' : 'RECORD TIME IN AM',
+              title: isPastLateThreshold || h >= 12 ? 'CLOCK IN TIME IN AM (LATE)' : 'CLOCK IN TIME IN AM',
+              sub: h >= 12
+                ? 'Time In AM Required • Cannot proceed to PM until morning attendance is recorded'
+                : 'Morning Shift Start • 8:00 AM – 12:00 PM',
+              theme: isPastLateThreshold || h >= 12 ? 'late' : 'in',
+            };
+          } else if (h < 12) {
+            if (!hasAmOut) {
               nextPunch = {
                 label: 'RECORD TIME OUT AM',
                 title: 'CLOCK OUT TIME OUT AM',
@@ -2304,15 +2343,15 @@ export function Dashboard() {
             }
           }
 
-          if (!nextPunch) {
-            if (!todayRecord?.pmArrival) {
+          if (!nextPunch && hasAmIn) {
+            if (!hasPmIn) {
               nextPunch = {
                 label: 'RECORD TIME IN PM',
                 title: 'CLOCK IN TIME IN PM',
                 sub: 'Afternoon Shift Start • 1:00 PM – 5:00 PM',
                 theme: 'in',
               };
-            } else if (!todayRecord?.pmDeparture) {
+            } else if (!hasPmOut) {
               nextPunch = {
                 label: 'RECORD TIME OUT PM',
                 title: 'CLOCK OUT TIME OUT PM',

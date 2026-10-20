@@ -3622,6 +3622,18 @@ export async function resetPasswordDirect(
 // ─── Departmental / Required Documents Cloud Sync ───────────────────────────
 
 export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocument[]> {
+  // 1. Try server-side API proxy (service role)
+  try {
+    const apiRes = await fetch(`/api/documents?action=get-requirements&t=${Date.now()}`);
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data;
+      }
+    }
+  } catch {}
+
+  // 2. Direct public Supabase URL
   try {
     const res = await fetch(
       `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/requirements_store.json?t=${Date.now()}`
@@ -3636,6 +3648,7 @@ export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocum
     console.warn('fetchRequiredDocumentsFromStorage notice:', err);
   }
 
+  // 3. Supabase client download
   if (isSupabaseConfigured()) {
     try {
       const { data, error } = await supabase.storage.from('face-photos').download('settings/requirements_store.json');
@@ -3651,6 +3664,17 @@ export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocum
 }
 
 export async function saveRequiredDocumentsToStorage(docs: RequiredDocument[]): Promise<boolean> {
+  // 1. Try server-side API proxy (service role)
+  try {
+    const apiRes = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save-requirements', docs }),
+    });
+    if (apiRes.ok) return true;
+  } catch {}
+
+  // 2. Direct Supabase client upload
   if (!isSupabaseConfigured()) return false;
   try {
     const jsonStr = JSON.stringify(docs);

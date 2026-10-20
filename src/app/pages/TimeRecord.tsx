@@ -198,13 +198,17 @@ export function TimeRecord() {
 
   // Auto-slot selector logic
   const getRecommendedSlot = (rec: TimeRecordType | null, hour: number): AttendanceSlot => {
-    const hasAmIn = rec?.amArrival || (rec?.timeIn && !/pm/i.test(rec.timeIn) && parseInt(rec.timeIn, 10) < 12);
-    const hasAmOut = rec?.amDeparture || (rec?.timeOut && parseInt(rec.timeOut, 10) < 13 && rec.amArrival);
-    const hasPmIn = rec?.pmArrival || (rec?.timeIn && (/pm/i.test(rec.timeIn) || parseInt(rec.timeIn, 10) >= 12));
-    const hasPmOut = rec?.pmDeparture || (rec?.timeOut && (/pm/i.test(rec.timeOut) || parseInt(rec.timeOut, 10) >= 12));
+    const hasAmIn = Boolean(rec?.amArrival || (rec?.timeIn && !/pm/i.test(rec.timeIn) && parseInt(rec.timeIn, 10) < 12));
+    const hasAmOut = Boolean(rec?.amDeparture || (rec?.timeOut && parseInt(rec.timeOut, 10) < 13 && rec.amArrival));
+    const hasPmIn = Boolean(rec?.pmArrival || (rec?.timeIn && (/pm/i.test(rec.timeIn) || parseInt(rec.timeIn, 10) >= 12)));
+    const hasPmOut = Boolean(rec?.pmDeparture || (rec?.timeOut && (/pm/i.test(rec.timeOut) || parseInt(rec.timeOut, 10) >= 12)));
+
+    // STRICT RULE: Trainee CANNOT proceed if they have not timed in for AM Time In
+    if (!hasAmIn) {
+      return 'am_arrival';
+    }
 
     if (hour < 12) {
-      if (!hasAmIn) return 'am_arrival';
       if (!hasAmOut) return 'am_departure';
       if (!hasPmIn) return 'pm_arrival';
       if (!hasPmOut) return 'pm_departure';
@@ -212,7 +216,6 @@ export function TimeRecord() {
     } else {
       if (!hasPmIn) return 'pm_arrival';
       if (!hasPmOut) return 'pm_departure';
-      if (!hasAmIn) return 'am_arrival';
       if (!hasAmOut) return 'am_departure';
       return 'pm_departure';
     }
@@ -377,6 +380,11 @@ export function TimeRecord() {
     `${String(cutoffHour).padStart(2, '0')}:${String(cutoffMin).padStart(2, '0')}`
   );
 
+  const hasAmInRecorded = Boolean(
+    getSlotTime('amArrival') ||
+    (currentRecord?.timeIn && !/pm/i.test(currentRecord.timeIn) && parseInt(currentRecord.timeIn, 10) < 12)
+  );
+
   const proceedToFaceScan = () => {
     if (isStudent && !hasValidHte) {
       toast.error('Clock-in blocked: You must be assigned to an approved Host Training Establishment (HTE) workplace by your instructor first.');
@@ -384,8 +392,15 @@ export function TimeRecord() {
     }
     if (!geofencePassed) return;
 
-    if (selectedSlot === 'am_departure' && !currentRecord?.amArrival && !currentRecord?.timeIn) {
-      toast.error('No Time In AM recorded yet. It is recommended to record Time In AM first.');
+    // Strict Rule: Trainee CANNOT proceed if they have not timed in for AM Time In
+    if (selectedSlot !== 'am_arrival' && !hasAmInRecorded) {
+      toast.error('Clock-in blocked: You cannot proceed. Trainee must complete "Time In AM" before recording any other punch.');
+      return;
+    }
+
+    if (selectedSlot === 'pm_departure' && !getSlotTime('pmArrival')) {
+      toast.error('Clock-in blocked: You must record "Time In PM" before recording "Time Out PM".');
+      return;
     }
 
     if (!registeredPhotoSource && !registeredImageDataUrl) {
@@ -421,6 +436,18 @@ export function TimeRecord() {
         : (currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || currentUser?.id || '');
 
       const slot = selectedSlot;
+
+      // Strict validation before saving
+      const hasAmIn = Boolean(
+        getSlotTime('amArrival') ||
+        (currentRecord?.timeIn && !/pm/i.test(currentRecord.timeIn) && parseInt(currentRecord.timeIn, 10) < 12)
+      );
+      if (slot !== 'am_arrival' && !hasAmIn) {
+        toast.error('Clock-in blocked: You cannot proceed without recording Time In AM first.');
+        setIsProcessingAction(false);
+        return;
+      }
+
       setCompletedSlot(slot);
 
       const now = new Date();
@@ -662,17 +689,24 @@ export function TimeRecord() {
               const isVerified = Boolean((currentRecord as any)?.[slot.verifiedField] || (rawTime && currentRecord?.timeInFaceVerified));
               const isGeofenced = Boolean((currentRecord as any)?.[slot.geofenceField] || (rawTime && currentRecord?.timeInGeofenced));
               const isCurrent = selectedSlot === slot.id;
+              const isLocked = slot.id !== 'am_arrival' && !hasAmInRecorded;
 
               return (
                 <button
                   key={slot.id}
                   type="button"
                   onClick={() => {
+                    if (isLocked) {
+                      toast.error('Slot Locked: You cannot proceed to this punch until "Time In AM" is completed.');
+                      return;
+                    }
                     setSelectedSlot(slot.id);
                     userActionOverrideRef.current = true;
                   }}
                   className={`text-left rounded-2xl p-2.5 transition-all cursor-pointer relative border ${
-                    isCurrent
+                    isLocked
+                      ? 'bg-black/20 text-white/50 border-white/5 cursor-not-allowed opacity-65'
+                      : isCurrent
                       ? 'bg-white text-slate-900 border-white shadow-md ring-2 ring-blue-300'
                       : isPunched
                       ? 'bg-white/20 text-white border-white/20 hover:bg-white/25'
@@ -682,7 +716,9 @@ export function TimeRecord() {
                   <div className="flex items-center justify-between mb-1">
                     <span
                       className={`text-[9.5px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                        isCurrent
+                        isLocked
+                          ? 'bg-white/10 text-white/40'
+                          : isCurrent
                           ? 'bg-blue-100 text-blue-800'
                           : isPunched
                           ? 'bg-emerald-400/30 text-emerald-200'
@@ -692,29 +728,39 @@ export function TimeRecord() {
                       {slot.period}
                     </span>
                     <div className="flex items-center gap-1">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isPunched ? 'bg-green-400' : isCurrent ? 'bg-blue-400 animate-ping' : 'bg-gray-400'
-                        }`}
-                      />
-                      {isVerified && <Camera size={10} className={isCurrent ? 'text-green-600' : 'text-green-300'} />}
+                      {isLocked ? (
+                        <Lock size={10} className="text-amber-300" />
+                      ) : (
+                        <>
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isPunched ? 'bg-green-400' : isCurrent ? 'bg-blue-400 animate-ping' : 'bg-gray-400'
+                            }`}
+                          />
+                          {isVerified && <Camera size={10} className={isCurrent ? 'text-green-600' : 'text-green-300'} />}
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  <p className={`text-[11px] font-bold truncate ${isCurrent ? 'text-slate-800' : 'text-blue-100'}`}>
+                  <p className={`text-[11px] font-bold truncate ${isLocked ? 'text-white/40' : isCurrent ? 'text-slate-800' : 'text-blue-100'}`}>
                     {slot.label}
                   </p>
-                  <p className={`font-black text-sm tracking-tight mt-0.5 ${isCurrent ? 'text-blue-700' : 'text-white'}`}>
-                    {rawTime ? formatTime(rawTime) : '— —'}
+                  <p className={`font-black text-sm tracking-tight mt-0.5 ${isLocked ? 'text-amber-200/60' : isCurrent ? 'text-blue-700' : 'text-white'}`}>
+                    {isLocked ? '🔒 Locked' : rawTime ? formatTime(rawTime) : '— —'}
                   </p>
 
                   <div className="flex items-center gap-1 mt-1">
-                    {isPunched && isGeofenced && (
+                    {isLocked ? (
+                      <span className="text-[9px] text-amber-200/80 font-medium">
+                        Requires AM In
+                      </span>
+                    ) : isPunched && isGeofenced ? (
                       <span className={`text-[9px] flex items-center gap-0.5 ${isCurrent ? 'text-green-700' : 'text-green-300'}`}>
                         <MapPin size={8} /> GPS
                       </span>
-                    )}
-                    {isPunched && (
+                    ) : null}
+                    {!isLocked && isPunched && (
                       <span className={`text-[9px] font-semibold ml-auto ${isCurrent ? 'text-emerald-700' : 'text-emerald-300'}`}>
                         Recorded
                       </span>
@@ -815,6 +861,24 @@ export function TimeRecord() {
               </div>
             )}
 
+            {/* Morning Time In Required Alert Banner */}
+            {!hasAmInRecorded && (
+              <div className="mb-4 bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex items-start gap-3 shadow-sm text-xs text-amber-950">
+                <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-sm text-amber-900">⚠️ Morning "Time In AM" Required</p>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                      Required First
+                    </span>
+                  </div>
+                  <p className="mt-1 text-amber-800 leading-relaxed">
+                    Attendance policy strictly requires recording <strong>Time In AM</strong> before you can proceed to Time Out AM, Time In PM, or Time Out PM. All subsequent punch slots remain locked until morning attendance is recorded.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Shift & Slot Switcher (AM & PM) */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
@@ -838,6 +902,8 @@ export function TimeRecord() {
                   {(() => {
                     const amInTime = getSlotTime('amArrival');
                     const amOutTime = getSlotTime('amDeparture');
+                    const isAmOutLocked = !hasAmInRecorded;
+
                     return (
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
@@ -875,11 +941,17 @@ export function TimeRecord() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (isAmOutLocked) {
+                              toast.error('Slot Locked: You cannot record Time Out AM until Time In AM is completed.');
+                              return;
+                            }
                             setSelectedSlot('am_departure');
                             userActionOverrideRef.current = true;
                           }}
                           className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                            selectedSlot === 'am_departure'
+                            isAmOutLocked
+                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                              : selectedSlot === 'am_departure'
                               ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
                               : amOutTime
                               ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
@@ -888,19 +960,25 @@ export function TimeRecord() {
                         >
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="text-[10px] font-bold">Time Out</span>
-                            {amOutTime && (
+                            {isAmOutLocked ? (
+                              <Lock size={11} className="text-amber-500" />
+                            ) : amOutTime ? (
                               <CheckCircle2
                                 size={12}
                                 className={selectedSlot === 'am_departure' ? 'text-blue-200' : 'text-emerald-600'}
                               />
-                            )}
+                            ) : null}
                           </div>
                           <p
                             className={`text-xs font-black ${
-                              selectedSlot === 'am_departure' ? 'text-white' : 'text-slate-800'
+                              isAmOutLocked
+                                ? 'text-amber-600/80'
+                                : selectedSlot === 'am_departure'
+                                ? 'text-white'
+                                : 'text-slate-800'
                             }`}
                           >
-                            {amOutTime ? formatTime(amOutTime) : 'Not Clocked'}
+                            {isAmOutLocked ? 'Req. AM In' : amOutTime ? formatTime(amOutTime) : 'Not Clocked'}
                           </p>
                         </button>
                       </div>
@@ -921,16 +999,25 @@ export function TimeRecord() {
                   {(() => {
                     const pmInTime = getSlotTime('pmArrival');
                     const pmOutTime = getSlotTime('pmDeparture');
+                    const isPmInLocked = !hasAmInRecorded;
+                    const isPmOutLocked = !hasAmInRecorded || !pmInTime;
+
                     return (
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
+                            if (isPmInLocked) {
+                              toast.error('Slot Locked: You cannot proceed to Time In PM until Time In AM is recorded.');
+                              return;
+                            }
                             setSelectedSlot('pm_arrival');
                             userActionOverrideRef.current = true;
                           }}
                           className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                            selectedSlot === 'pm_arrival'
+                            isPmInLocked
+                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                              : selectedSlot === 'pm_arrival'
                               ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
                               : pmInTime
                               ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
@@ -939,30 +1026,46 @@ export function TimeRecord() {
                         >
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="text-[10px] font-bold">Time In</span>
-                            {pmInTime && (
+                            {isPmInLocked ? (
+                              <Lock size={11} className="text-amber-500" />
+                            ) : pmInTime ? (
                               <CheckCircle2
                                 size={12}
                                 className={selectedSlot === 'pm_arrival' ? 'text-blue-200' : 'text-emerald-600'}
                               />
-                            )}
+                            ) : null}
                           </div>
                           <p
                             className={`text-xs font-black ${
-                              selectedSlot === 'pm_arrival' ? 'text-white' : 'text-slate-800'
+                              isPmInLocked
+                                ? 'text-amber-600/80'
+                                : selectedSlot === 'pm_arrival'
+                                ? 'text-white'
+                                : 'text-slate-800'
                             }`}
                           >
-                            {pmInTime ? formatTime(pmInTime) : 'Not Clocked'}
+                            {isPmInLocked ? 'Req. AM In' : pmInTime ? formatTime(pmInTime) : 'Not Clocked'}
                           </p>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => {
+                            if (!hasAmInRecorded) {
+                              toast.error('Slot Locked: You cannot proceed to Time Out PM until Time In AM is recorded.');
+                              return;
+                            }
+                            if (!pmInTime) {
+                              toast.error('Slot Locked: You must record Time In PM before recording Time Out PM.');
+                              return;
+                            }
                             setSelectedSlot('pm_departure');
                             userActionOverrideRef.current = true;
                           }}
                           className={`p-2 rounded-xl text-left transition-all cursor-pointer border ${
-                            selectedSlot === 'pm_departure'
+                            isPmOutLocked
+                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                              : selectedSlot === 'pm_departure'
                               ? 'bg-blue-600 text-white border-blue-600 shadow-sm ring-2 ring-blue-300'
                               : pmOutTime
                               ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
@@ -971,19 +1074,25 @@ export function TimeRecord() {
                         >
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="text-[10px] font-bold">Time Out</span>
-                            {pmOutTime && (
+                            {isPmOutLocked ? (
+                              <Lock size={11} className="text-amber-500" />
+                            ) : pmOutTime ? (
                               <CheckCircle2
                                 size={12}
                                 className={selectedSlot === 'pm_departure' ? 'text-blue-200' : 'text-emerald-600'}
                               />
-                            )}
+                            ) : null}
                           </div>
                           <p
                             className={`text-xs font-black ${
-                              selectedSlot === 'pm_departure' ? 'text-white' : 'text-slate-800'
+                              isPmOutLocked
+                                ? 'text-amber-600/80'
+                                : selectedSlot === 'pm_departure'
+                                ? 'text-white'
+                                : 'text-slate-800'
                             }`}
                           >
-                            {pmOutTime ? formatTime(pmOutTime) : 'Not Clocked'}
+                            {!hasAmInRecorded ? 'Req. AM In' : !pmInTime ? 'Req. PM In' : pmOutTime ? formatTime(pmOutTime) : 'Not Clocked'}
                           </p>
                         </button>
                       </div>
@@ -1026,6 +1135,10 @@ export function TimeRecord() {
 
             <button
               onClick={() => {
+                if (selectedSlot !== 'am_arrival' && !hasAmInRecorded) {
+                  toast.error('Clock-in blocked: You cannot proceed. Trainee must complete "Time In AM" first.');
+                  return;
+                }
                 if (isStudent && !hasValidHte) {
                   toast.error('Clock-in blocked: Awaiting HTE workplace placement from your OJT Instructor.');
                   return;
@@ -1046,9 +1159,11 @@ export function TimeRecord() {
                 }
                 proceedToFaceScan();
               }}
-              disabled={geofenceStatus === 'outside' || (isStudent && !hasValidHte)}
+              disabled={geofenceStatus === 'outside' || (isStudent && !hasValidHte) || (selectedSlot !== 'am_arrival' && !hasAmInRecorded)}
               className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                isStudent && !hasValidHte
+                selectedSlot !== 'am_arrival' && !hasAmInRecorded
+                  ? 'bg-amber-100 text-amber-900 border-2 border-amber-300 cursor-not-allowed shadow-xs'
+                  : isStudent && !hasValidHte
                   ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
                   : geofencePassed
                     ? 'bg-blue-700 hover:bg-blue-800 text-white shadow-md cursor-pointer'
@@ -1059,7 +1174,12 @@ export function TimeRecord() {
                         : 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-2 border-sky-400 cursor-pointer shadow-sm'
               }`}
             >
-              {isStudent && !hasValidHte ? (
+              {selectedSlot !== 'am_arrival' && !hasAmInRecorded ? (
+                <>
+                  <Lock size={16} className="text-amber-700" />
+                  <span>Time In AM Required to Proceed</span>
+                </>
+              ) : isStudent && !hasValidHte ? (
                 <>
                   <Lock size={16} />
                   <span>Awaiting HTE Workplace Assignment</span>
