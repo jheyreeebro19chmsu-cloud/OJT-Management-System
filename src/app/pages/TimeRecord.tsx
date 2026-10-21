@@ -203,22 +203,19 @@ export function TimeRecord() {
     const hasPmIn = Boolean(rec?.pmArrival || (rec?.timeIn && (/pm/i.test(rec.timeIn) || parseInt(rec.timeIn, 10) >= 12)));
     const hasPmOut = Boolean(rec?.pmDeparture || (rec?.timeOut && (/pm/i.test(rec.timeOut) || parseInt(rec.timeOut, 10) >= 12)));
 
-    // STRICT RULE: Trainee CANNOT proceed if they have not timed in for AM Time In
+    // STRICT RULE: Trainee MUST time in for AM Time In first
     if (!hasAmIn) {
       return 'am_arrival';
     }
 
-    if (hour < 12) {
-      if (!hasAmOut) return 'am_departure';
-      if (!hasPmIn) return 'pm_arrival';
-      if (!hasPmOut) return 'pm_departure';
+    // STRICT RULE: Trainee MUST time out for AM Time Out before proceeding to PM
+    if (!hasAmOut) {
       return 'am_departure';
-    } else {
-      if (!hasPmIn) return 'pm_arrival';
-      if (!hasPmOut) return 'pm_departure';
-      if (!hasAmOut) return 'am_departure';
-      return 'pm_departure';
     }
+
+    if (!hasPmIn) return 'pm_arrival';
+    if (!hasPmOut) return 'pm_departure';
+    return 'pm_departure';
   };
 
   const [selectedSlot, setSelectedSlot] = useState<AttendanceSlot>(() => {
@@ -385,6 +382,11 @@ export function TimeRecord() {
     (currentRecord?.timeIn && !/pm/i.test(currentRecord.timeIn) && parseInt(currentRecord.timeIn, 10) < 12)
   );
 
+  const hasAmOutRecorded = Boolean(
+    getSlotTime('amDeparture') ||
+    (currentRecord?.timeOut && parseInt(currentRecord.timeOut, 10) < 13 && currentRecord.amArrival)
+  );
+
   const proceedToFaceScan = () => {
     if (isStudent && !hasValidHte) {
       toast.error('Clock-in blocked: You must be assigned to an approved Host Training Establishment (HTE) workplace by your instructor first.');
@@ -395,6 +397,12 @@ export function TimeRecord() {
     // Strict Rule: Trainee CANNOT proceed if they have not timed in for AM Time In
     if (selectedSlot !== 'am_arrival' && !hasAmInRecorded) {
       toast.error('Clock-in blocked: You cannot proceed. Trainee must complete "Time In AM" before recording any other punch.');
+      return;
+    }
+
+    // Strict Rule: Trainee MUST complete Time Out AM before proceeding to afternoon PM attendance
+    if ((selectedSlot === 'pm_arrival' || selectedSlot === 'pm_departure') && !hasAmOutRecorded) {
+      toast.error('Clock-in blocked: You cannot proceed. Trainee must complete "Time Out AM" before afternoon attendance.');
       return;
     }
 
@@ -442,8 +450,19 @@ export function TimeRecord() {
         getSlotTime('amArrival') ||
         (currentRecord?.timeIn && !/pm/i.test(currentRecord.timeIn) && parseInt(currentRecord.timeIn, 10) < 12)
       );
+      const hasAmOut = Boolean(
+        getSlotTime('amDeparture') ||
+        (currentRecord?.timeOut && parseInt(currentRecord.timeOut, 10) < 13 && currentRecord.amArrival)
+      );
+
       if (slot !== 'am_arrival' && !hasAmIn) {
         toast.error('Clock-in blocked: You cannot proceed without recording Time In AM first.');
+        setIsProcessingAction(false);
+        return;
+      }
+
+      if ((slot === 'pm_arrival' || slot === 'pm_departure') && !hasAmOut) {
+        toast.error('Clock-in blocked: Trainee must complete Time Out AM before proceeding to afternoon attendance.');
         setIsProcessingAction(false);
         return;
       }
@@ -689,15 +708,22 @@ export function TimeRecord() {
               const isVerified = Boolean((currentRecord as any)?.[slot.verifiedField] || (rawTime && currentRecord?.timeInFaceVerified));
               const isGeofenced = Boolean((currentRecord as any)?.[slot.geofenceField] || (rawTime && currentRecord?.timeInGeofenced));
               const isCurrent = selectedSlot === slot.id;
-              const isLocked = slot.id !== 'am_arrival' && !hasAmInRecorded;
+              const isLocked =
+                (slot.id !== 'am_arrival' && !hasAmInRecorded) ||
+                ((slot.id === 'pm_arrival' || slot.id === 'pm_departure') && !hasAmOutRecorded);
+              const lockMessage = !hasAmInRecorded ? 'Requires AM In' : 'Requires AM Out';
 
               return (
                 <button
                   key={slot.id}
                   type="button"
                   onClick={() => {
-                    if (isLocked) {
+                    if (slot.id !== 'am_arrival' && !hasAmInRecorded) {
                       toast.error('Slot Locked: You cannot proceed to this punch until "Time In AM" is completed.');
+                      return;
+                    }
+                    if ((slot.id === 'pm_arrival' || slot.id === 'pm_departure') && !hasAmOutRecorded) {
+                      toast.error('Slot Locked: Trainee must complete "Time Out AM" before proceeding to afternoon attendance.');
                       return;
                     }
                     setSelectedSlot(slot.id);
@@ -753,7 +779,7 @@ export function TimeRecord() {
                   <div className="flex items-center gap-1 mt-1">
                     {isLocked ? (
                       <span className="text-[9px] text-amber-200/80 font-medium">
-                        Requires AM In
+                        {lockMessage}
                       </span>
                     ) : isPunched && isGeofenced ? (
                       <span className={`text-[9px] flex items-center gap-0.5 ${isCurrent ? 'text-green-700' : 'text-green-300'}`}>
@@ -999,16 +1025,22 @@ export function TimeRecord() {
                   {(() => {
                     const pmInTime = getSlotTime('pmArrival');
                     const pmOutTime = getSlotTime('pmDeparture');
-                    const isPmInLocked = !hasAmInRecorded;
-                    const isPmOutLocked = !hasAmInRecorded || !pmInTime;
+                    const isPmInLocked = !hasAmInRecorded || !hasAmOutRecorded;
+                    const isPmOutLocked = !hasAmInRecorded || !hasAmOutRecorded || !pmInTime;
+                    const pmInLockLabel = !hasAmInRecorded ? 'Req. AM In' : 'Req. AM Out';
+                    const pmOutLockLabel = !hasAmInRecorded ? 'Req. AM In' : !hasAmOutRecorded ? 'Req. AM Out' : 'Req. PM In';
 
                     return (
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
-                            if (isPmInLocked) {
-                              toast.error('Slot Locked: You cannot proceed to Time In PM until Time In AM is recorded.');
+                            if (!hasAmInRecorded) {
+                              toast.error('Slot Locked: Trainee must complete "Time In AM" first.');
+                              return;
+                            }
+                            if (!hasAmOutRecorded) {
+                              toast.error('Slot Locked: Trainee must complete "Time Out AM" before proceeding to afternoon attendance.');
                               return;
                             }
                             setSelectedSlot('pm_arrival');
@@ -1044,7 +1076,7 @@ export function TimeRecord() {
                                 : 'text-slate-800'
                             }`}
                           >
-                            {isPmInLocked ? 'Req. AM In' : pmInTime ? formatTime(pmInTime) : 'Not Clocked'}
+                            {isPmInLocked ? pmInLockLabel : pmInTime ? formatTime(pmInTime) : 'Not Clocked'}
                           </p>
                         </button>
 
@@ -1052,7 +1084,11 @@ export function TimeRecord() {
                           type="button"
                           onClick={() => {
                             if (!hasAmInRecorded) {
-                              toast.error('Slot Locked: You cannot proceed to Time Out PM until Time In AM is recorded.');
+                              toast.error('Slot Locked: Trainee must complete "Time In AM" first.');
+                              return;
+                            }
+                            if (!hasAmOutRecorded) {
+                              toast.error('Slot Locked: Trainee must complete "Time Out AM" before proceeding to afternoon attendance.');
                               return;
                             }
                             if (!pmInTime) {
@@ -1092,7 +1128,7 @@ export function TimeRecord() {
                                 : 'text-slate-800'
                             }`}
                           >
-                            {!hasAmInRecorded ? 'Req. AM In' : !pmInTime ? 'Req. PM In' : pmOutTime ? formatTime(pmOutTime) : 'Not Clocked'}
+                            {isPmOutLocked ? pmOutLockLabel : pmOutTime ? formatTime(pmOutTime) : 'Not Clocked'}
                           </p>
                         </button>
                       </div>
@@ -1139,6 +1175,10 @@ export function TimeRecord() {
                   toast.error('Clock-in blocked: You cannot proceed. Trainee must complete "Time In AM" first.');
                   return;
                 }
+                if ((selectedSlot === 'pm_arrival' || selectedSlot === 'pm_departure') && !hasAmOutRecorded) {
+                  toast.error('Clock-in blocked: You cannot proceed. Trainee must complete "Time Out AM" before afternoon attendance.');
+                  return;
+                }
                 if (isStudent && !hasValidHte) {
                   toast.error('Clock-in blocked: Awaiting HTE workplace placement from your OJT Instructor.');
                   return;
@@ -1159,9 +1199,15 @@ export function TimeRecord() {
                 }
                 proceedToFaceScan();
               }}
-              disabled={geofenceStatus === 'outside' || (isStudent && !hasValidHte) || (selectedSlot !== 'am_arrival' && !hasAmInRecorded)}
+              disabled={
+                geofenceStatus === 'outside' ||
+                (isStudent && !hasValidHte) ||
+                (selectedSlot !== 'am_arrival' && !hasAmInRecorded) ||
+                ((selectedSlot === 'pm_arrival' || selectedSlot === 'pm_departure') && !hasAmOutRecorded)
+              }
               className={`w-full mt-4 py-3 rounded-2xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                selectedSlot !== 'am_arrival' && !hasAmInRecorded
+                (selectedSlot !== 'am_arrival' && !hasAmInRecorded) ||
+                ((selectedSlot === 'pm_arrival' || selectedSlot === 'pm_departure') && !hasAmOutRecorded)
                   ? 'bg-amber-100 text-amber-900 border-2 border-amber-300 cursor-not-allowed shadow-xs'
                   : isStudent && !hasValidHte
                   ? 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
@@ -1178,6 +1224,11 @@ export function TimeRecord() {
                 <>
                   <Lock size={16} className="text-amber-700" />
                   <span>Time In AM Required to Proceed</span>
+                </>
+              ) : (selectedSlot === 'pm_arrival' || selectedSlot === 'pm_departure') && !hasAmOutRecorded ? (
+                <>
+                  <Lock size={16} className="text-amber-700" />
+                  <span>Time Out AM Required to Proceed</span>
                 </>
               ) : isStudent && !hasValidHte ? (
                 <>

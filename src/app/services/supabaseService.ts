@@ -3092,6 +3092,12 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
         amDeparture = data.time_out;
       } else {
         pmDeparture = data.time_out;
+        if (amArrival && !amDeparture) {
+          amDeparture = '12:00:00';
+        }
+        if (amArrival && !pmArrival) {
+          pmArrival = '13:00:00';
+        }
       }
     }
   }

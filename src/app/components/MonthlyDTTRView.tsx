@@ -331,6 +331,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           autoAmOut = format12Str(autoRec.amDeparture);
           autoPmIn = format12Str(autoRec.pmArrival);
           autoPmOut = format12Str(autoRec.pmDeparture);
+
+          // For days spanning morning and afternoon, official DTTR requires both Time In and Time Out in AM (12:00 PM) and PM (1:00 PM)
+          const effOut = autoPmOut || format12Str(autoRec.timeOut);
+          const inMins = parseTimeToMinutes(autoAmIn);
+          const outMins = parseTimeToMinutes(effOut);
+          if (inMins !== null && outMins !== null && inMins < 12 * 60 && outMins >= 12 * 60) {
+            if (!autoAmOut) autoAmOut = '12:00 PM';
+            if (!autoPmIn) autoPmIn = '1:00 PM';
+            if (!autoPmOut) autoPmOut = effOut;
+          }
+
           if (!autoHours || autoHours === 0) {
             autoHours = computeHoursFromTimes({
               day,

@@ -5032,6 +5032,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             baseRecord.amDeparture = baseRecord.timeOut;
           } else {
             baseRecord.pmDeparture = baseRecord.timeOut;
+            if (baseRecord.amArrival && !baseRecord.amDeparture) {
+              baseRecord.amDeparture = '12:00:00';
+            }
+            if (baseRecord.amArrival && !baseRecord.pmArrival) {
+              baseRecord.pmArrival = '13:00:00';
+            }
           }
         }
       }
