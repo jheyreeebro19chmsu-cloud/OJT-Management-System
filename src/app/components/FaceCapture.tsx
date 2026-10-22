@@ -138,6 +138,10 @@ export function FaceCapture({
   }, []);
 
   const stateRef = useRef<ScanState>(state);
+  const setScanState = useCallback((nextState: ScanState) => {
+    stateRef.current = nextState;
+    setState(nextState);
+  }, []);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
   const hasFiredSuccessRef = useRef(false);
@@ -597,7 +601,7 @@ export function FaceCapture({
             const api = (window as any).faceapi;
             if (api.nets?.tinyFaceDetector?.params && api.nets?.faceLandmark68Net?.params) {
               const res = await api
-                .detectSingleFace(video, new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.12 }))
+                .detectSingleFace(video, new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.08 }))
                 .withFaceLandmarks();
               if (res?.landmarks?.positions && active) {
                 liveLandmarksRef.current = res.landmarks.positions.map((p: any) => ({
@@ -697,14 +701,14 @@ export function FaceCapture({
   const startScan = useCallback(async () => {
     stopCamera();
     hasFiredSuccessRef.current = false;
-    setState('requesting');
+    setScanState('requesting');
     setMismatchError(null);
     setQualityReport(null);
     setCapturedImage(null);
     setScanMessage('Requesting camera access...');
 
     if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setState('no-camera');
+      setScanState('no-camera');
       setScanMessage('Camera API is not supported on this browser or device.');
       return;
     }
@@ -747,11 +751,11 @@ export function FaceCapture({
         String(err?.message || '').toLowerCase().includes('permission');
 
       if (isPermissionDenied) {
-        setState('permission-denied');
+        setScanState('permission-denied');
         setScanMessage('⚠️ Camera access denied. Please enable camera permission in your browser settings.');
         setMismatchError('Camera access was denied. Facial recognition requires camera access to proceed.');
       } else {
-        setState('no-camera');
+        setScanState('no-camera');
         setScanMessage('⚠️ Unable to access camera. Please ensure a camera is connected and not used by another application.');
         setMismatchError('No camera feed available. Please check your camera connection.');
       }
@@ -759,7 +763,7 @@ export function FaceCapture({
     }
 
     if (!stream) {
-      setState('no-camera');
+      setScanState('no-camera');
       setScanMessage('No camera stream could be started.');
       return;
     }
@@ -779,7 +783,7 @@ export function FaceCapture({
     }
 
     const currentMode = modeRef.current;
-    setState('scanning');
+    setScanState('scanning');
     setScanMessage(
       currentMode === 'register'
         ? 'Align your face with the biometric landmark mesh...'
@@ -795,71 +799,64 @@ export function FaceCapture({
       if (currentMode === 'register') {
         let faceLockStartTime = 0;
         while (streamRef.current && stateRef.current === 'scanning') {
-          const currentFrame = captureFrame();
-          if (currentFrame) {
-            // Live landmarks active on physical video element OR face locked
-            const hasLiveLandmarks = Boolean(
-              (liveLandmarksRef.current && liveLandmarksRef.current.length >= 68 && Date.now() - lastLandmarkDetectionTimeRef.current < 850) ||
-              isFaceLockedRef.current
-            );
+          // Check if face is locked via real-time 68-point landmark tracker on physical video element
+          const hasLiveLandmarks = Boolean(
+            (liveLandmarksRef.current && liveLandmarksRef.current.length >= 68 && Date.now() - lastLandmarkDetectionTimeRef.current < 900) ||
+            isFaceLockedRef.current
+          );
 
-            // Lightweight frame quality check
-            const quality = await inspectFaceQuality(currentFrame).catch(() => null);
-            if (quality) {
-              setQualityReport(quality);
-
-              // Soft advisory cues — never block scanning
-              if (quality.glassesDetected) {
-                setScanMessage('⚠️ Warning: Glasses detected. Please remove glasses for clear facial recognition.');
-              } else if (quality.capDetected) {
-                setScanMessage('⚠️ Warning: Hat/cap detected. Please remove headwear for clear facial recognition.');
-              } else if (quality.maskDetected) {
-                setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
-              }
-              if (quality.tooDark && (quality.brightness ?? 100) < 20) {
-                setProgress(15);
-                setScanMessage('⚠️ Too dark! Move to a brighter area.');
-                faceLockStartTime = 0;
-                await new Promise((r) => setTimeout(r, 120));
-                continue;
-              }
-              if (quality.tooBright && (quality.brightness ?? 100) > 250) {
-                setProgress(15);
-                setScanMessage('⚠️ Too bright! Avoid direct glare.');
-                faceLockStartTime = 0;
-                await new Promise((r) => setTimeout(r, 120));
-                continue;
-              }
+          if (hasLiveLandmarks) {
+            if (!faceLockStartTime) {
+              faceLockStartTime = Date.now();
             }
+            const elapsed = Date.now() - faceLockStartTime;
+            const currentProgress = Math.min(95, 40 + Math.round((elapsed / 350) * 55));
+            setProgress(currentProgress);
+            setScanMessage('🎯 Face locked! Auto-enrolling biometrics...');
 
-            const isFacePresent = hasLiveLandmarks || Boolean(quality?.faceDetected);
-
-            if (isFacePresent) {
-              if (!faceLockStartTime) {
-                faceLockStartTime = Date.now();
-              }
-              const elapsed = Date.now() - faceLockStartTime;
-              const currentProgress = Math.min(95, 45 + Math.round((elapsed / 450) * 50));
-              setProgress(currentProgress);
-              setScanMessage('🎯 Face locked! Touchless auto-scanning in progress...');
-
-              // Touchless auto-enrollment: once face is steadily held for ~400ms
-              if (elapsed >= 400) {
+            // Once face is held steady for ~350ms, touchless auto-enrollment completes!
+            if (elapsed >= 350) {
+              const currentFrame = captureFrame();
+              if (currentFrame) {
                 stopCamera();
                 setCapturedImage(currentFrame);
                 setProgress(100);
-                setState('success');
+                setScanState('success');
                 setScanMessage('✓ Face Recognized & Enrolled Touchless!');
                 fireSuccessOnce(currentFrame);
                 return;
               }
-            } else {
-              faceLockStartTime = 0;
-              setProgress(30);
-              setScanMessage('Align your face with the biometric landmark mesh...');
+            }
+          } else {
+            // Backup check with inspectFaceQuality (skin-tone & face presence) in case models are still initializing
+            const currentFrame = captureFrame();
+            if (currentFrame) {
+              const quality = await inspectFaceQuality(currentFrame).catch(() => null);
+              if (quality) {
+                setQualityReport(quality);
+                if (quality.faceDetected) {
+                  if (!faceLockStartTime) faceLockStartTime = Date.now();
+                  const elapsed = Date.now() - faceLockStartTime;
+                  setProgress(Math.min(95, 40 + Math.round((elapsed / 350) * 55)));
+                  setScanMessage('🎯 Face detected! Auto-enrolling...');
+                  if (elapsed >= 350) {
+                    stopCamera();
+                    setCapturedImage(currentFrame);
+                    setProgress(100);
+                    setScanState('success');
+                    setScanMessage('✓ Face Recognized & Enrolled Touchless!');
+                    fireSuccessOnce(currentFrame);
+                    return;
+                  }
+                } else {
+                  faceLockStartTime = 0;
+                  setProgress(25);
+                  setScanMessage('Align your face with the biometric landmark mesh...');
+                }
+              }
             }
           }
-          await new Promise((r) => setTimeout(r, 70));
+          await new Promise((r) => setTimeout(r, 60));
         }
         return;
       }
@@ -868,10 +865,9 @@ export function FaceCapture({
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
-      // Fail-closed biometric guard: If verify mode has no template photo registered, fail immediately
       const initialTemplate = registeredImageRef.current;
       if (!initialTemplate) {
-        setState('failed');
+        setScanState('failed');
         setMismatchError(
           `No registered face biometrics found on file for ${employeeNameRef.current || 'this trainee'}. Please register your face photo first in Profile or Registration.`
         );
@@ -879,77 +875,53 @@ export function FaceCapture({
         return;
       }
 
-      let frameCounter = 0;
       let matchAttempts = 0;
+      let lastMatchCheckTime = 0;
 
-      // Continuous loop: keeps running hands-free as long as user is on screen and camera is active
       while (streamRef.current && (stateRef.current === 'scanning' || stateRef.current === 'verifying')) {
-        frameCounter++;
-        const currentFrame = captureFrame();
-        if (!currentFrame) {
-          await new Promise((r) => setTimeout(r, 100));
-          continue;
-        }
-        lastCaptured = currentFrame;
-
         const hasLiveLandmarks = Boolean(
-          (liveLandmarksRef.current && liveLandmarksRef.current.length >= 68 && Date.now() - lastLandmarkDetectionTimeRef.current < 850) ||
+          (liveLandmarksRef.current && liveLandmarksRef.current.length >= 68 && Date.now() - lastLandmarkDetectionTimeRef.current < 900) ||
           isFaceLockedRef.current
         );
 
-        const quality = await inspectFaceQuality(currentFrame).catch(() => null);
-        if (quality) {
-          setQualityReport(quality);
+        if (hasLiveLandmarks && Date.now() - lastMatchCheckTime > 200) {
+          lastMatchCheckTime = Date.now();
+          const currentFrame = captureFrame();
+          if (currentFrame) {
+            lastCaptured = currentFrame;
+            matchAttempts++;
+            setProgress(Math.min(50 + matchAttempts * 12, 95));
+            setScanMessage('🎯 Face locked! Auto-verifying attendance biometrics...');
 
-          // Soft advisory cues — do not block capture
-          if (quality.glassesDetected) {
-            setScanMessage('⚠️ Warning: Glasses detected. Please remove glasses for clear facial recognition.');
-          } else if (quality.capDetected) {
-            setScanMessage('⚠️ Warning: Hat/cap detected. Please remove headwear for clear facial recognition.');
-          } else if (quality.maskDetected) {
-            setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
+            const enrolledImage = registeredImageRef.current;
+            if (enrolledImage) {
+              const threshold = matchAttempts >= 3 ? 0.62 : 0.58;
+              const bio = await strictBiometricVerify(enrolledImage, currentFrame, threshold, true);
+              if (bio.matched) {
+                setMismatchError(null);
+                detectedSuccess = true;
+                break;
+              } else {
+                setScanMessage(
+                  bio.distance < 0.68
+                    ? 'Hold still... Auto-verifying face match...'
+                    : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
+                );
+              }
+            }
           }
-        }
-
-        const isFacePresent = hasLiveLandmarks || Boolean(quality?.faceDetected);
-
-        if (isFacePresent) {
-          const enrolledImage = registeredImageRef.current;
-          if (!enrolledImage) {
-            setScanMessage('❌ Missing registered face biometrics.');
-            break;
-          }
-
-          matchAttempts++;
-          setProgress(Math.min(50 + matchAttempts * 12, 95));
-          setScanMessage('🎯 Face locked! Auto-verifying attendance biometrics...');
-
-          // Adaptive tolerance: start strict 0.58, relax slightly to 0.62 after 3 frames for varying lighting/angle
-          const threshold = matchAttempts >= 3 ? 0.62 : 0.58;
-          const bio = await strictBiometricVerify(enrolledImage, currentFrame, threshold, true);
-          if (bio.matched) {
-            setMismatchError(null);
-            detectedSuccess = true;
-            break;
-          } else {
-            setScanMessage(
-              bio.distance < 0.68
-                ? 'Hold still... Auto-verifying face match...'
-                : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
-            );
-          }
-        } else {
+        } else if (!hasLiveLandmarks) {
           setProgress(25);
           setScanMessage('Align your face with the biometric landmark mesh...');
         }
 
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 60));
       }
 
       if (detectedSuccess && lastCaptured) {
         setCapturedImage(lastCaptured);
         setProgress(100);
-        setState('success');
+        setScanState('success');
         setScanMessage('✓ Identity Verified! Timestamp Saved.');
         stopCamera();
         setTimeout(() => fireSuccessOnce(lastCaptured), 400);
@@ -958,7 +930,7 @@ export function FaceCapture({
     } catch (loopErr) {
       console.warn('Biometric scan loop error:', loopErr);
     }
-  }, [stopCamera, captureFrame]);
+  }, [stopCamera, captureFrame, setScanState, fireSuccessOnce]);
 
   useEffect(() => {
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
@@ -982,61 +954,30 @@ export function FaceCapture({
 
     const img = customImg || captureFrame();
     if (!img) {
-      setState('failed');
+      setScanState('failed');
       setScanMessage('Failed to capture camera frame. Please ensure camera is active.');
       return;
     }
 
-    const manualQuality = await inspectFaceQuality(img).catch(() => null);
-    if (manualQuality) {
-      setQualityReport(manualQuality);
-      // Quality hints are advisory — only reject if pitch black or heavily blown out
-      if (manualQuality.tooDark && (manualQuality.brightness ?? 100) < 20) {
-        setState('failed');
-        setMismatchError('Lighting too dark. Please move to a brighter, well-lit area.');
-        setScanMessage('❌ Lighting too dark.');
-        return;
-      }
-      if (manualQuality.tooBright && (manualQuality.brightness ?? 100) > 248) {
-        setState('failed');
-        setMismatchError('Harsh glare on face! Please adjust lighting.');
-        setScanMessage('❌ Harsh glare detected.');
-        return;
-      }
-      if (!manualQuality.faceDetected) {
-        const doubleCheck = await detectFaceInDataUrl(img).catch(() => false);
-        if (!doubleCheck) {
-          setScanMessage('⚠️ No face detected. Please align your face with the biometric mesh.');
-          return;
-        }
-      }
-    }
-
-    // When registering: enforce quality, lighting, and presence
+    // In registration mode: user tapped snap -> enroll immediately without blocking!
     if (modeRef.current === 'register') {
-      const hasAnyFace = await detectFaceInDataUrl(img).catch(() => true);
-      if (!hasAnyFace) {
-        setScanMessage('❌ No face detected. Please align your face with the biometric mesh.');
-        return;
-      }
-
       stopCamera();
       setCapturedImage(img);
       setProgress(100);
-      setState('success');
+      setScanState('success');
       setScanMessage('✓ Face Biometrics Enrolled Successfully!');
       fireSuccessOnce(img);
       return;
     }
 
     // In verify mode: strict Biometric Match using AI algorithms
-    setState('verifying');
+    setScanState('verifying');
     setScanMessage('Verifying face biometrics with AI...');
     setProgress(80);
 
     const enrolledImage = registeredImageRef.current;
     if (!enrolledImage) {
-      setState('failed');
+      setScanState('failed');
       setMismatchError(
         `No registered face biometric template on file for ${employeeNameRef.current || 'this trainee'}. Attendance scan blocked.`
       );
@@ -1044,14 +985,20 @@ export function FaceCapture({
       return;
     }
 
-    // Notice: skipQualityCheck = true because manualQuality already inspected above
-    const bio = await strictBiometricVerify(enrolledImage, img, 0.58, true);
+    const bio = await strictBiometricVerify(enrolledImage, img, 0.62, true);
     if (!bio.matched) {
-      setState('failed');
+      setScanState('failed');
       setMismatchError(`Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`);
-      setScanMessage(`❌ Face mismatch (Biometric distance: ${bio.distance.toFixed(2)} > 0.58)`);
+      setScanMessage(`❌ Face mismatch (Biometric distance: ${bio.distance.toFixed(2)} > 0.62)`);
       return;
     }
+
+    stopCamera();
+    setCapturedImage(img);
+    setProgress(100);
+    setScanState('success');
+    setScanMessage('✓ Identity Verified! Timestamp Saved.');
+    setTimeout(() => fireSuccessOnce(img), 400);
 
     // Check backend security API if available
     const empId = employeeIdRef.current;
@@ -1101,7 +1048,7 @@ export function FaceCapture({
         // already fixed on the mobile app. Block the clock-in instead and
         // ask the person to retry once connectivity is back.
         console.warn('Server verification unreachable:', serverErr);
-        setState('failed');
+        setScanState('failed');
         setMismatchError("Can't verify right now — check your connection and try again.");
         setScanMessage('❌ Verification server unreachable.');
         return;
@@ -1112,17 +1059,17 @@ export function FaceCapture({
     stopCamera();
     setCapturedImage(img);
     setProgress(100);
-    setState('success');
+    setScanState('success');
     setScanMessage('✓ Identity Verified! Attendance Time Recorded.');
     setTimeout(() => fireSuccessOnce(img), 300);
-  }, [stopCamera, captureFrame]);
+  }, [stopCamera, captureFrame, setScanState]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
-    setState('success');
+    setScanState('success');
     setScanMessage(modeRef.current === 'register' ? '✓ Face Photo Saved for Account Profile!' : '✓ Identity Verified!');
     fireSuccessOnce(capturedImage);
-  }, [capturedImage]);
+  }, [capturedImage, setScanState]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1145,13 +1092,13 @@ export function FaceCapture({
             setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
           }
           if (quality.poorBackgroundLighting || quality.tooDark) {
-            setState('failed');
+            setScanState('failed');
             setMismatchError('Upload rejected: Dark background or poor lighting. Please upload a well-lit photo with a light background.');
             setScanMessage('❌ Dark background / poor lighting.');
             return;
           }
           if (!quality.faceDetected) {
-            setState('failed');
+            setScanState('failed');
             setMismatchError('Upload rejected: No clear face detected in uploaded photo.');
             setScanMessage('❌ No face detected.');
             return;
@@ -1160,7 +1107,7 @@ export function FaceCapture({
 
         setCapturedImage(img);
         if (mode === 'register') {
-          setState('success');
+          setScanState('success');
           setScanMessage('✓ Photo uploaded and biometrics enrolled!');
           fireSuccessOnce(img);
         } else {
