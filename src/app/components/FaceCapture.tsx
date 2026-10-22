@@ -15,6 +15,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
+  User,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
@@ -100,6 +102,11 @@ export function FaceCapture({
   const liveLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
   const smoothedLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
   const lastLandmarkDetectionTimeRef = useRef<number>(0);
+
+  // Hands-free auto-scan tracking refs
+  const faceDetectedSinceRef = useRef<number>(0);
+  const [isFaceLocked, setIsFaceLocked] = useState<boolean>(false);
+  const isFaceLockedRef = useRef<boolean>(false);
 
   const [state, setState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
@@ -403,9 +410,9 @@ export function FaceCapture({
 
       // 3. Biometric HUD Target Corner Brackets
       ctx.save();
-      const cornerColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : '#38bdf8';
+      const cornerColor = isSuccess ? '#22c55e' : isFailed ? '#ef4444' : (isLiveTracked || isFaceLockedRef.current) ? '#22c55e' : '#38bdf8';
       ctx.strokeStyle = cornerColor;
-      ctx.globalAlpha = isSuccess ? 0.90 : isFailed ? 0.90 : 0.55;
+      ctx.globalAlpha = (isSuccess || isLiveTracked || isFaceLockedRef.current) ? 0.90 : isFailed ? 0.90 : 0.55;
       ctx.lineWidth = 2.0 * dpr;
       ctx.shadowColor = cornerColor;
       ctx.shadowBlur = 4 * dpr;
@@ -598,6 +605,15 @@ export function FaceCapture({
                   y: Number(p.y),
                 }));
                 lastLandmarkDetectionTimeRef.current = Date.now();
+                if (!isFaceLockedRef.current) {
+                  isFaceLockedRef.current = true;
+                  setIsFaceLocked(true);
+                }
+              } else if (Date.now() - lastLandmarkDetectionTimeRef.current > 700) {
+                if (isFaceLockedRef.current) {
+                  isFaceLockedRef.current = false;
+                  setIsFaceLocked(false);
+                }
               }
             }
           }
@@ -775,11 +791,19 @@ export function FaceCapture({
     loadFaceModels().catch(() => {});
 
     try {
-      // REGISTRATION MODE: instant scan when face is detected
+      // REGISTRATION MODE: hands-free auto-scan when face is aligned with biometric mesh
       if (currentMode === 'register') {
+        let faceLockStartTime = 0;
         while (streamRef.current && stateRef.current === 'scanning') {
           const currentFrame = captureFrame();
           if (currentFrame) {
+            // Live landmarks active on physical video element OR face locked
+            const hasLiveLandmarks = Boolean(
+              (liveLandmarksRef.current && liveLandmarksRef.current.length >= 68 && Date.now() - lastLandmarkDetectionTimeRef.current < 850) ||
+              isFaceLockedRef.current
+            );
+
+            // Lightweight frame quality check
             const quality = await inspectFaceQuality(currentFrame).catch(() => null);
             if (quality) {
               setQualityReport(quality);
@@ -795,45 +819,52 @@ export function FaceCapture({
               if (quality.tooDark && (quality.brightness ?? 100) < 20) {
                 setProgress(15);
                 setScanMessage('⚠️ Too dark! Move to a brighter area.');
-                await new Promise((r) => setTimeout(r, 150));
+                faceLockStartTime = 0;
+                await new Promise((r) => setTimeout(r, 120));
                 continue;
               }
               if (quality.tooBright && (quality.brightness ?? 100) > 250) {
                 setProgress(15);
                 setScanMessage('⚠️ Too bright! Avoid direct glare.');
-                await new Promise((r) => setTimeout(r, 150));
+                faceLockStartTime = 0;
+                await new Promise((r) => setTimeout(r, 120));
                 continue;
               }
+            }
 
-              if (quality.faceDetected) {
+            const isFacePresent = hasLiveLandmarks || Boolean(quality?.faceDetected);
+
+            if (isFacePresent) {
+              if (!faceLockStartTime) {
+                faceLockStartTime = Date.now();
+              }
+              const elapsed = Date.now() - faceLockStartTime;
+              const currentProgress = Math.min(95, 45 + Math.round((elapsed / 450) * 50));
+              setProgress(currentProgress);
+              setScanMessage('🎯 Face locked! Touchless auto-scanning in progress...');
+
+              // Touchless auto-enrollment: once face is steadily held for ~400ms
+              if (elapsed >= 400) {
                 stopCamera();
                 setCapturedImage(currentFrame);
                 setProgress(100);
                 setState('success');
-                setScanMessage('✓ Face Recognized & Enrolled!');
+                setScanMessage('✓ Face Recognized & Enrolled Touchless!');
                 fireSuccessOnce(currentFrame);
                 return;
-              } else {
-                setProgress(35);
-                setScanMessage('Align your face with the biometric landmark mesh...');
               }
             } else {
-              // Fallback if inspection unavailable: register frame immediately
-              stopCamera();
-              setCapturedImage(currentFrame);
-              setProgress(100);
-              setState('success');
-              setScanMessage('✓ Face Recognized & Enrolled!');
-              fireSuccessOnce(currentFrame);
-              return;
+              faceLockStartTime = 0;
+              setProgress(30);
+              setScanMessage('Align your face with the biometric landmark mesh...');
             }
           }
-          await new Promise((r) => setTimeout(r, 100));
+          await new Promise((r) => setTimeout(r, 70));
         }
         return;
       }
 
-      // VERIFICATION MODE: continuous matching live camera stream against registered student photo
+      // VERIFICATION MODE: hands-free continuous matching live camera stream against registered student photo
       let detectedSuccess = false;
       let lastCaptured: string | undefined = undefined;
 
@@ -851,7 +882,7 @@ export function FaceCapture({
       let frameCounter = 0;
       let matchAttempts = 0;
 
-      // Continuous loop: keeps running as long as user is on screen and camera is active
+      // Continuous loop: keeps running hands-free as long as user is on screen and camera is active
       while (streamRef.current && (stateRef.current === 'scanning' || stateRef.current === 'verifying')) {
         frameCounter++;
         const currentFrame = captureFrame();
@@ -860,6 +891,11 @@ export function FaceCapture({
           continue;
         }
         lastCaptured = currentFrame;
+
+        const hasLiveLandmarks = Boolean(
+          (liveLandmarksRef.current && liveLandmarksRef.current.length >= 68 && Date.now() - lastLandmarkDetectionTimeRef.current < 850) ||
+          isFaceLockedRef.current
+        );
 
         const quality = await inspectFaceQuality(currentFrame).catch(() => null);
         if (quality) {
@@ -873,39 +909,41 @@ export function FaceCapture({
           } else if (quality.maskDetected) {
             setScanMessage('⚠️ Warning: Face mask detected. Please remove mask for clear facial recognition.');
           }
-
-          if (quality.faceDetected) {
-            const enrolledImage = registeredImageRef.current;
-            if (!enrolledImage) {
-              setScanMessage('❌ Missing registered face biometrics.');
-              break;
-            }
-
-            matchAttempts++;
-            setProgress(Math.min(50 + matchAttempts * 10, 95));
-            setScanMessage('Scanning face biometrics with AI...');
-
-            const bio = await strictBiometricVerify(enrolledImage, currentFrame, 0.58, true);
-            if (bio.matched) {
-              setMismatchError(null);
-              detectedSuccess = true;
-              break;
-            } else {
-              setScanMessage(
-                bio.distance < 0.68
-                  ? 'Hold still... Verifying face...'
-                  : matchAttempts > 6
-                    ? 'Hold still or tap "Scan & Verify Now"'
-                    : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
-              );
-            }
-          } else {
-            setProgress(20);
-            setScanMessage('Align your face with the biometric landmark mesh...');
-          }
         }
 
-        await new Promise((r) => setTimeout(r, 100));
+        const isFacePresent = hasLiveLandmarks || Boolean(quality?.faceDetected);
+
+        if (isFacePresent) {
+          const enrolledImage = registeredImageRef.current;
+          if (!enrolledImage) {
+            setScanMessage('❌ Missing registered face biometrics.');
+            break;
+          }
+
+          matchAttempts++;
+          setProgress(Math.min(50 + matchAttempts * 12, 95));
+          setScanMessage('🎯 Face locked! Auto-verifying attendance biometrics...');
+
+          // Adaptive tolerance: start strict 0.58, relax slightly to 0.62 after 3 frames for varying lighting/angle
+          const threshold = matchAttempts >= 3 ? 0.62 : 0.58;
+          const bio = await strictBiometricVerify(enrolledImage, currentFrame, threshold, true);
+          if (bio.matched) {
+            setMismatchError(null);
+            detectedSuccess = true;
+            break;
+          } else {
+            setScanMessage(
+              bio.distance < 0.68
+                ? 'Hold still... Auto-verifying face match...'
+                : `⚠️ Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
+            );
+          }
+        } else {
+          setProgress(25);
+          setScanMessage('Align your face with the biometric landmark mesh...');
+        }
+
+        await new Promise((r) => setTimeout(r, 80));
       }
 
       if (detectedSuccess && lastCaptured) {
@@ -914,7 +952,7 @@ export function FaceCapture({
         setState('success');
         setScanMessage('✓ Identity Verified! Timestamp Saved.');
         stopCamera();
-        setTimeout(() => fireSuccessOnce(lastCaptured), 600);
+        setTimeout(() => fireSuccessOnce(lastCaptured), 400);
         return;
       }
     } catch (loopErr) {
@@ -1238,59 +1276,61 @@ export function FaceCapture({
             />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ transform: 'scaleX(-1)' }} />
 
-            {/* Movable Face Grid Guide & Control Bar */}
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-auto z-20">
+            {/* Top Center: Hands-Free Auto-Scan & Face Lock Status Pill */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none whitespace-nowrap">
               <div
-                className={`px-3 py-1 rounded-full backdrop-blur-md text-[10px] font-bold flex items-center gap-1.5 shadow-sm transition-all ${
-                  isDragging
-                    ? 'bg-cyan-500/95 text-slate-950 shadow-cyan-500/40 scale-105'
-                    : (gridOffset.x !== 0 || gridOffset.y !== 0)
-                      ? 'bg-cyan-950/85 border border-cyan-500/60 text-cyan-300'
-                      : 'bg-black/65 border border-white/10 text-white'
+                className={`px-3.5 py-1 rounded-full backdrop-blur-md text-[10.5px] font-bold flex items-center gap-1.5 shadow-lg transition-all duration-300 ${
+                  isFaceLocked
+                    ? 'bg-emerald-600/95 border border-emerald-400 text-white shadow-emerald-500/35 scale-105'
+                    : 'bg-black/70 border border-white/15 text-white/95'
                 }`}
               >
-                <Move size={11} className={isDragging ? 'text-slate-950 animate-spin' : 'text-cyan-400'} />
-                <span>
-                  {isDragging
-                    ? 'Dragging Face Grid...'
-                    : (gridOffset.x !== 0 || gridOffset.y !== 0)
-                      ? `Grid: ${gridOffset.x > 0 ? '+' : ''}${gridOffset.x}, ${gridOffset.y > 0 ? '+' : ''}${gridOffset.y}`
-                      : 'Drag Face Grid to Move'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {(gridOffset.x !== 0 || gridOffset.y !== 0) && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      resetGrid();
-                    }}
-                    className="px-2.5 py-1 rounded-full bg-slate-900/85 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 hover:text-white text-[10px] font-bold backdrop-blur-md flex items-center gap-1 shadow-md transition-all cursor-pointer"
-                    title="Reset grid to center"
-                  >
-                    <RotateCcw size={10} className="text-cyan-400" />
-                    <span>Center</span>
-                  </button>
+                {isFaceLocked ? (
+                  <>
+                    <Sparkles size={11} className="text-emerald-300 animate-spin" />
+                    <span>🎯 Face Locked • Auto-Scanning...</span>
+                  </>
+                ) : (
+                  <>
+                    <User size={11} className="text-cyan-400" />
+                    <span>Align Face with Biometric Mesh</span>
+                  </>
                 )}
+              </div>
+            </div>
+
+            {/* Quick Grid Reset & Move Controls */}
+            <div className="absolute top-3 right-3 flex items-center gap-1 z-20 pointer-events-auto">
+              {(gridOffset.x !== 0 || gridOffset.y !== 0) && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowMoveControls((prev) => !prev);
+                    resetGrid();
                   }}
-                  className={`px-2 py-1 rounded-full backdrop-blur-md border text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                    showMoveControls
-                      ? 'bg-cyan-600 border-cyan-400 text-white shadow-md'
-                      : 'bg-black/60 border-white/10 text-slate-300 hover:text-white'
-                  }`}
-                  title="Toggle move controls"
+                  className="px-2 py-1 rounded-full bg-slate-900/80 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 hover:text-white text-[9.5px] font-bold backdrop-blur-md flex items-center gap-1 shadow-md transition-all cursor-pointer"
+                  title="Reset grid to center"
                 >
-                  <Move size={11} />
-                  <span>D-Pad</span>
+                  <RotateCcw size={9} className="text-cyan-400" />
+                  <span>Center</span>
                 </button>
-              </div>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMoveControls((prev) => !prev);
+                }}
+                className={`px-2 py-1 rounded-full backdrop-blur-md border text-[9.5px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  showMoveControls
+                    ? 'bg-cyan-600 border-cyan-400 text-white shadow-md'
+                    : 'bg-black/60 border border-white/10 text-slate-300 hover:text-white'
+                }`}
+                title="Toggle move controls"
+              >
+                <Move size={10} />
+                <span>Move</span>
+              </button>
             </div>
 
             {/* Floating Precision D-Pad Nudge Controls */}
@@ -1574,44 +1614,58 @@ export function FaceCapture({
           </button>
         )}
 
-        {/* Scanning state: Manual Snap button & Upload button */}
+        {/* Scanning state: Touchless Auto-Scanning with Manual Snap Override & Upload button */}
         {['scanning', 'analyzing', 'verifying'].includes(state) && (
-          <div className="flex gap-2 w-full">
-            <button
-              type="button"
-              onClick={() => handleManualSnap()}
-              disabled={state === 'verifying' || state === 'analyzing'}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
-                state === 'verifying' || state === 'analyzing'
-                  ? 'bg-blue-600 text-white cursor-wait animate-pulse'
-                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white shadow-indigo-600/25 cursor-pointer'
-              }`}
-            >
-              {state === 'verifying' || state === 'analyzing' ? (
-                <>
-                  <RefreshCw size={15} className="animate-spin" />
-                  <span>Verifying Face Biometrics...</span>
-                </>
-              ) : (
-                <>
-                  <Camera size={15} />
-                  <span>
-                    {mode === 'register'
-                      ? 'Scan Face Now'
-                      : 'Scan & Verify Now'}
-                  </span>
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload photo from device"
-              className="px-3.5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center"
-            >
-              <Upload size={15} />
-            </button>
-          </div>
+          <>
+            <div className="flex gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => handleManualSnap()}
+                disabled={state === 'verifying' || state === 'analyzing'}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
+                  state === 'verifying' || state === 'analyzing'
+                    ? 'bg-blue-600 text-white cursor-wait animate-pulse'
+                    : isFaceLocked
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/50 cursor-pointer animate-pulse'
+                      : 'bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white shadow-indigo-600/25 cursor-pointer'
+                }`}
+              >
+                {state === 'verifying' || state === 'analyzing' ? (
+                  <>
+                    <RefreshCw size={15} className="animate-spin" />
+                    <span>Verifying Face Biometrics...</span>
+                  </>
+                ) : isFaceLocked ? (
+                  <>
+                    <Sparkles size={15} className="animate-spin text-emerald-200" />
+                    <span>⚡ Auto-Scanning Face...</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera size={15} />
+                    <span>
+                      {mode === 'register'
+                        ? '⚡ Auto-Scanning Active (or Tap Now)'
+                        : '⚡ Auto-Verify Active (or Tap Now)'}
+                    </span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload photo from device"
+                className="px-3.5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center"
+              >
+                <Upload size={15} />
+              </button>
+            </div>
+            {/* Touchless Auto-Scan helper cue */}
+            <div className="flex items-center justify-center gap-1.5 text-[10.5px] text-slate-500 font-medium">
+              <Sparkles size={12} className="text-emerald-500 shrink-0" />
+              <span>Touchless auto-scan: Just align face with the mesh — no tap needed!</span>
+            </div>
+          </>
         )}
 
         {/* Cancel button */}
